@@ -1,0 +1,178 @@
+schema: ai-work.content-systems/v1
+paths:
+  ai_work_root: ''
+systems:
+  wiki:
+    enabled: true
+    root: ''
+    registry: ''
+    layout: auto
+    workspace_dir_template: projects/{workspace_id}
+    source:
+      include_extensions:
+      - .py
+      - .java
+      - .kt
+      - .kts
+      - .groovy
+      - .xml
+      - .jsp
+      - .html
+      - .htm
+      - .yaml
+      - .yml
+      - .properties
+      - .json
+      - .toml
+      - .ini
+      - .cfg
+      - .sql
+      - .js
+      - .jsx
+      - .ts
+      - .tsx
+      - .vue
+      - .css
+      - .scss
+      - .less
+      - .gradle
+      - .md
+      - .ps1
+      - .sh
+      - .cmd
+      - .bat
+      include_names:
+      - VERSION
+      - Dockerfile
+      - Makefile
+      - pom.xml
+      exclude_segments:
+      - .git
+      - .idea
+      - .settings
+      - .vscode
+      - .ai-work
+      - __pycache__
+      - .pytest_cache
+      - .mypy_cache
+      - .ruff_cache
+      - node_modules
+      - target
+      - test
+      - tests
+      - reports
+      - lib
+      - dist
+      - build
+      - bin
+      exclude_globs:
+      - '**/*.class'
+      - '**/*.pyc'
+      properties_normalization: keys
+    snapshot:
+      mass_change_min_files: 50
+      mass_change_ratio: 0.35
+      bulk_cosmetic_ratio: 0.8
+    quality:
+      citation_line_coverage_target: 0.9
+      source_dependency_coverage_warn: 0.1
+      semantic_audit_sample_docs: 3
+      filler_repetition_warn: 4
+      effective_wiki_coverage_warn: 0.0
+      initial_build_effective_coverage_min: 0.95
+    coverage:
+      include_globs: []
+      no_doc_globs:
+      - '**/*Mapper.xml'
+      - '**/*Dao.xml'
+      - '**/controller.xml'
+      - '**/service.xml'
+      - '**/viewForm.xml'
+      - '**/entity.xml'
+      - '**/viewList.xml'
+      - '**/*.min.js'
+      - '**/*.min.css'
+      - '**/*.map'
+      - '**/package-lock.json'
+      - '**/agents/openai.yaml'
+      - '**/__init__.py'
+      - automation/knowledge/README.md
+      - scripts/ci/Test-V510SwitchNegatives.ps1
+      excluded_extensions:
+      - .css
+      - .scss
+      - .less
+      markdown_contract_roots:
+      - agents
+      - automation
+      - governance
+      - skills
+      - templates
+      - wiki
+  knowledge:
+    enabled: true
+    root: ''
+    registry: ''
+    layout: auto
+    canonical:
+      projects_dir: 10-projects
+      shared_dir: 20-shared
+      source_dir: 90-sources
+      archive_dir: 90-archive
+    projection:
+      engine: sqlite-fts5
+      database: .ai-kb/knowledge.db
+      meta_root: .ai-kb/meta
+      graph_mode: optional
+      vector_mode: retired-compatible
+      legacy_databases: []
+    retrieval:
+      strategy: canonical-first-fts5
+      default_scope: project
+      include_shared: true
+      global_fallback: false
+      source_fallback: true
+      limit_default: 20
+      telemetry: true
+      telemetry_retention_days: 30
+    ingest:
+      manifest_root: .ai-kb/ingest
+      max_text_bytes: 1048576
+      allowed_extensions:
+      - .md
+      - .txt
+      - .pdf
+      - .doc
+      - .docx
+      - .xls
+      - .xlsx
+      - .ppt
+      - .pptx
+      - .csv
+      - .json
+      - .yaml
+      - .yml
+      - .xml
+      hard_exclude_globs:
+      - '**/.git/**'
+      - '**/.obsidian/**'
+      - '**/.ai-kb/**'
+      - '**/__pycache__/**'
+      - '**/.pytest_cache/**'
+    quality:
+      source_accountability_warn: 1.0
+      canonical_traceability_target: 1.0
+      index_freshness_target: 1.0
+      semantic_audit_sample_docs: 3
+      filler_repetition_warn: 4
+    evidence:
+      task_roots: []
+    evaluation:
+      golden_set: 00-system/eval/golden.jsonl
+      output_root: .ai-kb/eval
+      limit: 20
+    maintenance:
+      local_out_of_scope_roots:
+      - .codebuddy
+      - .obsidian
+      - obsidian

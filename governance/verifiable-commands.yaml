@@ -1,0 +1,117 @@
+# V5.2.0 B-12 治理级命令注册表（R3 校验源）
+#
+# 权威：历史“升级计划-智能验证与上下文治理” §3.2 L137（命令只校验注册表中的
+# ID、参数 schema、注册表版本与内容 SHA-256，以及已保存输出证据；绝不执行命令）、
+# §7 L311（命令注册表有稳定 schema、版本、content SHA-256）。human_owner 动作级授权
+# G1（2026-08-02）创建本文件；cutover（G2）不在授权范围。
+#
+# 双锚点：registry_version + registry_content_sha256。registry_content_sha256 为
+# {"commands": [...]} 经 json.dumps(ensure_ascii=False, sort_keys=True) 规范化序列化后的
+# SHA-256（与 cli/structured_refs.py compute_registry_content_sha256 同算法）；重算不一致
+# → 校验器 fail-closed 拒绝整个注册表（视为 registry 不可信）。
+#
+# 每条命令：
+#   - id: 命令 ID（唯一；引用 value 与之比对，未知 ID → COMMAND_ID_UNKNOWN）
+#   - registry_version: 与顶层一致（不一致 → COMMAND_REGISTRY_VERSION_MISMATCH）
+#   - args_schema: 参数名白名单（location "params:k=v" 提取的参数名超出 → COMMAND_ARGS_SCHEMA_MISMATCH）
+#   - content_sha256: 命令定义锚点 = {"id","args_schema","output_evidence_required"}
+#     规范化序列化后的 SHA-256；引用 evidence_hash 必须与之一致（不一致 → COMMAND_CONTENT_HASH_MISMATCH）
+#   - output_evidence_required: true 时引用必须携带 evidence_hash（缺失 → COMMAND_OUTPUT_MISSING）
+#
+# 首批纳入仅限只读/证据类且不执行外部进程的命令（无 subprocess/网络/模型调用）：
+# receipt（B-16 收据）、report 只读报表组、refs-validate（B-12）、lossless-summary（B-14）、
+# config 只读子命令。review-preflight 因内部执行 git（cli/review_preflight.py _run_git）
+# 属执行外部进程，不纳入。本文件绝不包含可执行命令行。
+registry_version: "1.0.0"
+registry_content_sha256: "sha256:4bd51feaad9fb29fcf8e60c8acb4ecbb515be750d187c5a28517a400d37d26b7"
+commands:
+  - id: "receipt"
+    registry_version: "1.0.0"
+    args_schema:
+      - "task"
+      - "task-dir"
+      - "actor"
+      - "action-type"
+      - "summary"
+      - "authorized-by"
+      - "authorization-scope"
+      - "environment"
+      - "action-sha256"
+      - "script"
+      - "result"
+      - "evidence-hash"
+      - "resource-ref"
+      - "provenance"
+      - "sensitivity"
+    content_sha256: "sha256:db073372843bfda7d758761a43b0f2ae4ad1cd84b602429b6bcdda050d355614"
+    output_evidence_required: true
+  - id: "report-task-summary"
+    registry_version: "1.0.0"
+    args_schema: ["task", "db"]
+    content_sha256: "sha256:ab520423a712c2f9062fb7a7219f03e18719b26e2300d0a67f86417eb2929c37"
+    output_evidence_required: false
+  - id: "report-stage-time"
+    registry_version: "1.0.0"
+    args_schema: ["task", "db"]
+    content_sha256: "sha256:707c003cfae6c6edb9bd07c3bccb26a074915500882d572a763d00d809948029"
+    output_evidence_required: false
+  - id: "report-rework"
+    registry_version: "1.0.0"
+    args_schema: ["project", "db"]
+    content_sha256: "sha256:85ce399964f70fdafc16495069be48f26d2b7f1788a5f04fcba5702831cf8cf6"
+    output_evidence_required: false
+  - id: "report-blocked"
+    registry_version: "1.0.0"
+    args_schema: ["project", "db"]
+    content_sha256: "sha256:10bdec13d6aea6c0fa1cce920fab4fcaba51c8664c14921ef8b703117451bb72"
+    output_evidence_required: false
+  - id: "report-first-pass-rate"
+    registry_version: "1.0.0"
+    args_schema: ["project", "db"]
+    content_sha256: "sha256:9b47924e02a874970af54e28a0ab85eb4b0bc8a24d99b87ffede670ecafe94e4"
+    output_evidence_required: false
+  - id: "report-cross"
+    registry_version: "1.0.0"
+    args_schema: ["metric", "projects", "db"]
+    content_sha256: "sha256:e26ee24fc8c8ab0e9cf061b3b342842d186bfdba01c1b9e8bc180f520ad1b4cc"
+    output_evidence_required: false
+  - id: "report-cost-benefit"
+    registry_version: "1.0.0"
+    args_schema: ["task", "output"]
+    content_sha256: "sha256:0c311b2bf59c1f8adcd6bf17a15134cda91ea88424b8f8dbdde632b6bd3014a6"
+    output_evidence_required: true
+  - id: "refs-validate"
+    registry_version: "1.0.0"
+    args_schema: ["refs-file", "scope-dirs", "approved-scope", "command-registry", "schema", "example"]
+    content_sha256: "sha256:7da307168c961433f55b4ed99413095c938d4f7fe6c8f1c1a09776bd7d7baf0a"
+    output_evidence_required: true
+  - id: "lossless-summary"
+    registry_version: "1.0.0"
+    args_schema: ["source-base", "input", "output-dir", "type", "declared-type", "simulate"]
+    content_sha256: "sha256:f4d48353a08a81c22257fbd2fb0af517baebcd3ffad9f33e197f10589538550c"
+    output_evidence_required: true
+  - id: "config-load"
+    registry_version: "1.0.0"
+    args_schema: ["file", "schema", "base-root"]
+    content_sha256: "sha256:f4f1fc32d998373ceaf0f255ae7a3b1e3c2c5fb9e3ce1928ed05a2b0988d158e"
+    output_evidence_required: false
+  - id: "config-validate"
+    registry_version: "1.0.0"
+    args_schema: ["file", "schema", "base-root"]
+    content_sha256: "sha256:14bba0097ed76153c6f2af34b705030a75d11421ca227d8a7b9a78356ebcec2e"
+    output_evidence_required: false
+  - id: "config-schema"
+    registry_version: "1.0.0"
+    args_schema: ["name"]
+    content_sha256: "sha256:4178640df159f69a7c93822b3bb34b2059c77aa983a7327a713ab7d8c97419fa"
+    output_evidence_required: false
+  - id: "config-dump"
+    registry_version: "1.0.0"
+    args_schema: ["base-root"]
+    content_sha256: "sha256:5602b7ba68ccd07ac51c34b6c31fc2935d82855828c5aeeda83f3cc034e3c314"
+    output_evidence_required: false
+  - id: "config-gate"
+    registry_version: "1.0.0"
+    args_schema: ["task-version", "base-root"]
+    content_sha256: "sha256:c237970d79a8f58be1a7680366b6aa81d025fab0168f7317bea3cdbdfbaa8dca"
+    output_evidence_required: false

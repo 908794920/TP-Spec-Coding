@@ -1,0 +1,4 @@
+interface:
+  display_name: "Technical Review"
+  short_description: "Independently review traceability, quality, and residual risk"
+  default_prompt: "Use $technical-review to review this implementation."

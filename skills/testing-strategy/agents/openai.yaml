@@ -1,0 +1,4 @@
+interface:
+  display_name: "Testing Strategy"
+  short_description: "Plan risk-proportionate tests and evidence collection"
+  default_prompt: "Use $testing-strategy to plan verification."

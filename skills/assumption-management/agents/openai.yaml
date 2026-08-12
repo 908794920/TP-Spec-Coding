@@ -1,0 +1,4 @@
+interface:
+  display_name: "Assumption Management"
+  short_description: "Validate assumptions and escalate material risk"
+  default_prompt: "Use $assumption-management to manage task assumptions."

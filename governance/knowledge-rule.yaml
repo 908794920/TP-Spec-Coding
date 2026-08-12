@@ -1,0 +1,153 @@
+# AI Knowledge Rule Definition — V5.2.0 Record-first
+#
+# Purpose:
+#   Define when long-lived Knowledge is worth capturing and which component owns
+#   retrieval/canonical maintenance.  Physical paths and retrieval implementation
+#   are owned by governance/content-systems.yaml, not this rule file.
+#
+# Compatibility version remains 2.1.0 for active V5.2.0 tasks; semantics are
+# additive/Record-first and do not restore Knowledge as a completion gate.
+version: "2.1.0"
+
+knowledge:
+  purpose:
+    description: "保存跨 Task 长期有效、可复用、能提高未来判断质量的业务/技术/运维知识"
+    authority:
+      truth: "Canonical Markdown + registered source/evidence"
+      retrieval_projection: "configured projection DB（可删除重建，不是事实源）"
+      path_resolver: "governance/content-systems.yaml + project override"
+    retrieval:
+      entry: "ai-work knowledge search"
+      strategy: "canonical-first-fts5"
+      source_fallback: true
+      vector: "retired-compatible；存在旧表不代表活动能力"
+  storage:
+    rule: "所有 physical root / registry / projection 路径由 Content Systems Resolver 解析；本规则不持有绝对路径"
+    canonical:
+      projects: "10-projects/{project-id}"
+      shared: "20-shared"
+      evidence: "项目 90-sources/ 或 registered external/task/code evidence"
+    generated:
+      rule: "SQLite FTS/link/graph 等 projection 可重建，不作为 canonical 写入目标"
+
+should_save:
+  architecture_decision:
+    enabled: true
+    examples: ["关键架构边界", "技术选型原因", "长期禁止项"]
+  business_rule:
+    enabled: true
+    examples: ["稳定业务流程", "状态/权限规则", "特殊业务约束"]
+  data_and_interface:
+    enabled: true
+    examples: ["核心数据语义", "接口契约", "跨系统约束"]
+  production_issue:
+    enabled: true
+    examples: ["已验证根因", "长期防复发措施", "高复用排障经验"]
+  operating_knowledge:
+    enabled: true
+    examples: ["稳定运维规则", "恢复/回滚经验", "长期工具约束"]
+
+should_not_save:
+  examples:
+  - "一次性沟通过程或聊天记录"
+  - "普通代码修改流水账"
+  - "临时调试日志/未验证 workaround"
+  - "无复用价值的 CRUD/样式改动"
+  - "仅为了提高文档数量/覆盖率而复制 Source"
+  - "没有 evidence 的模型推断"
+
+responsibility:
+  tp-requirement-analysis:
+    role: "按需知识消费者"
+    responsibilities:
+    - "存在业务/历史知识缺口时优先使用标准 Knowledge Retrieval，而不是全库扫描历史资料"
+    - "Knowledge 与当前需求/源码冲突时标注冲突，不静默采用"
+  tp-architecture-design:
+    role: "知识消费者与长期价值判断者"
+    responsibilities:
+    - "设计/风险判断需要历史项目事实时优先 ai-work knowledge search，并按需回 source/evidence"
+    - "判断当前任务是否产生长期知识价值；需要时确认 project/kind/knowledge_target 或记录 DEFERRED"
+    - "不得直接把检索命中当成当前源码事实；代码事实仍回 Source/Wiki 核验"
+  tp-delivery-convergence:
+    role: "可选 Knowledge candidate 整理者"
+    responsibilities:
+    - "只整理已验证、长期有效的候选事实和 evidence"
+    - "可形成可选 knowledge candidate/target，但不直接维护 Vault canonical、source registry、index 或 baseline"
+    - "没有明确长期价值时 DEFERRED，不阻止 COMPLETED"
+  tp-knowledge:
+    role: "Knowledge Content System 唯一标准维护 Skill"
+    responsibilities:
+    - "检索、外部文档/source 注册、canonical update/create/merge、evidence 维护"
+    - "运行 Knowledge L1-L4、index、telemetry、audit 与 trusted baseline"
+    - "无人值守定时维护按 automation/knowledge 当前 canonical protocol 执行"
+  tp-base-maintenance:
+    role: "Base 健康/同步 owner"
+    responsibilities:
+    - "只负责项目引入的 TP-Spec-Coding、managed surfaces 与 Content Systems 路由健康"
+    - "不修改 Knowledge 内容"
+  human_owner:
+    role: "高风险/歧义最终决策者"
+    responsibilities:
+    - "确认破坏性清理、项目归属、冲突 merge/split 与重大长期规则"
+
+workflow:
+  retrieval:
+    trigger: "需求/设计/排障存在可从长期知识确认的具体缺口"
+    steps:
+    - "resolve Content Systems"
+    - "ai-work knowledge search（知道 project-id 时按问题范围使用 project filter）"
+    - "canonical 命中优先；需要证明时下钻 source/evidence"
+    - "涉及当前代码实现时再用 Wiki 缩小范围并回 Source Code 核验"
+  task_capture:
+    trigger: "任务确实产生已验证、长期可复用知识"
+    steps:
+    - "架构/交付角色标记 knowledge value/target 或候选 evidence；没有则 DEFERRED"
+    - "tp-knowledge 在显式维护范围内搜索已有 canonical"
+    - "update/merge 优先于 create"
+    - "index → verify → L4(if required) → snapshot-commit"
+    completion_gate: false
+  external_ingest:
+    protocol: "automation/knowledge/ingest-batch.md"
+    invariant: "Registered Source Accountability = 100%；不要求每个 Source 生成 canonical"
+  scheduled_maintenance:
+    protocol: "automation/knowledge/daily-maintenance.md"
+    executor: "unattended conversational model"
+    interaction: "AskUserQuestion forbidden；歧义/破坏性操作 fail-closed"
+
+quality:
+  requirements:
+  - "canonical 必须有 durable source_refs/evidence_refs"
+  - "事实、历史观察、推断、待确认项必须区分"
+  - "强断言必须由真正 enforcement/evidence 层支持"
+  - "update/merge 优先于重复 create"
+  - "source accountability、traceability、projection freshness 分开报告"
+  - "检索策略变化必须先跑当前 Golden Query eval"
+  gates:
+    L1: "schema/id/project/kind/relation/path integrity"
+    L2: "evidence/source traceability"
+    L3: "content/projection/retrieval deterministic quality"
+    L4: "targeted conversational semantic audit"
+
+editor_experience:
+  role: "人类浏览/编辑体验；不是 Runtime authority"
+  requirements:
+  - "保留可读目录和链接"
+  - "不让特定编辑器/Junction 成为 Knowledge Runtime 前提"
+  - "generated projection 与临时施工资产不得冒充 canonical"
+
+principles:
+  knowledge_is_asset:
+    enabled: true
+    description: "Knowledge 是跨任务长期资产，不属于单次 Task"
+  task_record_not_equal_knowledge:
+    enabled: true
+    description: "Task 保存发生过什么；Knowledge 只保存长期可复用内容"
+  source_accountability_not_coverage:
+    enabled: true
+    description: "每个 registered Source 必须有 disposition，但 duplicate/source_only/excluded 等不应被强制 canonicalized"
+  projection_not_truth:
+    enabled: true
+    description: "FTS/link/graph DB 是可重建检索投影，不是 Knowledge truth"
+  low_overhead:
+    enabled: true
+    description: "优先低成本、可解释、可维护能力；不为边际收益恢复复杂检索依赖"

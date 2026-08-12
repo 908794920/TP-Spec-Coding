@@ -1,0 +1,29 @@
+schema: ai-work.wiki-coverage/v1
+purpose: >
+  Auditable file-oriented Code Intelligence coverage. The headline effective_wiki_coverage
+  measures current meaningfully represented wiki-eligible source files, not all scanner-visible files.
+headline_metric: effective_wiki_coverage
+formula: trusted_covered_files / wiki_eligible_files
+trusted_covered_rule:
+  - current Wiki document content_hash must equal manifest document content_hash
+  - current dependency normalized_hash must equal current source normalized_hash
+  - a real Wiki <cite> counts as direct evidence
+  - an uncited primary/context dependency counts only when it binds to a section that still exists in the current document
+  - uncited reference-only dependency does not count
+denominator:
+  source: discover_source_files
+  exclusions:
+    - configured no_doc_globs
+    - configured low-signal excluded_extensions
+    - generic Markdown outside configured behavioral contract roots
+  invariant: every exclusion is reported with a reason
+secondary_metrics:
+  source_dependency_coverage: scanner-wide dependency indicator; not the headline Wiki coverage
+  citation_evidence_coverage: eligible files with current direct citation evidence
+  primary_context_coverage: eligible files with current section-bound primary/context semantic representation
+  dual_evidence_files: files with both direct cite and section-bound primary/context evidence
+  citation_only_covered_files: files covered by direct cite without primary/context binding
+  semantic_only_covered_files: files covered by current section-bound primary/context relation without direct cite
+  stale_wiki_documents: Wiki documents changed after deterministic manifest refresh; their claims do not count
+  invalid_section_binding_files: primary/context claims with no current section binding; they do not count unless directly cited
+aggregation: sum trusted covered files / sum wiki-eligible files; never average per-repo percentages

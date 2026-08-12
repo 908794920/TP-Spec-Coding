@@ -1,0 +1,45 @@
+# -*- coding: utf-8 -*-
+"""Frozen pre-Record-first workflow decoder.
+
+V5.2.0 no longer exposes these microstates as an active governance contract.
+They are retained only so old ledger history and recovery commands remain
+parseable during migration/forensics. New tasks must use NEW/ACTIVE/BLOCKED/
+COMPLETED/CANCELLED plus current_phase facts.
+"""
+from __future__ import annotations
+
+LEGACY_STATE_OWNERS = {
+    "RISK_ANALYZING": "tp-architecture-design",
+    "REQUIREMENT_CLARIFYING": "tp-architecture-design",
+    "TECHNICAL_DISCOVERY": "tp-development-engineering",
+    "PRODUCT_DESIGNING": "tp-product-design",
+    "PRODUCT_CONFIRMING": "human_owner",
+    "TECH_DESIGNING": "tp-architecture-design",
+    "DISCOVERY_REVIEW_REQUIRED": "tp-architecture-design",
+    "CHANGE_CONFIRMING": "human_owner",
+    "DEVELOPING": "tp-development-engineering",
+    "ASSISTING": "tp-development-engineering",
+    "VERIFYING": "tp-verification-engineering",
+    "BROWSER_VERIFYING": "tp-architecture-design",
+    "REVIEWING": "tp-architecture-design",
+    "CLOSING": "tp-delivery-convergence",
+}
+
+LEGACY_TRANSITIONS = {
+    "NEW": ["RISK_ANALYZING", "TECH_DESIGNING", "DEVELOPING"],
+    "BLOCKED": ["REQUIREMENT_CLARIFYING", "TECHNICAL_DISCOVERY", "TECH_DESIGNING", "DEVELOPING", "VERIFYING"],
+    "RISK_ANALYZING": ["REQUIREMENT_CLARIFYING", "PRODUCT_DESIGNING", "TECH_DESIGNING", "DEVELOPING", "TECHNICAL_DISCOVERY", "ACTIVE"],
+    "REQUIREMENT_CLARIFYING": ["PRODUCT_DESIGNING", "TECH_DESIGNING", "TECHNICAL_DISCOVERY", "CHANGE_CONFIRMING", "BLOCKED", "ACTIVE"],
+    "TECHNICAL_DISCOVERY": ["REQUIREMENT_CLARIFYING", "TECH_DESIGNING", "DISCOVERY_REVIEW_REQUIRED", "BLOCKED", "ACTIVE"],
+    "PRODUCT_DESIGNING": ["PRODUCT_CONFIRMING", "ACTIVE"],
+    "PRODUCT_CONFIRMING": ["TECH_DESIGNING", "CANCELLED", "ACTIVE"],
+    "TECH_DESIGNING": ["DEVELOPING", "CHANGE_CONFIRMING", "BLOCKED", "ACTIVE"],
+    "DISCOVERY_REVIEW_REQUIRED": ["REQUIREMENT_CLARIFYING", "TECH_DESIGNING", "CHANGE_CONFIRMING", "DEVELOPING", "BLOCKED", "ACTIVE"],
+    "CHANGE_CONFIRMING": ["REQUIREMENT_CLARIFYING", "PRODUCT_DESIGNING", "TECH_DESIGNING", "CANCELLED", "ACTIVE"],
+    "DEVELOPING": ["ASSISTING", "VERIFYING", "DISCOVERY_REVIEW_REQUIRED", "BLOCKED", "ACTIVE", "COMPLETED"],
+    "ASSISTING": ["VERIFYING", "DISCOVERY_REVIEW_REQUIRED", "BLOCKED", "ACTIVE", "COMPLETED"],
+    "VERIFYING": ["DEVELOPING", "BROWSER_VERIFYING", "REVIEWING", "CLOSING", "DISCOVERY_REVIEW_REQUIRED", "BLOCKED", "ACTIVE", "COMPLETED"],
+    "BROWSER_VERIFYING": ["REVIEWING", "CLOSING", "DISCOVERY_REVIEW_REQUIRED", "BLOCKED", "ACTIVE", "COMPLETED"],
+    "REVIEWING": ["CLOSING", "DEVELOPING", "DISCOVERY_REVIEW_REQUIRED", "BLOCKED", "ACTIVE", "COMPLETED"],
+    "CLOSING": ["COMPLETED", "BLOCKED", "ACTIVE"],
+}

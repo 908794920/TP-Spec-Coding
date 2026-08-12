@@ -1,0 +1,63 @@
+version: "1.0.0"
+contract_version: "5.2.0"
+purpose: "Optional architecture planning strategy. Comparative mode is UltraPlan Lite; it is never a mandatory workflow state."
+default_mode: DIRECT
+modes:
+  DIRECT:
+    description: "Single architecture-design pass using the verified requirement/evidence pack."
+    applies:
+      - "L0/L1"
+      - "ordinary L2 with one obvious technical route"
+      - "any deterministic change where competing plans add no decision value"
+  COMPARATIVE:
+    description: "UltraPlan Lite: isolated orthogonal candidate plans, fact verification, scored synthesis, then an independent architecture review only when risk/uncertainty justifies it."
+    eligibility:
+      any:
+        - "L3 with multiple plausible technical routes"
+        - "L2 with high architecture risk and multiple plausible routes"
+        - "cross-module change where route choice materially changes performance, maintainability or regression risk"
+    do_not_use_when:
+      - "single-file or deterministic change"
+      - "the requirement/evidence pack is incomplete"
+    execution:
+      preferred: "parallel isolated subagents when the editor supports isolated concurrency"
+      fallback: "isolated sequential perspectives over the same evidence pack; never feed one perspective conclusion into the next"
+      fallback_must_not_block: true
+    fan_out:
+      perspectives:
+        - id: MAINTAINABILITY
+          optimize: "simplicity, readability, maintainability"
+        - id: PERFORMANCE
+          optimize: "performance, scalability, operational characteristics"
+        - id: MINIMAL_CHANGE
+          optimize: "smallest change surface and regression risk"
+      isolation: "Candidates share only the same verified evidence pack; they do not see one another's plans."
+      evidence_policy: "Do not let every candidate rescan the repository. Candidates may perform only targeted verification for disputed/missing facts."
+      output_cap:
+        critical_files_max: 5
+        requirements:
+          - "approach summary"
+          - "ordered implementation steps and dependencies"
+          - "critical file paths"
+          - "risks and mitigations"
+          - "explicit decisions/assumptions"
+    synthesis:
+      fact_check: "tp-architecture-design re-reads critical/disputed files before scoring; child-agent claims are not authoritative."
+      score_dimensions:
+        - completeness
+        - feasibility
+        - risk
+        - cost
+      method: "Choose the best-scoring plan as the coherent skeleton; import only superior elements from alternatives."
+      required_output:
+        - "selected approach and why"
+        - "borrowed elements from alternatives"
+        - "rejected alternatives and reasons"
+        - "decision-complete implementation plan"
+    review_boundary: "tp-architecture-review is an optional independent second opinion; invoke it when risk/uncertainty or human_owner warrants it."
+constraints:
+  side_effects: "Planning is read-only with respect to business code/data. Business artifacts are written only when they carry useful content; Runtime records checkpoints separately."
+  no_new_state: true
+  no_new_mandatory_artifact: true
+  fallback_must_not_block: true
+  cost_guardrail: "Use COMPARATIVE only when route-choice value is expected to outweigh the additional planning cost."

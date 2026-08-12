@@ -1,0 +1,57 @@
+import tempfile
+from pathlib import Path
+from cli import orchestration
+from scripts.tests.v514_orchestration_testutil import make_db,add_checkpoint,add_decision,add_review,add_verify
+
+
+def test_effective_level_never_downgrades():
+    assert orchestration.resolve_effective_level('L3','L1')=='L3'
+    assert orchestration.resolve_effective_level('L1','L2')=='L2'
+
+def test_l1_standard_route():
+    with tempfile.TemporaryDirectory() as td:
+        db=make_db(Path(td)/'a.db',risk='L1',flow='L1')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='requirement'
+        add_checkpoint(db,'TASK-V514','tp-requirement-analysis','requirement')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='architecture' and r['execution_mode']=='DIRECT'
+        add_checkpoint(db,'TASK-V514','tp-architecture-design','architecture')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='development'
+
+def test_l3_ultraplan_only_on_multiple_route_signal():
+    with tempfile.TemporaryDirectory() as td:
+        db=make_db(Path(td)/'a.db',risk='L3',flow='L3')
+        add_checkpoint(db,'TASK-V514','tp-requirement-analysis','requirement')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='architecture' and r['execution_mode']=='DIRECT'
+        add_decision(db,'TASK-V514','workflow:multiple-feasible-routes')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['execution_mode']=='COMPARATIVE'
+
+def test_l3_architecture_review_then_material_confirmation():
+    with tempfile.TemporaryDirectory() as td:
+        db=make_db(Path(td)/'a.db',risk='L3',flow='L3')
+        add_checkpoint(db,'TASK-V514','tp-requirement-analysis','requirement')
+        add_checkpoint(db,'TASK-V514','tp-architecture-design','architecture')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='architecture_review'
+        add_review(db,'TASK-V514','PASS')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='development' and r['confirmation_required'] is True
+        add_decision(db,'TASK-V514','workflow:material-confirmed:architecture->development')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['confirmation_required'] is False
+
+def test_verification_rework_and_deep_review():
+    with tempfile.TemporaryDirectory() as td:
+        db=make_db(Path(td)/'a.db',risk='L3',flow='L3')
+        for actor,phase in [('tp-requirement-analysis','requirement'),('tp-architecture-design','architecture')]: add_checkpoint(db,'TASK-V514',actor,phase)
+        add_review(db,'TASK-V514','PASS'); add_decision(db,'TASK-V514','workflow:material-confirmed:architecture->development')
+        add_checkpoint(db,'TASK-V514','tp-development-engineering','development')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='verification' and r['execution_mode']=='DEEP_REVIEW'
+        add_verify(db,'TASK-V514','NEEDS_FIX')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='development' and 'VERIFICATION_NEEDS_FIX' in r['reason_codes']

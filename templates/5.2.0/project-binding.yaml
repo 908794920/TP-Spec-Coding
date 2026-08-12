@@ -1,0 +1,7 @@
+schema: ai-work.project-binding/v1
+project:
+  id: replace-me
+  # Optional only when the central registries use different IDs.
+  # wiki_id: replace-me
+  # knowledge_id: replace-me
+base_version: 5.2.0

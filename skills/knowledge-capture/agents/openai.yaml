@@ -1,0 +1,4 @@
+interface:
+  display_name: "Knowledge Capture"
+  short_description: "Extract durable knowledge without promoting transient logs"
+  default_prompt: "Use $knowledge-capture to assess task knowledge."

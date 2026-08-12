@@ -1,0 +1,15 @@
+schema: ai-work.wiki-snapshot/v1
+required:
+  - repo_id
+  - snapshot_id
+  - files
+file_fields:
+  - size
+  - mtime_ns
+  - content_hash
+  - normalized_hash
+  - encoding
+  - decode_status
+commit_rule: "Only current verification PASS (+ semantic audit PASS when required) may advance baseline."
+
+raw_sha_rule: "Every eligible source file is raw-SHA256 checked on each scan; size/mtime alone never prove unchanged content."

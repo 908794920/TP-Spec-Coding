@@ -1,0 +1,8 @@
+schema: ai-work.installation/v1
+base:
+  root: ""
+systems:
+  wiki:
+    root: ""
+  knowledge:
+    root: ""

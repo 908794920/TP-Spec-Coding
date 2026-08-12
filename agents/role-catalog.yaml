@@ -1,0 +1,85 @@
+catalog_version: "5.2.0"
+base_version: "5.2.0"
+generated_utc: 20260812T140235Z
+generated_by: update_role_catalog.py deterministic metadata/hash refresh
+human_actor:
+  id: human_owner
+  note: Personal user; owns business choices and high-risk authorization, not routine bookkeeping.
+roles:
+- workflow_role: tp-workflow-orchestrator
+  display_name: tp-工作流编排
+  type: control-role
+  skill_path: agents/tp-workflow-orchestrator/SKILL.md
+  owns_states: []
+  content_sha256: DFF0525240DE1E1A777D02CA7798F39A852CEB1EB932DAEBFD6045656F8781B2
+- workflow_role: tp-requirement-analysis
+  display_name: tp-需求分析
+  type: workflow-role
+  skill_path: skills/tp-requirement-analysis/SKILL.md
+  owns_states: []
+  content_sha256: 02EA47ACA43AC22C22A38C3C3E4E42E2763AE89B46AC6BD1410BC12F5C71663C
+- workflow_role: tp-product-design
+  display_name: tp-产品设计
+  type: workflow-role
+  skill_path: skills/tp-product-design/SKILL.md
+  owns_states: []
+  content_sha256: DA137A7D6299FA55DFCA599DDDD5ADB341E229A7CAD0A3F5CEADB47707806543
+- workflow_role: tp-architecture-design
+  display_name: tp-架构设计
+  type: workflow-role
+  skill_path: skills/tp-architecture-design/SKILL.md
+  owns_states:
+  - NEW
+  content_sha256: 6B8262115225747CA4191E592D06063A65D80BC7D6359BE65684BEF410E18C5A
+- workflow_role: tp-architecture-review
+  display_name: tp-架构评审
+  type: optional-review-role
+  skill_path: skills/tp-architecture-review/SKILL.md
+  owns_states: []
+  content_sha256: E44ACE7B746E81A516BDEBEB4E04EC6AF3D3200ACD5B4965A4755101C8FFBF1B
+- workflow_role: tp-development-engineering
+  display_name: tp-开发工程
+  type: workflow-role
+  skill_path: skills/tp-development-engineering/SKILL.md
+  owns_states: []
+  content_sha256: 8AF151FBC289C973C2FCD26185560C1D6818FDEE57719260147707A19B2D6B00
+- workflow_role: tp-verification-engineering
+  display_name: tp-验收工程
+  type: workflow-role
+  skill_path: skills/tp-verification-engineering/SKILL.md
+  owns_states: []
+  content_sha256: E3FB72F7FAB2C3F7E5776EBE0046DD3E5C59430E2B5A29861E66BD07A172411E
+- workflow_role: tp-delivery-convergence
+  display_name: tp-交付/知识收敛辅助
+  type: optional-helper-role
+  skill_path: skills/tp-delivery-convergence/SKILL.md
+  owns_states: []
+  content_sha256: FA91C420A86F09272F747809ED3DBEF933A1457359D131840CEE805F8DFB1060
+- workflow_role: tp-base-maintenance
+  display_name: tp-基座维护
+  type: human-owner-skill
+  skill_path: agents/tp-base-maintenance/SKILL.md
+  owns_states: []
+  content_sha256: EF229A8823E00277BF6007E1A822A862D1CB4E6A060390F79061591300CC0D78
+- workflow_role: tp-knowledge
+  display_name: tp-knowledge
+  type: human-owner-skill
+  skill_path: agents/tp-knowledge/SKILL.md
+  owns_states: []
+  content_sha256: 56D39BA5A5B608EE3DF6AA877D5CA22171B75EF49E23FE9823A104C563139FA3
+- workflow_role: tp-wiki
+  display_name: tp-wiki
+  type: human-owner-skill
+  skill_path: agents/tp-wiki/SKILL.md
+  owns_states: []
+  content_sha256: BF4DCA9FBAD0F9FA24CF7B68E7FF5F86133F1514BF98E839B0F5D0408B1751B8
+state_owner_map:
+  NEW: tp-architecture-design
+  CANCELLED: human_owner
+completion_chain:
+  L0_L1: responsible AI finishes business work -> optional verification -> task complete
+  L2_L3: responsible AI finishes business work -> risk-triggered review/verification as useful -> task complete
+page_verification_modes:
+- human
+- verification
+- architecture

@@ -1,0 +1,113 @@
+# TP-Spec-Coding V5.2.0 — Record-first active workflow
+version: "5.2.0"
+workflow:
+  name: "TP-Spec-Coding Record-first Workflow"
+  description: "个人本地开发黑匣子：开发优先，Runtime 旁路记录；phase 是事实，不是收费站。"
+
+states:
+  NEW:
+    name: "新建"
+    description: "Task 已建立，尚无第一条实际工作进展。"
+  ACTIVE:
+    name: "进行中"
+    description: "正在完成业务工作；owner/phase 由最近事实动态记录。"
+  BLOCKED:
+    name: "真实阻塞"
+    description: "存在明确的人类、环境、授权或外部依赖 blocker。"
+  COMPLETED:
+    name: "完成"
+    description: "工作结束；最终投影必须如实披露验证、延期和风险。"
+  CANCELLED:
+    name: "取消"
+    owner: "human_owner"
+    description: "用户取消；历史保持不可变。"
+
+levels:
+  L0:
+    name: "极低风险"
+    flow:
+      - state: "NEW"
+      - state: "ACTIVE"
+      - state: "COMPLETED"
+    human_required: false
+  L1:
+    name: "低风险"
+    flow:
+      - state: "NEW"
+      - state: "ACTIVE"
+      - state: "COMPLETED"
+    human_required: false
+  L2:
+    name: "普通研发"
+    flow:
+      - state: "NEW"
+      - state: "ACTIVE"
+      - state: "COMPLETED"
+    human_required: false
+  L3:
+    name: "高风险/产品型"
+    flow:
+      - state: "NEW"
+      - state: "ACTIVE"
+      - state: "COMPLETED"
+    human_required: false
+
+transitions:
+  NEW:
+    next:
+      - ACTIVE
+      - BLOCKED
+      - COMPLETED
+      - CANCELLED
+  ACTIVE:
+    next:
+      - BLOCKED
+      - COMPLETED
+      - CANCELLED
+  BLOCKED:
+    next:
+      - ACTIVE
+      - CANCELLED
+  COMPLETED:
+    next: []
+  CANCELLED:
+    next: []
+
+rules:
+  record_first:
+    hard_block_only:
+      - "SQLite/ledger integrity is ambiguous or corrupted"
+      - "an explicit task blocker is unresolved"
+      - "a high-risk action requires user authorization before execution"
+      - "a claimed verification/PASS fact is forged or internally inconsistent"
+    warn_only:
+      - "optional design/review/knowledge artifact missing"
+      - "knowledge retrieval not recorded"
+      - "structured refs incomplete"
+      - "recommended independent architecture review not run"
+      - "knowledge convergence deferred"
+    automation:
+      - "Runtime owns task identity, contract metadata, owner/phase projection, generated views and provenance"
+      - "normal roles do not maintain refresh, handoff or phase-exit bookkeeping"
+  phases:
+    values: [intake, requirement, product, architecture, discovery, development, verification, delivery, other]
+    semantics: "phase is a query/audit fact, not a workflow permission state"
+  architecture_review:
+    default: "optional"
+    trigger:
+      - "high-risk or broad cross-system change"
+      - "database/security/permission architecture change"
+      - "multiple materially different feasible designs"
+      - "high uncertainty reported by the coordinating/design AI"
+      - "human_owner explicitly requests an independent review"
+  completion:
+    semantics:
+      - "COMPLETED means work ended; it does not imply every recommended test or knowledge action ran"
+      - "final-result exposes the actual latest verification fact"
+      - "BLOCKED cannot become COMPLETED until the explicit blocker is resolved"
+      - "human test not executed must never be rewritten as PASS"
+  database_access:
+    description:
+      - "read-only development/test inspection is allowed within task scope"
+      - "production reads require explicit user confirmation and least privilege"
+      - "DML/DDL/production writes remain action-level hard authorization gates"

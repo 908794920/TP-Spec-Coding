@@ -1,0 +1,82 @@
+version: 5.2.0
+mode: record-first
+principle: business work first; Runtime owns bookkeeping
+daily_api:
+  task_checkpoint:
+    command: ai-work task checkpoint --task <TASK> --task-dir <DIR> --actor <ROLE>
+      --phase <PHASE> --summary <TEXT> [--evidence evidence/... ]
+    purpose: Record one meaningful progress milestone. NEW auto-activates; projections
+      auto-rebuild.
+    notes:
+    - Do not checkpoint microsteps.
+    - No handoff/frontmatter/refs payload is required.
+  task_verify:
+    command: ai-work task verify --task <TASK> --task-dir <DIR> --decision PASS|FAIL|NEEDS_FIX
+      --summary <TEXT> [--evidence evidence/... ]
+    purpose: Record actual technical verification.
+    notes:
+    - PASS requires at least one real evidence/* file.
+    - Verification is a fact, not a phase-transition gate.
+  task_block:
+    command: ai-work task block --task <TASK> --task-dir <DIR> --actor <ROLE> --reason
+      <TEXT>
+    purpose: Record a real unresolved blocker.
+  task_resume:
+    command: ai-work task resume --task <TASK> --task-dir <DIR> --actor <ROLE> --summary
+      <TEXT> [--phase <PHASE>]
+    purpose: Resume work after the explicit blocker is resolved.
+  task_complete:
+    command: ai-work task complete --task <TASK> --task-dir <DIR> --summary
+      <TEXT>
+    purpose: Finish the task and auto-generate final-result with truthful verification
+      facts.
+    notes:
+    - Actor defaults to the latest task owner; do not repeat role identity just for bookkeeping.
+    - If a recorded verification subject changed, final truth is marked *_STALE instead of reusing PASS.
+project_api:
+  project_bootstrap_check: ai-work project bootstrap --id <PROJECT> --root <ROOT> --check-only
+  project_bootstrap: ai-work project bootstrap --id <PROJECT> --root <ROOT>
+  project_upgrade_contract: ai-work project upgrade-contract --id <PROJECT> --to 5.2.0
+errors:
+  PROJECT_BOOTSTRAP_AVAILABLE: read-only bootstrap check found a pristine project that may be initialized only after explicit human_owner action
+  PROJECT_NOT_INITIALIZED: project ledger is not initialized; run project bootstrap/init first
+  PROJECT_BOOTSTRAP_UNSAFE: bootstrap refused because the project is not pristine or ledger state is ambiguous
+runtime_owned:
+- task identity / contract metadata
+- current_state / current_phase / current_owner projection
+- status.yaml / events.jsonl / generated/continuation.md / generated/final-result.md
+- provenance for adopted intake artifacts
+- durable journal and SQLite transaction recovery
+do_not_use_in_normal_role_flow:
+- commit --refresh
+- commit --phase-exit
+- phase-exit dry-run as a mandatory gate
+- hand-authored stage_handoff / intended_next / next_prompt
+- refs-validate merely to unlock another phase
+- empty optional artifacts created only for validator completeness
+optional_capabilities:
+  workflow_orchestrator: read-only next-role resolution and contract doctor; it never writes Task state or creates a second ledger
+  architecture_review: risk-triggered independent review; not a default development
+    gate
+  structured_refs: available when precise provenance materially helps; missing refs
+    are WARN
+  work_sessions: available for timing evidence; never a workflow blocker
+  acceptance_override: human_owner defer/waive without forging PASS
+  legacy_commit: compatibility/recovery surface; not the V5.2.0 daily role API
+rules:
+  write_semantics:
+    canonical_writer: Runtime SQLite transaction + durable journal; roles never edit
+      SQLite directly
+    audited_write_commands:
+    - task checkpoint / task verify / task block / task resume / task complete
+    - work start / work end
+    - acceptance-override
+    - legacy commit (compatibility/recovery only)
+    direct_sqlite_edit: forbidden
+    projection_write: Runtime-owned; status/events/generated views are rebuilt automatically
+  execution_timing:
+    pairing_rule: WORK_SESSION_STARTED/ENDED use session_id correlation; runtime/dispatcher
+      should own start/end when available
+    pretask_rule: No TaskId means no fabricated work-session event; pre-task timing
+      may remain unrecorded
+    workflow_effect: timing evidence never blocks task progression

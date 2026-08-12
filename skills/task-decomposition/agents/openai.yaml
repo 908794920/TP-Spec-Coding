@@ -1,0 +1,4 @@
+interface:
+  display_name: "Task Decomposition"
+  short_description: "Create integration-safe, verifiable work items"
+  default_prompt: "Use $task-decomposition to decompose an approved plan."

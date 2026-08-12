@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-work.local/knowledge/schema/source-registry-record.schema.json",
+  "title": "Knowledge Source Registry Record",
+  "type": "object",
+  "required": [
+    "source_id",
+    "project",
+    "origin_path",
+    "sha256",
+    "disposition"
+  ],
+  "properties": {
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "origin_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "content_path": {
+      "type": "string"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "size": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "mtime_ns": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "disposition": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "canonicalized",
+        "merged",
+        "source_only",
+        "duplicate",
+        "superseded",
+        "quarantined",
+        "excluded"
+      ]
+    },
+    "canonical_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reason": {
+      "type": "string"
+    },
+    "batch": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}

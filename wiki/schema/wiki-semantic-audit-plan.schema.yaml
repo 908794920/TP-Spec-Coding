@@ -1,0 +1,28 @@
+schema: ai-work.wiki-semantic-audit-plan/v1
+required:
+- mode
+- audit_scope
+- subject_digest
+- documents
+modes:
+- change-set
+- standalone
+rules:
+- The plan is deterministic scope selection; the model still performs semantic review.
+- When receipt_required=true, audit-record PASS must cover every document in this plan.
+- A plan is stale when its subject_digest no longer matches the current durable Wiki subject.
+- Initial adoption with no trusted baseline selects every durable manifest document.
+- Incremental semantic audit selects every affected document; risk sampling may only add scope, never replace mandatory affected
+  documents.
+audit_scopes:
+- initial-full-repo
+- standalone-full-repo
+- all-affected
+
+semantic_challenges:
+- currentity
+- existence-vs-authority
+- responsibility-attribution
+- pipeline-stage-owner
+- active-contract
+- cite-strength

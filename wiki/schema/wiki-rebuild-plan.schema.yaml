@@ -1,0 +1,21 @@
+schema: ai-work.wiki-rebuild-plan/v1
+required:
+  - change_set_id
+  - requires_ai_update
+  - affected_documents
+  - topology_review
+  - uncertain_files
+rules:
+  cosmetic: provenance-only
+  semantic: targeted AI update
+  structural: topology-aware AI review
+  uncertain: baseline blocked
+
+wiki_coverage_expectation:
+  purpose: annotate scanner-visible topology with wiki-eligible versus explained exclusions when resolved repo/config context is available
+  invariant: scanner remains broad; eligibility metadata must not suppress source change detection
+semantic_guardrails:
+- currentity
+- existence-is-not-authority
+- responsibility-attribution
+- pipeline-stage-ownership

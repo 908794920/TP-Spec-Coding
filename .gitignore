@@ -1,0 +1,33 @@
+# 本地数据库与注册表（不进入共享基座）
+db/registry.local.json
+db/*.db
+db/*.db-wal
+db/*.db-shm
+
+# Python 字节码缓存
+__pycache__/
+*.pyc
+
+# 任务本地持久 WAL（flush 崩溃恢复 journal，不入库）
+**/.flush-journal/
+
+# 阶段内持久执行区（草稿/调试上下文，不属于任务工件契约，不入库）
+**/.execution/
+
+# cutover 快照与证据回执为运行时产物，不入库（审计留本地）
+cutover-snapshots/
+evidence/
+
+# pytest 缓存
+.pytest_cache/
+
+# 发布压缩包与产物（发布包自身不入库；ZIP 校验值生成到包外）
+*.zip
+dist/
+release/
+
+# 版本发布补丁（分发载体，不属于项目源码内容，不入库/不进入 manifest）
+*.patch
+
+# 未发布规划文档：不进入正式发布 Git/manifest，由后续版本分支单独归档
+/docs/planning/

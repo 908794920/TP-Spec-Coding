@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implementation Control"
+  short_description: "Keep authorized implementation scope and evidence aligned"
+  default_prompt: "Use $implementation-control for this approved work item."

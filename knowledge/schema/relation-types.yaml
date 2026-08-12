@@ -1,0 +1,232 @@
+schema_version: 1.2.0
+compatibility_policy: relation names immutable; allowed_source_kinds / allowed_target_kinds
+  only extendible; cycle flags never relaxed to bypass existing constraints.
+changelog:
+- version: 1.2.0
+  date: 2026-08-11
+  note: Allow feature/data containment targets for real legacy hierarchies; this is an additive contract widening, not a semantic rewrite.
+kinds:
+- project
+- domain
+- system
+- module
+- feature
+- interface
+- data
+- job
+- operation
+- decision
+- source
+relations:
+- name: part_of
+  description: Source is a constituent of target (hierarchical containment).
+  direction: source -> target (source is part of target)
+  allowed_source_kinds:
+  - domain
+  - system
+  - module
+  - feature
+  - interface
+  - data
+  - job
+  - operation
+  - decision
+  allowed_target_kinds:
+  - project
+  - domain
+  - system
+  - module
+  - feature
+  - data
+  allow_self_loop: false
+  participates_in_cycle_detection: true
+  cycle_policy: must be a DAG; any cycle is a violation.
+- name: implements
+  description: Source realizes a target capability.
+  direction: source -> target (source implements target)
+  allowed_source_kinds:
+  - feature
+  - interface
+  - operation
+  - job
+  allowed_target_kinds:
+  - domain
+  - system
+  - module
+  - feature
+  allow_self_loop: false
+  participates_in_cycle_detection: false
+- name: depends_on
+  description: Source requires target to function.
+  direction: source -> target (source depends on target)
+  allowed_source_kinds:
+  - domain
+  - system
+  - module
+  - feature
+  - interface
+  - data
+  - job
+  - operation
+  allowed_target_kinds:
+  - domain
+  - system
+  - module
+  - feature
+  - interface
+  - data
+  - job
+  - operation
+  - source
+  allow_self_loop: false
+  participates_in_cycle_detection: false
+- name: calls
+  description: Source invokes a target interface.
+  direction: source -> target (source calls target)
+  allowed_source_kinds:
+  - feature
+  - interface
+  - job
+  - operation
+  allowed_target_kinds:
+  - interface
+  allow_self_loop: false
+  participates_in_cycle_detection: false
+- name: reads
+  description: Source reads from a target data entity.
+  direction: source -> target (source reads target)
+  allowed_source_kinds:
+  - feature
+  - interface
+  - job
+  - operation
+  allowed_target_kinds:
+  - data
+  allow_self_loop: false
+  participates_in_cycle_detection: false
+- name: writes
+  description: Source writes to a target data entity.
+  direction: source -> target (source writes target)
+  allowed_source_kinds:
+  - feature
+  - interface
+  - job
+  - operation
+  allowed_target_kinds:
+  - data
+  allow_self_loop: false
+  participates_in_cycle_detection: false
+- name: triggered_by
+  description: Source is initiated by target event/capability.
+  direction: source -> target (source triggered by target)
+  allowed_source_kinds:
+  - job
+  - operation
+  allowed_target_kinds:
+  - feature
+  - interface
+  - data
+  - job
+  - operation
+  - source
+  allow_self_loop: false
+  participates_in_cycle_detection: false
+- name: supersedes
+  description: Source replaces a deprecated target of the same kind.
+  direction: source -> target (source supersedes target)
+  allowed_source_kinds:
+  - project
+  - domain
+  - system
+  - module
+  - feature
+  - interface
+  - data
+  - job
+  - operation
+  - decision
+  - source
+  allowed_target_kinds:
+  - project
+  - domain
+  - system
+  - module
+  - feature
+  - interface
+  - data
+  - job
+  - operation
+  - decision
+  - source
+  allow_self_loop: false
+  participates_in_cycle_detection: true
+  cycle_policy: must be a DAG; any cycle is a violation.
+  constraint: source and target SHOULD share the same kind (enforced as a warning,
+    not hard fail).
+- name: source_refs
+  description: Source canonical note cites target evidence (source kind).
+  direction: source -> target (source references target evidence)
+  allowed_source_kinds:
+  - project
+  - domain
+  - system
+  - module
+  - feature
+  - interface
+  - data
+  - job
+  - operation
+  - decision
+  allowed_target_kinds:
+  - source
+  allow_self_loop: false
+  participates_in_cycle_detection: false
+- name: verifies
+  description: Source operation/job/decision provides verification evidence for target
+    capability or contract.
+  direction: source -> target (source verifies target)
+  allowed_source_kinds:
+  - operation
+  - job
+  - decision
+  allowed_target_kinds:
+  - system
+  - module
+  - feature
+  - interface
+  - data
+  - job
+  - operation
+  allow_self_loop: false
+  participates_in_cycle_detection: false
+- name: related_to
+  description: Restricted-use generic association. Use only when no specific relation
+    fits.
+  direction: source -> target (symmetric in meaning, stored once)
+  allowed_source_kinds:
+  - project
+  - domain
+  - system
+  - module
+  - feature
+  - interface
+  - data
+  - job
+  - operation
+  - decision
+  - source
+  allowed_target_kinds:
+  - project
+  - domain
+  - system
+  - module
+  - feature
+  - interface
+  - data
+  - job
+  - operation
+  - decision
+  - source
+  allow_self_loop: true
+  participates_in_cycle_detection: false
+  constraint: must carry a 'note' explaining why a specific relation was insufficient.

@@ -1,0 +1,28 @@
+schema: ai-work.wiki-manifest/v1
+required:
+- workspace_id
+- repo_id
+- repo_root
+- documents
+document_types:
+- content-doc
+- concept-card
+- module-index
+dependency_roles:
+- primary
+- context
+- reference
+machine_owned_fields:
+- generated_at
+- provenance.manifest_refresh
+- source_change_set_id
+- candidate_snapshot_id
+- documents[].content_hash
+- documents[].citations
+- documents[].dependencies[].content_hash
+- documents[].dependencies[].normalized_hash
+notes:
+- branch is not emitted by deterministic refresh; Git branch names are not part of snapshot truth and stale copied values are removed.
+- last_commit_id is not required; Wiki maintenance is source-snapshot based and does not require Git.
+- A single manifest-level AI generator is not authoritative after incremental maintenance; semantic authorship is mixed/per-document
+  and may be not-recorded.

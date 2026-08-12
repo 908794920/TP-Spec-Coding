@@ -1,0 +1,31 @@
+schema: ai-work.wiki-cite-anchors/v1
+purpose: >
+  Machine-owned baseline for deterministic relocation of precise <cite line> anchors
+  when source bytes change but normalized semantics remain equivalent.
+required:
+  - schema
+  - snapshot_id
+  - sources
+  - citations
+fields:
+  snapshot_id: committed source snapshot this anchor baseline binds
+  documents: sha256 of Wiki Markdown at anchor capture time
+  sources:
+    value:
+      content_hash: raw source sha256 at capture time
+      normalized_hash: semantic source sha256 at capture time
+      encoding: detected text encoding
+      decode_status: certain or fallback
+      semantic_lines: hashed language-normalized physical-line anchors; source text is not copied
+  citations:
+    item:
+      document: Wiki-relative Markdown path
+      citation_index: zero-based citation occurrence in manifest order
+      source: repo-relative source path
+      line_start: committed physical start line
+      line_end: committed physical end line
+invariants:
+  - anchor snapshot_id must equal the committed wiki-snapshot.json snapshot_id before relocation
+  - relocation is allowed only for source changes classified COSMETIC with unchanged normalized_hash
+  - unresolved relocation blocks deterministic finalize rather than guessing
+  - the anchor file is machine metadata and is not part of the semantic Wiki subject digest

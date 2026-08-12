@@ -1,0 +1,4 @@
+interface:
+  display_name: "Requirement Clarification"
+  short_description: "Resolve ambiguities into testable delivery inputs"
+  default_prompt: "Use $requirement-clarification to clarify this TP-Spec-Coding requirement."

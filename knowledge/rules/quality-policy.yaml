@@ -1,0 +1,34 @@
+schema: ai-work.knowledge-quality-policy/v1
+description: >
+  Knowledge 质量政策：gate 决定 lint 事实在 verify 确定性门中的定级。
+  职责边界：lint.py 只产生事实（violations/warnings/advisories）；
+  本 policy 定级；state.verify() 消费 policy 执行 Gate。
+  gate 取值：
+  - block:   violations 桶计入 gate_errors，warnings 桶计入 gate_warnings，决定 verify FAIL/WARN
+  - warn:    violations/warnings 桶计入 gate_warnings，不产生 FAIL
+  - backlog: 不参与 verify 硬门，进入 backlog 报告（LEGACY/INFORMATIONAL 遗留，随 baseline 保留）
+  advisory 桶（lint advisories）默认不参与 Gate，仅 gate=backlog 时进入 backlog 报告。
+  未列出的规则按桶回退：violations=block、warnings=warn、advisories=不参与 Gate。
+  workspace 可在 .ai-work/config/quality-policy.yaml 覆盖指定规则的 gate（按 rule_id 合并）。
+rules:
+  K001: { gate: block, class: INTEGRITY } # frontmatter/schema
+  K002: { gate: block, class: INTEGRITY } # canonical id 格式
+  K003: { gate: block, class: INTEGRITY } # 重复 canonical id
+  K004: { gate: block, class: INTEGRITY } # project 未注册
+  K005: { gate: block, class: INTEGRITY } # 未知 kind
+  K006: { gate: block, class: INTEGRITY } # 文件名契约
+  K007: { gate: block, class: INTEGRITY } # relation 枚举/结构
+  K008: { gate: block, class: INTEGRITY } # relation 源/目标 kind 契约
+  K009: { gate: block, class: INTEGRITY } # 无 source_refs/evidence_refs
+  K010: { gate: backlog, class: LEGACY_COMPATIBILITY } # basename/非标准 wikilink（legacy）
+  K011: { gate: backlog, class: LEGACY_COMPATIBILITY } # 断链 wikilink（legacy backlog）
+  K012: { gate: block, class: INTEGRITY } # part_of 环
+  K013: { gate: block, class: INTEGRITY } # supersedes 环
+  K014: { gate: block, class: INTEGRITY } # canonical 落在生成投影目录
+  K015: { gate: backlog, class: LEGACY_COMPATIBILITY } # SRC ref 未本地解析（legacy symbolic/evidence）
+  K016: { gate: warn, class: LEGACY_COMPATIBILITY } # legacy evidence path 未解析（advisory，不参与 Gate）
+  K017: { gate: block, class: INTEGRITY } # evidence 结构无效
+  K018: { gate: backlog, class: INFORMATIONAL } # related_to 缺少 note
+  K019: { gate: block, class: INTEGRITY } # project-registry schema
+  K020: { gate: block, class: INTEGRITY } # source-registry schema
+  K021: { gate: block, class: INTEGRITY } # registered content_path 不存在

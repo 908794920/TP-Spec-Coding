@@ -1,0 +1,28 @@
+# Compatibility Matrix — TP-Spec-Coding 双层版本门控
+#
+# 用途：
+#   声明式定义「任务契约版本（artifact_contract.version）」与各治理文件版本
+#   的兼容关系。V5.2.0 单一活动契约的外层配置载体（human_owner 决策 T4：
+#   独立文件方案 B）。
+#
+# 门控语义（组长裁决 8.6-M2）：
+#   - 外层：任务 status.yaml 的 artifact_contract.version 必须与基座 VERSION
+#     全量精确匹配（major.minor.patch 三段全部相等），任一分量不等即拒绝。
+#   - 内层：各治理文件版本落在对应 contract 声明的区间内即兼容；
+#     risk-rule / knowledge-rule 允许跨契约版本兼容（T3）。
+#   - 区间记法 "[a, b)" 表示 >= a 且 < b。
+#   - 当前分支只保留唯一活动契约 V5.2.0；历史版本由 Git release 分支承担。
+#
+# 本文件受 cli/config_loader.py 受控加载路径读取，schema 名 = compat-matrix。
+version: "1.0.0"
+contracts:
+  "5.2.0":
+    base_version: "5.2.0"
+    governance_ranges:
+      workflow: "[5.2.0, 5.3.0)"
+      ai-role: "[5.2.0, 5.3.0)"
+      risk-rule: "[2.0.0, 3.0.0)"
+      knowledge-rule: "[2.1.0, 3.0.0)"
+      role-catalog: "[5.2.0, 5.3.0)"
+      orchestration: "[5.2.0, 5.3.0)"
+    status_contract: "5.2.0"

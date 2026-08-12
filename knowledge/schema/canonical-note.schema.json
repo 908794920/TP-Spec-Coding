@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-work.local/knowledge/schema/canonical-note.schema.json",
+  "title": "Canonical Note (frontmatter)",
+  "schema_version": "1.1.0",
+  "compatibility_policy": "additive metadata evolution; stable IDs/kind codes/relation names remain immutable. source_refs stays required for compatibility, but code/task evidence may be represented by evidence_refs.",
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "date": "2026-07-15",
+      "note": "P1 initial. Fixed 11 kinds, 10 relations, 9 required fields."
+    },
+    {
+      "version": "1.1.0",
+      "date": "2026-08-11",
+      "note": "TP-Spec-Coding V5.2.0 standardization: structured evidence_refs and verifies relation; source_refs may be empty only when evidence_refs is non-empty."
+    }
+  ],
+  "description": "Frontmatter contract for a canonical knowledge note. Stable ID + readable title. Links use vault-root paths only.",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "project",
+    "kind",
+    "status",
+    "canonical",
+    "source_refs",
+    "confidence",
+    "last_verified"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]*-(PROJ|DOM|SYS|MOD|FEAT|API|DATA|JOB|OPS|DEC|SRC)-\\d{3,}$",
+      "description": "Stable ID: {UPPER_PROJECT}-{KIND_CODE}-{NNN}. Kind codes: PROJ/DOM/SYS/MOD/FEAT/API/DATA/JOB/OPS/DEC/SRC."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "project-id from project-registry.yaml (lowercase ASCII, digits, hyphens)."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "project",
+        "domain",
+        "system",
+        "module",
+        "feature",
+        "interface",
+        "data",
+        "job",
+        "operation",
+        "decision",
+        "source"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "active",
+        "deprecated",
+        "superseded"
+      ]
+    },
+    "canonical": {
+      "type": "boolean",
+      "description": "true for canonical-layer notes; false for raw evidence copies."
+    },
+    "source_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 0,
+      "description": "Legacy-compatible evidence references. Prefer stable SRC-/TASK- refs. May be empty only when evidence_refs provides structured evidence."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "last_verified": {
+      "type": "string",
+      "format": "date",
+      "description": "ISO 8601 date (YYYY-MM-DD)."
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "type",
+          "target"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "part_of",
+              "implements",
+              "depends_on",
+              "calls",
+              "reads",
+              "writes",
+              "triggered_by",
+              "supersedes",
+              "source_refs",
+              "verifies",
+              "related_to"
+            ]
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Target canonical ID or vault-root path."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "type",
+          "ref"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "source",
+              "task",
+              "code",
+              "external"
+            ]
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "locator": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[A-Fa-f0-9]{64}$"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "source_refs": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "evidence_refs"
+          ],
+          "properties": {
+            "evidence_refs": {
+              "minItems": 1
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
