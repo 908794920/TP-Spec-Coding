@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import yaml
@@ -180,7 +184,7 @@ def test_public_repo_has_reproducible_dependencies_and_github_ci():
     assert "pytest" in dev
     ci = read(".github/workflows/ci.yml")
     assert "pytest" in ci
-    assert "update_manifest.py --verify" in ci
+    assert "update_manifest.py --verify-release" in ci
     assert "check_version_consistency.py" in ci
     assert "update_role_catalog.py --verify" in ci
 
@@ -257,6 +261,69 @@ def test_project_init_refuses_to_overwrite_conflicting_portable_binding(tmp_path
     assert binding["project"]["id"] == "existing-project"
     assert not (workspace / ".ai-work" / "db" / "different-project.db").exists()
 
+
+
+
+def test_contributing_documents_git_release_closure():
+    text = read("CONTRIBUTING.md")
+    for needle in (
+        "git add -A",
+        "update_manifest.py --verify-release",
+        "Test-AiWorkBase.ps1 -Mode Full",
+        "Git Tag",
+        "GitHub Release",
+    ):
+        assert needle in text, needle
+    assert "full.release.git_manifest" in read("scripts/ci/Test-AiWorkBase.ps1")
+
+def test_release_manifest_gate_distinguishes_working_tree_from_git_release(tmp_path):
+    """A visible but untracked file may pass dev verify, but must fail release verify."""
+    repo = tmp_path / "repo"
+    scripts = repo / "scripts"
+    scripts.mkdir(parents=True)
+    shutil.copy2(BASE / "scripts" / "update_manifest.py", scripts / "update_manifest.py")
+    (repo / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+
+    def run(*args: str) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        for key in tuple(env):
+            if key.startswith("GIT_"):
+                env.pop(key, None)
+        return subprocess.run(
+            list(args),
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=15,
+            env=env,
+        )
+
+    assert run("git", "init").returncode == 0
+    assert run("git", "config", "core.autocrlf", "false").returncode == 0
+    assert run("git", "add", "scripts/update_manifest.py", "tracked.txt").returncode == 0
+
+    generated = run(sys.executable, "scripts/update_manifest.py")
+    assert generated.returncode == 0, generated.stderr
+    assert run("git", "add", "manifest.sha256").returncode == 0
+
+    clean_release = run(sys.executable, "scripts/update_manifest.py", "--verify-release")
+    assert clean_release.returncode == 0, clean_release.stderr
+
+    # Reproduce the v5.2.0 publication failure mode: the file is visible and
+    # included by the development manifest, but it was never git-added.
+    (repo / "release-surface.txt").write_text("untracked\n", encoding="utf-8")
+    regenerated = run(sys.executable, "scripts/update_manifest.py")
+    assert regenerated.returncode == 0, regenerated.stderr
+
+    dev_verify = run(sys.executable, "scripts/update_manifest.py", "--verify")
+    assert dev_verify.returncode == 0, dev_verify.stderr
+
+    release_verify = run(sys.executable, "scripts/update_manifest.py", "--verify-release")
+    assert release_verify.returncode != 0
+    combined = release_verify.stdout + release_verify.stderr
+    assert "release-surface.txt" in combined
+    assert "untracked" in combined.lower()
 
 def test_public_project_entry_uses_tp_spec_coding_brand():
     for rel in ("project-entry/root-managed-block.md", "project-entry/ai-work-readme.md"):

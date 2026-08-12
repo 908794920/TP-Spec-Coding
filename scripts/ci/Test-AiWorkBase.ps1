@@ -102,6 +102,17 @@ Invoke-Check 'static.hash.manifest_recompute' {
     ($out | Select-Object -Last 1)
 }
 
+if ($Mode -eq 'Full') {
+    Invoke-Check 'full.release.git_manifest' {
+        $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        $out = & python (Join-Path $base 'scripts\update_manifest.py') --verify-release 2>&1
+        $code = $LASTEXITCODE
+        $ErrorActionPreference = $prevEap
+        if ($code -ne 0) { throw ('release manifest gate failed: ' + (($out | Select-Object -First 8) -join ' | ')) }
+        ($out | Select-Object -Last 1)
+    }
+}
+
 Invoke-Check 'static.forbidden.paths' {
     $tracked = @(& git -C $base ls-files)
     # docs/ 已纳入 Git 管理（V5.2.0 发布完整性）；仅禁止运行时产物与本地状态

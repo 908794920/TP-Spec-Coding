@@ -8,7 +8,8 @@
 
 用法：
     python scripts/update_manifest.py            # 生成
-    python scripts/update_manifest.py --verify   # 校验
+    python scripts/update_manifest.py --verify           # 开发工作树校验
+    python scripts/update_manifest.py --verify-release   # Git 发布面校验（仅已跟踪文件）
 """
 from __future__ import annotations
 
@@ -42,6 +43,36 @@ def git_ls_files() -> list[str]:
         if (BASE / rel).is_file():
             out.append(rel)
     return sorted(set(out))
+
+
+def git_tracked_files() -> list[str]:
+    """Return existing Git-indexed files, excluding the manifest itself."""
+    proc = subprocess.run(
+        ["git", "-C", str(BASE), "ls-files", "--cached", "-z"],
+        capture_output=True,
+        check=True,
+    )
+    out: list[str] = []
+    for rel in proc.stdout.decode("utf-8").split("\0"):
+        if not rel or rel == "manifest.sha256":
+            continue
+        if (BASE / rel).is_file():
+            out.append(rel)
+    return sorted(set(out))
+
+
+def git_untracked_files() -> list[str]:
+    """Return visible non-ignored files that are not in the Git index."""
+    proc = subprocess.run(
+        ["git", "-C", str(BASE), "ls-files", "--others", "--exclude-standard", "-z"],
+        capture_output=True,
+        check=True,
+    )
+    return sorted(
+        rel
+        for rel in proc.stdout.decode("utf-8").split("\0")
+        if rel and rel != "manifest.sha256" and (BASE / rel).is_file()
+    )
 
 
 def sha256_file(path: Path) -> str:
@@ -142,10 +173,60 @@ def verify() -> int:
     return 0
 
 
+def _manifest_entries() -> dict[str, str]:
+    entries: dict[str, str] = {}
+    for line in MANIFEST.read_text(encoding="utf-8").splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        parts = line.split("  ", 1)
+        if len(parts) != 2 or len(parts[0]) != 64:
+            raise ValueError(f"unparseable manifest line: {line}")
+        entries[parts[1].strip()] = parts[0].upper()
+    return entries
+
+
+def verify_release() -> int:
+    """Verify the release surface against the Git index, not the loose worktree.
+
+    Development verification intentionally includes visible untracked files so a
+    patch can be tested before staging.  A release must be stricter: every file
+    recorded in the manifest must already be Git-tracked, and no visible
+    non-ignored file may remain untracked.  This prevents a local file (for
+    example .github/workflows/ci.yml) from passing validation but being omitted
+    from the final commit.
+    """
+    if not (BASE / ".git").exists():
+        print("ERROR: --verify-release requires a Git checkout", file=sys.stderr)
+        return 1
+    if verify() != 0:
+        return 1
+    try:
+        entries = set(_manifest_entries())
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: release manifest parse failed: {exc}", file=sys.stderr)
+        return 1
+
+    tracked = set(git_tracked_files())
+    untracked = set(git_untracked_files())
+    bad: list[str] = []
+    bad += [f"manifest-not-git-tracked:{rel}" for rel in sorted(entries - tracked)]
+    bad += [f"tracked-missing-manifest:{rel}" for rel in sorted(tracked - entries)]
+    bad += [f"untracked-release-file:{rel}" for rel in sorted(untracked)]
+    if bad:
+        print("ERROR: release manifest gate failed: " + "; ".join(bad), file=sys.stderr)
+        return 1
+    print(f"{len(entries)} files release-tracked OK (git-index mode)")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="manifest.sha256 generator/verifier")
-    parser.add_argument("--verify", action="store_true", help="verify instead of generate")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--verify", action="store_true", help="verify development working tree")
+    mode.add_argument("--verify-release", action="store_true", help="verify Git-tracked release surface")
     args = parser.parse_args()
+    if args.verify_release:
+        return verify_release()
     return verify() if args.verify else generate()
 
 

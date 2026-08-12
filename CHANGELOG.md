@@ -11,6 +11,8 @@
 - 清理公共仓库发布面：移除旧内部升级报告与个人 Knowledge legacy filename，portable 检查不再携带用户指纹 token；公共默认不包含 Runtime DB、机器 Registry、用户 Wiki/Knowledge 数据。
 - 单活动契约切换到 5.2.0：治理文件、Role Catalog、Agent/Skill frontmatter 与 `templates/5.2.0` 同步升级，SQLite Runtime schema 不变，旧在途 Task 继续走官方 project/task contract migration 链。
 - Version Purity 扫描器补齐“上一 minor”检测：当前 5.2.x 活动面出现 5.1.x 等旧 5.x token 会被识别，历史证据仍通过精确 allowlist 保留。
+- 正式发布面补强：恢复首发提交遗漏的 `.github/` Actions / PR / Issue 模板，并新增 Git-index 级 `update_manifest.py --verify-release`；发布候选必须已 `git add -A`，防止“本地工作树验证通过，但新增点目录未进入最终 commit”的假绿。
+- 修复 B18 cutover 回归在普通用户/Linux CI 下的清理权限缺陷：目录解除只读时保留 execute/search 位，避免 root 本地测试假绿、GitHub Actions 因临时目录无法遍历而失败。
 
 ## V5.1.4 Workflow Orchestrator — 2026-08-12
 

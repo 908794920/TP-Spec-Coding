@@ -100,7 +100,13 @@ def _force_rmtree(root: Path) -> None:
         return
     for p in sorted(root.rglob("*"), reverse=True):
         try:
-            os.chmod(p, stat.S_IREAD | stat.S_IWRITE)
+            mode = stat.S_IREAD | stat.S_IWRITE
+            if p.is_dir():
+                # Directories need execute/search permission to remain traversable
+                # while shutil.rmtree walks them. Root can mask this bug; normal
+                # GitHub Actions users cannot.
+                mode |= stat.S_IEXEC
+            os.chmod(p, mode)
         except OSError:
             pass
     shutil.rmtree(root, ignore_errors=True)

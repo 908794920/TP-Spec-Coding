@@ -34,6 +34,25 @@ Windows 环境再运行：
 pwsh -File scripts/ci/Test-AiWorkBase.ps1 -Mode Full
 ```
 
+## 正式发布检查
+
+普通开发允许 `manifest.sha256` 临时覆盖尚未 `git add` 的可见文件，方便 Patch 在提交前验证；**正式发布不允许这样做**。发布候选必须以 Git index 为准，确保 GitHub 最终能拿到本机测试过的全部文件。
+
+```bash
+# 必须使用 -A，避免漏掉 .github/ 这类点目录或删除项
+git add -A
+
+python scripts/update_manifest.py --verify-release
+```
+
+Windows 发布候选再运行完整门禁：
+
+```powershell
+pwsh -File scripts/ci/Test-AiWorkBase.ps1 -Mode Full
+```
+
+只有 Linux / Windows CI 均通过后，才创建对应 **Git Tag** 和 **GitHub Release**。Tag 指向的提交必须就是完成上述 Release Gate 的提交；不要先打 Tag 再补文件。
+
 ## 设计边界
 
 贡献请保持这些不变量：
