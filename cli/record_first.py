@@ -399,6 +399,15 @@ def complete(*, task_id: str, task_dir: str, actor: Optional[str], summary: str,
             raise ValueError("INTEGRITY_BLOCKED: explicit task blocker must be resolved before COMPLETED")
         if current in TERMINAL_STATES:
             raise ValueError(f"task is already terminal: {current}")
+        # Zero-token invariant: a role may never bypass remaining workflow stages.
+        from . import orchestration
+        route = orchestration.resolve_route(task_id, db_path=db_path)
+        if route.get("recommended_action") != "task_complete" or route.get("next_stage") != "complete":
+            raise ValueError(
+                "INTEGRITY_PIPELINE_PENDING: "
+                f"next_stage={route.get('next_stage')} role={route.get('role_id')} "
+                f"reason={','.join(route.get('reason_codes') or [])}"
+            )
         # Completion is a factual terminal record, not a quality claim. It does not
         # require every AC to be PASS, but any positive/owner-authority claim that is
         # present must be truthful and ledger-backed.

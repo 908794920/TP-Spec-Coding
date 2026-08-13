@@ -25,7 +25,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-BASE = Path(__file__).resolve().parent.parent.parent  # ai-work-base
+BASE = Path(__file__).resolve().parent.parent.parent  # tp-spec-base
 sys.path.insert(0, str(BASE))
 
 from cli import anchor_check  # noqa: E402
@@ -95,7 +95,7 @@ NINE_KIND_TEXT = (
     "def f():\n"
     "    return 1\n"
     "```\n"
-    "$ ai-work task list\n"
+    "$ tp-spec task list\n"
     "Error: failed to connect\n"
     "C:\\temp\\file.txt\n"
     "https://example.com/demo\n"

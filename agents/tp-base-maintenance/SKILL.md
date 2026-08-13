@@ -28,25 +28,25 @@ User Installation
 Current Workspace
   ├─ Wiki workspace/repo scope
   ├─ Knowledge project + shared scope
-  └─ .ai-work runtime/task state
+  └─ .tp-spec runtime/task state
 ```
 
-项目侧 Junction 只属于兼容迁移面。Runtime 不得依赖 `.ai-work/agents|skills|wiki|knowledge|scripts...` 链接才能工作。
+项目侧 Junction 只属于兼容迁移面。Runtime 不得依赖 `.tp-spec/agents|skills|wiki|knowledge|scripts...` 链接才能工作。
 
 ## 1. 标准配置
 
 用户级安装配置默认：
 
 ```text
-~/.ai-work/installation.yaml
+~/.tp-spec/installation.yaml
 ```
 
-由 `ai-work base configure` 管理，保存 Base/Wiki/Knowledge **系统根**。
+由 `tp-spec base configure` 管理，保存 Base/Wiki/Knowledge **系统根**。
 
 项目绑定默认：
 
 ```text
-<workspace>/.ai-work/config/project-binding.yaml
+<workspace>/.tp-spec/config/project-binding.yaml
 ```
 
 只保存项目身份（`project.id`，必要时 `wiki_id/knowledge_id`），不重复保存每个项目的绝对 Wiki/Knowledge 子目录。项目物理子目录由 registry + Resolver 计算。
@@ -54,7 +54,7 @@ Current Workspace
 Workspace Inventory 默认：
 
 ```text
-~/.ai-work/workspaces.yaml
+~/.tp-spec/workspaces.yaml
 ```
 
 用于批量 doctor/migration，不要求每次扫描磁盘。`installation.yaml` 与 `workspaces.yaml` 都是
@@ -64,7 +64,7 @@ Workspace Inventory 默认：
 
 - 项目 `project-binding.yaml` 只保存稳定 identity，不保存 Base/Wiki/Knowledge machine path；
 - 项目 `content-systems.yaml` 只保留真正的项目级 override；与 Installation 重复的 machine roots 应移除；
-- 项目根 `README.md` / `AGENTS.md` 的 TP-Spec-Coding managed block 与 `.ai-work/README.md` 由 Base 模板确定性维护，禁止渲染 machine-local 路径。
+- 项目根 `README.md` / `AGENTS.md` 的 TP-Spec-Coding managed block 与 `.tp-spec/README.md` 由 Base 模板确定性维护，禁止渲染 machine-local 路径。
 
 ## 2. Project Scope 不得丢失
 
@@ -78,15 +78,15 @@ Workspace Inventory 默认：
 ## 3. 核心动作
 
 ```text
-ai-work base configure
-ai-work base installation-doctor
-ai-work base installation-migrate
-ai-work base inventory
-ai-work base resolve
-ai-work base doctor
-ai-work base migration-plan
-ai-work base sync-project
-ai-work base migrate
+tp-spec base configure
+tp-spec base installation-doctor
+tp-spec base installation-migrate
+tp-spec base inventory
+tp-spec base resolve
+tp-spec base doctor
+tp-spec base migration-plan
+tp-spec base sync-project
+tp-spec base migrate
 ```
 
 推荐多项目收敛：
@@ -122,10 +122,10 @@ WRITE PROJECT BINDING
 强约束：
 
 - 只删除 Junction/symlink **本身**，绝不删除 Target；
-- 若 `.ai-work/<name>` 是真实目录而非链接，标记 `MANUAL_REVIEW`，不得自动删；
+- 若 `.tp-spec/<name>` 是真实目录而非链接，标记 `MANUAL_REVIEW`，不得自动删；
 - link target 与 Resolver target 不一致 → `BLOCKED`；
 - Knowledge/Wiki project scope 未解析时，不得移除对应链接；
-- 旧 Knowledge Registry 尚无 `workspace_roots` 时，可用现有 `.ai-work/knowledge` Junction/symlink **精确匹配已注册 `10-projects/<id>`** 作为一次性 binding seed；不得按目录名猜；
+- 旧 Knowledge Registry 尚无 `workspace_roots` 时，可用现有 `.tp-spec/knowledge` Junction/symlink **精确匹配已注册 `10-projects/<id>`** 作为一次性 binding seed；不得按目录名猜；
 - 简单 `content-systems.yaml` 只有在与用户 Installation 完全等价时才可选择删除；含项目特有 override 必须保留。
 
 ## 5. Health 结论
@@ -146,11 +146,11 @@ CLI 可输出 `PASS/FAIL/READY/BLOCKED` 作为确定性执行状态，两者不�
 
 ### Project integration surface
 
-`ai-work base sync-project --workspace-root <ROOT>` 默认只读计划；显式 `--apply` 后才允许：
+`tp-spec base sync-project --workspace-root <ROOT>` 默认只读计划；显式 `--apply` 后才允许：
 
-- 新建/更新根 `AGENTS.md` 的 `ai-work-base:managed` block；
+- 新建/更新根 `AGENTS.md` 的 `tp-spec-base:managed` block；
 - 新建/更新根 `README.md` 的同一 managed block，并保留项目自身内容；
-- 生成/更新 Base-owned `.ai-work/README.md`；
+- 生成/更新 Base-owned `.tp-spec/README.md`；
 - 从 project-local `content-systems.yaml` 移除与当前 Installation 完全重复的 machine roots；若只剩 schema/空 override，则删除该冗余 project config；
 - 含真实项目级 coverage/quality 等 override 时保留语义，只移除可证明冗余的 machine roots。
 
@@ -158,7 +158,7 @@ CLI 可输出 `PASS/FAIL/READY/BLOCKED` 作为确定性执行状态，两者不�
 
 ### Active task portability
 
-Base 只检查 `.ai-work/tasks` 中仍处于 `NEW/ACTIVE/BLOCKED` 的顶层 Markdown formal artifacts。若发现具有执行语义的旧 `.ai-work/knowledge|wiki|scripts|agents|governance|skills|templates|automation|cli` 路径，报告 `LEGACY_ACTIVE_REFERENCE` 并要求 targeted review。明确的 legacy/禁止使用描述不作为 actionable finding。`tasksHistory`、evidence 与已完成任务不做历史清洗。
+Base 只检查 `.tp-spec/tasks` 中仍处于 `NEW/ACTIVE/BLOCKED` 的顶层 Markdown formal artifacts。若发现具有执行语义的旧 `.tp-spec/knowledge|wiki|scripts|agents|governance|skills|templates|automation|cli` 路径，报告 `LEGACY_ACTIVE_REFERENCE` 并要求 targeted review。明确的 legacy/禁止使用描述不作为 actionable finding。`tasksHistory`、evidence 与已完成任务不做历史清洗。
 
 SQLite `*.db-wal` / `*.db-shm` 属于 transient runtime，不作为 portable truth，不因其存在判定 portability FAIL。
 
@@ -166,7 +166,7 @@ SQLite `*.db-wal` / `*.db-shm` 属于 transient runtime，不作为 portable tru
 
 本 Skill 继续负责项目 Runtime 初始化健康检查，但它与 Base Binding 迁移是两件事。
 
-- 只读预检：`ai-work project bootstrap --id <PROJECT> --root <ROOT> --check-only`；
+- 只读预检：`tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only`；
 - 未初始化且确认 pristine 时，只有 human_owner 明确要求才执行 bootstrap；
 - 非 pristine、ledger/registry 歧义或已有不兼容状态必须 fail-closed，保留 `PROJECT_BOOTSTRAP_UNSAFE`；
 - 不得把“去 Junction / 写 project-binding”误当成“初始化项目 Runtime”。
@@ -191,7 +191,7 @@ SQLite `*.db-wal` / `*.db-shm` 属于 transient runtime，不作为 portable tru
 - 修改 Knowledge canonical/source/evidence；
 - 修改 Wiki 正文；
 - 绕过 Base 官方命令直接手工改 Runtime SQLite；
-- 为了“目录干净”删除真实 `.ai-work` 项目状态目录。
+- 为了“目录干净”删除真实 `.tp-spec` 项目状态目录。
 
 ## 7. 与其他 Skill 的边界
 

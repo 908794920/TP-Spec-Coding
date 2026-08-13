@@ -7,7 +7,7 @@
 核心保证：
 - task transition 单事务（更新 task + 插入 task_event）
 - transition 校验 workflow.yaml 合法 next
-- --owner-role 缺省 = 目标状态规范 owner（与 Test-AiWorkTask.ps1 CANONICAL_OWNER_MISMATCH 对齐）
+- --owner-role 缺省 = 目标状态规范 owner（与 Test-TpSpecTask.ps1 CANONICAL_OWNER_MISMATCH 对齐）
 - COMPLETED 由自动质量门禁决定，不要求最终人工审批
 - 用户确认仅用于产品/范围交互，不作为普通结单安全门禁
 """
@@ -372,8 +372,8 @@ def cmd_task_create(args) -> int:
     if not os.path.isfile(db_path):
         print(
             f"PROJECT_NOT_INITIALIZED: Runtime database not found for project '{project_id}': {db_path}. "
-            f"Run 'ai-work project bootstrap --id {project_id} --root <workspace-root>' (preferred for health checks) "
-            "or explicit 'ai-work project init' before task create.",
+            f"Run 'tp-spec project bootstrap --id {project_id} --root <workspace-root>' (preferred for health checks) "
+            "or explicit 'tp-spec project init' before task create.",
             file=sys.stderr,
         )
         return 4
@@ -387,7 +387,7 @@ def cmd_task_create(args) -> int:
                 print(
                     f"PROJECT_NOT_INITIALIZED: Runtime schema is unavailable for project '{project_id}' at {db_path}: "
                     + "; ".join(details)
-                    + f". Run 'ai-work project bootstrap --id {project_id} --root <workspace-root>'.",
+                    + f". Run 'tp-spec project bootstrap --id {project_id} --root <workspace-root>'.",
                     file=sys.stderr,
                 )
                 return 4
@@ -400,7 +400,7 @@ def cmd_task_create(args) -> int:
     except Exception as exc:
         print(
             f"PROJECT_NOT_INITIALIZED: Runtime database cannot be verified read-only: {db_path}: {exc}. "
-            f"Run 'ai-work project bootstrap --id {project_id} --root <workspace-root>'.",
+            f"Run 'tp-spec project bootstrap --id {project_id} --root <workspace-root>'.",
             file=sys.stderr,
         )
         return 4
@@ -437,7 +437,7 @@ def cmd_task_create(args) -> int:
         adopted_intake: List[str] = []
         intake_arg = getattr(args, 'from_intake', None)
         if getattr(args, 'scaffold', False) or intake_arg:
-            scaffold_target = Path(args.task_dir).resolve() if getattr(args, 'task_dir', None) else (Path.cwd() / '.ai-work' / 'tasks' / task_id).resolve()
+            scaffold_target = Path(args.task_dir).resolve() if getattr(args, 'task_dir', None) else (Path.cwd() / '.tp-spec' / 'tasks' / task_id).resolve()
             try:
                 scaffold_tmp = _prepare_task_scaffold(scaffold_target, task_id, args.title or '', args.risk, args.flow, now)
                 if intake_arg:
@@ -521,11 +521,11 @@ def cmd_task_transition(args) -> int:
     V5.2.0 活动任务：
     - 日常事实入口为 ``task checkpoint/block/resume/verify/complete``；这些命令复用
       durable journal + projection 原子提交，但不暴露旧 handoff/phase gate；
-    - ``ai-work commit`` 仅保留兼容/恢复表面，不是日常角色 API；
+    - ``tp-spec commit`` 仅保留兼容/恢复表面，不是日常角色 API；
     - 本命令对活动任务返回非零退出码 ``DIRECT_TRANSITION_DISABLED``；
     - 历史任务（base_version != active_version()）仍按静态归档只读拒绝。
 
-    管理员修复模式请使用 ``ai-work event sync --admin-recovery``（显式标志 +
+    管理员修复模式请使用 ``tp-spec event sync --admin-recovery``（显式标志 +
     共享 validator + 显式确认文本 + AUDIT 事件），不可用本命令推进状态。
     """
     task_id = args.task
@@ -1034,7 +1034,7 @@ def cmd_task_migrate(args) -> int:
         if project is not None and str(project["base_version"] or "") != target:
             print(
                 f"ERROR: project base_version={project['base_version']!r} is not {target}; "
-                "run official 'ai-work project upgrade-contract --id <PROJECT>' first, then migrate in-flight tasks",
+                "run official 'tp-spec project upgrade-contract --id <PROJECT>' first, then migrate in-flight tasks",
                 file=sys.stderr,
             )
             return 6
@@ -1221,7 +1221,7 @@ def cmd_task_migration_plan(args) -> int:
         if project is None:
             print(f"ERROR: project not found: {args.project}", file=sys.stderr)
             return 4
-        tasks_root = Path(args.tasks_root).resolve() if args.tasks_root else (Path(project["root_path"]) / ".ai-work" / "tasks").resolve()
+        tasks_root = Path(args.tasks_root).resolve() if args.tasks_root else (Path(project["root_path"]) / ".tp-spec" / "tasks").resolve()
         rows = conn.execute(
             "SELECT * FROM task WHERE project_id=? AND current_state NOT IN ('COMPLETED','CANCELLED') ORDER BY created_at, task_id",
             (args.project,),
@@ -1322,7 +1322,7 @@ def cmd_task_migration_plan(args) -> int:
         project_base = str(project["base_version"] or "")
         project_contract_current = project_base == active_version()
         report = {
-            "schema": "ai-work.task-migration-plan/v3",
+            "schema": "tp-spec.task-migration-plan/v3",
             "active_version": active_version(),
             "project_id": args.project,
             "project_base_version": project_base,
@@ -1638,7 +1638,7 @@ def add_task_subparsers(task_parser) -> None:
     p_create.add_argument("--db", required=False, default=None)
     p_create.add_argument("--scaffold", action="store_true", help="Create the V5.2.0 task directory and templates together with the DB task")
     p_create.add_argument("--from-intake", required=False, default=None, help="Adopt pre-task requirement artifacts from an intake directory; implies --scaffold and preserves source")
-    p_create.add_argument("--task-dir", required=False, default=None, help="Scaffold destination (default: .ai-work/tasks/<TASK-ID>)")
+    p_create.add_argument("--task-dir", required=False, default=None, help="Scaffold destination (default: .tp-spec/tasks/<TASK-ID>)")
     p_create.set_defaults(func=cmd_task_create)
 
     # V5.2.0 Record-first daily API: business facts, not workflow bookkeeping.
@@ -1758,7 +1758,7 @@ def add_task_subparsers(task_parser) -> None:
     # task migration-plan (read-only upgrade gate)
     p_plan = sub.add_parser("migration-plan", help="Scan all non-terminal tasks for four-way contract/projection consistency")
     p_plan.add_argument("--project", required=True, help="project id")
-    p_plan.add_argument("--tasks-root", required=False, default=None, help="tasks root (default: <project.root_path>/.ai-work/tasks)")
+    p_plan.add_argument("--tasks-root", required=False, default=None, help="tasks root (default: <project.root_path>/.tp-spec/tasks)")
     p_plan.add_argument("--gate", action="store_true", help="return non-zero when any task requires an explicit migration decision")
     p_plan.add_argument("--db", required=False, default=None)
     p_plan.set_defaults(func=cmd_task_migration_plan)

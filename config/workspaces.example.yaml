@@ -1,2 +1,2 @@
-schema: ai-work.workspace-inventory/v1
+schema: tp-spec.workspace-inventory/v1
 workspaces: []

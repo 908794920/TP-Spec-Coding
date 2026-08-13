@@ -23,8 +23,8 @@ REGISTER
 ## Deterministic start
 
 ```text
-ai-work knowledge ingest register --workspace-root <workspace> --project <id> --batch <name> --source-root <path>
-ai-work knowledge ingest status   --workspace-root <workspace> --batch <name>
+tp-spec knowledge ingest register --workspace-root <workspace> --project <id> --batch <name> --source-root <path>
+tp-spec knowledge ingest status   --workspace-root <workspace> --batch <name>
 ```
 
 Registration writes only machine-owned manifest/progress under the configured ingest root. It never modifies external source files.
@@ -45,7 +45,7 @@ Registration writes only machine-owned manifest/progress under the configured in
 After processing a source, record it deterministically:
 
 ```text
-ai-work knowledge ingest disposition ... --source-id <id> --disposition canonicalized --canonical-id <CID>
+tp-spec knowledge ingest disposition ... --source-id <id> --disposition canonicalized --canonical-id <CID>
 ```
 
 or an appropriate terminal disposition plus reason.

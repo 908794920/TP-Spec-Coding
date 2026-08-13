@@ -42,7 +42,7 @@ def cmd_doctor(args) -> int:
         if not scope.get("resolved"):
             warnings.append("current workspace has no resolved Knowledge project scope; project-scoped search will fail closed until registry/binding is fixed")
         result={
-            "schema":"ai-work.knowledge-doctor/v1","status":"PASS" if not issues else "FAIL",
+            "schema":"tp-spec.knowledge-doctor/v1","status":"PASS" if not issues else "FAIL",
             "paths":cfg.paths.as_dict(),
             "mount":junction_relation(cfg.paths.knowledge_logical_root,project_root),
             "project_scope":scope,
@@ -51,54 +51,54 @@ def cmd_doctor(args) -> int:
         }
         _emit(result); return 0 if not issues else 1
     except Exception as exc:
-        _emit({"schema":"ai-work.knowledge-doctor/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+        _emit({"schema":"tp-spec.knowledge-doctor/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_init(args) -> int:
     try:
         cfg=_cfg(args); paths=meta_paths(cfg); paths["root"].mkdir(parents=True,exist_ok=True)
         # Init only machine-owned state root. It never invents project registry/canonical prose.
-        _emit({"schema":"ai-work.knowledge-init/v1","status":"PASS","meta_root":str(paths["root"]),"database":str(cfg.paths.knowledge_projection_db),"baseline_created":False}); return 0
+        _emit({"schema":"tp-spec.knowledge-init/v1","status":"PASS","meta_root":str(paths["root"]),"database":str(cfg.paths.knowledge_projection_db),"baseline_created":False}); return 0
     except Exception as exc:
-        _emit({"schema":"ai-work.knowledge-init/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+        _emit({"schema":"tp-spec.knowledge-init/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_scan(args) -> int:
     try: _emit(stage_scan(_cfg(args))); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-change-set/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-change-set/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_maintain(args) -> int:
     try: _emit(maintain(_cfg(args))); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-maintain/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-maintain/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_verify(args) -> int:
     try:
         r=verify(_cfg(args)); _emit(r); return 0 if r["status"]=="PASS" else 1
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-verification/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-verification/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_lint(args) -> int:
     try:
         r=lint_knowledge(_cfg(args)); _emit(r); return 0 if r["status"]=="PASS" else 1
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-lint/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-lint/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_index_build(args) -> int:
     try: _emit(build_projection(_cfg(args),clean=True)); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-index/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-index/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_index_update(args) -> int:
     try: _emit(update_projection(_cfg(args))); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-index/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-index/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_index_status(args) -> int:
     try:
         r=projection_status(_cfg(args)); _emit(r); return 0 if r.get("status") in {"PASS","WARN"} else 1
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-index-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-index-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_search(args) -> int:
@@ -108,13 +108,13 @@ def cmd_search(args) -> int:
         if not args.project and args.scope != "global":
             resolved = resolve_knowledge_project(cfg, require=True)
         hits=search(cfg,args.query,project=args.project,kind=args.kind,layer=args.layer,limit=args.limit,record_telemetry=not args.no_telemetry,scope=args.scope)
-        _emit({"schema":"ai-work.knowledge-search/v1","status":"PASS","query_hash_only":True,"strategy":cfg.knowledge_retrieval.get("strategy"),"scope":args.scope or cfg.knowledge_retrieval.get("default_scope","project"),"resolved_project":(resolved or {}).get("project_id") if resolved else args.project,"count":len(hits),"results":hits}); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-search/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+        _emit({"schema":"tp-spec.knowledge-search/v1","status":"PASS","query_hash_only":True,"strategy":cfg.knowledge_retrieval.get("strategy"),"scope":args.scope or cfg.knowledge_retrieval.get("default_scope","project"),"resolved_project":(resolved or {}).get("project_id") if resolved else args.project,"count":len(hits),"results":hits}); return 0
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-search/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_telemetry(args) -> int:
-    try: _emit({"schema":"ai-work.knowledge-retrieval-telemetry/v1",**telemetry_summary(_cfg(args),days=args.days)}); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-retrieval-telemetry/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    try: _emit({"schema":"tp-spec.knowledge-retrieval-telemetry/v1",**telemetry_summary(_cfg(args),days=args.days)}); return 0
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-retrieval-telemetry/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_eval(args) -> int:
@@ -122,12 +122,12 @@ def cmd_eval(args) -> int:
         modes = None if args.mode == "all" else [args.mode]
         _emit(evaluate(_cfg(args), golden_path=args.golden, output=args.output, modes=modes)); return 0
     except Exception as exc:
-        _emit({"schema":"ai-work.knowledge-golden-eval/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+        _emit({"schema":"tp-spec.knowledge-golden-eval/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_migrate_plan(args) -> int:
     try: _emit(migration_plan(_cfg(args))); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-migration-plan/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-migration-plan/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 
@@ -138,46 +138,46 @@ def cmd_migrate_normalize(args) -> int:
         _emit(result)
         return 0
     except Exception as exc:
-        _emit({"schema":"ai-work.knowledge-normalization/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+        _emit({"schema":"tp-spec.knowledge-normalization/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 def cmd_audit(args) -> int:
     try: _emit(create_audit_plan(_cfg(args),full=bool(args.full))); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-semantic-audit-plan/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-semantic-audit-plan/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_audit_record(args) -> int:
     try: _emit(record_audit(_cfg(args),result=args.result,summary=args.summary,documents=args.document or [])); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-semantic-audit-receipt/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-semantic-audit-receipt/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_snapshot_commit(args) -> int:
     try: _emit(commit_snapshot(_cfg(args))); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-snapshot-commit/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}","baseline_advanced":False}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-snapshot-commit/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}","baseline_advanced":False}); return 1
 
 
 def cmd_status(args) -> int:
     try: _emit(knowledge_status(_cfg(args))); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_ingest_register(args) -> int:
     try: _emit(register_batch(_cfg(args),project=args.project,batch=args.batch,source_root=Path(args.source_root))); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-ingest-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-ingest-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_ingest_status(args) -> int:
     try: _emit(ingest_status(_cfg(args),args.batch)); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-ingest-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-ingest-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_ingest_disposition(args) -> int:
     try: _emit(disposition(_cfg(args),batch=args.batch,source_id=args.source_id,disposition_name=args.disposition,canonical_ids=args.canonical_id or [],reason=args.reason or "",origin_path=args.origin_path)); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-ingest-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-ingest-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_ingest_finalize(args) -> int:
     try: _emit(finalize_batch(_cfg(args),args.batch)); return 0
-    except Exception as exc: _emit({"schema":"ai-work.knowledge-ingest-status/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.knowledge-ingest-status/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def _common(p: argparse.ArgumentParser) -> None:

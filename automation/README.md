@@ -6,6 +6,6 @@ Wiki 使用 `automation/wiki/`；Knowledge 使用 `automation/knowledge/`。两�
 
 Knowledge 的 Scheduler 执行者是对话模型，不是纯脚本守护进程。外部定时器不应复制整套 Knowledge 维护提示词，也不得在无人值守运行中 AskUserQuestion；歧义、证据冲突或破坏性操作必须 fail-closed 并报告。
 
-Scheduler bootstrap 必须先通过用户 `~/.ai-work/installation.yaml`（或等价已安装命令）解析 physical BaseRoot，再读取 Base 内 canonical protocol；项目 `.ai-work/scripts` Junction 不是运行前提。
+Scheduler bootstrap 必须先通过用户 `~/.tp-spec/installation.yaml`（或等价已安装命令）解析 physical BaseRoot，再读取 Base 内 canonical protocol；项目 `.tp-spec/scripts` Junction 不是运行前提。
 
 - Wiki Scheduler 可以以 Wiki System Root 作为执行锚点，但必须通过 Installation + Workspace Inventory + Repo Registry 逐个解析 Source Workspace；Wiki Root 永远不是 `--workspace-root`。

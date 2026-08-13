@@ -34,11 +34,11 @@ class PortabilityCase(unittest.TestCase):
         self.wiki.mkdir(); self.knowledge.mkdir()
         self.install = self.root / "installation.yaml"
         write(self.install, yaml.safe_dump({
-            "schema": "ai-work.installation/v1",
+            "schema": "tp-spec.installation/v1",
             "base": {"root": str(BASE)},
             "systems": {"wiki": {"root": str(self.wiki)}, "knowledge": {"root": str(self.knowledge)}},
         }, sort_keys=False))
-        write(self.workspace / ".ai-work/config/project-binding.yaml", """schema: ai-work.project-binding/v1
+        write(self.workspace / ".tp-spec/config/project-binding.yaml", """schema: tp-spec.project-binding/v1
 project:
   id: sample-app
   wiki_id: sample-app
@@ -54,7 +54,7 @@ base_version: 5.1.3
         self.assertEqual(plan["status"], "SYNC_AVAILABLE")
         result = sync_project_surface(self.workspace, apply=True)
         self.assertEqual(result["status"], "CURRENT")
-        for rel in ("README.md", "AGENTS.md", ".ai-work/README.md"):
+        for rel in ("README.md", "AGENTS.md", ".tp-spec/README.md"):
             text = (self.workspace / rel).read_text(encoding="utf-8")
             self.assertNotIn(str(self.root), text)
             self.assertNotIn(str(BASE), text)
@@ -75,11 +75,11 @@ base_version: 5.1.3
             self.workspace / "README.md",
             f"# Product\n\nproject-owned\n\n{MANAGED_START}\nlegacy machine path: D:/private/old-base\n{MANAGED_END}\n\nkeep-tail\n",
         )
-        write(self.workspace / ".ai-work/README.md", "legacy runtime instructions D:/private/old-base\n")
+        write(self.workspace / ".tp-spec/README.md", "legacy runtime instructions D:/private/old-base\n")
         result = sync_project_surface(self.workspace, apply=True)
         self.assertEqual(result["status"], "CURRENT")
         root_text = (self.workspace / "README.md").read_text(encoding="utf-8")
-        runtime_text = (self.workspace / ".ai-work/README.md").read_text(encoding="utf-8")
+        runtime_text = (self.workspace / ".tp-spec/README.md").read_text(encoding="utf-8")
         self.assertIn("project-owned", root_text)
         self.assertIn("keep-tail", root_text)
         self.assertNotIn("D:/private/old-base", root_text)
@@ -93,9 +93,9 @@ base_version: 5.1.3
         self.assertIn("broken", (self.workspace / "AGENTS.md").read_text(encoding="utf-8"))
 
     def test_redundant_machine_roots_are_removed_and_empty_override_deleted(self):
-        write(self.workspace / ".ai-work/config/content-systems.yaml", yaml.safe_dump({
-            "schema": "ai-work.content-systems/v1",
-            "paths": {"ai_work_root": ""},
+        write(self.workspace / ".tp-spec/config/content-systems.yaml", yaml.safe_dump({
+            "schema": "tp-spec.content-systems/v1",
+            "paths": {"tp_spec_root": ""},
             "systems": {
                 "wiki": {"enabled": True, "root": str(self.wiki), "registry": ""},
                 "knowledge": {"enabled": True, "root": str(self.knowledge)},
@@ -103,26 +103,26 @@ base_version: 5.1.3
         }, sort_keys=False))
         result = normalize_project_portability(self.workspace, installation_config=self.install, apply=True)
         self.assertEqual(result["status"], "CURRENT")
-        self.assertFalse((self.workspace / ".ai-work/config/content-systems.yaml").exists())
+        self.assertFalse((self.workspace / ".tp-spec/config/content-systems.yaml").exists())
 
     def test_project_semantic_override_survives_machine_root_cleanup(self):
-        write(self.workspace / ".ai-work/config/content-systems.yaml", yaml.safe_dump({
-            "schema": "ai-work.content-systems/v1",
+        write(self.workspace / ".tp-spec/config/content-systems.yaml", yaml.safe_dump({
+            "schema": "tp-spec.content-systems/v1",
             "systems": {
                 "wiki": {"root": str(self.wiki), "coverage": {"no_doc_globs": ["**/vendor/**"]}},
                 "knowledge": {"root": str(self.knowledge)},
             },
         }, sort_keys=False))
         normalize_project_portability(self.workspace, installation_config=self.install, apply=True)
-        data = yaml.safe_load((self.workspace / ".ai-work/config/content-systems.yaml").read_text(encoding="utf-8"))
+        data = yaml.safe_load((self.workspace / ".tp-spec/config/content-systems.yaml").read_text(encoding="utf-8"))
         self.assertEqual(data["systems"]["wiki"]["coverage"]["no_doc_globs"], ["**/vendor/**"])
         self.assertNotIn("root", data["systems"]["wiki"])
         self.assertNotIn("knowledge", data.get("systems", {}))
 
     def test_different_absolute_project_root_is_blocked(self):
         other = self.root / "other-wiki"
-        write(self.workspace / ".ai-work/config/content-systems.yaml", yaml.safe_dump({
-            "schema": "ai-work.content-systems/v1",
+        write(self.workspace / ".tp-spec/config/content-systems.yaml", yaml.safe_dump({
+            "schema": "tp-spec.content-systems/v1",
             "systems": {"wiki": {"root": str(other)}},
         }, sort_keys=False))
         plan = project_portability_plan(self.workspace, installation_config=self.install)
@@ -133,8 +133,8 @@ base_version: 5.1.3
         # Public defaults must stay machine/user neutral. Legacy projection names are
         # therefore opt-in compatibility data supplied by a project override.
         legacy = ".ai-kb/legacy-projection.db"
-        write(self.workspace / ".ai-work/config/content-systems.yaml", yaml.safe_dump({
-            "schema": "ai-work.content-systems/v1",
+        write(self.workspace / ".tp-spec/config/content-systems.yaml", yaml.safe_dump({
+            "schema": "tp-spec.content-systems/v1",
             "systems": {
                 "knowledge": {
                     "projection": {

@@ -17,7 +17,7 @@ from cli.path_identity import canonical_path, same_path
 
 
 def runtime_db_path(workspace_root: "str | Path", project_id: str) -> Path:
-    return canonical_path(workspace_root) / ".ai-work" / "db" / f"{project_id}.db"
+    return canonical_path(workspace_root) / ".tp-spec" / "db" / f"{project_id}.db"
 
 
 def _transient_files(db_path: Path) -> List[Dict[str, Any]]:
@@ -54,7 +54,7 @@ def runtime_rebind_plan(
     workspace = canonical_path(workspace_root)
     db_path = runtime_db_path(workspace, project_id)
     result: Dict[str, Any] = {
-        "schema": "ai-work.runtime-portability/v1",
+        "schema": "tp-spec.runtime-portability/v1",
         "workspace_root": str(workspace),
         "project_id": project_id,
         "db_path": str(db_path),

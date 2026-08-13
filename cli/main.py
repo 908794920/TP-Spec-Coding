@@ -77,7 +77,7 @@ def _add_stub_group(subparsers, name: str) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="ai-work",
+        prog="tp-spec",
         description=f"TP-Spec-Coding V{active_version()} CLI",
     )
     subparsers = parser.add_subparsers(dest="group", required=True)

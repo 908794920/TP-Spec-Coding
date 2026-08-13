@@ -1,4 +1,4 @@
-schema: ai-work.knowledge-quality-policy/v1
+schema: tp-spec.knowledge-quality-policy/v1
 description: >
   Knowledge 质量政策：gate 决定 lint 事实在 verify 确定性门中的定级。
   职责边界：lint.py 只产生事实（violations/warnings/advisories）；
@@ -9,7 +9,7 @@ description: >
   - backlog: 不参与 verify 硬门，进入 backlog 报告（LEGACY/INFORMATIONAL 遗留，随 baseline 保留）
   advisory 桶（lint advisories）默认不参与 Gate，仅 gate=backlog 时进入 backlog 报告。
   未列出的规则按桶回退：violations=block、warnings=warn、advisories=不参与 Gate。
-  workspace 可在 .ai-work/config/quality-policy.yaml 覆盖指定规则的 gate（按 rule_id 合并）。
+  workspace 可在 .tp-spec/config/quality-policy.yaml 覆盖指定规则的 gate（按 rule_id 合并）。
 rules:
   K001: { gate: block, class: INTEGRITY } # frontmatter/schema
   K002: { gate: block, class: INTEGRITY } # canonical id 格式

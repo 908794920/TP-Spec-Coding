@@ -215,16 +215,25 @@ class TestAttackC_AcceptanceReview(_AttackFixture):
 # ============================== D 自动结单质量门禁 ==============================
 class TestAttackD_AutomaticCompletion(_AttackFixture):
     def _verification_ready(self):
-        # Record-first verification is a fact; no DEVELOPING/VERIFYING/CLOSING route is required.
-        run_cli(
-            self.db, self.task_dir, "task", "checkpoint", "--task", self.task_id,
-            "--actor", "tp-development-engineering", "--phase", "development",
-            "--summary", "implementation complete", expect=0,
-        )
+        # Final convergence: L2 completion must traverse canonical workflow facts.
+        for actor, phase, summary in (
+            ("tp-requirement-analysis", "requirement", "requirement complete"),
+            ("tp-architecture-design", "architecture", "architecture complete"),
+            ("tp-development-engineering", "development", "implementation complete"),
+        ):
+            run_cli(
+                self.db, self.task_dir, "task", "checkpoint", "--task", self.task_id,
+                "--actor", actor, "--phase", phase, "--summary", summary, expect=0,
+            )
         run_cli(
             self.db, self.task_dir, "task", "verify", "--task", self.task_id,
             "--actor", "tp-verification-engineering", "--decision", "PASS",
             "--summary", "verified", "--evidence", "evidence/test-result.txt", expect=0,
+        )
+        run_cli(
+            self.db, self.task_dir, "task", "checkpoint", "--task", self.task_id,
+            "--actor", "tp-delivery-convergence", "--phase", "delivery",
+            "--summary", "delivery converged", expect=0,
         )
 
     def test_d1_personnel_approval_cli_is_removed(self):

@@ -182,7 +182,7 @@ def normalization_plan(cfg) -> Dict[str, Any]:
     safe = [r for r in rows if r["changed"]]
     review = [r for r in rows if r["review"]]
     return {
-        "schema": "ai-work.knowledge-normalization-plan/v1",
+        "schema": "tp-spec.knowledge-normalization-plan/v1",
         "status": "READY" if safe else ("REVIEW_ONLY" if review else "NO_CHANGE"),
         "read_only": True,
         "root": str(cfg.paths.knowledge_physical_root),
@@ -230,7 +230,7 @@ def apply_normalization(cfg) -> Dict[str, Any]:
         })
     review=[{"path":r["path"],"reasons":r["review"]} for r in plans if r["review"]]
     receipt = {
-        "schema":"ai-work.knowledge-normalization-receipt/v1",
+        "schema":"tp-spec.knowledge-normalization-receipt/v1",
         "status":"APPLIED" if changed else "NO_CHANGE",
         "applied_at":now_iso(),
         "root":str(cfg.paths.knowledge_physical_root),
@@ -242,5 +242,5 @@ def apply_normalization(cfg) -> Dict[str, Any]:
     receipt["receipt_id"] = stable_hash(receipt)
     mp=meta_paths(cfg)
     write_json(mp["root"] / "knowledge-normalization-receipt.json", receipt)
-    write_json(mp["root"] / "knowledge-normalization-review.json", {"schema":"ai-work.knowledge-normalization-review/v1","generated_at":receipt["applied_at"],"items":review})
+    write_json(mp["root"] / "knowledge-normalization-review.json", {"schema":"tp-spec.knowledge-normalization-review/v1","generated_at":receipt["applied_at"],"items":review})
     return receipt

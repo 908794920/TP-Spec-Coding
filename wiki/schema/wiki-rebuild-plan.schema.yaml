@@ -1,4 +1,4 @@
-schema: ai-work.wiki-rebuild-plan/v1
+schema: tp-spec.wiki-rebuild-plan/v1
 required:
   - change_set_id
   - requires_ai_update

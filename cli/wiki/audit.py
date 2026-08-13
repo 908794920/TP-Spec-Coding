@@ -13,7 +13,7 @@ import json
 from .manifest import load_manifest
 from .snapshot import snapshot_paths, utc_now, wiki_subject_digest
 
-AUDIT_PLAN_SCHEMA = "ai-work.wiki-semantic-audit-plan/v1"
+AUDIT_PLAN_SCHEMA = "tp-spec.wiki-semantic-audit-plan/v1"
 
 # Stable adversarial checks carried by every audit plan.  These are intentionally
 # few and high-value: they target the error class that survives hash/citation gates

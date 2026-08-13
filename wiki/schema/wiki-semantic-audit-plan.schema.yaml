@@ -1,4 +1,4 @@
-schema: ai-work.wiki-semantic-audit-plan/v1
+schema: tp-spec.wiki-semantic-audit-plan/v1
 required:
 - mode
 - audit_scope

@@ -20,7 +20,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Test-AiWorkBaseRoot {
+function Test-TpSpecBaseRoot {
     param([string]$Path)
     if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
     return (
@@ -30,10 +30,10 @@ function Test-AiWorkBaseRoot {
     )
 }
 
-function Get-AiWorkInstallationBaseRoot {
-    $configPath = $env:AI_WORK_INSTALLATION_CONFIG
+function Get-TpSpecInstallationBaseRoot {
+    $configPath = $env:TP_SPEC_INSTALLATION_CONFIG
     if ([string]::IsNullOrWhiteSpace($configPath)) {
-        $configPath = Join-Path (Join-Path $HOME '.ai-work') 'installation.yaml'
+        $configPath = Join-Path (Join-Path $HOME '.tp-spec') 'installation.yaml'
     }
     if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { return $null }
     try {
@@ -53,12 +53,12 @@ function Get-AiWorkInstallationBaseRoot {
     return $null
 }
 
-function Resolve-AiWorkBaseRoot {
+function Resolve-TpSpecBaseRoot {
     # New projects resolve Base from the user Installation; project-side scripts
     # Junction remains compatibility-only. Every candidate is validated by stable files.
     $candidates = New-Object System.Collections.Generic.List[string]
-    if ($env:AI_WORK_BASE_ROOT) { $candidates.Add($env:AI_WORK_BASE_ROOT) }
-    $installed = Get-AiWorkInstallationBaseRoot
+    if ($env:TP_SPEC_BASE_ROOT) { $candidates.Add($env:TP_SPEC_BASE_ROOT) }
+    $installed = Get-TpSpecInstallationBaseRoot
     if ($installed) { $candidates.Add($installed) }
     $candidates.Add((Split-Path -Parent $PSScriptRoot))
 
@@ -77,14 +77,14 @@ function Resolve-AiWorkBaseRoot {
 
     foreach ($candidate in $candidates) {
         try { $full = [System.IO.Path]::GetFullPath($candidate) } catch { continue }
-        if (Test-AiWorkBaseRoot $full) { return $full }
+        if (Test-TpSpecBaseRoot $full) { return $full }
     }
     return $null
 }
 
-$script:BaseRoot = Resolve-AiWorkBaseRoot
+$script:BaseRoot = Resolve-TpSpecBaseRoot
 if (-not $script:BaseRoot) {
-    Write-Output "[Error] GOVERNANCE_LOAD_ERROR - unable to resolve TP-Spec-Coding root; configure ~/.ai-work/installation.yaml or set AI_WORK_BASE_ROOT"
+    Write-Output "[Error] GOVERNANCE_LOAD_ERROR - unable to resolve TP-Spec-Coding root; configure ~/.tp-spec/installation.yaml or set TP_SPEC_BASE_ROOT"
     exit 1
 }
 
@@ -354,7 +354,7 @@ function Test-GeneratedView {
         if ($generatedTime -ne [DateTimeOffset]::MinValue) {
             $sourceWriteTime = [DateTimeOffset](Get-Item -LiteralPath $sourcePath).LastWriteTimeUtc
             if ($sourceWriteTime -gt $generatedTime.ToUniversalTime().AddSeconds(2)) {
-                Add-Issue Error 'GENERATED_SOURCE_NEWER' "Source '$sourceFile' is newer than generated view '$RelativePath'. Do not edit generated/*; run official 'ai-work commit --refresh' as the current owner. This is an audited Runtime write that records ARTIFACT_REFRESH in SQLite."
+                Add-Issue Error 'GENERATED_SOURCE_NEWER' "Source '$sourceFile' is newer than generated view '$RelativePath'. Do not edit generated/*; run official 'tp-spec commit --refresh' as the current owner. This is an audited Runtime write that records ARTIFACT_REFRESH in SQLite."
             }
         }
     }
@@ -362,13 +362,13 @@ function Test-GeneratedView {
         $actualSourceDigest = 'sha256:' + (Get-CombinedSourceHash -Sources $sources)
         $declaredSourceDigest = Get-YamlScalar -Text $front.Metadata -Name 'source_digest'
         if ($declaredSourceDigest -ne $actualSourceDigest) {
-            Add-Issue Error 'GENERATED_SOURCE_DIGEST_MISMATCH' "Generated view '$RelativePath' is stale or its sources changed. Do not edit generated/*; run official 'ai-work commit --refresh' as the current owner. This is an audited Runtime write that records ARTIFACT_REFRESH in SQLite."
+            Add-Issue Error 'GENERATED_SOURCE_DIGEST_MISMATCH' "Generated view '$RelativePath' is stale or its sources changed. Do not edit generated/*; run official 'tp-spec commit --refresh' as the current owner. This is an audited Runtime write that records ARTIFACT_REFRESH in SQLite."
         }
     }
     $actualContentDigest = 'sha256:' + (Get-StringHash -Text $front.Content)
     $declaredContentDigest = Get-YamlScalar -Text $front.Metadata -Name 'content_digest'
     if ($declaredContentDigest -ne $actualContentDigest) {
-        Add-Issue Error 'GENERATED_CONTENT_DIGEST_MISMATCH' "Generated view '$RelativePath' was modified outside the generator. Do not repair it manually; run official 'ai-work commit --refresh' as the current owner. This is an audited Runtime write that records ARTIFACT_REFRESH in SQLite."
+        Add-Issue Error 'GENERATED_CONTENT_DIGEST_MISMATCH' "Generated view '$RelativePath' was modified outside the generator. Do not repair it manually; run official 'tp-spec commit --refresh' as the current owner. This is an audited Runtime write that records ARTIFACT_REFRESH in SQLite."
     }
     $continuationStateLine = "- 状态：$ExpectedState"
     $finalStateLine = "- 任务状态：$ExpectedState"
@@ -611,7 +611,7 @@ if (-not [string]::IsNullOrWhiteSpace($statusText) -and [string]$artifactContrac
         } else {
             $projectRoot = $taskDirectory.Parent.FullName
             $cursor = $taskDirectory
-            while ($cursor -and $cursor.Name -ne '.ai-work') { $cursor = $cursor.Parent }
+            while ($cursor -and $cursor.Name -ne '.tp-spec') { $cursor = $cursor.Parent }
             if ($cursor -and $cursor.Parent) { $projectRoot = $cursor.Parent.FullName }
             Push-Location $projectRoot
             try {
@@ -1165,7 +1165,7 @@ if ($requiresArtifactContract -and $riskLevel -in @('L0', 'L1')) {
     $riskRulePath = Join-Path $script:BaseRoot 'governance\risk-rule.yaml'
     if (-not (Test-Path -LiteralPath $riskRulePath -PathType Leaf)) {
         $aiWorkDirectory = $taskDirectory.Parent
-        while ($null -ne $aiWorkDirectory -and $aiWorkDirectory.Name -ne '.ai-work') { $aiWorkDirectory = $aiWorkDirectory.Parent }
+        while ($null -ne $aiWorkDirectory -and $aiWorkDirectory.Name -ne '.tp-spec') { $aiWorkDirectory = $aiWorkDirectory.Parent }
         if ($null -ne $aiWorkDirectory) { $riskRulePath = Join-Path $aiWorkDirectory.FullName 'governance\risk-rule.yaml' }
     }
     $riskRules = Get-AutomatedRiskRules -Path $riskRulePath

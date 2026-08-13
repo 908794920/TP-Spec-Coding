@@ -4,7 +4,7 @@
 The active Record-first daily API is implemented by :mod:`cli.record_first` and uses
 the five public states from ``governance/workflow.yaml``.  This module intentionally
 retains the older long-state transition validator/writer so frozen historical
-contracts, legacy ``ai-work commit`` flows and explicit admin-recovery paths can be
+contracts, legacy ``tp-spec commit`` flows and explicit admin-recovery paths can be
 interpreted or repaired without duplicating durable-journal logic.
 
 It is therefore *not* the normal V5.2.0 role-flow permission engine.  Code that needs
@@ -1257,7 +1257,7 @@ def transition_task(
             )
             handoff_detail = dict(detail)
             handoff_detail["handoff_payload"] = {
-                "handoff_schema": "ai-work.handoff/v1",
+                "handoff_schema": "tp-spec.handoff/v1",
                 "from_actor": actor,
                 "to_actor": owner,
                 "state": to_state,

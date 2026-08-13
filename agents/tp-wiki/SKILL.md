@@ -38,14 +38,14 @@ Knowledge   = 跨任务长期有效的业务/经验知识
 
 - `wiki.root` 表示 Wiki **System Root**；可来自用户 Installation、项目 Content Systems override 或零配置本地默认；
 - 配置外部中央 root 时直接使用 resolved physical root；
-- 日常 Wiki 必须继续保持 workspace/repo scope；Resolver 从 System Root + Repo Registry 计算项目 Wiki root。`.ai-work/wiki` Junction 仅为 legacy 兼容，不是 Runtime 必需条件；
+- 日常 Wiki 必须继续保持 workspace/repo scope；Resolver 从 System Root + Repo Registry 计算项目 Wiki root。`.tp-spec/wiki` Junction 仅为 legacy 兼容，不是 Runtime 必需条件；
 - 不按目录名猜 workspace/repo/Junction target；不硬编码任何 machine-local Wiki Root；
 - Wiki 数据目录不再携带 `tools/`。
 
 先执行：
 
 ```text
-<BaseRoot>/scripts/Invoke-AiWorkCli.ps1 wiki doctor --workspace-root <workspace>
+<BaseRoot>/scripts/tp-spec.ps1 wiki doctor --workspace-root <workspace>
 ```
 
 ## 3. 标准事实链
@@ -131,7 +131,7 @@ SCAN → CLASSIFY → TOPOLOGY → PLAN → AI UPDATE
 ## 9. 禁止事项
 
 - 不修改 source repo；只写 resolved Wiki physical root 内的 Wiki/metadata。
-- 不混写 `.ai-work/knowledge`；不把 Wiki 内 concept/card 当成 canonical Knowledge。
+- 不混写 `.tp-spec/knowledge`；不把 Wiki 内 concept/card 当成 canonical Knowledge。
 - 不硬编码模型名、绝对路径、旧 PowerShell 脚本或 Junction 目标。
 - 不放宽质量门迁就产物；不虚报全仓 PASS；不把抽样写成全量实测；不靠 metadata-only `reference` dependency 刷高覆盖率。
 - 不因一次重新下载/格式漂移触发无证据的全量重写。

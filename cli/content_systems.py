@@ -55,7 +55,7 @@ def _child_path(value: Any, *, anchor: Path, default: str) -> Path:
 @dataclass(frozen=True)
 class ContentPaths:
     workspace_root: Path
-    ai_work_root: Path
+    tp_spec_root: Path
     wiki_logical_root: Path
     wiki_system_root: Path
     wiki_registry: Path
@@ -73,7 +73,7 @@ class ContentPaths:
     def as_dict(self) -> Dict[str, str]:
         return {
             "workspace_root": str(self.workspace_root),
-            "ai_work_root": str(self.ai_work_root),
+            "tp_spec_root": str(self.tp_spec_root),
             "wiki_logical_root": str(self.wiki_logical_root),
             "wiki_system_root": str(self.wiki_system_root),
             "wiki_registry": str(self.wiki_registry),
@@ -137,8 +137,8 @@ def _positive_int(section: str, field: str, value: Any, *, allow_zero: bool = Fa
 
 
 def _validate_config(data: Dict[str, Any]) -> None:
-    if data.get("schema") != "ai-work.content-systems/v1":
-        raise ContentSystemsConfigError("schema must be ai-work.content-systems/v1")
+    if data.get("schema") != "tp-spec.content-systems/v1":
+        raise ContentSystemsConfigError("schema must be tp-spec.content-systems/v1")
     paths = data.get("paths")
     systems = data.get("systems")
     if not isinstance(paths, dict) or not isinstance(systems, dict):
@@ -248,7 +248,7 @@ def load_content_systems(
         if not override_path.is_absolute():
             override_path = workspace / override_path
     else:
-        override_path = workspace / ".ai-work" / "config" / "content-systems.yaml"
+        override_path = workspace / ".tp-spec" / "config" / "content-systems.yaml"
     override: Dict[str, Any] = {}
     if override_path.is_file():
         override = load_config(override_path, use_cache=False)
@@ -259,8 +259,8 @@ def load_content_systems(
 
     path_cfg = data["paths"]
     systems = data["systems"]
-    ai_work_text = str(path_cfg.get("ai_work_root") or "").strip()
-    ai_work = _path_value(ai_work_text, anchor=workspace) if ai_work_text else (workspace / ".ai-work").resolve(strict=False)
+    ai_work_text = str(path_cfg.get("tp_spec_root") or "").strip()
+    ai_work = _path_value(ai_work_text, anchor=workspace) if ai_work_text else (workspace / ".tp-spec").resolve(strict=False)
 
     wiki_cfg = systems["wiki"]
     wiki_logical = (ai_work / "wiki").resolve(strict=False)
@@ -304,7 +304,7 @@ def load_content_systems(
     binding = load_project_binding(workspace)
     paths = ContentPaths(
         workspace_root=workspace,
-        ai_work_root=ai_work,
+        tp_spec_root=ai_work,
         wiki_logical_root=wiki_logical,
         wiki_system_root=wiki_system,
         wiki_registry=wiki_registry,

@@ -33,7 +33,7 @@ import re
 from .manifest import extract_citations, load_manifest, resolve_wiki_relative
 from .source import discover_source_files, fingerprint_file, resolve_repo_relative
 
-COVERAGE_SCHEMA = "ai-work.wiki-coverage/v1"
+COVERAGE_SCHEMA = "tp-spec.wiki-coverage/v1"
 
 
 def _norm(rel: str) -> str:

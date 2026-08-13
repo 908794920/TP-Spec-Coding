@@ -90,7 +90,7 @@ class BaseConvergenceCase(unittest.TestCase):
         self.tmp.cleanup()
 
     def _link(self, name: str, target: Path) -> Path:
-        p = self.workspace / ".ai-work" / name
+        p = self.workspace / ".tp-spec" / name
         p.parent.mkdir(parents=True, exist_ok=True)
         p.symlink_to(target, target_is_directory=True)
         return p
@@ -139,7 +139,7 @@ class TestBaseConvergence(BaseConvergenceCase):
         self.assertEqual(final["health"], "HEALTHY", final)
 
     def test_real_project_local_base_owned_directory_is_never_auto_deleted(self):
-        real = self.workspace / ".ai-work" / "agents"
+        real = self.workspace / ".tp-spec" / "agents"
         write(real / "local.txt", "real project-local data\n")
         plan = migration_plan_for_workspace(self.workspace, installation_config=self.installation)
         reviews = [a for a in plan["actions"] if a.get("action") == "MANUAL_REVIEW_REAL_PATH"]
@@ -165,7 +165,7 @@ class TestBaseConvergence(BaseConvergenceCase):
         empty_inventory = self.user / "empty-workspaces.yaml"
         # inventory_rows intentionally merges the machine-local Runtime registry.
         # This regression is specifically about Wiki + Knowledge registry merging,
-        # so isolate it from any real ~/.ai-work/registry.local.json on the host.
+        # so isolate it from any real ~/.tp-spec/registry.local.json on the host.
         with patch("cli.base_maintenance.dbmod.list_projects", return_value=[]):
             rows = inventory_rows(
                 installation_config=str(self.installation),
@@ -178,14 +178,14 @@ class TestBaseConvergence(BaseConvergenceCase):
         inventory = self.user / "workspaces.yaml"
         write_workspace_inventory(rows, path=inventory)
         data = yaml.safe_load(inventory.read_text(encoding="utf-8"))
-        self.assertEqual(data["schema"], "ai-work.workspace-inventory/v1")
+        self.assertEqual(data["schema"], "tp-spec.workspace-inventory/v1")
         self.assertEqual(len(data["workspaces"]), 1)
 
     def test_project_content_override_has_priority_and_only_equivalent_roots_are_redundant(self):
         # Same roots expressed relative to workspace can safely become redundant.
         wiki_rel = os.path.relpath(self.wiki, self.workspace).replace("\\", "/")
         knowledge_rel = os.path.relpath(self.knowledge, self.workspace).replace("\\", "/")
-        write(self.workspace / ".ai-work/config/content-systems.yaml", f'''schema: ai-work.content-systems/v1
+        write(self.workspace / ".tp-spec/config/content-systems.yaml", f'''schema: tp-spec.content-systems/v1
 systems:
   wiki:
     root: "{wiki_rel}"
@@ -195,7 +195,7 @@ systems:
         r = resolve_workspace(self.workspace, installation_config=self.installation)
         self.assertTrue(r["project_content_override"]["redundant"], r["project_content_override"])
         # Extra project-specific retrieval override must be preserved.
-        write(self.workspace / ".ai-work/config/content-systems.yaml", f'''schema: ai-work.content-systems/v1
+        write(self.workspace / ".tp-spec/config/content-systems.yaml", f'''schema: tp-spec.content-systems/v1
 systems:
   wiki:
     root: "{wiki_rel}"

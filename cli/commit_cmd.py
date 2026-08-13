@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """V5.2.0 legacy commit compatibility / recovery surface.
 
-Normal V5.2.0 roles do not use ``ai-work commit`` to advance work.  The public daily
+Normal V5.2.0 roles do not use ``tp-spec commit`` to advance work.  The public daily
 API is ``task checkpoint/block/resume/verify/complete`` in :mod:`cli.record_first`.
 This module is retained because its durable-journal / atomic-projection primitives are
 also useful to Record-first writes and because historical long-state tasks/admin
@@ -840,7 +840,7 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
             raise ReconciliationRequiredError(
                 f"DB committed but post-commit step failed: {e}; "
                 f"evidence preserved (journal={tx_id}, backup={bak_dir}); "
-                f"run 'ai-work reconcile' to resolve"
+                f"run 'tp-spec reconcile' to resolve"
             ) from e
         try:
             _restore(task_dir, bak_dir, rel_paths, journal)
@@ -850,7 +850,7 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
             raise ReconciliationRequiredError(
                 f"DB rolled back but file restore FAILED: {restore_err}; "
                 f"evidence preserved (journal={tx_id}, backup={bak_dir}); "
-                f"run 'ai-work reconcile' to resolve"
+                f"run 'tp-spec reconcile' to resolve"
             ) from e
         # 恢复成功才删除 journal（恢复失败时保留恢复依据，交给 reconcile）
         transaction_journal.remove_journal(task_dir, tx_id)

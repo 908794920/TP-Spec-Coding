@@ -221,17 +221,17 @@ foreach ($path in @($statusPath, $handoffPath, $eventsPath)) {
 }
 
 $aiWorkRoot = $task.Parent
-while ($null -ne $aiWorkRoot -and $aiWorkRoot.Name -ne '.ai-work') { $aiWorkRoot = $aiWorkRoot.Parent }
-if ($null -eq $aiWorkRoot) { throw 'TaskPath must be located below a .ai-work directory.' }
+while ($null -ne $aiWorkRoot -and $aiWorkRoot.Name -ne '.tp-spec') { $aiWorkRoot = $aiWorkRoot.Parent }
+if ($null -eq $aiWorkRoot) { throw 'TaskPath must be located below a .tp-spec directory.' }
 
 # BUG 修复（2026-07-30）：DB 后端启用时禁止直接调用底层 flush。直调只完成
 # 文件侧事务，跳过 projection rebuild 与 event sync，造成文件侧推进而 SQLite
-# 账本停滞的静默割裂（TASK-21956 实证）。编排器 ai-work.ps1 以
-# AI_WORK_ORCHESTRATED=1 豁免本守卫（单一决策点）。直调时守卫 fail-closed：
+# 账本停滞的静默割裂（TASK-21956 实证）。编排器 tp-spec.ps1 以
+# TP_SPEC_ORCHESTRATED=1 豁免本守卫（单一决策点）。直调时守卫 fail-closed：
 # 检测结论为 true，或无法给出可信结论（Python 缺失、库/注册表异常等）均
 # 拒绝，只有明确 false 才放行，避免检测失败重新暴露账本割裂风险。
 # 守卫位于 .flush-journal 创建与锁获取之前，拒绝路径真正零副作用。
-if ($env:AI_WORK_ORCHESTRATED -ne '1') {
+if ($env:TP_SPEC_ORCHESTRATED -ne '1') {
     $guardBaseRoot = Split-Path -Parent $PSScriptRoot
     $guardDetectScript = @"
 import sys, os
@@ -251,9 +251,9 @@ try:
 except Exception as e:
     print('error: %s: %s' % (type(e).__name__, e))
 "@
-    # 与 ai-work.ps1 一致：python -c 传多行 here-string 会因 CRLF 解析失败，
+    # 与 tp-spec.ps1 一致：python -c 传多行 here-string 会因 CRLF 解析失败，
     # 改写临时 .py 文件（UTF-8 无 BOM）再执行。
-    $guardDetectFile = Join-Path ([System.IO.Path]::GetTempPath()) ('ai-work-flush-guard-' + [guid]::NewGuid().ToString('N') + '.py')
+    $guardDetectFile = Join-Path ([System.IO.Path]::GetTempPath()) ('tp-spec-flush-guard-' + [guid]::NewGuid().ToString('N') + '.py')
     $guardVerdict = ''
     $guardPrevEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -270,14 +270,14 @@ except Exception as e:
         Remove-Item -LiteralPath $guardDetectFile -Force -ErrorAction SilentlyContinue
     }
     if ($guardVerdict -match '^true') {
-        throw ("DB backend is enabled for task '$($task.Name)'. Calling Invoke-AiWorkHandoffFlush.ps1 directly only flushes the file side and skips 'projection rebuild' and 'event sync', leaving the SQLite ledger behind (silent drift). " +
-            'Use the orchestrated entry instead: scripts/ai-work.ps1 -TaskPath <task-path> -Actor <actor> (or ai-work commit). ' +
+        throw ("DB backend is enabled for task '$($task.Name)'. Calling Invoke-TpSpecHandoffFlush.ps1 directly only flushes the file side and skips 'projection rebuild' and 'event sync', leaving the SQLite ledger behind (silent drift). " +
+            'Use the orchestrated entry instead: scripts/tp-spec.ps1 -TaskPath <task-path> -Actor <actor> (or tp-spec commit). ' +
             "If a drift already happened, recover with: python cli/main.py event sync --task $($task.Name) --task-dir <task-path> (idempotent, safe to retry).")
     }
     if ($guardVerdict -notmatch '^false') {
         $guardDetail = if ([string]::IsNullOrWhiteSpace($guardVerdict)) { 'no output; python missing or failed to start' } else { $guardVerdict }
-        throw ("DB-backend detection did not produce a trusted verdict for task '$($task.Name)' ($guardDetail). Direct Invoke-AiWorkHandoffFlush.ps1 is rejected (fail-closed) to prevent silent file/ledger drift. " +
-            'Use the orchestrated entry: scripts/ai-work.ps1 -TaskPath <task-path> -Actor <actor>, or fix the Python/DB environment and retry.')
+        throw ("DB-backend detection did not produce a trusted verdict for task '$($task.Name)' ($guardDetail). Direct Invoke-TpSpecHandoffFlush.ps1 is rejected (fail-closed) to prevent silent file/ledger drift. " +
+            'Use the orchestrated entry: scripts/tp-spec.ps1 -TaskPath <task-path> -Actor <actor>, or fix the Python/DB environment and retry.')
     }
 }
 
@@ -300,7 +300,7 @@ try {
     }
     $GeneratorVersion = $script:ActiveVersion
 
-    # File-mode equivalent of `ai-work commit --review-only`: append one
+    # File-mode equivalent of `tp-spec commit --review-only`: append one
     # REVIEW_COMPLETED event without changing state or consuming handoff.json.
     if ($ReviewOnly) {
         if ($Actor -ne 'tp-verification-engineering') { throw 'V5.2.0 -ReviewOnly is only available to tp-verification-engineering.' }
@@ -446,7 +446,7 @@ try {
         }
     }
 
-    # V5.2.0 结单链门控（与 ai-work commit / task transition 一致）。
+    # V5.2.0 结单链门控（与 tp-spec commit / task transition 一致）。
     $nextState = [string]$handoff.next.state
     $nextOwner = [string]$handoff.next.owner
     if ($nextState -eq 'COMPLETED') {
@@ -569,7 +569,7 @@ try {
 
 $($handoff.next_prompt.invocation)
 
-- 任务路径：.ai-work/tasks/$($handoff.next_prompt.task_id)/
+- 任务路径：.tp-spec/tasks/$($handoff.next_prompt.task_id)/
 - 当前状态：$($handoff.next_prompt.target_state) / owner $($handoff.next_prompt.target_role) / risk $($handoff.next_prompt.risk_level) / page verification $($handoff.next_prompt.page_verification)
 - 唯一入口：$($handoff.next_prompt.entry)
 

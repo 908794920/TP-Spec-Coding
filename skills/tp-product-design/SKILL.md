@@ -28,7 +28,7 @@ description: 产品设计工程师（tp-product-design）：按需把需求转�
 
 ## Runtime
 Task 存在且本阶段确有成果时，可记录一次：
-`ai-work task checkpoint ... --phase product --summary "产品流程/交互结论"`
+`tp-spec task checkpoint ... --phase product --summary "产品流程/交互结论"`
 
 真实产品决策未解决且无法继续时才 `task block`。产品设计不是 L3 固定收费站，也不要求独立确认流程才能进入开发，除非用户明确要求等待确认。
 

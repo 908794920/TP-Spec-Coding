@@ -12,8 +12,8 @@ import os
 
 from .source import discover_source_files, fingerprint_file, normalized_hash, resolve_repo_relative, sha256_bytes
 
-SNAPSHOT_SCHEMA = "ai-work.wiki-snapshot/v1"
-CHANGESET_SCHEMA = "ai-work.wiki-changeset/v1"
+SNAPSHOT_SCHEMA = "tp-spec.wiki-snapshot/v1"
+CHANGESET_SCHEMA = "tp-spec.wiki-changeset/v1"
 
 
 def utc_now() -> str:

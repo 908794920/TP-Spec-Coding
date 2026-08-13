@@ -77,7 +77,7 @@ def register_batch(cfg, *, project: str, batch: str, source_root: Path) -> Dict[
         rows.append({"source_id":source_id,"project":project,"batch":batch,"origin_path":rel,"sha256":sha,"size":p.stat().st_size,"mtime_ns":p.stat().st_mtime_ns,"classification":classification,"disposition":disposition,"canonical_ids":[],"reason":reason})
     paths["root"].mkdir(parents=True,exist_ok=True)
     write_jsonl(paths["manifest"],rows)
-    write_json(paths["meta"],{"schema":"ai-work.knowledge-ingest-batch/v1","batch":batch,"project":project,"source_root":str(source_root),"registered_at":now_iso(),"source_count":len(rows),"finalized_at":None})
+    write_json(paths["meta"],{"schema":"tp-spec.knowledge-ingest-batch/v1","batch":batch,"project":project,"source_root":str(source_root),"registered_at":now_iso(),"source_count":len(rows),"finalized_at":None})
     _sync_global_registry(cfg,rows)
     return ingest_status(cfg,batch)
 
@@ -98,7 +98,7 @@ def ingest_status(cfg, batch: str) -> Dict[str, Any]:
     for r in rows:
         d=str(r.get("disposition") or ""); counts[d]=counts.get(d,0)+1
     total=len(rows); accounted=sum(v for k,v in counts.items() if k in TERMINAL)
-    return {"schema":"ai-work.knowledge-ingest-status/v1","batch":batch,"registered":total,"accounted":accounted,"pending":counts.get("pending",0),"accountability":accounted/total if total else None,"dispositions":counts,"finalized":bool((read_json(paths["meta"],{}) or {}).get("finalized_at"))}
+    return {"schema":"tp-spec.knowledge-ingest-status/v1","batch":batch,"registered":total,"accounted":accounted,"pending":counts.get("pending",0),"accountability":accounted/total if total else None,"dispositions":counts,"finalized":bool((read_json(paths["meta"],{}) or {}).get("finalized_at"))}
 
 
 def finalize_batch(cfg, batch: str) -> Dict[str, Any]:

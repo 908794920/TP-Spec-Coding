@@ -28,7 +28,7 @@ REGISTER
 ```
 
 
-Before INDEX/VERIFY/L4, run `ai-work knowledge scan` **after the final canonical/evidence/disposition write**. The staged change set is the trust subject for audit/baseline; an earlier pre-AI change set must never be reused. If truth changes after staging, re-scan.
+Before INDEX/VERIFY/L4, run `tp-spec knowledge scan` **after the final canonical/evidence/disposition write**. The staged change set is the trust subject for audit/baseline; an earlier pre-AI change set must never be reused. If truth changes after staging, re-scan.
 
 ## Safety rules
 

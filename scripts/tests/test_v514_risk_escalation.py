@@ -11,7 +11,7 @@ from cli.version import active_version
 
 def _seed_workspace(root: Path, *, risk: str = "L2", flow: str = "L2") -> tuple[str, Path]:
     task_id = "TASK-RISK-FLOOR"
-    task_dir = root / ".ai-work" / "tasks" / task_id
+    task_dir = root / ".tp-spec" / "tasks" / task_id
     task_dir.mkdir(parents=True)
     (task_dir / "task.md").write_text(
         "---\nartifact: task\ntask_id: TASK-RISK-FLOOR\nartifact_contract:\n  version: \"5.2.0\"\n---\n\n"
@@ -20,7 +20,7 @@ def _seed_workspace(root: Path, *, risk: str = "L2", flow: str = "L2") -> tuple[
     )
     (task_dir / "status.yaml").write_text("placeholder\n", encoding="utf-8")
     (task_dir / "events.jsonl").write_text("", encoding="utf-8")
-    db_path = root / ".ai-work" / "db" / "runtime.db"
+    db_path = root / ".tp-spec" / "db" / "runtime.db"
     db_path.parent.mkdir(parents=True)
     conn = dbmod.connect(str(db_path))
     dbmod.init_schema(conn)
@@ -103,3 +103,26 @@ def test_governed_security_change_has_l3_floor():
     result = risk_signals.scan_texts(["本次修改安全策略并调整脱敏规则。"])
     assert result["floor"] == "L3"
     assert "SECURITY" in result["signals"]
+
+
+def test_default_acceptance_template_boilerplate_does_not_raise_risk_floor():
+    with tempfile.TemporaryDirectory() as td:
+        task_dir = Path(td)
+        template = Path(__file__).parents[2] / "templates" / active_version() / "acceptance.md"
+        (task_dir / "acceptance.md").write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+        result = risk_signals.scan_task_artifacts(task_dir)
+        assert result["floor"] is None
+        assert "DDL" not in result["signals"]
+        assert "DML" not in result["signals"]
+
+
+def test_actual_database_action_in_acceptance_still_raises_l2_floor():
+    with tempfile.TemporaryDirectory() as td:
+        task_dir = Path(td)
+        (task_dir / "acceptance.md").write_text(
+            "```yaml\ndatabase_verification:\n  action: DML # selected action\n```\n",
+            encoding="utf-8",
+        )
+        result = risk_signals.scan_task_artifacts(task_dir)
+        assert result["floor"] == "L2"
+        assert "DML" in result["signals"]

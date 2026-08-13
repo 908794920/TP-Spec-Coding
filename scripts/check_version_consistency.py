@@ -27,7 +27,7 @@ import re
 import sys
 from pathlib import Path
 
-BASE = Path(__file__).resolve().parent.parent  # ai-work-base
+BASE = Path(__file__).resolve().parent.parent  # tp-spec-base
 
 
 def _ensure_utf8_stdio() -> None:

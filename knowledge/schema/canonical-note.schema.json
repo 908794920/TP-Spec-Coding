@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ai-work.local/knowledge/schema/canonical-note.schema.json",
+  "$id": "https://tp-spec.local/knowledge/schema/canonical-note.schema.json",
   "title": "Canonical Note (frontmatter)",
   "schema_version": "1.1.0",
   "compatibility_policy": "additive metadata evolution; stable IDs/kind codes/relation names remain immutable. source_refs stays required for compatibility, but code/task evidence may be represented by evidence_refs.",

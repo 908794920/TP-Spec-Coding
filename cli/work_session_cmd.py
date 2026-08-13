@@ -140,7 +140,7 @@ def cmd_work_end(args) -> int:
         open_session = _open_session_for_role(conn, task_id, actor_role)
         if open_session is None:
             print(
-                f"ERROR: no open work session for {actor_role}; run 'ai-work work start' first",
+                f"ERROR: no open work session for {actor_role}; run 'tp-spec work start' first",
                 file=sys.stderr,
             )
             return 5

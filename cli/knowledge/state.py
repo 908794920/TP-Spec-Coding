@@ -30,7 +30,7 @@ def stage_scan(cfg) -> Dict[str, Any]:
     current = knowledge_truth_snapshot(cfg)
     diff = classify_snapshot(baseline, current)
     changeset = {
-        "schema": "ai-work.knowledge-change-set/v1",
+        "schema": "tp-spec.knowledge-change-set/v1",
         "created_at": now_iso(),
         "baseline_snapshot_id": str((baseline or {}).get("snapshot_id") or ""),
         "current_snapshot_id": current["snapshot_id"],
@@ -61,7 +61,7 @@ def maintain(cfg) -> Dict[str, Any]:
         else:
             status = "WAITING_FOR_AI"
     return {
-        "schema": "ai-work.knowledge-maintain/v1",
+        "schema": "tp-spec.knowledge-maintain/v1",
         "status": status,
         "change_set": changeset,
         "projection": proj,
@@ -80,7 +80,7 @@ def load_quality_policy(cfg) -> Dict[str, Any]:
     policy to execute the gate.
     """
     policy = yaml.safe_load(_BASE_QUALITY_POLICY.read_text(encoding="utf-8")) or {}
-    override = cfg.paths.ai_work_root / "config" / "quality-policy.yaml"
+    override = cfg.paths.tp_spec_root / "config" / "quality-policy.yaml"
     if override.is_file():
         extra = yaml.safe_load(override.read_text(encoding="utf-8")) or {}
         rules = dict(policy.get("rules") or {})
@@ -155,7 +155,7 @@ def verify(cfg) -> Dict[str, Any]:
             warnings.append(f"registered sources still pending: {accountability['pending']}")
     status = "PASS" if not errors and not warnings else ("WARN" if not errors else "FAIL")
     receipt = {
-        "schema": "ai-work.knowledge-verification/v1",
+        "schema": "tp-spec.knowledge-verification/v1",
         "verified_at": now_iso(),
         "status": status,
         "truth_snapshot_id": current["snapshot_id"],
@@ -218,7 +218,7 @@ def create_audit_plan(cfg, *, full: bool = False) -> Dict[str, Any]:
     mandatory = [n["rel_path"] for n in canonical] if (full or initial) else _affected_canonical(cfg, changeset)
     required = bool(mandatory) and (full or initial or bool(changeset.get("semantic_audit_required")))
     plan = {
-        "schema": "ai-work.knowledge-semantic-audit-plan/v1",
+        "schema": "tp-spec.knowledge-semantic-audit-plan/v1",
         "created_at": now_iso(),
         "truth_snapshot_id": current["snapshot_id"],
         "change_set_id": changeset.get("change_set_id", ""),
@@ -246,7 +246,7 @@ def record_audit(cfg, *, result: str, summary: str, documents: List[str]) -> Dic
     if normalized == "PASS" and missing:
         raise ValueError("audit PASS blocked: mandatory documents not reviewed: " + ", ".join(missing[:10]))
     receipt = {
-        "schema": "ai-work.knowledge-semantic-audit-receipt/v1",
+        "schema": "tp-spec.knowledge-semantic-audit-receipt/v1",
         "recorded_at": now_iso(),
         "result": normalized,
         "summary": summary,
@@ -284,7 +284,7 @@ def commit_snapshot(cfg) -> Dict[str, Any]:
             raise ValueError("snapshot blocked: semantic audit does not bind current truth")
     current["committed_at"] = now_iso()
     write_json(paths["snapshot"], current)
-    return {"schema":"ai-work.knowledge-snapshot-commit/v1","status":"PASS","snapshot_id":current["snapshot_id"],"baseline_advanced":True}
+    return {"schema":"tp-spec.knowledge-snapshot-commit/v1","status":"PASS","snapshot_id":current["snapshot_id"],"baseline_advanced":True}
 
 
 def status(cfg) -> Dict[str, Any]:
@@ -292,7 +292,7 @@ def status(cfg) -> Dict[str, Any]:
     baseline = read_json(paths["snapshot"], None)
     current = knowledge_truth_snapshot(cfg)
     return {
-        "schema":"ai-work.knowledge-status/v1",
+        "schema":"tp-spec.knowledge-status/v1",
         "baseline_snapshot_id":str((baseline or {}).get("snapshot_id") or ""),
         "current_snapshot_id":current["snapshot_id"],
         "baseline_current":bool(baseline and baseline.get("snapshot_id")==current["snapshot_id"]),

@@ -63,7 +63,7 @@ A Knowledge Vault should contain knowledge data, user dictionaries/registry, evi
    └─ ingest/                      # registered ingest batches
 ```
 
-Use `ai-work knowledge search` as the Agent retrieval entry and `ai-work knowledge eval` for Golden Query regression. See the rule files in this directory for the executable contract. Project-specific paths belong in Content Systems configuration or the project registry; do not hard-code them into Base code or prompts.
+Use `tp-spec knowledge search` as the Agent retrieval entry and `tp-spec knowledge eval` for Golden Query regression. See the rule files in this directory for the executable contract. Project-specific paths belong in Content Systems configuration or the project registry; do not hard-code them into Base code or prompts.
 
 ## Trusted baseline binding
 
@@ -82,4 +82,4 @@ final canonical/evidence/source-registry writes
 
 ## Legacy normalization
 
-Before a large legacy Vault spends model tokens on semantic repair, run `ai-work knowledge migrate-normalize` in dry-run mode. `--apply` only performs semantics-preserving structural/alias conversions and writes a receipt/review queue under `.ai-kb/meta/`; missing evidence, unknown relation meaning, missing confidence/verification facts remain for targeted `tp-knowledge` review. See `knowledge/rules/migration-standard.md`.
+Before a large legacy Vault spends model tokens on semantic repair, run `tp-spec knowledge migrate-normalize` in dry-run mode. `--apply` only performs semantics-preserving structural/alias conversions and writes a receipt/review queue under `.ai-kb/meta/`; missing evidence, unknown relation meaning, missing confidence/verification facts remain for targeted `tp-knowledge` review. See `knowledge/rules/migration-standard.md`.

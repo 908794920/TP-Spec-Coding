@@ -71,7 +71,7 @@ def test_project_bootstrap_accepts_equivalent_alias_root(tmp_path: Path):
         pytest.skip("filesystem does not allow directory symlinks")
 
     project_id = "demo"
-    db_path = real / ".ai-work" / "db" / "demo.db"
+    db_path = real / ".tp-spec" / "db" / "demo.db"
     _make_runtime_db(db_path, project_id, alias)
     registry = tmp_path / "registry.local.json"
     registry.write_text(
@@ -163,7 +163,7 @@ def test_windows_ci_declares_utf8_execution_boundary():
 
 
 def test_windows_byte_gate_validates_repo_policy_not_global_autocrlf_setting():
-    gate = (BASE / "scripts" / "ci" / "Test-AiWorkBase.ps1").read_text(encoding="utf-8-sig")
+    gate = (BASE / "scripts" / "ci" / "Test-TpSpecBase.ps1").read_text(encoding="utf-8-sig")
     assert "* -text" in gate
     assert "expected 'false'" not in gate
     assert "core.autocrlf" in gate  # diagnostics remain visible

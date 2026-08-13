@@ -34,7 +34,7 @@ def _resolve_db(args) -> str:
 
     G1 治本：scope=project 时，scope_id 即 project_id（D 文档启用命令
     `config set --scope project --scope-id <pid>` 不传 --project 也能命中项目库）。
-    这样 ai-work.ps1 自动检测（按 task_id 扫 registry 读项目库）才能读到 flag。
+    这样 tp-spec.ps1 自动检测（按 task_id 扫 registry 读项目库）才能读到 flag。
     """
     project = getattr(args, "project", None)
     if not project and (getattr(args, "scope", None) or _DEFAULT_SCOPE) == "project":

@@ -31,7 +31,7 @@ python scripts/update_manifest.py --verify
 Windows 环境再运行：
 
 ```powershell
-pwsh -File scripts/ci/Test-AiWorkBase.ps1 -Mode Full
+pwsh -File scripts/ci/Test-TpSpecBase.ps1 -Mode Full
 ```
 
 ## 正式发布检查
@@ -48,7 +48,7 @@ python scripts/update_manifest.py --verify-release
 Windows 发布候选再运行完整门禁：
 
 ```powershell
-pwsh -File scripts/ci/Test-AiWorkBase.ps1 -Mode Full
+pwsh -File scripts/ci/Test-TpSpecBase.ps1 -Mode Full
 ```
 
 只有 Linux / Windows CI 均通过后，才创建对应 **Git Tag** 和 **GitHub Release**。Tag 指向的提交必须就是完成上述 Release Gate 的提交；不要先打 Tag 再补文件。

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ai-work.local/knowledge/schema/project-registry.schema.json",
+  "$id": "https://tp-spec.local/knowledge/schema/project-registry.schema.json",
   "title": "Knowledge Project Registry",
   "type": "object",
   "required": [

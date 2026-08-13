@@ -19,7 +19,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-BASE = Path(__file__).resolve().parent.parent.parent  # ai-work-base
+BASE = Path(__file__).resolve().parent.parent.parent  # tp-spec-base
 sys.path.insert(0, str(BASE))
 
 from cli.config_loader import gate_task_contract  # noqa: E402
@@ -61,7 +61,7 @@ class TestActiveContract(unittest.TestCase):
         })()
         rc = project_cmd.cmd_project_init(args)
         self.assertEqual(rc, 0)
-        db_path = self.tmp / ".ai-work" / "db" / "v510proj.db"
+        db_path = self.tmp / ".tp-spec" / "db" / "v510proj.db"
         self.assertTrue(db_path.is_file())
         conn = dbmod.connect(db_path)
         try:
@@ -112,7 +112,7 @@ class TestActiveContract(unittest.TestCase):
         })()
         rc = project_cmd.cmd_project_init(args)
         self.assertNotEqual(rc, 0)
-        self.assertFalse((self.tmp / "oldroot" / ".ai-work" / "db" / "oldproj.db").is_file())
+        self.assertFalse((self.tmp / "oldroot" / ".tp-spec" / "db" / "oldproj.db").is_file())
 
     def test_project_init_rejects_future_version(self):
         """显式 --base-version 传未来版本必须拒绝。"""
@@ -131,7 +131,7 @@ class TestActiveContract(unittest.TestCase):
         })()
         rc = project_cmd.cmd_project_init(args)
         self.assertNotEqual(rc, 0)
-        self.assertFalse((self.tmp / "futureroot" / ".ai-work" / "db" / "futureproj.db").is_file())
+        self.assertFalse((self.tmp / "futureroot" / ".tp-spec" / "db" / "futureproj.db").is_file())
 
     def test_task_create_rejects_non_active_project(self):
         """非活动版本项目上创建任务必须拒绝。"""

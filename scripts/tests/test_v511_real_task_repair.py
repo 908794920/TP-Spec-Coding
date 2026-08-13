@@ -183,7 +183,7 @@ class TestRealTaskRepair(unittest.TestCase):
 
     def test_task_create_scaffold_creates_runtime_ready_directory(self):
         project_root = self.work / "proj-scaffold"
-        db_path = project_root / ".ai-work" / "db" / "ai-work.db"
+        db_path = project_root / ".tp-spec" / "db" / "tp-spec.db"
         db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = dbmod.connect(str(db_path))
         dbmod.init_schema(conn)
@@ -195,7 +195,7 @@ class TestRealTaskRepair(unittest.TestCase):
             )
         conn.close()
 
-        task_dir = project_root / ".ai-work" / "tasks" / TASK_ID
+        task_dir = project_root / ".tp-spec" / "tasks" / TASK_ID
         rc, out, err = run([
             "task", "create", "--id", TASK_ID, "--project", PROJECT_ID,
             "--title", "真实任务脚手架", "--risk", "L2", "--flow", "L2",
@@ -607,10 +607,15 @@ class TestRealTaskRepair(unittest.TestCase):
         tdir = Path(task_dir)
         guide = tdir / "requirement-test-guide.md"
         guide_before = guide.read_bytes()
-        run([
-            "task", "checkpoint", "--task", TASK_ID, "--task-dir", task_dir, "--db", db_path,
-            "--actor", "tp-development-engineering", "--phase", "development", "--summary", "implementation done",
-        ])
+        for actor, phase, summary in (
+            ("tp-requirement-analysis", "requirement", "requirement complete"),
+            ("tp-architecture-design", "architecture", "architecture complete"),
+            ("tp-development-engineering", "development", "implementation done"),
+        ):
+            run([
+                "task", "checkpoint", "--task", TASK_ID, "--task-dir", task_dir, "--db", db_path,
+                "--actor", actor, "--phase", phase, "--summary", summary,
+            ])
         rc1, out1, err1 = run([
             "task", "verify", "--task", TASK_ID, "--task-dir", task_dir, "--db", db_path,
             "--actor", "tp-verification-engineering", "--decision", "PASS",

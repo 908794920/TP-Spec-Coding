@@ -259,7 +259,7 @@ def build_projection(cfg, *, clean: bool = True) -> Dict[str, Any]:
     _rebuild_graph(conn, canonical, str(cfg.knowledge_projection.get("graph_mode") or "optional"))
     subject = stable_hash({n["rel_path"]: n["sha256"] for n in canonical + sources})
     meta = {
-        "projection_schema": "ai-work.knowledge-projection/v1",
+        "projection_schema": "tp-spec.knowledge-projection/v1",
         "projection_subject": subject,
         "build_at": now_iso(),
         "build_doc_count": str(len(canonical) + len(sources)),

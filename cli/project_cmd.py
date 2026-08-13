@@ -50,19 +50,19 @@ def cmd_project_init(args) -> int:
     except ConfigLoadError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    # 解析 db 路径：--db 优先，否则 <root>/.ai-work/db/<pid>.db
+    # 解析 db 路径：--db 优先，否则 <root>/.tp-spec/db/<pid>.db
     if args.db:
         db_path = args.db
     else:
-        db_path = os.path.join(root_path, ".ai-work", "db", f"{project_id}.db")
+        db_path = os.path.join(root_path, ".tp-spec", "db", f"{project_id}.db")
     # 创建父目录
     parent = os.path.dirname(os.path.abspath(db_path))
     os.makedirs(parent, exist_ok=True)
     # 幂等创建已完成任务归档目录与持久执行区。
     # 只创建目录，绝不移动、删除、清空或扫描迁移其中内容；归档由用户手动管理。
-    ai_work_root = os.path.join(os.path.abspath(root_path), ".ai-work")
-    os.makedirs(os.path.join(ai_work_root, "tasksHistory"), exist_ok=True)
-    os.makedirs(os.path.join(ai_work_root, ".execution"), exist_ok=True)
+    tp_spec_root = os.path.join(os.path.abspath(root_path), ".tp-spec")
+    os.makedirs(os.path.join(tp_spec_root, "tasksHistory"), exist_ok=True)
+    os.makedirs(os.path.join(tp_spec_root, ".execution"), exist_ok=True)
     # 连接 + init_schema
     conn = dbmod.connect(db_path)
     try:
@@ -157,10 +157,10 @@ def cmd_project_bootstrap(args) -> int:
         # create a second default DB next to an already-registered project.
         registered_db = registered.get("db_path")
         db_path = dbmod._resolve_project_db_abs(registered_db) if registered_db else os.path.join(
-            root_path, ".ai-work", "db", f"{project_id}.db"
+            root_path, ".tp-spec", "db", f"{project_id}.db"
         )
     else:
-        db_path = os.path.join(root_path, ".ai-work", "db", f"{project_id}.db")
+        db_path = os.path.join(root_path, ".tp-spec", "db", f"{project_id}.db")
 
     # Existing DB: only report READY when the schema/project row are actually usable.
     if os.path.isfile(db_path):
@@ -221,9 +221,9 @@ def cmd_project_bootstrap(args) -> int:
         )
         return 4
 
-    ai_work_root = os.path.join(root_path, ".ai-work")
-    active_tasks = os.path.join(ai_work_root, "tasks")
-    history_tasks = os.path.join(ai_work_root, "tasksHistory")
+    tp_spec_root = os.path.join(root_path, ".tp-spec")
+    active_tasks = os.path.join(tp_spec_root, "tasks")
+    history_tasks = os.path.join(tp_spec_root, "tasksHistory")
     if _dir_has_entries(active_tasks) or _dir_has_entries(history_tasks):
         print(
             "PROJECT_BOOTSTRAP_UNSAFE: task/history artifacts already exist while the Runtime DB is missing; "
@@ -413,7 +413,7 @@ def add_project_subparsers(project_parser) -> None:
     p_bootstrap.add_argument("--id", required=True, help="project id (^[a-z0-9][a-z0-9-]*$)")
     p_bootstrap.add_argument("--name", required=False, default=None, help="project display name")
     p_bootstrap.add_argument("--root", required=False, default=".", help="workspace root (default: .)")
-    p_bootstrap.add_argument("--db", required=False, default=None, help="db path (default: <root>/.ai-work/db/<id>.db)")
+    p_bootstrap.add_argument("--db", required=False, default=None, help="db path (default: <root>/.tp-spec/db/<id>.db)")
     p_bootstrap.add_argument("--registry", required=False, default=None, help="registry path override")
     p_bootstrap.add_argument("--check-only", action="store_true", help="read-only health/pristine check; never initializes storage")
     p_bootstrap.set_defaults(func=cmd_project_bootstrap)
@@ -430,13 +430,13 @@ def add_project_subparsers(project_parser) -> None:
         "--db",
         required=False,
         default=None,
-        help="db path (default: <root>/.ai-work/db/<pid>.db)",
+        help="db path (default: <root>/.tp-spec/db/<pid>.db)",
     )
     p_init.add_argument(
         "--registry",
         required=False,
         default=None,
-        help="registry.local.json path (default: machine-local ~/.ai-work/registry.local.json)",
+        help="registry.local.json path (default: machine-local ~/.tp-spec/registry.local.json)",
     )
     p_init.set_defaults(func=cmd_project_init)
 

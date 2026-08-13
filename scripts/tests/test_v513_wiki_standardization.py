@@ -2,7 +2,7 @@
 """V5.1.3 Wiki standardization regression.
 
 Pure local/stdlib+PyYAML tests.  Protects the key product invariants:
-- config empty roots resolve under .ai-work and external central roots remain compatible;
+- config empty roots resolve under .tp-spec and external central roots remain compatible;
 - formatting/encoding drift does not become semantic change;
 - Python/YAML indentation stays semantic;
 - mass-change guard prevents token-explosive rewrites;
@@ -88,7 +88,7 @@ class WikiCase(unittest.TestCase):
         self.workspace = self.root / "workspace"
         self.workspace.mkdir()
         # Regression fixtures must never inherit the developer machine's
-        # ~/.ai-work/installation.yaml.  Use an explicit non-existent installation
+        # ~/.tp-spec/installation.yaml.  Use an explicit non-existent installation
         # config so the base config's empty roots resolve inside this temp workspace.
         self.installation_config = self.root / "missing-installation.yaml"
         self.cfg = load_content_systems(
@@ -98,7 +98,7 @@ class WikiCase(unittest.TestCase):
         )
         self.repo = self.workspace / "repo"
         self.repo.mkdir()
-        self.wiki = self.workspace / ".ai-work" / "wiki" / "repo"
+        self.wiki = self.workspace / ".tp-spec" / "wiki" / "repo"
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -106,16 +106,16 @@ class WikiCase(unittest.TestCase):
 
 class TestContentSystems(WikiCase):
     def test_empty_roots_default_under_ai_work(self):
-        self.assertEqual(self.cfg.paths.ai_work_root, (self.workspace / ".ai-work").resolve(strict=False))
-        self.assertEqual(self.cfg.paths.wiki_system_root, (self.workspace / ".ai-work" / "wiki").resolve(strict=False))
-        self.assertEqual(self.cfg.paths.knowledge_physical_root, (self.workspace / ".ai-work" / "knowledge").resolve(strict=False))
+        self.assertEqual(self.cfg.paths.tp_spec_root, (self.workspace / ".tp-spec").resolve(strict=False))
+        self.assertEqual(self.cfg.paths.wiki_system_root, (self.workspace / ".tp-spec" / "wiki").resolve(strict=False))
+        self.assertEqual(self.cfg.paths.knowledge_physical_root, (self.workspace / ".tp-spec" / "knowledge").resolve(strict=False))
         self.assertEqual(self.cfg.paths.wiki_layout, "workspace-root")
 
     def test_external_legacy_central_root_and_registry(self):
         central = self.root / "central-wiki"
         registry = central / "00-system" / "repo-registry.yaml"
         write(registry, yaml.safe_dump({"version": 1, "workspaces": [{"id": "ws", "workspace_root": str(self.workspace), "repos": [{"id": "repo", "repo_root": str(self.repo), "enabled": True}]}]}, sort_keys=False))
-        override = self.workspace / ".ai-work" / "config" / "content-systems.yaml"
+        override = self.workspace / ".tp-spec" / "config" / "content-systems.yaml"
         write(override, yaml.safe_dump({"systems": {"wiki": {"root": str(central)}}}, sort_keys=False))
         cfg = load_content_systems(self.workspace, base_config_path=BASE_CONFIG, installation_config_path=self.installation_config)
         self.assertEqual(cfg.paths.wiki_layout, "legacy-central")
@@ -124,7 +124,7 @@ class TestContentSystems(WikiCase):
         self.assertEqual(target.wiki_repo_root, (central / "projects" / "ws" / "repo").resolve())
 
     def test_existing_registry_mismatch_does_not_guess_workspace(self):
-        registry = self.workspace / ".ai-work" / "config" / "wiki-repos.yaml"
+        registry = self.workspace / ".tp-spec" / "config" / "wiki-repos.yaml"
         write(registry, yaml.safe_dump({"version": 1, "workspaces": [{"id": "other", "workspace_root": str(self.root / "other"), "repos": []}]}, sort_keys=False))
         cfg = load_content_systems(self.workspace, base_config_path=BASE_CONFIG, installation_config_path=self.installation_config)
         with self.assertRaisesRegex(ValueError, "workspace not registered"):
@@ -132,20 +132,20 @@ class TestContentSystems(WikiCase):
 
     def test_project_override_can_relocate_knowledge(self):
         target = self.root / "canonical-knowledge"
-        override = self.workspace / ".ai-work" / "config" / "content-systems.yaml"
+        override = self.workspace / ".tp-spec" / "config" / "content-systems.yaml"
         write(override, yaml.safe_dump({"systems": {"knowledge": {"root": str(target)}}}, sort_keys=False))
         cfg = load_content_systems(self.workspace, base_config_path=BASE_CONFIG, installation_config_path=self.installation_config)
         self.assertEqual(cfg.paths.knowledge_physical_root, target.resolve(strict=False))
-        self.assertEqual(cfg.paths.knowledge_logical_root, (self.workspace / ".ai-work" / "knowledge").resolve(strict=False))
+        self.assertEqual(cfg.paths.knowledge_logical_root, (self.workspace / ".tp-spec" / "knowledge").resolve(strict=False))
 
     def test_invalid_quality_sampling_configuration_fails_closed(self):
-        override = self.workspace / ".ai-work" / "config" / "content-systems.yaml"
+        override = self.workspace / ".tp-spec" / "config" / "content-systems.yaml"
         write(override, yaml.safe_dump({"systems": {"wiki": {"quality": {"semantic_audit_sample_docs": 0}}}}, sort_keys=False))
         with self.assertRaisesRegex(ContentSystemsConfigError, "positive integer"):
             load_content_systems(self.workspace, base_config_path=BASE_CONFIG, installation_config_path=self.installation_config)
 
     def test_invalid_mass_change_ratio_fails_closed(self):
-        override = self.workspace / ".ai-work" / "config" / "content-systems.yaml"
+        override = self.workspace / ".tp-spec" / "config" / "content-systems.yaml"
         write(override, yaml.safe_dump({"systems": {"wiki": {"snapshot": {"mass_change_ratio": 1.5}}}}, sort_keys=False))
         with self.assertRaisesRegex(ContentSystemsConfigError, "within 0..1"):
             load_content_systems(self.workspace, base_config_path=BASE_CONFIG, installation_config_path=self.installation_config)
@@ -154,7 +154,7 @@ class TestContentSystems(WikiCase):
         self.assertEqual(float(self.cfg.quality["initial_build_effective_coverage_min"]), 0.95)
 
     def test_invalid_initial_build_readiness_threshold_fails_closed(self):
-        override = self.workspace / ".ai-work" / "config" / "content-systems.yaml"
+        override = self.workspace / ".tp-spec" / "config" / "content-systems.yaml"
         write(override, yaml.safe_dump({"systems": {"wiki": {"quality": {"initial_build_effective_coverage_min": 1.1}}}}, sort_keys=False))
         with self.assertRaisesRegex(ContentSystemsConfigError, "within 0..1"):
             load_content_systems(self.workspace, base_config_path=BASE_CONFIG, installation_config_path=self.installation_config)
@@ -1057,7 +1057,7 @@ class TestCoverageAndSemanticClosure(WikiCase):
                 }],
             }],
         }, sort_keys=False))
-        override = self.workspace / ".ai-work" / "config" / "content-systems.yaml"
+        override = self.workspace / ".tp-spec" / "config" / "content-systems.yaml"
         write(override, yaml.safe_dump({"systems": {"wiki": {"root": str(central)}}}, sort_keys=False))
         write(self.repo / "src" / "GeneratedClient.java", "class GeneratedClient {}\n")
         cfg = load_content_systems(self.workspace, base_config_path=BASE_CONFIG, installation_config_path=self.installation_config)
@@ -1126,13 +1126,13 @@ class TestWikiContracts(unittest.TestCase):
     def test_scheduler_uses_versioned_canonical_prompt(self):
         boot = (BASE / "automation" / "wiki" / "SCHEDULER_BOOTSTRAP.md").read_text(encoding="utf-8")
         daily = (BASE / "automation" / "wiki" / "daily-maintenance.md").read_text(encoding="utf-8")
-        wrapper = (BASE / "scripts" / "Invoke-AiWorkCli.ps1").read_text(encoding="utf-8-sig")
+        wrapper = (BASE / "scripts" / "tp-spec.ps1").read_text(encoding="utf-8-sig")
         self.assertIn("automation/wiki/daily-maintenance.md", boot)
-        self.assertIn("Invoke-AiWorkCli.ps1", boot)
+        self.assertIn("tp-spec.ps1", boot)
         self.assertIn("MASS_CHANGE_REVIEW_REQUIRED", daily)
         self.assertIn("snapshot-commit", daily)
         self.assertIn("baseline", daily)
-        self.assertIn("Resolve-AiWorkBaseRoot", wrapper)
+        self.assertIn("Resolve-TpSpecBaseRoot", wrapper)
         self.assertIn("cli\\main.py", wrapper)
 
     def test_wiki_standard_and_initialized_data_do_not_embed_tools_directory(self):
@@ -1144,7 +1144,7 @@ class TestWikiContracts(unittest.TestCase):
 
     def test_cite_anchor_schema_is_versioned_machine_metadata(self):
         schema = (BASE / "wiki" / "schema" / "wiki-cite-anchors.schema.yaml").read_text(encoding="utf-8")
-        self.assertIn("ai-work.wiki-cite-anchors/v1", schema)
+        self.assertIn("tp-spec.wiki-cite-anchors/v1", schema)
         self.assertIn("COSMETIC", schema)
         self.assertIn("snapshot_id", schema)
 

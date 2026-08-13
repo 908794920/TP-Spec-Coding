@@ -108,6 +108,25 @@ def scan_texts(texts: Iterable[str], *, base_root: Optional["str | Path"] = None
     return {"floor": floor, "signals": hits}
 
 
+def _acceptance_risk_text(text: str) -> str:
+    """Remove static scaffold guidance while preserving selected acceptance values.
+
+    The acceptance template documents enum choices such as DDL/DML in comments and
+    explanatory inline-code lines. Those are not task facts and must not raise the
+    deterministic risk floor. A selected value (for example ``action: DML``) remains
+    in the scan input, so real database-change declarations still escalate.
+    """
+    lines: List[str] = []
+    for line in str(text or "").splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("`") and "`" in stripped[1:]:
+            continue
+        if re.match(r"^\s*[A-Za-z_][\w-]*\s*:", line):
+            line = line.split("#", 1)[0]
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def scan_task_artifacts(task_dir: "str | Path", *, base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
     root = Path(task_dir)
     if not root.is_dir():
@@ -125,6 +144,8 @@ def scan_task_artifacts(task_dir: "str | Path", *, base_root: Optional["str | Pa
         if remaining <= 0:
             break
         text = text[:remaining]
+        if path.name.lower() == "acceptance.md":
+            text = _acceptance_risk_text(text)
         texts.append(text)
         total += len(text)
     return scan_texts(texts, base_root=base_root)

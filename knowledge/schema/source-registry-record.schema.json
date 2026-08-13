@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ai-work.local/knowledge/schema/source-registry-record.schema.json",
+  "$id": "https://tp-spec.local/knowledge/schema/source-registry-record.schema.json",
   "title": "Knowledge Source Registry Record",
   "type": "object",
   "required": [

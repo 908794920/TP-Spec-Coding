@@ -69,7 +69,7 @@ _SENTINEL_RULES = [
     # 围栏代码块整体提取（可带语言标注行；非贪婪，嵌套围栏逐轮收敛）
     {"id": "code_block", "pattern": r"(?ms)^(?P<fence>```+|~~~+)[^\n]*\n.*?^(?P=fence)[ \t]*$"},
     # 命令形态：提示符行 / 受控命令 ID 行
-    {"id": "command", "pattern": r"(?m)^(?:[$>] |ai-work |python |pip |npm |git |docker |curl |wget )[^\n]+"},
+    {"id": "command", "pattern": r"(?m)^(?:[$>] |tp-spec |python |pip |npm |git |docker |curl |wget )[^\n]+"},
     # 错误形态
     {"id": "error", "pattern": r"(?im)^\s*(?:error|traceback|exception|failed)[^\n]*|\b(?:error|failed|failure):\s*[^\n]+"},
     # 哈希：sha256: 前缀或裸 64-hex（复用 _SHA256_RE 判定范式）

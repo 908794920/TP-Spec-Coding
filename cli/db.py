@@ -6,7 +6,7 @@
 
 职责：
 - connect / init_schema / migrate / verify_schema
-- resolve_db_path（按 §2.4 优先级：--db > AI_WORK_DB > registry > cwd/.ai-work/db/{project}.db）
+- resolve_db_path（按 §2.4 优先级：--db > TP_SPEC_DB > registry > cwd/.tp-spec/db/{project}.db）
 - register_project / list_projects（machine-local registry.local.json 读写）
 - transactional 上下文管理器（单事务语义）
 - now_iso（统一 +08:00 时间格式）
@@ -26,7 +26,7 @@ from cli.path_identity import canonical_path, same_path
 
 # 模块基目录（cli/db.py 所在目录）
 _MODULE_DIR = Path(__file__).resolve().parent
-# ai-work-base 根目录
+# tp-spec-base 根目录
 _BASE_ROOT = _MODULE_DIR.parent
 # schema.sql 路径（cli/../db/schema.sql）
 _SCHEMA_SQL_PATH = (_MODULE_DIR / ".." / "db" / "schema.sql").resolve()
@@ -169,20 +169,20 @@ def verify_schema(conn: sqlite3.Connection) -> Tuple[bool, List[str]]:
     return ok, details
 
 
-def user_ai_work_root() -> Path:
+def user_tp_spec_root() -> Path:
     """Return the machine-local TP-Spec-Coding state root without importing Base resolvers."""
-    env = os.environ.get("AI_WORK_USER_ROOT")
+    env = os.environ.get("TP_SPEC_USER_ROOT")
     if env:
         return canonical_path(env)
-    return canonical_path(Path.home() / ".ai-work")
+    return canonical_path(Path.home() / ".tp-spec")
 
 
 def registry_default_path() -> Path:
-    """Machine-local registry path, overridable with ``AI_WORK_REGISTRY``."""
-    env = os.environ.get("AI_WORK_REGISTRY")
+    """Machine-local registry path, overridable with ``TP_SPEC_REGISTRY``."""
+    env = os.environ.get("TP_SPEC_REGISTRY")
     if env:
         return canonical_path(env)
-    return user_ai_work_root() / "registry.local.json"
+    return user_tp_spec_root() / "registry.local.json"
 
 
 def legacy_registry_default_path() -> Path:
@@ -249,16 +249,16 @@ def resolve_db_path(
     """按优先级解析 db 路径：
 
     1. --db <path>
-    2. AI_WORK_DB 环境变量
+    2. TP_SPEC_DB 环境变量
     3. registry 中 project_id 对应的 db
     4. registry 中扫描包含 task_id 的 db
-    5. cwd/.ai-work/db/{project}.db（或 aiwork.db）
+    5. cwd/.tp-spec/db/{project}.db（或 tpspec.db）
 
-    legacy registry 中的相对路径仅作为兼容输入按 ai-work-base 根解析；现代 machine-local registry 写入绝对路径。
+    legacy registry 中的相对路径仅作为兼容输入按 tp-spec-base 根解析；现代 machine-local registry 写入绝对路径。
     """
     if args_db:
         return args_db
-    env_db = os.environ.get("AI_WORK_DB")
+    env_db = os.environ.get("TP_SPEC_DB")
     if env_db:
         return env_db
     reg_path = registry_read_path()
@@ -271,8 +271,8 @@ def resolve_db_path(
         if resolved:
             return resolved
     if project_id:
-        return str((Path.cwd() / ".ai-work" / "db" / f"{project_id}.db").resolve())
-    return str((Path.cwd() / ".ai-work" / "db" / "aiwork.db").resolve())
+        return str((Path.cwd() / ".tp-spec" / "db" / f"{project_id}.db").resolve())
+    return str((Path.cwd() / ".tp-spec" / "db" / "tpspec.db").resolve())
 
 
 def _lookup_db_in_registry(reg_path: Path, project_id: str) -> Optional[str]:
@@ -419,7 +419,7 @@ def list_projects(registry_path: Optional[str] = None) -> List[Dict[str, Any]]:
 
 
 def _resolve_project_db_abs(db_path: str) -> str:
-    """将 registry 中的 db_path 解析为绝对路径（相对路径以 ai-work-base 根为基准）。"""
+    """将 registry 中的 db_path 解析为绝对路径（相对路径以 tp-spec-base 根为基准）。"""
     if os.path.isabs(db_path):
         return db_path
     return str((_BASE_ROOT / db_path).resolve())
@@ -534,7 +534,7 @@ def remove_project(project_id: str, registry_path: Optional[str] = None) -> bool
 def prune_projects(registry_path: Optional[str] = None) -> Tuple[List[str], List[str]]:
     """清理指向已删除 db 文件的 registry 条目。返回 (removed, kept)。
 
-    遍历 registry projects，解析每个 db_path（相对路径以 ai-work-base 根为基准），
+    遍历 registry projects，解析每个 db_path（相对路径以 tp-spec-base 根为基准），
     若文件不存在则移除该条目。db 存在但 schema 不兼容的不删（由 db verify 报告）。
     """
     read_path, write_path, remove_legacy = _registry_mutation_paths(registry_path)

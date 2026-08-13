@@ -38,4 +38,4 @@ jobs:
       - run: python -m pip install -r requirements-dev.txt
       - name: Full Windows gate
         shell: pwsh
-        run: pwsh -File scripts/ci/Test-AiWorkBase.ps1 -Mode Full
+        run: pwsh -File scripts/ci/Test-TpSpecBase.ps1 -Mode Full

@@ -17,7 +17,7 @@ knowledge:
       retrieval_projection: "configured projection DB（可删除重建，不是事实源）"
       path_resolver: "governance/content-systems.yaml + project override"
     retrieval:
-      entry: "ai-work knowledge search"
+      entry: "tp-spec knowledge search"
       strategy: "canonical-first-fts5"
       source_fallback: true
       vector: "retired-compatible；存在旧表不代表活动能力"
@@ -65,21 +65,23 @@ responsibility:
   tp-architecture-design:
     role: "知识消费者与长期价值判断者"
     responsibilities:
-    - "设计/风险判断需要历史项目事实时优先 ai-work knowledge search，并按需回 source/evidence"
+    - "设计/风险判断需要历史项目事实时优先 tp-spec knowledge search，并按需回 source/evidence"
     - "判断当前任务是否产生长期知识价值；需要时确认 project/kind/knowledge_target 或记录 DEFERRED"
     - "不得直接把检索命中当成当前源码事实；代码事实仍回 Source/Wiki 核验"
   tp-delivery-convergence:
-    role: "可选 Knowledge candidate 整理者"
+    role: "Task 驱动的 Knowledge 内容收敛者"
     responsibilities:
-    - "只整理已验证、长期有效的候选事实和 evidence"
-    - "可形成可选 knowledge candidate/target，但不直接维护 Vault canonical、source registry、index 或 baseline"
-    - "没有明确长期价值时 DEFERRED，不阻止 COMPLETED"
+    - "只消费已验证的 Task/verification/交付事实；默认使用 compact fact pack，禁止全库重扫"
+    - "对本 Task 产生的长期知识执行 targeted search，优先 update/merge，必要时 create canonical 并绑定 evidence"
+    - "不得直接维护 source ingest/registry、Golden Set、全库 audit/migration/scheduler 治理；不得调度或 handoff tp-knowledge"
+    - "没有明确长期价值时走 Fast Path，不制造空文档或额外 AI 工作"
   tp-knowledge:
-    role: "Knowledge Content System 唯一标准维护 Skill"
+    role: "独立 Knowledge Content System 专项维护 Skill"
     responsibilities:
     - "检索、外部文档/source 注册、canonical update/create/merge、evidence 维护"
     - "运行 Knowledge L1-L4、index、telemetry、audit 与 trusted baseline"
     - "无人值守定时维护按 automation/knowledge 当前 canonical protocol 执行"
+    - "保留全部现有 Knowledge 专项能力；不属于开发 workflow，不由 tp-workflow-orchestrator 或 tp-delivery-convergence 调度"
   tp-base-maintenance:
     role: "Base 健康/同步 owner"
     responsibilities:
@@ -95,16 +97,16 @@ workflow:
     trigger: "需求/设计/排障存在可从长期知识确认的具体缺口"
     steps:
     - "resolve Content Systems"
-    - "ai-work knowledge search（知道 project-id 时按问题范围使用 project filter）"
+    - "tp-spec knowledge search（知道 project-id 时按问题范围使用 project filter）"
     - "canonical 命中优先；需要证明时下钻 source/evidence"
     - "涉及当前代码实现时再用 Wiki 缩小范围并回 Source Code 核验"
   task_capture:
     trigger: "任务确实产生已验证、长期可复用知识"
     steps:
-    - "架构/交付角色标记 knowledge value/target 或候选 evidence；没有则 DEFERRED"
-    - "tp-knowledge 在显式维护范围内搜索已有 canonical"
-    - "update/merge 优先于 create"
-    - "index → verify → L4(if required) → snapshot-commit"
+    - "架构阶段只标记长期知识价值/target；交付阶段消费已验证 compact fact pack"
+    - "tp-delivery-convergence 对 Task 驱动事实执行 targeted search → update/create/merge，并绑定 evidence"
+    - "update/merge 优先于 create；没有长期价值时 Fast Path 直接收敛"
+    - "必要时 index update → verify → snapshot-commit；不得因此调度 tp-knowledge"
     completion_gate: false
   external_ingest:
     protocol: "automation/knowledge/ingest-batch.md"

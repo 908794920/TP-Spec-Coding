@@ -6,7 +6,7 @@
 2. 怎么把已有项目交给 AI 接入；
 3. 换电脑或移动项目以后怎么恢复，而不是重新配置一遍所有历史事实。
 
-> TP-Spec-Coding 的公共仓库不携带任何作者机器路径、项目注册、Runtime DB、Wiki 或 Knowledge 用户数据。机器信息只在你自己的 `~/.ai-work/` 下生成。
+> TP-Spec-Coding 的公共仓库不携带任何作者机器路径、项目注册、Runtime DB、Wiki 或 Knowledge 用户数据。机器信息只在你自己的 `~/.tp-spec/` 下生成。
 
 ## 1. 准备环境
 
@@ -40,9 +40,9 @@ db/registry.local.json.example
 真正运行时使用的是当前用户自己的机器状态：
 
 ```text
-~/.ai-work/installation.yaml
-~/.ai-work/workspaces.yaml
-~/.ai-work/registry.local.json
+~/.tp-spec/installation.yaml
+~/.tp-spec/workspaces.yaml
+~/.tp-spec/registry.local.json
 ```
 
 Windows 的 `~` 代表当前用户 Home，Linux/macOS 同理。
@@ -83,10 +83,10 @@ python -m cli.main base installation-doctor
 在 Base 根目录也可以：
 
 ```powershell
-pwsh -File scripts/Invoke-AiWorkCli.ps1 base installation-doctor
+pwsh -File scripts/tp-spec.ps1 base installation-doctor
 ```
 
-包装器解析 Base 的优先级包括 `AI_WORK_BASE_ROOT`、用户 installation 配置和当前脚本真实位置，用于避免把 Base 绝对路径写进业务项目。
+包装器解析 Base 的优先级包括 `TP_SPEC_BASE_ROOT`、用户 installation 配置和当前脚本真实位置，用于避免把 Base 绝对路径写进业务项目。
 
 ## 4. 让 AI 帮你完成第一次配置
 
@@ -122,7 +122,7 @@ python -m cli.main project init \
   --root "<project-root>"
 ```
 
-`project init` 会创建项目 Runtime，并写入 `.ai-work/config/project-binding.yaml` 作为稳定 portable identity；如果该目录已经绑定到另一个 project id，会直接拒绝，避免覆盖错项目。
+`project init` 会创建项目 Runtime，并写入 `.tp-spec/config/project-binding.yaml` 作为稳定 portable identity；如果该目录已经绑定到另一个 project id，会直接拒绝，避免覆盖错项目。
 
 然后同步 portable project entry：
 
@@ -154,9 +154,9 @@ tp-workflow-orchestrator
 
 ```text
 请使用 TP-Spec-Coding 处理这个任务。
-先通过 AI_WORK_BASE_ROOT 或 ~/.ai-work/installation.yaml 定位 Base，
+先通过 TP_SPEC_BASE_ROOT 或 ~/.tp-spec/installation.yaml 定位 Base，
 读取 agents/tp-workflow-orchestrator/SKILL.md，
-再读取当前项目的 managed entry 和已有 .ai-work Task/Runtime 事实。
+再读取当前项目的 managed entry 和已有 .tp-spec Task/Runtime 事实。
 不要跳过已有历史，不要由 Orchestrator 代替专业角色记账。
 ```
 
@@ -206,7 +206,7 @@ tp-wiki
 根据你的存储策略复制或重新 clone：
 
 - TP-Spec-Coding 源码；
-- 业务项目源码以及项目自己的 `.ai-work`；
+- 业务项目源码以及项目自己的 `.tp-spec`；
 - Wiki / Knowledge 数据（如果你需要沿用）；
 
 ### 不要直接复制什么
@@ -214,9 +214,9 @@ tp-wiki
 不要把旧机器的以下文件当成 portable truth：
 
 ```text
-~/.ai-work/installation.yaml
-~/.ai-work/workspaces.yaml
-~/.ai-work/registry.local.json
+~/.tp-spec/installation.yaml
+~/.tp-spec/workspaces.yaml
+~/.tp-spec/registry.local.json
 ```
 
 它们保存的是旧机器 locator。
@@ -268,13 +268,13 @@ Orchestrator 只是调度，真实 requirement / architecture / development / ve
 
 ## 11. Git 中应该提交什么
 
-业务项目是否提交 `.ai-work` 由你的项目策略决定；如果它作为研发事实历史跟项目走，就应明确纳入版本管理策略。
+业务项目是否提交 `.tp-spec` 由你的项目策略决定；如果它作为研发事实历史跟项目走，就应明确纳入版本管理策略。
 
 TP-Spec-Coding 公共仓库本身不应提交：
 
 - `db/registry.local.json`；
 - Runtime `*.db` / `*.db-wal` / `*.db-shm`；
-- `~/.ai-work/*`；
+- `~/.tp-spec/*`；
 - 用户 Wiki / Knowledge 数据；
 - 本机绝对路径；
 - 测试缓存和临时产物。
@@ -286,8 +286,8 @@ TP-Spec-Coding 公共仓库本身不应提交：
 检查：
 
 ```text
-AI_WORK_BASE_ROOT
-~/.ai-work/installation.yaml
+TP_SPEC_BASE_ROOT
+~/.tp-spec/installation.yaml
 ```
 
 然后：
@@ -332,11 +332,11 @@ Orchestrator 故障时可以按 `agents/role-catalog.yaml` 手工加载对应内
 正式项目名是 **TP-Spec-Coding**，但以下技术 namespace 为兼容历史 Task / DB 保持不变：
 
 ```text
-ai-work CLI
-.ai-work/
-~/.ai-work/
-ai-work.* schema
-AI_WORK_BASE_ROOT
+tp-spec CLI
+.tp-spec/
+~/.tp-spec/
+tp-spec.* schema
+TP_SPEC_BASE_ROOT
 ```
 
 这属于稳定接口，而不是旧品牌残留。

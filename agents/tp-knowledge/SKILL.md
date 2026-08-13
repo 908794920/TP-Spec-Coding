@@ -22,7 +22,9 @@ Knowledge 是 TP-Spec-Coding 的**长期可复用知识层**：业务规则、�
 - Task Runtime：一次研发发生了什么。
 - Knowledge：跨 Task 长期复用的事实、规则、经验与证据索引。
 
-本 Skill 不维护 Base VERSION、公共 Junction、`.ai-work` 受管块或基座同步；需要时调用 `tp-base-maintenance`。不拥有 workflow state，不成为 Task 完成 Gate。
+本 Skill 不维护 Base VERSION、公共 Junction、`.tp-spec` 受管块或基座同步；需要时调用 `tp-base-maintenance`。不拥有 workflow state，不成为 Task 完成 Gate。
+
+**与开发工作流完全独立：** `tp-knowledge` 不是 `tp-workflow-orchestrator` 的阶段，也不得被 `tp-delivery-convergence` 调用、handoff 或等待。它保留本文定义的全部 Knowledge 专项能力；普通研发 Task 的内容收敛由 delivery 自己完成。
 
 ## 1. 权威关系
 
@@ -52,12 +54,12 @@ Embedding/vector 已做历史评测并因收益不足退役；数据库里存在
 
 1. 用共享 Content Systems Resolver 解析 `knowledge_physical_root`、registry、projection DB、meta root；不硬编码 Vault 绝对路径。
 2. 读取 `knowledge/README.md` 与 `knowledge/rules/*` 当前 Base 规范。
-3. 运行 `ai-work knowledge doctor --workspace-root <workspace>`；需要内容变更时再运行 `knowledge maintain`。
-4. 检索优先：先 `ai-work knowledge search -q ...` 找已有 canonical，再按需读 source/evidence；禁止先全库扫 Markdown 再猜重复项。
+3. 运行 `tp-spec knowledge doctor --workspace-root <workspace>`；需要内容变更时再运行 `knowledge maintain`。
+4. 检索优先：先 `tp-spec knowledge search -q ...` 找已有 canonical，再按需读 source/evidence；禁止先全库扫 Markdown 再猜重复项。
 
 默认检索 Scope 必须是当前项目 + registered shared scopes；只有显式跨项目任务才使用 `--scope global`。全局 SQLite 投影不等于全局默认检索。
 
-Junction 仅是兼容/浏览入口。Knowledge System Root 与 Project Root 都是 Resolver 的结果；不得依赖 `.ai-work/knowledge` 链接。
+Junction 仅是兼容/浏览入口。Knowledge System Root 与 Project Root 都是 Resolver 的结果；不得依赖 `.tp-spec/knowledge` 链接。
 
 ## 3. 日常内容维护
 
@@ -137,9 +139,9 @@ Knowledge 定时器的执行者是**对话模型**，不是单纯脚本。Schedu
 
 ## 7. 检索与可观测性
 
-优先通过 `ai-work knowledge search` 使用标准投影。标准搜索只记录 query hash、模式、候选/结果数量、fallback、耗时等轻量 telemetry，不保存原始 query 正文。
+优先通过 `tp-spec knowledge search` 使用标准投影。标准搜索只记录 query hash、模式、候选/结果数量、fallback、耗时等轻量 telemetry，不保存原始 query 正文。
 
-关注：canonical hit、source fallback、no-result、latency。检索策略变化前运行 `ai-work knowledge eval` 对当前 Golden Set 回归；不得仅因旧 DB 存在 vector 表而恢复 Embedding。它们用于判断 Knowledge 是否真正帮助 Agent，而不是把“文档数”当产品 KPI。
+关注：canonical hit、source fallback、no-result、latency。检索策略变化前运行 `tp-spec knowledge eval` 对当前 Golden Set 回归；不得仅因旧 DB 存在 vector 表而恢复 Embedding。它们用于判断 Knowledge 是否真正帮助 Agent，而不是把“文档数”当产品 KPI。
 
 ## 8. 禁止事项
 

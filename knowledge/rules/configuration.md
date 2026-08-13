@@ -17,15 +17,15 @@ System Root is resolved from, in precedence order:
 1. project Content Systems override;
 2. user Installation `systems.knowledge.root`;
 3. Base default `systems.knowledge.root`;
-4. zero-config fallback `<workspace>/.ai-work/knowledge`.
+4. zero-config fallback `<workspace>/.tp-spec/knowledge`.
 
 Default user Installation path:
 
 ```text
-~/.ai-work/installation.yaml
+~/.tp-spec/installation.yaml
 ```
 
-Project identity comes from `<workspace>/.ai-work/config/project-binding.yaml` and/or exact `project-registry.yaml.workspace_roots` mapping. During one-time convergence only, an existing `.ai-work/knowledge` Junction/symlink may seed the binding **only when its resolved target exactly equals one registered `10-projects/<id>` directory**. Runtime must not guess project ID from folder names when a registry exists; once the binding is written, the legacy-link fallback is no longer needed.
+Project identity comes from `<workspace>/.tp-spec/config/project-binding.yaml` and/or exact `project-registry.yaml.workspace_roots` mapping. During one-time convergence only, an existing `.tp-spec/knowledge` Junction/symlink may seed the binding **only when its resolved target exactly equals one registered `10-projects/<id>` directory**. Runtime must not guess project ID from folder names when a registry exists; once the binding is written, the legacy-link fallback is no longer needed.
 
 Registry, projection DB and meta stay relative to the **System Root**:
 
@@ -34,7 +34,7 @@ Registry, projection DB and meta stay relative to the **System Root**:
 - machine meta: `.ai-kb/meta`;
 - Golden evaluation: configured `evaluation.golden_set/output_root`.
 
-A `.ai-work/knowledge` Junction is compatibility-only and may be removed after Resolver equivalence is verified.
+A `.tp-spec/knowledge` Junction is compatibility-only and may be removed after Resolver equivalence is verified.
 
 ## 2. Project-scoped retrieval
 

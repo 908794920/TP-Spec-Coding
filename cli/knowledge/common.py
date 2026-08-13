@@ -218,7 +218,7 @@ def resolve_knowledge_project(cfg: ResolvedConfig, *, require: bool = False) -> 
     # tp-base-maintenance writes project-binding.yaml this fallback is no longer
     # needed and the link can be removed safely.
     if match is None:
-        legacy = cfg.paths.workspace_root / ".ai-work" / "knowledge"
+        legacy = cfg.paths.workspace_root / ".tp-spec" / "knowledge"
         link_like = legacy.is_symlink()
         try:
             checker = getattr(legacy, "is_junction", None)
@@ -337,7 +337,7 @@ def knowledge_truth_snapshot(cfg: ResolvedConfig) -> Dict[str, Any]:
     source_registry = meta_paths(cfg)["source_registry"]
     if source_registry.is_file():
         files[".ai-kb/meta/source-registry.jsonl"] = {"scope": "source-registry", "sha256": hashlib.sha256(source_registry.read_bytes()).hexdigest(), "id": "", "project": ""}
-    subject = {"schema": "ai-work.knowledge-snapshot/v1", "files": files}
+    subject = {"schema": "tp-spec.knowledge-snapshot/v1", "files": files}
     subject["snapshot_id"] = stable_hash(subject)
     return subject
 

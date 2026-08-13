@@ -1,4 +1,4 @@
-schema: ai-work.project-binding/v1
+schema: tp-spec.project-binding/v1
 project:
   id: replace-me
   # Optional only when the central registries use different IDs.

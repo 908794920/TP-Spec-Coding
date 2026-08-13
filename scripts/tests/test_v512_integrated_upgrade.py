@@ -31,12 +31,16 @@ TASK_ID = "TASK-V512-INTEGRATED"
 
 
 def _advance_to_verifying(task_dir: str, db_path: str, task_id: str = TASK_ID) -> None:
-    rc, out, err = run([
-        "task", "checkpoint", "--task", task_id, "--task-dir", task_dir, "--db", db_path,
-        "--actor", "tp-development-engineering", "--phase", "development",
-        "--summary", "implementation completed",
-    ])
-    assert rc == 0, (out, err)
+    for actor, phase, summary in (
+        ("tp-requirement-analysis", "requirement", "requirement complete"),
+        ("tp-architecture-design", "architecture", "architecture complete"),
+        ("tp-development-engineering", "development", "implementation completed"),
+    ):
+        rc, out, err = run([
+            "task", "checkpoint", "--task", task_id, "--task-dir", task_dir, "--db", db_path,
+            "--actor", actor, "--phase", phase, "--summary", summary,
+        ])
+        assert rc == 0, (out, err)
 
 
 def _set_human_pending(task_dir: str, *, ac: str = "AC-01") -> None:
@@ -201,7 +205,7 @@ class TestContractUpgradeAndPlanning(unittest.TestCase):
 
     def test_project_upgrade_contract_changes_project_only(self):
         root = self.work / "project"
-        db_path = root / ".ai-work" / "db" / "p.db"
+        db_path = root / ".tp-spec" / "db" / "p.db"
         db_path.parent.mkdir(parents=True)
         legacy = ".".join(["5", "1", "1"])
         conn = dbmod.connect(str(db_path))
@@ -292,7 +296,7 @@ class TestContractUpgradeAndPlanning(unittest.TestCase):
         self.assertIn("PROJECT_NOT_INITIALIZED", data["errors"])
 
     def test_powershell_validator_uses_record_first_integrity_path(self):
-        p = BASE / "scripts" / "Test-AiWorkTask.ps1"
+        p = BASE / "scripts" / "Test-TpSpecTask.ps1"
         raw = p.read_bytes()
         self.assertTrue(raw.startswith(b"\xef\xbb\xbf"), "Windows PowerShell 5.1 public validator must be UTF-8 BOM")
         text = raw.decode("utf-8-sig")
@@ -337,7 +341,7 @@ class TestContractUpgradeAndPlanning(unittest.TestCase):
         for required in ("recorded_at", "residual_risk", "reverify_owner", "trigger"):
             self.assertTrue(fields.get(required), required)
 
-        ps = (BASE / "scripts" / "Test-AiWorkTask.ps1").read_text(encoding="utf-8-sig")
+        ps = (BASE / "scripts" / "Test-TpSpecTask.ps1").read_text(encoding="utf-8-sig")
         acceptance_section = ps[ps.index("$deferredRecords = @{}") : ps.index("# 人工页面验收声明") ]
         self.assertNotIn(r"\s{4,}", acceptance_section)
         self.assertGreaterEqual(acceptance_section.count(r"[ \t]{2,}"), 4)

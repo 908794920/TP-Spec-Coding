@@ -11,7 +11,7 @@ from .coverage import classify_wiki_eligible_sources
 from .snapshot import snapshot_paths, utc_now
 from .topology import analyze_topology
 
-PLAN_SCHEMA = "ai-work.wiki-rebuild-plan/v1"
+PLAN_SCHEMA = "tp-spec.wiki-rebuild-plan/v1"
 
 
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:

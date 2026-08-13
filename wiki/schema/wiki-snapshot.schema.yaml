@@ -1,4 +1,4 @@
-schema: ai-work.wiki-snapshot/v1
+schema: tp-spec.wiki-snapshot/v1
 required:
   - repo_id
   - snapshot_id

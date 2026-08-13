@@ -14,7 +14,7 @@ from .anchors import apply_cosmetic_citation_relocations
 from .source import fingerprint_file, resolve_repo_relative
 from .snapshot import snapshot_paths
 
-MANIFEST_SCHEMA = "ai-work.wiki-manifest/v1"
+MANIFEST_SCHEMA = "tp-spec.wiki-manifest/v1"
 DOCUMENT_TYPES = {"content-doc", "concept-card", "module-index"}
 DEPENDENCY_ROLES = {"primary", "context", "reference"}
 _CITE_RE = re.compile(
@@ -211,7 +211,7 @@ def refresh_manifest(
             "repo_root": str(repo_root),
             "generated_at": utc_now(),
             "provenance": {
-                "manifest_refresh": {"type": "deterministic", "tool": "ai-work wiki manifest-refresh", "refreshed_at": utc_now()},
+                "manifest_refresh": {"type": "deterministic", "tool": "tp-spec wiki manifest-refresh", "refreshed_at": utc_now()},
                 "semantic_content": {"type": "mixed-or-not-recorded", "model": "not-recorded"},
             },
             "documents": [],
@@ -228,7 +228,7 @@ def refresh_manifest(
     provenance = manifest.get("provenance") if isinstance(manifest.get("provenance"), dict) else {}
     provenance["manifest_refresh"] = {
         "type": "deterministic",
-        "tool": "ai-work wiki manifest-refresh",
+        "tool": "tp-spec wiki manifest-refresh",
         "refreshed_at": manifest["generated_at"],
     }
     provenance.setdefault("semantic_content", {"type": "mixed-or-not-recorded", "model": "not-recorded"})

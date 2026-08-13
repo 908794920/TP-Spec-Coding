@@ -1,6 +1,6 @@
 # V5.1.0 P4 single-contract regression: build a real 5.1.0 task and drive the
 # full L1 chain (NEW->DEVELOPING->VERIFYING->CLOSING->COMPLETED) through the CLI,
-# then validate with Test-AiWorkTask.ps1. Plus negative tests.
+# then validate with Test-TpSpecTask.ps1. Plus negative tests.
 import os, sys, shutil, sqlite3, subprocess, tempfile, re
 from pathlib import Path
 
@@ -17,9 +17,9 @@ def check(name, cond, detail=""):
 work = tempfile.mkdtemp(prefix="v510p4-")
 proj_root = os.path.join(work, "proj")
 task_id = "TASK-20260729-905"
-task_dir = os.path.join(proj_root, ".ai-work", "tasks", task_id)
+task_dir = os.path.join(proj_root, ".tp-spec", "tasks", task_id)
 os.makedirs(task_dir, exist_ok=True)
-db_path = os.path.join(proj_root, ".ai-work", "db", "p4.db")
+db_path = os.path.join(proj_root, ".tp-spec", "db", "p4.db")
 os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
 # 1. init DB + project (base_version 5.1.0)
@@ -51,7 +51,7 @@ def run(argv):
 
 def validate():
     r = subprocess.run(["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-File",
-                        os.path.join(BASE,"scripts","Test-AiWorkTask.ps1"),"-TaskPath",task_dir],
+                        os.path.join(BASE,"scripts","Test-TpSpecTask.ps1"),"-TaskPath",task_dir],
                        capture_output=True, text=True)
     return r.returncode, r.stdout + r.stderr
 
@@ -85,7 +85,7 @@ check("validator_completed_0errors", vrc == 0, vout.strip().splitlines()[-6:] if
 
 # --- Negative tests (fresh task each) ---
 def fresh(tid, risk="L1"):
-    td = os.path.join(proj_root, ".ai-work", "tasks", tid)
+    td = os.path.join(proj_root, ".tp-spec", "tasks", tid)
     os.makedirs(td, exist_ok=True)
     for fn in os.listdir(tpl):
         shutil.copy(os.path.join(tpl, fn), os.path.join(td, fn))

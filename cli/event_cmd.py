@@ -7,7 +7,7 @@
 - event sync（M5-C）：回流 flush 追加的 events.jsonl 事件到 DB，同事务推进 task 表
 
 核心保证：
-- event add 的 type 必须在 Test-AiWorkTask.ps1 EventTypes 内
+- event add 的 type 必须在 Test-TpSpecTask.ps1 EventTypes 内
 - actor 非空保证
 - event sync 幂等（flush_id 去重），不变量 task.current_state == events.jsonl 末条 STATE.state
 """
@@ -76,7 +76,7 @@ def cmd_event_add(args) -> int:
             f"ERROR: {event_policies.GOVERNANCE_EVENT_REQUIRES_TRUSTED_PRODUCER}: "
             f"event add cannot produce governance event '{args.type}'; "
             f"it must be produced by its trusted command "
-            f"(e.g. 'ai-work commit', 'ai-work review record', 'ai-work receipt record')",
+            f"(e.g. 'tp-spec commit', 'tp-spec review record', 'tp-spec receipt record')",
             file=sys.stderr,
         )
         return 8
@@ -261,7 +261,7 @@ def cmd_event_sync(args) -> int:
             print(
                 "EVENT_SYNC_STATE_MUTATION_FORBIDDEN: event sync must not advance authoritative "
                 "state (STATE/HANDOFF/owner/completed_at/cancel). "
-                "Use 'ai-work commit' for state transitions, or '--admin-recovery' with "
+                "Use 'tp-spec commit' for state transitions, or '--admin-recovery' with "
                 "--confirm-admin-recovery ADMIN_RECOVERY for explicit managed recovery.",
                 file=sys.stderr,
             )
@@ -394,7 +394,7 @@ def cmd_event_sync(args) -> int:
                     )
                     inserted += 1
         # V5.2.0 Hardening：非状态 FACT 导入禁止 UPDATE task 表（§4.3）。
-        # 权威状态只允许经 ai-work commit / --admin-recovery 修改。
+        # 权威状态只允许经 tp-spec commit / --admin-recovery 修改。
         print(
             f"event sync: imported {len(new_flush_ids)} non-state flush group(s), "
             f"inserted {inserted} FACT event(s); task table untouched (state/owner unchanged)"

@@ -2,11 +2,14 @@
 """Machine-local TP-Spec-Coding installation lifecycle helpers."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from cli import db as dbmod
 from cli.path_identity import canonical_path, same_path
+from cli.launcher import install_launchers, launcher_health
+from cli.namespace_migration import legacy_user_root
 from cli.environment import (
     INSTALLATION_SCHEMA,
     EnvironmentConfigError,
@@ -31,7 +34,7 @@ def installation_doctor(
 ) -> Dict[str, Any]:
     path = canonical_path(installation_config) if installation_config else default_installation_path()
     result: Dict[str, Any] = {
-        "schema": "ai-work.installation-health/v1",
+        "schema": "tp-spec.installation-health/v1",
         "path": str(path),
         "status": "FAIL",
         "health": "REPAIR_REQUIRED",
@@ -40,8 +43,12 @@ def installation_doctor(
         "actions": [],
     }
     if not path.is_file():
-        result["issues"].append("installation config missing")
-        result["actions"].append("RUN_BASE_CONFIGURE")
+        if installation_config is None and legacy_user_root().exists():
+            result["issues"].append("LEGACY_NAMESPACE_DETECTED: migrate the legacy user namespace before configure")
+            result["actions"].append("RUN_NAMESPACE_MIGRATE")
+        else:
+            result["issues"].append("installation config missing")
+            result["actions"].append("RUN_BASE_CONFIGURE")
         return result
     try:
         cfg = load_installation_config(path)
@@ -65,6 +72,13 @@ def installation_doctor(
             "legacy_exists": dbmod.legacy_registry_default_path().is_file(),
         },
     })
+    launcher = launcher_health(
+        base_root=cfg.base_root, state_root=path.parent,
+        require_path=(os.name == "nt" and installation_config is None),
+    )
+    result["launcher"] = launcher
+    if launcher.get("status") != "PASS":
+        result["issues"].extend([f"launcher: {msg}" for msg in launcher.get("issues") or []])
     if not base.get("valid"):
         result["issues"].append("configured Base root is invalid")
     if not wiki["configured"] or not wiki["is_dir"]:
@@ -77,7 +91,7 @@ def installation_doctor(
         result["warnings"].append(f"executing Base differs from installation base.root: {executing}")
         result["actions"].append("REVIEW_BASE_ROOT_DRIFT")
     if dbmod.legacy_registry_default_path().is_file():
-        result["warnings"].append("legacy Base-local runtime registry exists; migrate it to machine-local ~/.ai-work state")
+        result["warnings"].append("legacy Base-local runtime registry exists; migrate it to machine-local ~/.tp-spec state")
         result["actions"].append("RUN_BASE_INSTALLATION_MIGRATE")
 
     if result["issues"]:
@@ -105,6 +119,11 @@ def configure_installation(
     must be supplied explicitly before it can be replaced.
     """
     path = canonical_path(installation_config) if installation_config else default_installation_path()
+    if installation_config is None and legacy_user_root().exists() and not path.exists():
+        return {
+            "schema": INSTALLATION_SCHEMA, "status": "BLOCKED", "path": str(path),
+            "error": "LEGACY_NAMESPACE_DETECTED: run 'python -m cli.main base namespace-migrate --workspace-root <project> --apply' first",
+        }
     before = path.read_bytes() if path.is_file() else None
     existing = None
     invalid_existing = None
@@ -137,6 +156,12 @@ def configure_installation(
         return {"schema": INSTALLATION_SCHEMA, "status": "BLOCKED", "path": str(path), "error": f"Knowledge System Root does not exist: {knowledge}"}
 
     write_installation_config(base_root=base, wiki_root=wiki, knowledge_root=knowledge, path=path)
+    launcher_result = install_launchers(
+        base_root=base, state_root=path.parent,
+        persist_path=(os.name == "nt" and installation_config is None),
+    )
+    if launcher_result.get("status") != "PASS":
+        return {"schema": INSTALLATION_SCHEMA, "status": "FAIL", "path": str(path), "launcher": launcher_result}
     after = path.read_bytes()
     if before is None:
         action = "CREATED"
@@ -153,6 +178,7 @@ def configure_installation(
         "base_root": str(base),
         "wiki_root": str(wiki),
         "knowledge_root": str(knowledge),
+        "launcher": launcher_result,
         "health": health,
     }
 
@@ -167,13 +193,13 @@ def installation_migration(
     """Migrate recognized machine-local installation state without guessing paths."""
     path = canonical_path(installation_config) if installation_config else default_installation_path()
     if not path.is_file():
-        return {"schema": "ai-work.installation-migration/v1", "status": "BLOCKED", "path": str(path), "blockers": ["installation config missing"]}
+        return {"schema": "tp-spec.installation-migration/v1", "status": "BLOCKED", "path": str(path), "blockers": ["installation config missing"]}
     try:
         cfg = load_installation_config(path)
     except (EnvironmentConfigError, OSError, ValueError) as exc:
-        return {"schema": "ai-work.installation-migration/v1", "status": "BLOCKED", "path": str(path), "blockers": [f"installation config invalid: {exc}"]}
+        return {"schema": "tp-spec.installation-migration/v1", "status": "BLOCKED", "path": str(path), "blockers": [f"installation config invalid: {exc}"]}
     if cfg.data.get("schema") != INSTALLATION_SCHEMA:
-        return {"schema": "ai-work.installation-migration/v1", "status": "BLOCKED", "path": str(path), "blockers": [f"unsupported installation schema: {cfg.data.get('schema')}"]}
+        return {"schema": "tp-spec.installation-migration/v1", "status": "BLOCKED", "path": str(path), "blockers": [f"unsupported installation schema: {cfg.data.get('schema')}"]}
 
     registry = dbmod.migrate_legacy_registry_to_user(
         apply=apply,
@@ -189,7 +215,7 @@ def installation_migration(
     else:
         status = "CURRENT"
     return {
-        "schema": "ai-work.installation-migration/v1",
+        "schema": "tp-spec.installation-migration/v1",
         "status": status,
         "apply": bool(apply),
         "path": str(path),

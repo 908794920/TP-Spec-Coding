@@ -146,7 +146,7 @@ def evaluate(cfg, *, golden_path: Optional[str]=None, output: Optional[str]=None
             rank=_match_rank(g,hits,aliases,limit)
             qrows.append({"id":g["id"],"answer_type":g["answer_type"],"category":g.get("category",""),"rank":rank,"matched":bool(rank),"hit_count":len(hits),"latency_ms":round(elapsed,3)})
         per_mode[mode]={"metrics":_metrics(qrows),"per_question":qrows}
-    result={"schema":"ai-work.knowledge-golden-eval/v1","status":"PASS","generated_at":now_iso(),"golden_set":str(path),"golden_count":len(golden),"retrieval_authority":str(cfg.knowledge_retrieval.get("strategy") or "canonical-first-fts5"),"vector_mode":str(cfg.knowledge_projection.get("vector_mode") or "retired-compatible"),"modes":per_mode}
+    result={"schema":"tp-spec.knowledge-golden-eval/v1","status":"PASS","generated_at":now_iso(),"golden_set":str(path),"golden_count":len(golden),"retrieval_authority":str(cfg.knowledge_retrieval.get("strategy") or "canonical-first-fts5"),"vector_mode":str(cfg.knowledge_projection.get("vector_mode") or "retired-compatible"),"modes":per_mode}
     if output:
         out=Path(output)
         if not out.is_absolute(): out=cfg.paths.knowledge_physical_root/out

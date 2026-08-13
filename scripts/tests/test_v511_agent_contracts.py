@@ -76,8 +76,8 @@ class TestAgentSkills(unittest.TestCase):
         ):
             text = read_skill(agent)
             self.assertNotIn("stage_handoff:", text, agent)
-        self.assertIn("不再进入 CLOSING", read_skill("tp-verification-engineering"))
-        self.assertIn("无需拥有 CLOSING", read_skill("tp-delivery-convergence"))
+        self.assertIn("验收角色不得自行 `task complete`", read_skill("tp-verification-engineering"))
+        self.assertIn("`PIPELINE_COMPLETE`", read_skill("tp-delivery-convergence"))
 
 
 class TestCostTiering(unittest.TestCase):

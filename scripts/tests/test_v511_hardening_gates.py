@@ -34,7 +34,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-BASE = Path(__file__).resolve().parent.parent.parent  # ai-work-base
+BASE = Path(__file__).resolve().parent.parent.parent  # tp-spec-base
 sys.path.insert(0, str(BASE))
 
 from cli import db as dbmod  # noqa: E402
@@ -220,7 +220,7 @@ class TestStateBypassNegative(unittest.TestCase):
         self.assertIn("EVENT_SYNC_STATE_MUTATION_FORBIDDEN", err)
 
     # ---- §15.1-3：无 tp-verification PASS 不得 CLOSING ----
-    def test_no_pass_can_complete_truthfully_without_inventing_pass(self):
+    def test_no_pass_cannot_bypass_required_l2_pipeline(self):
         rc, out, err = run([
             "task", "checkpoint", "--task", TASK_ID, "--task-dir", str(self.task_dir),
             "--db", self.db_path, "--actor", "tp-development-engineering",
@@ -230,20 +230,23 @@ class TestStateBypassNegative(unittest.TestCase):
         rc, out, err = run([
             "task", "complete", "--task", TASK_ID, "--task-dir", str(self.task_dir),
             "--db", self.db_path, "--actor", "tp-development-engineering",
-            "--summary", "work ended; verification not recorded",
+            "--summary", "attempt completion before required pipeline",
         ])
-        self.assertEqual(rc, 0, (out, err))
-        self.assertEqual(json.loads(out)["verification"], "NOT_RECORDED")
-        final = (Path(self.task_dir) / "generated" / "final-result.md").read_text(encoding="utf-8")
-        self.assertIn("NOT_RECORDED", final)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("INTEGRITY_PIPELINE_PENDING", err + out)
 
     # ---- §15.1-4：L2/L3 通过自动质量门禁后可直接 CLOSING ----
-    def test_l2_verification_pass_allows_direct_completion_without_personnel_approval(self):
-        run([
-            "task", "checkpoint", "--task", TASK_ID, "--task-dir", str(self.task_dir),
-            "--db", self.db_path, "--actor", "tp-development-engineering",
-            "--phase", "development", "--summary", "implementation complete",
-        ])
+    def test_l2_verification_pass_requires_delivery_before_completion(self):
+        for actor, phase, summary in (
+            ("tp-requirement-analysis", "requirement", "requirement complete"),
+            ("tp-architecture-design", "architecture", "architecture complete"),
+            ("tp-development-engineering", "development", "implementation complete"),
+        ):
+            rc, out, err = run([
+                "task", "checkpoint", "--task", TASK_ID, "--task-dir", str(self.task_dir),
+                "--db", self.db_path, "--actor", actor, "--phase", phase, "--summary", summary,
+            ])
+            self.assertEqual(rc, 0, (out, err))
         rc, out, err = run([
             "task", "verify", "--task", TASK_ID, "--task-dir", str(self.task_dir),
             "--db", self.db_path, "--actor", "tp-verification-engineering",
@@ -252,7 +255,19 @@ class TestStateBypassNegative(unittest.TestCase):
         self.assertEqual(rc, 0, (out, err))
         rc, out, err = run([
             "task", "complete", "--task", TASK_ID, "--task-dir", str(self.task_dir),
-            "--db", self.db_path, "--actor", "tp-verification-engineering", "--summary", "done",
+            "--db", self.db_path, "--actor", "tp-verification-engineering", "--summary", "premature",
+        ])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("next_stage=delivery", err + out)
+        rc, out, err = run([
+            "task", "checkpoint", "--task", TASK_ID, "--task-dir", str(self.task_dir),
+            "--db", self.db_path, "--actor", "tp-delivery-convergence",
+            "--phase", "delivery", "--summary", "delivery converged",
+        ])
+        self.assertEqual(rc, 0, (out, err))
+        rc, out, err = run([
+            "task", "complete", "--task", TASK_ID, "--task-dir", str(self.task_dir),
+            "--db", self.db_path, "--actor", "tp-delivery-convergence", "--summary", "done",
         ])
         self.assertEqual(rc, 0, (out, err))
         self.assertEqual(json.loads(out)["verification"], "PASS")
@@ -504,7 +519,7 @@ class TestAcceptanceClosingGates(unittest.TestCase):
         self.assertNotEqual(rc, 0)
 
     # ---- §15.3-5：L3 同样只依赖自动质量门禁 ----
-    def test_l3_can_complete_without_verification_but_does_not_claim_pass(self):
+    def test_l3_cannot_complete_without_required_verification_and_delivery(self):
         task_id = "TASK-20260804-201"
         work, task_dir, db_path = _prepare(task_id=task_id, risk="L3", flow="L3")
         self.addCleanup(shutil.rmtree, work, ignore_errors=True)
@@ -516,10 +531,10 @@ class TestAcceptanceClosingGates(unittest.TestCase):
         self.assertEqual(rc, 0, (out, err))
         rc, out, err = run([
             "task", "complete", "--task", task_id, "--task-dir", str(task_dir), "--db", db_path,
-            "--actor", "tp-development-engineering", "--summary", "done with unrecorded verification",
+            "--actor", "tp-development-engineering", "--summary", "premature completion",
         ])
-        self.assertEqual(rc, 0, (out, err))
-        self.assertEqual(json.loads(out)["verification"], "NOT_RECORDED")
+        self.assertNotEqual(rc, 0)
+        self.assertIn("INTEGRITY_PIPELINE_PENDING", err + out)
 
     # ---- §15.3-6：scope change drift ----
     def test_scope_change_drift(self):
@@ -607,11 +622,11 @@ class TestTransactionReconcile(unittest.TestCase):
     def test_journal_identity_fields(self):
         self._committed()
         # 构造残留 journal 模拟崩溃（记录身份字段）
-        jdir = Path(self.task_dir) / ".ai-work" / "transactions"
+        jdir = Path(self.task_dir) / ".tp-spec" / "transactions"
         jdir.mkdir(parents=True, exist_ok=True)
         tx_id = transaction_journal.new_transaction_id()
         journal = {
-            "schema": "ai-work.transaction/v1",
+            "schema": "tp-spec.transaction/v1",
             "transaction_id": tx_id,
             "task_id": TASK_ID,
             "operation": "commit",
@@ -641,12 +656,12 @@ class TestTransactionReconcile(unittest.TestCase):
     def test_recovery_identity_mismatch_is_C(self):
         self._committed()
         rev = _event_count(self.db_path)
-        jdir = Path(self.task_dir) / ".ai-work" / "transactions"
+        jdir = Path(self.task_dir) / ".tp-spec" / "transactions"
         jdir.mkdir(parents=True, exist_ok=True)
         tx_id = transaction_journal.new_transaction_id()
         # 伪造 journal：revision 与 DB 一致，但 state/owner/flush_id 全部不匹配
         journal = {
-            "schema": "ai-work.transaction/v1",
+            "schema": "tp-spec.transaction/v1",
             "transaction_id": tx_id,
             "task_id": TASK_ID,
             "operation": "commit",
@@ -676,7 +691,7 @@ class TestTransactionReconcile(unittest.TestCase):
         rev = _event_count(self.db_path)
         status_path = Path(self.task_dir) / "status.yaml"
         original = status_path.read_bytes()
-        jdir = Path(self.task_dir) / ".ai-work" / "transactions"
+        jdir = Path(self.task_dir) / ".tp-spec" / "transactions"
         jdir.mkdir(parents=True, exist_ok=True)
         tx_id = transaction_journal.new_transaction_id()
         bak_dir = Path(self.task_dir) / f".v511-bak-{tx_id}"
@@ -684,7 +699,7 @@ class TestTransactionReconcile(unittest.TestCase):
         # 备份内容被篡改（与 before_digest 不符）
         (bak_dir / "status.yaml").write_bytes(b"tampered backup")
         journal = {
-            "schema": "ai-work.transaction/v1",
+            "schema": "tp-spec.transaction/v1",
             "transaction_id": tx_id,
             "task_id": TASK_ID,
             "operation": "commit",
@@ -712,10 +727,10 @@ class TestTransactionReconcile(unittest.TestCase):
     # ---- §15.4-4：write_journal 刷新 updated_at ----
     def test_journal_updated_at_refresh(self):
         self._committed()
-        jdir = Path(self.task_dir) / ".ai-work" / "transactions"
+        jdir = Path(self.task_dir) / ".tp-spec" / "transactions"
         jdir.mkdir(parents=True, exist_ok=True)
         tx_id = transaction_journal.new_transaction_id()
-        j = {"schema": "ai-work.transaction/v1", "transaction_id": tx_id, "task_id": TASK_ID,
+        j = {"schema": "tp-spec.transaction/v1", "transaction_id": tx_id, "task_id": TASK_ID,
              "operation": "commit", "phase": "PREPARED", "created_at": "2026-08-04T00:00:00Z",
              "updated_at": "2026-08-04T00:00:00Z"}
         transaction_journal.write_journal(Path(self.task_dir), j)

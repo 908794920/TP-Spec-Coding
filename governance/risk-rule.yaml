@@ -179,7 +179,7 @@ suggested_escalation_signals:
     - "权限或认证相关文件修改"
     - "支付、核心状态机或安全相关文件修改"
     - "数据库迁移或生产环境关键配置修改"
-# 自动校验信号：保留给 legacy/专项风险扫描兼容使用；V5.2.0 五态 Task 的 Test-AiWorkTask Record-first fast path 不执行旧扫描段。
+# 自动校验信号：保留给 legacy/专项风险扫描兼容使用；V5.2.0 五态 Task 的 Test-TpSpecTask Record-first fast path 不执行旧扫描段。
 # pattern 使用 .NET 正则；任何调用者只可据此建议提高风险，不能把扫描结果变成流程状态门禁。
 automated_validation:
   scan_sources:

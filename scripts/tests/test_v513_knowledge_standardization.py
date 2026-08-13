@@ -36,7 +36,7 @@ class KnowledgeCase(unittest.TestCase):
         self.workspace = self.root / "workspace"
         self.vault = self.root / "vault"
         self.workspace.mkdir(); self.vault.mkdir()
-        write(self.workspace / ".ai-work/config/content-systems.yaml", f'''schema: ai-work.content-systems/v1
+        write(self.workspace / ".tp-spec/config/content-systems.yaml", f'''schema: tp-spec.content-systems/v1
 systems:
   knowledge:
     root: "{self.vault.as_posix()}"
@@ -120,10 +120,12 @@ class TestKnowledgeContracts(KnowledgeCase):
         self.assertIn("knowledge scan", daily)
         self.assertIn("VALIDATE_AND_INDEX", daily)
         self.assertIn("knowledge index update\nknowledge verify", daily)
-        self.assertIn("ai-work knowledge search", knowledge_rule)
+        self.assertIn("tp-spec knowledge search", knowledge_rule)
         self.assertIn("tp-knowledge", knowledge_rule)
         self.assertNotIn("PRIVATE_VAULT_ROOT", knowledge_rule)
-        self.assertIn("不得直接维护 Vault canonical", delivery)
+        self.assertIn("Task 驱动的 Knowledge 内容收敛", delivery)
+        self.assertIn("不得自行调用 `tp-knowledge`", delivery)
+        self.assertIn("90-sources", delivery)
 
     def test_lint_accepts_verifies_and_structured_code_evidence(self):
         self.canonical("10-projects/demo/30-features/DEMO-FEAT-001-Feature.md", cid="DEMO-FEAT-001", kind="feature", title="Feature", source_refs="[TASK-1]")

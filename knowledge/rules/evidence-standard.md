@@ -17,7 +17,7 @@ Existing canonical notes using `source_refs: [TASK-...]` remain valid compatibil
 evidence_refs:
   - type: task
     ref: TASK-20260809-001
-    locator: .ai-work/tasks/TASK-20260809-001/evidence/final.md
+    locator: .tp-spec/tasks/TASK-20260809-001/evidence/final.md
   - type: code
     ref: TP_Voyager
     locator: agent_runtime/service.py#L120-L168

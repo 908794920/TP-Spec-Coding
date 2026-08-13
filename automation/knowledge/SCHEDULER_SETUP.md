@@ -13,7 +13,7 @@ The scheduled conversation should start with the **project workspace root** as c
 The scheduled conversational model must be able to:
 
 1. read the current Base and workspace files;
-2. execute the physical Base `scripts/Invoke-AiWorkCli.ps1 knowledge ...` or an equivalent installed `ai-work knowledge ...` command;
+2. execute the physical Base `scripts/tp-spec.ps1 knowledge ...` or an equivalent installed `tp-spec knowledge ...` command;
 3. edit only the resolved Knowledge Vault when the canonical protocol permits it;
 4. preserve the previous trusted baseline on failure.
 

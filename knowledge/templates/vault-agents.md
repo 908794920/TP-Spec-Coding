@@ -13,7 +13,7 @@ This directory is the physical storage for the TP-Spec-Coding Knowledge Content 
 
 - Read registered source/evidence and canonical Knowledge.
 - Maintain canonical/source/meta through the current `tp-knowledge` protocol.
-- Rebuild/query FTS5 projection through `ai-work knowledge ...`.
+- Rebuild/query FTS5 projection through `tp-spec knowledge ...`.
 
 ## Forbidden
 

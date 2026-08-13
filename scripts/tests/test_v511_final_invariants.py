@@ -279,16 +279,25 @@ class TestValidatorSchema(_TaskFixture):
 # =============================================================================
 class TestAutomaticCompletion(_TaskFixture):
     def _verification_ready(self):
-        run([
-            "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--db", self.db_path, "--actor", "tp-development-engineering",
-            "--phase", "development", "--summary", "implementation complete",
-        ], 0)
+        for actor, phase, summary in (
+            ("tp-requirement-analysis", "requirement", "requirement complete"),
+            ("tp-architecture-design", "architecture", "architecture complete"),
+            ("tp-development-engineering", "development", "implementation complete"),
+        ):
+            run([
+                "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
+                "--db", self.db_path, "--actor", actor, "--phase", phase, "--summary", summary,
+            ], 0)
         run([
             "task", "verify", "--task", self.task_id, "--task-dir", str(self.task_dir),
             "--db", self.db_path, "--actor", "tp-verification-engineering",
             "--decision", "PASS", "--summary", "verified",
             "--evidence", "evidence/test-result.txt",
+        ], 0)
+        run([
+            "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
+            "--db", self.db_path, "--actor", "tp-delivery-convergence",
+            "--phase", "delivery", "--summary", "delivery converged",
         ], 0)
 
     def test_inv08_no_personnel_approval_state_or_cli(self):

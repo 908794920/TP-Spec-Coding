@@ -58,7 +58,7 @@ def cmd_doctor(args) -> int:
         knowledge_scope = resolve_knowledge_project(cfg, require=False)
         knowledge_project_root = Path(knowledge_scope["project_root"]) if knowledge_scope.get("project_root") else cfg.paths.knowledge_physical_root
         result = {
-            "schema": "ai-work.wiki-doctor/v1",
+            "schema": "tp-spec.wiki-doctor/v1",
             "status": "PASS",
             "config": cfg.paths.as_dict(),
             "wiki_mount": junction_relation(cfg.paths.wiki_logical_root, physical_ws),
@@ -76,7 +76,7 @@ def cmd_doctor(args) -> int:
         _emit(result)
         return 0 if result["status"] == "PASS" else 1
     except Exception as exc:
-        _emit({"schema": "ai-work.wiki-doctor/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
+        _emit({"schema": "tp-spec.wiki-doctor/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
         return 1
 
 
@@ -94,7 +94,7 @@ def cmd_init(args) -> int:
             mpath = t.wiki_repo_root / "meta" / "wiki-manifest.yaml"
             if not mpath.exists():
                 manifest = {
-                    "schema": "ai-work.wiki-manifest/v1",
+                    "schema": "tp-spec.wiki-manifest/v1",
                     "workspace_id": t.workspace_id,
                     "repo_id": t.repo_id,
                     "repo_root": str(t.repo_root),
@@ -104,10 +104,10 @@ def cmd_init(args) -> int:
                 }
                 write_manifest(t.wiki_repo_root, manifest)
             initialized.append(t.as_dict())
-        _emit({"schema": "ai-work.wiki-init/v1", "status": "PASS", "targets": initialized, "registry": str(cfg.paths.wiki_registry)})
+        _emit({"schema": "tp-spec.wiki-init/v1", "status": "PASS", "targets": initialized, "registry": str(cfg.paths.wiki_registry)})
         return 0
     except Exception as exc:
-        _emit({"schema": "ai-work.wiki-init/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
+        _emit({"schema": "tp-spec.wiki-init/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
         return 1
 
 
@@ -124,10 +124,10 @@ def cmd_build(args) -> int:
             changeset = stage_scan(t.repo_id, t.repo_root, t.wiki_repo_root, cfg.source, cfg.snapshot)
             plan = build_plan(t.wiki_repo_root, repo_root=t.repo_root, source_cfg=cfg.source, coverage_cfg=_coverage_cfg(cfg, t))
             results.append({"repo_id": t.repo_id, "state": "WAITING_FOR_AI", "changeset": changeset, "plan": plan})
-        _emit({"schema": "ai-work.wiki-build/v1", "status": "WAITING_FOR_AI", "results": results, "baseline_advanced": False})
+        _emit({"schema": "tp-spec.wiki-build/v1", "status": "WAITING_FOR_AI", "results": results, "baseline_advanced": False})
         return 0
     except Exception as exc:
-        _emit({"schema": "ai-work.wiki-build/v1", "status": "BLOCKED", "error": f"{type(exc).__name__}: {exc}", "baseline_advanced": False})
+        _emit({"schema": "tp-spec.wiki-build/v1", "status": "BLOCKED", "error": f"{type(exc).__name__}: {exc}", "baseline_advanced": False})
         return 1
 
 
@@ -138,10 +138,10 @@ def cmd_scan(args) -> int:
         for t in targets:
             changeset = stage_scan(t.repo_id, t.repo_root, t.wiki_repo_root, cfg.source, cfg.snapshot)
             results.append({"target": t.as_dict(), "changeset": changeset})
-        _emit({"schema": "ai-work.wiki-scan-run/v1", "status": "PASS", "results": results})
+        _emit({"schema": "tp-spec.wiki-scan-run/v1", "status": "PASS", "results": results})
         return 0
     except Exception as exc:
-        _emit({"schema": "ai-work.wiki-scan-run/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
+        _emit({"schema": "tp-spec.wiki-scan-run/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
         return 1
 
 
@@ -152,10 +152,10 @@ def cmd_plan(args) -> int:
         for t in targets:
             plan = build_plan(t.wiki_repo_root, allow_mass_change=bool(args.allow_mass_change), mass_change_reason=str(getattr(args, "mass_change_reason", "") or ""), repo_root=t.repo_root, source_cfg=cfg.source, coverage_cfg=_coverage_cfg(cfg, t))
             results.append({"repo_id": t.repo_id, "wiki_repo_root": str(t.wiki_repo_root), "plan": plan})
-        _emit({"schema": "ai-work.wiki-plan-run/v1", "status": "PASS", "results": results})
+        _emit({"schema": "tp-spec.wiki-plan-run/v1", "status": "PASS", "results": results})
         return 0
     except Exception as exc:
-        _emit({"schema": "ai-work.wiki-plan-run/v1", "status": "BLOCKED", "error": f"{type(exc).__name__}: {exc}"})
+        _emit({"schema": "tp-spec.wiki-plan-run/v1", "status": "BLOCKED", "error": f"{type(exc).__name__}: {exc}"})
         return 1
 
 
@@ -182,10 +182,10 @@ def cmd_manifest_refresh(args) -> int:
                     if "mass change guard" not in str(exc):
                         raise
             results.append({"repo_id": t.repo_id, "documents": len(manifest.get("documents") or []), "manifest": str(t.wiki_repo_root / "meta" / "wiki-manifest.yaml"), "plan_refreshed": plan is not None})
-        _emit({"schema": "ai-work.wiki-manifest-refresh/v1", "status": "PASS", "results": results})
+        _emit({"schema": "tp-spec.wiki-manifest-refresh/v1", "status": "PASS", "results": results})
         return 0
     except Exception as exc:
-        _emit({"schema": "ai-work.wiki-manifest-refresh/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
+        _emit({"schema": "tp-spec.wiki-manifest-refresh/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
         return 1
 
 
@@ -198,10 +198,10 @@ def cmd_verify(args) -> int:
             report = verify_repo(repo_root=t.repo_root, wiki_repo_root=t.wiki_repo_root, source_cfg=cfg.source, quality_cfg=cfg.quality, coverage_cfg=_coverage_cfg(cfg, t))
             reports.append({"repo_id": t.repo_id, "report": report})
             failed = failed or report.get("result") != "PASS"
-        _emit({"schema": "ai-work.wiki-verify-run/v1", "status": "FAIL" if failed else "PASS", "results": reports})
+        _emit({"schema": "tp-spec.wiki-verify-run/v1", "status": "FAIL" if failed else "PASS", "results": reports})
         return 1 if failed else 0
     except Exception as exc:
-        _emit({"schema": "ai-work.wiki-verify-run/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
+        _emit({"schema": "tp-spec.wiki-verify-run/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
         return 1
 
 
@@ -246,10 +246,10 @@ def cmd_coverage(args) -> int:
             "source_dependency_coverage": (total_dep_linked / total_discovered) if total_discovered else None,
             "aggregation": "sum covered / sum eligible; percentages are not averaged",
         }
-        _emit({"schema": "ai-work.wiki-coverage-run/v1", "status": "PASS", "aggregate": aggregate, "results": results})
+        _emit({"schema": "tp-spec.wiki-coverage-run/v1", "status": "PASS", "aggregate": aggregate, "results": results})
         return 0
     except Exception as exc:
-        _emit({"schema": "ai-work.wiki-coverage-run/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
+        _emit({"schema": "tp-spec.wiki-coverage-run/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
         return 1
 
 
@@ -281,10 +281,10 @@ def cmd_audit(args) -> int:
             plan = build_audit_plan(t.wiki_repo_root, cfg.quality, full=bool(getattr(args, "full", False)))
             plan["first_build_readiness"] = readiness
             results.append({"repo_id": t.repo_id, "audit_plan": plan})
-        _emit({"schema": "ai-work.wiki-audit-plan-run/v1", "status": "PASS", "results": results})
+        _emit({"schema": "tp-spec.wiki-audit-plan-run/v1", "status": "PASS", "results": results})
         return 0
     except Exception as exc:
-        _emit({"schema": "ai-work.wiki-audit-plan-run/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
+        _emit({"schema": "tp-spec.wiki-audit-plan-run/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
         return 1
 
 
@@ -297,7 +297,7 @@ def cmd_audit_record(args) -> int:
         _emit(receipt)
         return 0 if receipt["result"] == "PASS" else 1
     except Exception as exc:
-        _emit({"schema": "ai-work.wiki-semantic-audit/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
+        _emit({"schema": "tp-spec.wiki-semantic-audit/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
         return 1
 
 
@@ -326,10 +326,10 @@ def cmd_snapshot_commit(args) -> int:
                 )
             result = commit_baseline(t.wiki_repo_root, repo_id=t.repo_id, repo_root=t.repo_root, source_cfg=cfg.source, require_verification=True)
             results.append({"repo_id": t.repo_id, "first_build_readiness": readiness, **result})
-        _emit({"schema": "ai-work.wiki-baseline-commit/v1", "status": "PASS", "results": results})
+        _emit({"schema": "tp-spec.wiki-baseline-commit/v1", "status": "PASS", "results": results})
         return 0
     except Exception as exc:
-        _emit({"schema": "ai-work.wiki-baseline-commit/v1", "status": "BLOCKED", "error": f"{type(exc).__name__}: {exc}"})
+        _emit({"schema": "tp-spec.wiki-baseline-commit/v1", "status": "BLOCKED", "error": f"{type(exc).__name__}: {exc}"})
         return 1
 
 
@@ -350,10 +350,10 @@ def cmd_status(args) -> int:
                     except Exception:
                         row[name]["parse_error"] = True
             results.append(row)
-        _emit({"schema": "ai-work.wiki-status/v1", "status": "PASS", "results": results})
+        _emit({"schema": "tp-spec.wiki-status/v1", "status": "PASS", "results": results})
         return 0
     except Exception as exc:
-        _emit({"schema": "ai-work.wiki-status/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
+        _emit({"schema": "tp-spec.wiki-status/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
         return 1
 
 
@@ -381,10 +381,10 @@ def cmd_maintain(args) -> int:
             elif state == "DETERMINISTIC_FINALIZE" and overall == "NO_CHANGE":
                 overall = "DETERMINISTIC_FINALIZE"
             results.append({"repo_id": t.repo_id, "state": state, "changeset": changeset, "plan": plan})
-        _emit({"schema": "ai-work.wiki-maintain/v1", "status": overall, "results": results, "baseline_advanced": False})
+        _emit({"schema": "tp-spec.wiki-maintain/v1", "status": overall, "results": results, "baseline_advanced": False})
         return 1 if overall == "BLOCKED" else 0
     except Exception as exc:
-        _emit({"schema": "ai-work.wiki-maintain/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}", "baseline_advanced": False})
+        _emit({"schema": "tp-spec.wiki-maintain/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}", "baseline_advanced": False})
         return 1
 
 

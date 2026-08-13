@@ -3,8 +3,8 @@
     TP-Spec-Coding V5.2.0 交接编排包装器
 .DESCRIPTION
     检测 DB 后端是否启用：
-    - 启用：projection rebuild → Invoke-AiWorkHandoffFlush.ps1 → event sync（顺序不可反）
-    - 未启用：直接透传 Invoke-AiWorkHandoffFlush.ps1
+    - 启用：projection rebuild → Invoke-TpSpecHandoffFlush.ps1 → event sync（顺序不可反）
+    - 未启用：直接透传 Invoke-TpSpecHandoffFlush.ps1
 .PARAMETER TaskPath
     任务目录路径（必需）
 .PARAMETER Actor
@@ -13,9 +13,9 @@
     显式启用 DB 编排路径（缺省自动检测 config 表 db_backend_enabled；
     检测无可信结论时 fail-closed 拒绝，exit 9）
 .EXAMPLE
-    .\ai-work.ps1 -TaskPath .ai-work\tasks\TASK-DEMO-001 -Actor tp-development-engineering
+    .\tp-spec.ps1 -TaskPath .tp-spec\tasks\TASK-DEMO-001 -Actor tp-development-engineering
 .EXAMPLE
-    .\ai-work.ps1 -TaskPath .ai-work\tasks\TASK-DEMO-001 -Actor tp-development-engineering -DbBackend
+    .\tp-spec.ps1 -TaskPath .tp-spec\tasks\TASK-DEMO-001 -Actor tp-development-engineering -DbBackend
 #>
 param(
     [Parameter(Mandatory=$true)]
@@ -36,7 +36,7 @@ if (-not $taskId) {
     throw "无法从 TaskPath 解析 task_id: $TaskPath"
 }
 
-$flushScript = Join-Path $baseRoot 'scripts\Invoke-AiWorkHandoffFlush.ps1'
+$flushScript = Join-Path $baseRoot 'scripts\Invoke-TpSpecHandoffFlush.ps1'
 
 # 检测 DB 后端是否启用（三值裁决，2026-07-30 BUG 修复）：
 # - 明确 true  → rebuild → flush → sync 编排路径
@@ -68,7 +68,7 @@ except Exception as e:
 "@
     # G1 治本延伸：python -c 传多行 here-string 时，PowerShell 的 CRLF 会导致
     # Python 语法解析错误。改为写临时 .py 文件再执行，确保检测脚本正确运行。
-    $detectFile = Join-Path ([System.IO.Path]::GetTempPath()) ('ai-work-detect-' + [guid]::NewGuid().ToString('N') + '.py')
+    $detectFile = Join-Path ([System.IO.Path]::GetTempPath()) ('tp-spec-detect-' + [guid]::NewGuid().ToString('N') + '.py')
     $detectVerdict = ''
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -89,9 +89,9 @@ except Exception as e:
         # fail-closed：检测无可信结论时拒绝，不得误入任何编排路径。
         # 用 [Console]::Error 输出（Write-Error 在 EAP=Stop 下会提前终止，exit 码失效）。
         $detectDetail = if ([string]::IsNullOrWhiteSpace($detectVerdict)) { 'no output; python missing or failed to start' } else { $detectVerdict }
-        [Console]::Error.WriteLine("[ai-work] DB-backend detection did not produce a trusted verdict for task '$taskId' ($detectDetail).")
-        [Console]::Error.WriteLine("[ai-work] Fail-closed: rebuild/flush/sync are all skipped and no task artifact is written, to prevent silent file/SQLite ledger drift.")
-        [Console]::Error.WriteLine("[ai-work] Fix the Python/DB/registry environment and retry.")
+        [Console]::Error.WriteLine("[tp-spec] DB-backend detection did not produce a trusted verdict for task '$taskId' ($detectDetail).")
+        [Console]::Error.WriteLine("[tp-spec] Fail-closed: rebuild/flush/sync are all skipped and no task artifact is written, to prevent silent file/SQLite ledger drift.")
+        [Console]::Error.WriteLine("[tp-spec] Fix the Python/DB/registry environment and retry.")
         exit 9
     }
 }
@@ -100,53 +100,53 @@ if (-not $enabled) {
     # 未启用路径：透传 flush（行为与今天逐字节一致）
     # 守卫豁免：包装器已完成 DB 检测，flush 不再二次检测（单一决策点）；
     # 保存并恢复旧值，避免嵌套调用时污染父环境
-    $prevOrchestrated = $env:AI_WORK_ORCHESTRATED
-    $env:AI_WORK_ORCHESTRATED = '1'
+    $prevOrchestrated = $env:TP_SPEC_ORCHESTRATED
+    $env:TP_SPEC_ORCHESTRATED = '1'
     try {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $flushScript -TaskPath $TaskPath -Actor $Actor
         $passExit = $LASTEXITCODE
     } finally {
-        if ($null -eq $prevOrchestrated) { Remove-Item Env:AI_WORK_ORCHESTRATED -ErrorAction SilentlyContinue }
-        else { $env:AI_WORK_ORCHESTRATED = $prevOrchestrated }
+        if ($null -eq $prevOrchestrated) { Remove-Item Env:TP_SPEC_ORCHESTRATED -ErrorAction SilentlyContinue }
+        else { $env:TP_SPEC_ORCHESTRATED = $prevOrchestrated }
     }
     exit $passExit
 }
 
 # 启用路径：rebuild → flush → sync（顺序不可反）
-Write-Host "[ai-work] DB 后端已启用，执行 rebuild → flush → sync"
+Write-Host "[tp-spec] DB 后端已启用，执行 rebuild → flush → sync"
 
 # 1. projection rebuild（DB → status.yaml/events.jsonl）
 & python cli/main.py projection rebuild --task $taskId --task-dir $TaskPath 2>&1 | Out-Host
 if ($LASTEXITCODE -ne 0) {
     # [Console]::Error 输出：Write-Error 在 EAP=Stop 下会提前终止，exit 8 失效。
-    [Console]::Error.WriteLine("[ai-work] projection rebuild 失败 (exit=$LASTEXITCODE)，不调 flush")
+    [Console]::Error.WriteLine("[tp-spec] projection rebuild 失败 (exit=$LASTEXITCODE)，不调 flush")
     exit 8
 }
 
 # 2. flush（生成 generated/continuation.md）
 # 守卫豁免：flush 由本编排器调用，rebuild 已完成、sync 紧随其后；
 # 保存并恢复旧值，避免嵌套调用时污染父环境
-$prevOrchestrated = $env:AI_WORK_ORCHESTRATED
-$env:AI_WORK_ORCHESTRATED = '1'
+$prevOrchestrated = $env:TP_SPEC_ORCHESTRATED
+$env:TP_SPEC_ORCHESTRATED = '1'
 try {
     & powershell -NoProfile -ExecutionPolicy Bypass -File $flushScript -TaskPath $TaskPath -Actor $Actor
     $flushExit = $LASTEXITCODE
 } finally {
-    if ($null -eq $prevOrchestrated) { Remove-Item Env:AI_WORK_ORCHESTRATED -ErrorAction SilentlyContinue }
-    else { $env:AI_WORK_ORCHESTRATED = $prevOrchestrated }
+    if ($null -eq $prevOrchestrated) { Remove-Item Env:TP_SPEC_ORCHESTRATED -ErrorAction SilentlyContinue }
+    else { $env:TP_SPEC_ORCHESTRATED = $prevOrchestrated }
 }
 if ($flushExit -ne 0) {
     # [Console]::Error 输出：Write-Error 在 EAP=Stop 下会提前终止，透传退出码失效。
-    [Console]::Error.WriteLine("[ai-work] flush 失败 (exit=$flushExit)，不回流")
+    [Console]::Error.WriteLine("[tp-spec] flush 失败 (exit=$flushExit)，不回流")
     exit $flushExit
 }
 
 # 3. event sync（回流 flush 追加事件到 DB）
 & python cli/main.py event sync --task $taskId --task-dir $TaskPath 2>&1 | Out-Host
 if ($LASTEXITCODE -ne 0) {
-    Write-Warning "[ai-work] event sync 失败 (exit=$LASTEXITCODE)，flush 已成功，可重试 'event sync'"
+    Write-Warning "[tp-spec] event sync 失败 (exit=$LASTEXITCODE)，flush 已成功，可重试 'event sync'"
     exit 7
 }
 
-Write-Host "[ai-work] 交接完成：rebuild → flush → sync 全部成功"
+Write-Host "[tp-spec] 交接完成：rebuild → flush → sync 全部成功"
 exit 0

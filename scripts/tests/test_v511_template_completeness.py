@@ -25,7 +25,7 @@ try:
 except ImportError:  # pragma: no cover
     yaml = None
 
-BASE = Path(__file__).resolve().parent.parent.parent  # ai-work-base
+BASE = Path(__file__).resolve().parent.parent.parent  # tp-spec-base
 
 REQUIRED_FILES = (
     "README.md",

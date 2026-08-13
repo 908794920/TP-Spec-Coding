@@ -29,7 +29,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-BASE = Path(__file__).resolve().parent.parent.parent  # ai-work-base
+BASE = Path(__file__).resolve().parent.parent.parent  # tp-spec-base
 sys.path.insert(0, str(BASE))
 
 from cli import db as dbmod  # noqa: E402
@@ -67,9 +67,9 @@ def run(argv):
 def build_task(work, task_id="TASK-20260804-101", eol="\n", bom=False, db_name="t.db", seed=0):
     """构建真实 V5.1.3 任务 fixture（模板 + task create）。返回 (task_dir, db_path)。"""
     proj_root = os.path.join(work, "proj")
-    task_dir = os.path.join(proj_root, ".ai-work", "tasks", task_id)
+    task_dir = os.path.join(proj_root, ".tp-spec", "tasks", task_id)
     os.makedirs(task_dir, exist_ok=True)
-    db_path = os.path.join(proj_root, ".ai-work", "db", db_name)
+    db_path = os.path.join(proj_root, ".tp-spec", "db", db_name)
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = dbmod.connect(db_path)
     dbmod.init_schema(conn)
@@ -324,7 +324,7 @@ class TestCommitReliability(unittest.TestCase):
         # journal 已清除（恢复成功），无备份残留
         leftovers = [n for n in os.listdir(task_dir) if n.startswith(".v511-bak-")]
         self.assertEqual(leftovers, [])
-        jdir = Path(task_dir) / ".ai-work" / "transactions"
+        jdir = Path(task_dir) / ".tp-spec" / "transactions"
         self.assertFalse(any(jdir.glob("*.json")), "journal must be removed after successful recovery")
 
     # ---- 7. payload-json 中文 + 乱码拒绝 ----

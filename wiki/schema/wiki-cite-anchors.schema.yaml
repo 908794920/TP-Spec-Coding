@@ -1,4 +1,4 @@
-schema: ai-work.wiki-cite-anchors/v1
+schema: tp-spec.wiki-cite-anchors/v1
 purpose: >
   Machine-owned baseline for deterministic relocation of precise <cite line> anchors
   when source bytes change but normalized semantics remain equivalent.

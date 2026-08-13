@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Deterministic project-facing TP-Spec-Coding entrypoint maintenance.
 
-The project root README/AGENTS managed block and ``.ai-work/README.md`` are a
+The project root README/AGENTS managed block and ``.tp-spec/README.md`` are a
 portable integration surface.  They describe stable resolver behavior only;
 machine-specific paths stay in the installation profile and are never rendered
 into project files.
@@ -15,8 +15,8 @@ from cli.environment import load_project_binding
 
 BASE_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_ROOT = BASE_ROOT / "project-entry"
-MANAGED_START = "<!-- ai-work-base:managed:start -->"
-MANAGED_END = "<!-- ai-work-base:managed:end -->"
+MANAGED_START = "<!-- tp-spec-base:managed:start -->"
+MANAGED_END = "<!-- tp-spec-base:managed:end -->"
 
 
 class ProjectSurfaceError(ValueError):
@@ -81,14 +81,14 @@ def project_surface_plan(workspace_root: "str | Path", *, project_id: str = "") 
         changed = before.replace("\r\n", "\n") != after.replace("\r\n", "\n")
         rows.append({"path": str(path), "state": "STALE" if changed else "CURRENT", "action": action if changed else "NONE", "changed": changed, "content": after})
 
-    runtime_readme = workspace / ".ai-work" / "README.md"
-    desired = _render("ai-work-readme.md", project_id=pid)
+    runtime_readme = workspace / ".tp-spec" / "README.md"
+    desired = _render("tp-spec-readme.md", project_id=pid)
     before = runtime_readme.read_text(encoding="utf-8-sig") if runtime_readme.is_file() else ""
     changed = before.replace("\r\n", "\n") != desired.replace("\r\n", "\n")
     rows.append({"path": str(runtime_readme), "state": "STALE" if changed else "CURRENT", "action": "WRITE_BASE_MANAGED_README" if changed else "NONE", "changed": changed, "content": desired})
 
     return {
-        "schema": "ai-work.project-surface-plan/v1",
+        "schema": "tp-spec.project-surface-plan/v1",
         "workspace_root": str(workspace),
         "project_id": pid,
         "status": "BLOCKED" if blockers else ("SYNC_AVAILABLE" if any(r.get("changed") for r in rows) else "CURRENT"),

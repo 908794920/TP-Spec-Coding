@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """V5.2.0 reconcile 命令（A-04 修复：durable recovery + 自身一致性）。
 
-``ai-work reconcile --task TASK-ID`` 以 SQLite 为唯一权威，检查并修复投影漂移。
+``tp-spec reconcile --task TASK-ID`` 以 SQLite 为唯一权威，检查并修复投影漂移。
 
 V5.2.0 修复内容：
 - **durable journal 恢复判定**（任务书 §3）：发现未完成 journal 时按
@@ -19,7 +19,7 @@ V5.2.0 修复内容：
   的 handoff_record 完整恢复（reconstructed 元数据不影响语义等价比对）。
 
 原则：不删除/修改历史事件；只追加 RECONCILIATION 事件（投影为 FACT，
-Test-AiWorkTask.ps1 零感知）；幂等（无漂移不写事件）；失败非零退出。
+Test-TpSpecTask.ps1 零感知）；幂等（无漂移不写事件）；失败非零退出。
 
 设计依据：V5.2.0 AI-A 定向修复任务书 §3/§4/§5/§8 与审查报告 §3.2-§3.4/§3.7。
 """
@@ -373,7 +373,7 @@ def _check_generated_digest(task_dir: Path, task) -> List[str]:
     actual_digest = "sha256:" + _source_digest(source_paths, task_dir)
     if declared_digest and declared_digest != actual_digest:
         return [f"{rel}: source_digest mismatch (declared {declared_digest}, actual {actual_digest})"]
-    # content_digest 语义与 Test-AiWorkTask.ps1 的 Get-FrontMatter 一致：
+    # content_digest 语义与 Test-TpSpecTask.ps1 的 Get-FrontMatter 一致：
     # closing delimiter 后的空行被 ".*?\r?\n---\s*\r?\n" 吞掉，content 从正文开始。
     actual_content = "sha256:" + hashlib.sha256(rest.lstrip("\r\n").encode("utf-8")).hexdigest()
     if declared_content and declared_content != actual_content:

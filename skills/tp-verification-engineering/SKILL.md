@@ -35,9 +35,9 @@ description: 验收与质量验证工程师（tp-verification-engineering）：�
 
 ## Runtime
 结束一次技术验收只需：
-`ai-work task verify ... --decision PASS|FAIL|NEEDS_FIX --summary "..." [--evidence evidence/...]`
+`tp-spec task verify ... --decision PASS|FAIL|NEEDS_FIX --summary "..." [--evidence evidence/...]`
 
-PASS 必须有真实 `evidence/*`。如果没有更多业务动作，可以随后 `task complete`；不再进入 CLOSING，也不需要 `tp-delivery-convergence` 仅为结单运行。
+PASS 必须有真实 `evidence/*`。记录 PASS 后必须把控制权返回 `tp-workflow-orchestrator` 并执行 `tp-spec workflow next`；验收角色不得自行 `task complete`。L2/L3 会确定性进入 `tp-delivery-convergence`，L0/L1 由 Orchestrator 判断是否已 `PIPELINE_COMPLETE`。
 
 
 ## Deep Review Capability（UltraReview 模式）

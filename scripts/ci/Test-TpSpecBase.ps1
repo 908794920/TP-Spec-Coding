@@ -36,7 +36,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$realBase = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)   # ai-work-base
+$realBase = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)   # tp-spec-base
 if ([string]::IsNullOrWhiteSpace($BaseRoot)) { $base = $realBase }
 else { $base = (Resolve-Path -LiteralPath $BaseRoot).Path }
 
@@ -65,7 +65,7 @@ function Invoke-Check([string]$Name, [scriptblock]$Body) {
 }
 
 # --- work directory (created by this run; the only dir we may clean) ---
-$workDir = Join-Path ([System.IO.Path]::GetTempPath()) ("aiwork-ci-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + "-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+$workDir = Join-Path ([System.IO.Path]::GetTempPath()) ("tpspec-ci-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + "-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $workDir -Force | Out-Null
 Write-Output "WORKDIR $workDir"
 
@@ -119,7 +119,7 @@ if ($Mode -eq 'Full') {
 Invoke-Check 'static.forbidden.paths' {
     $tracked = @(& git -C $base ls-files)
     # docs/ 已纳入 Git 管理（V5.2.0 发布完整性）；仅禁止运行时产物与本地状态
-    $forbiddenPatterns = @('__pycache__', '\.pyc$', '^db/registry\.local\.json$', '\.db$', '\.flush-journal', '\.local\.', '\.pytest_cache', '^ai-work-base\.zip$', '^docs/planning/')
+    $forbiddenPatterns = @('__pycache__', '\.pyc$', '^db/registry\.local\.json$', '\.db$', '\.flush-journal', '\.local\.', '\.pytest_cache', '^tp-spec-base\.zip$', '^docs/planning/')
     $hits = @()
     foreach ($p in $forbiddenPatterns) {
         $hits += @($tracked | Where-Object { $_ -match $p -and $_ -notmatch '\.example$' })
@@ -334,7 +334,7 @@ if (-not $KeepWorkDir) {
     $resolved = (Resolve-Path -LiteralPath $workDir -ErrorAction SilentlyContinue)
     $tempRoot = [System.IO.Path]::GetTempPath().TrimEnd('\')
     if ($resolved -and $resolved.Path.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase) -and
-        (Split-Path -Leaf $resolved.Path).StartsWith('aiwork-ci-')) {
+        (Split-Path -Leaf $resolved.Path).StartsWith('tpspec-ci-')) {
         Remove-Item -LiteralPath $resolved.Path -Recurse -Force
         Write-Output "CLEANED $($resolved.Path)"
     }

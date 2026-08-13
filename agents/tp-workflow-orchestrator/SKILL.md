@@ -30,7 +30,7 @@ description: 工作流编排器（tp-workflow-orchestrator）：TP-Spec-Coding �
 已有正式 Task 时，优先运行只读路由：
 
 ```text
-ai-work workflow next --task <TASK> --db <DB> --json
+tp-spec workflow next --task <TASK> --db <DB> --json
 ```
 
 然后只加载返回的 `skill_path`，不要一次性加载全部角色 Skill。

@@ -7,8 +7,8 @@ Legacy Knowledge migration must reduce deterministic schema noise before a model
 Use:
 
 ```text
-ai-work knowledge migrate-normalize --workspace-root <workspace>
-ai-work knowledge migrate-normalize --workspace-root <workspace> --apply
+tp-spec knowledge migrate-normalize --workspace-root <workspace>
+tp-spec knowledge migrate-normalize --workspace-root <workspace> --apply
 ```
 
 Dry-run is the default.

@@ -4,7 +4,7 @@
 依据：《V5.2.0 执行AI统一修复与自验证任务》§7 与《V5.2.0 源码级发布审查报告》
 P0-2（无架构评审可 DEVELOPING）/P0-6（新增角色不能通过正式 CLI 执行）。
 
-提供 ``ai-work review record``：
+提供 ``tp-spec review record``：
 - 由 ``tp-architecture-review`` 写入 ``REVIEW_COMPLETED`` 事件（detail 含
   review_kind=ARCHITECTURE、round、artifact、artifact_digest、design_digest、
   requirement_decisions_digest、findings_count、evidence、transaction_id）；
@@ -231,7 +231,7 @@ def _check_pass_content_gate(task_dir: Path, artifact_text: str, args, task) -> 
 
 
 def cmd_review_record(args) -> int:
-    """ai-work review record：tp-architecture-review 写入架构评审 PASS/REVISE/BLOCKED。"""
+    """tp-spec review record：tp-architecture-review 写入架构评审 PASS/REVISE/BLOCKED。"""
     task_id = args.task
     task_dir = Path(args.task_dir).resolve()
     if not task_dir.is_dir():

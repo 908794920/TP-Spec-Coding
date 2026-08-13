@@ -1,21 +1,21 @@
 ﻿<#
 .SYNOPSIS
-V5.1.0 file-mode isolated end-to-end regression through Invoke-AiWorkHandoffFlush.ps1.
+V5.1.0 file-mode isolated end-to-end regression through Invoke-TpSpecHandoffFlush.ps1.
 
 .DESCRIPTION
 Creates an isolated 5.1.0 L1 task under the system temp directory (never a real
 project) and drives the full chain NEW -> DEVELOPING -> VERIFYING -> CLOSING ->
-COMPLETED by actually invoking scripts/Invoke-AiWorkHandoffFlush.ps1 with tp-*
-actors. It also proves the ai-work.ps1 non-DB path delegates to the flush.
+COMPLETED by actually invoking scripts/Invoke-TpSpecHandoffFlush.ps1 with tp-*
+actors. It also proves the tp-spec.ps1 non-DB path delegates to the flush.
 
 Because file-mode flush always transitions, the no-transition review record
-(the file-mode analogue of `ai-work commit --review-only`) is written directly
+(the file-mode analogue of `tp-spec commit --review-only`) is written directly
 as a genuine tp-verification-engineering REVIEW_COMPLETED PASS event that matches
 codex-review.md; the CLOSING flush still fully enforces the closing chain against
 it. No validator or workflow rule is relaxed.
 
 Asserts: old actor rejected, direct VERIFYING->COMPLETED rejected, non-delivery
-CLOSING rejected, final Test-AiWorkTask.ps1 returns 0 errors, status/events/
+CLOSING rejected, final Test-TpSpecTask.ps1 returns 0 errors, status/events/
 generated projections and handoff consumption are correct, and a flush replay of
 the already-consumed handoff is a successful no-op that appends no duplicate STATE.
 The temp directory is kept for audit. Exit code is non-zero on any failure.
@@ -23,10 +23,10 @@ The temp directory is kept for audit. Exit code is non-zero on any failure.
 [CmdletBinding()]
 param()
 $ErrorActionPreference = 'Stop'
-$base = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)  # ai-work-base
-$flush = Join-Path $base 'scripts\Invoke-AiWorkHandoffFlush.ps1'
-$aiwork = Join-Path $base 'scripts\ai-work.ps1'
-$validator = Join-Path $base 'scripts\Test-AiWorkTask.ps1'
+$base = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)  # tp-spec-base
+$flush = Join-Path $base 'scripts\Invoke-TpSpecHandoffFlush.ps1'
+$tpspec = Join-Path $base 'scripts\tp-spec.ps1'
+$validator = Join-Path $base 'scripts\Test-TpSpecTask.ps1'
 $tpl = Join-Path $base 'templates\5.1.3'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
@@ -45,7 +45,7 @@ function Write-Text([string]$Path, [string]$Text) {
 # --- isolated temp project (never a real task) ---
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("v510filemode-" + [guid]::NewGuid().ToString('N'))
 $taskId = 'TASK-20260730-701'
-$taskDir = Join-Path $work ".ai-work\tasks\$taskId"
+$taskDir = Join-Path $work ".tp-spec\tasks\$taskId"
 New-Item -ItemType Directory -Path $taskDir -Force | Out-Null
 
 function New-TaskCopy([string]$dir, [string]$tid, [string]$state = 'NEW', [string]$owner = 'tp-architecture-design') {
@@ -150,10 +150,10 @@ function Invoke-Flush([string]$dir, [string]$actor, [switch]$ReviewOnly) {
     return @{ Code = $code; Out = $out }
 }
 
-function Invoke-AiWork([string]$dir, [string]$actor) {
+function Invoke-TpSpec([string]$dir, [string]$actor) {
     $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     try {
-        $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $aiwork -TaskPath $dir -Actor $actor 2>&1 | Out-String
+        $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $tpspec -TaskPath $dir -Actor $actor 2>&1 | Out-String
         $code = $LASTEXITCODE
     }
     finally { $ErrorActionPreference = $prev }
@@ -226,29 +226,29 @@ $afterStates = Get-StateCount $taskDir
 Check 'replay_flush_rc0' ($r.Code -eq 0) "rc=$($r.Code)"
 Check 'replay_no_duplicate_state' ($afterStates -eq $beforeStates) "before=$beforeStates after=$afterStates"
 
-# 8b. ai-work.ps1 non-DB path delegates to flush (no registry/DB -> passthrough), replay no-op
-$r = Invoke-AiWork $taskDir 'tp-delivery-convergence'
+# 8b. tp-spec.ps1 non-DB path delegates to flush (no registry/DB -> passthrough), replay no-op
+$r = Invoke-TpSpec $taskDir 'tp-delivery-convergence'
 $afterWrap = Get-StateCount $taskDir
-Check 'aiwork_nondb_delegates_flush_rc0' ($r.Code -eq 0) "rc=$($r.Code)"
-Check 'aiwork_nondb_no_duplicate_state' ($afterWrap -eq $beforeStates) "before=$beforeStates after=$afterWrap"
+Check 'tpspec_nondb_delegates_flush_rc0' ($r.Code -eq 0) "rc=$($r.Code)"
+Check 'tpspec_nondb_no_duplicate_state' ($afterWrap -eq $beforeStates) "before=$beforeStates after=$afterWrap"
 
 # ============================ negatives ============================
 # N1: old/unknown actor rejected by flush -Actor ValidateSet (represents any legacy actor)
-$ndir = Join-Path $work ".ai-work\tasks\TASK-20260730-711"
+$ndir = Join-Path $work ".tp-spec\tasks\TASK-20260730-711"
 New-TaskCopy $ndir 'TASK-20260730-711' 'NEW' 'tp-architecture-design'
 Write-Handoff $ndir 'TASK-20260730-711' 'tp-architecture-design' 'x' 'DEVELOPING' 'tp-development-engineering'
 $r = Invoke-Flush $ndir 'legacy-tool-actor'
 Check 'neg_old_actor_rejected' ($r.Code -ne 0) "rc=$($r.Code)"
 
 # N2: direct VERIFYING -> COMPLETED rejected (no valid transition / must come from CLOSING)
-$ndir2 = Join-Path $work ".ai-work\tasks\TASK-20260730-712"
+$ndir2 = Join-Path $work ".tp-spec\tasks\TASK-20260730-712"
 New-TaskCopy $ndir2 'TASK-20260730-712' 'VERIFYING' 'tp-verification-engineering'
 Write-Handoff $ndir2 'TASK-20260730-712' 'tp-delivery-convergence' 'x' 'COMPLETED' 'tp-delivery-convergence'
 $r = Invoke-Flush $ndir2 'tp-delivery-convergence'
 Check 'neg_verifying_to_completed_rejected' ($r.Code -ne 0) "rc=$($r.Code)"
 
 # N3: non-delivery actor cannot enter CLOSING (SHD satisfied so the closing-chain actor rule is exercised)
-$ndir3 = Join-Path $work ".ai-work\tasks\TASK-20260730-713"
+$ndir3 = Join-Path $work ".tp-spec\tasks\TASK-20260730-713"
 New-TaskCopy $ndir3 'TASK-20260730-713' 'VERIFYING' 'tp-verification-engineering'
 Set-ReviewPass $ndir3 'CLOSING' 'evidence/ac01.md' ((Get-Date).ToString('o'))
 Write-Handoff $ndir3 'TASK-20260730-713' 'tp-development-engineering' 'x' 'CLOSING' 'tp-delivery-convergence'

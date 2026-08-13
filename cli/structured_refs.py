@@ -708,7 +708,7 @@ def refs_validate_example() -> dict[str, Any]:
             ]
         },
         "save_as": "refs.json",
-        "command": "ai-work refs-validate --refs-file refs.json",
+        "command": "tp-spec refs-validate --refs-file refs.json",
         "local_verified_pattern": (
             "For LOCAL_VERIFIED file refs, run from a known project root and add "
             "--scope-dirs <PROJECT_ROOT> --approved-scope <RELATIVE_PREFIX>; ref.value stays project-root relative."

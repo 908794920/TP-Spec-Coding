@@ -28,7 +28,7 @@ description: 代码开发工程师（tp-development-engineering）：在已确�
 
 ## Runtime
 开发完成或出现一个有意义的里程碑时最多记录一次：
-`ai-work task checkpoint ... --phase development --summary "实现/自测摘要" [--evidence evidence/...]`
+`tp-spec task checkpoint ... --phase development --summary "实现/自测摘要" [--evidence evidence/...]`
 
 不要调用 refresh、phase-exit dry-run、手工 handoff、refs-validate 来解锁下一阶段。
 

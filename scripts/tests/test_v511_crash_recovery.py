@@ -27,7 +27,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-BASE = Path(__file__).resolve().parent.parent.parent  # ai-work-base
+BASE = Path(__file__).resolve().parent.parent.parent  # tp-spec-base
 sys.path.insert(0, str(BASE))
 
 from cli import db as dbmod  # noqa: E402
@@ -64,7 +64,7 @@ def _simulate_crash(task_dir, db_path, phase, rev_before, rev_after,
     if tamper_text is not None:
         status_path.write_text(tamper_text, encoding="utf-8", newline="\n")
     journal = {
-        "schema": "ai-work.transaction/v1",
+        "schema": "tp-spec.transaction/v1",
         "transaction_id": tx_id,
         "task_id": TASK_ID,
         "operation": "commit",
@@ -291,7 +291,7 @@ class TestReconcileConsistency(unittest.TestCase):
             conn.close()
         self.assertEqual(count, 0)
         self.assertIn('current_state: "NEW"', self._status_text(task_dir), "file must be restored to pre-repair state")
-        jdir = Path(task_dir) / ".ai-work" / "transactions"
+        jdir = Path(task_dir) / ".tp-spec" / "transactions"
         self.assertFalse(any(jdir.glob("*.json")))
         # 重跑（无注入）→ 修复成功
         rc2, _, err2 = reconcile(task_dir, db_path)
@@ -336,7 +336,7 @@ class TestReconcileConsistency(unittest.TestCase):
         self._tamper_status(task_dir)
         rc, _, err = reconcile(task_dir, db_path)
         self.assertEqual(rc, 0, err)
-        jdir = Path(task_dir) / ".ai-work" / "transactions"
+        jdir = Path(task_dir) / ".tp-spec" / "transactions"
         self.assertFalse(any(jdir.glob("*.json")), "journal must be removed after successful reconcile")
         leftovers = [n for n in os.listdir(task_dir) if n.startswith(".v511-bak-")]
         self.assertEqual(leftovers, [])

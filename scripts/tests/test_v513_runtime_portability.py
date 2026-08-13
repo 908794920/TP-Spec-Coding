@@ -54,12 +54,12 @@ class RuntimePortabilityCase(unittest.TestCase):
         self.workspace = self.root / "workspace"
         self.workspace.mkdir()
         self.project_id = "demo"
-        write(self.workspace / ".ai-work/config/project-binding.yaml", """schema: ai-work.project-binding/v1
+        write(self.workspace / ".tp-spec/config/project-binding.yaml", """schema: tp-spec.project-binding/v1
 project:
   id: demo
 base_version: 5.1.3
 """)
-        self.env = patch.dict(os.environ, {"AI_WORK_USER_ROOT": str(self.user)}, clear=False)
+        self.env = patch.dict(os.environ, {"TP_SPEC_USER_ROOT": str(self.user)}, clear=False)
         self.env.start()
 
     def tearDown(self):
@@ -71,7 +71,7 @@ base_version: 5.1.3
         write(legacy, json.dumps({"projects": [{"project_id": "other", "db_path": "X:/other.db", "root_path": "X:/other", "base_version": "5.1.3", "schema_version": 1}]}, indent=2))
         with patch.object(dbmod, "_LEGACY_REGISTRY_PATH", legacy):
             dbmod.register_project(
-                project_id="demo", project_name="demo", db_path=str(self.workspace / ".ai-work/db/demo.db"),
+                project_id="demo", project_name="demo", db_path=str(self.workspace / ".tp-spec/db/demo.db"),
                 root_path=str(self.workspace), base_version="5.1.3", schema_version=1,
             )
         data = json.loads(dbmod.registry_default_path().read_text(encoding="utf-8"))
@@ -90,7 +90,7 @@ base_version: 5.1.3
 
     def test_runtime_root_rebind_updates_db_and_machine_registry(self):
         old = self.root / "old-missing-workspace"
-        db_path = self.workspace / ".ai-work/db/demo.db"
+        db_path = self.workspace / ".tp-spec/db/demo.db"
         make_runtime_db(db_path, self.project_id, old)
         plan = runtime_rebind_plan(self.workspace, self.project_id)
         self.assertEqual(plan["status"], "REBIND_AVAILABLE", plan)
@@ -109,7 +109,7 @@ base_version: 5.1.3
         self.assertFalse((BASE / "db/registry.local.json").exists())
 
     def test_relative_legacy_runtime_root_is_rebindable_not_resolved_against_current_cwd(self):
-        db_path = self.workspace / ".ai-work/db/demo.db"
+        db_path = self.workspace / ".tp-spec/db/demo.db"
         make_runtime_db(db_path, self.project_id, Path("."))
         plan = runtime_rebind_plan(self.workspace, self.project_id)
         self.assertEqual(plan["status"], "REBIND_AVAILABLE", plan)
@@ -117,13 +117,13 @@ base_version: 5.1.3
     def test_runtime_rebind_blocks_when_previous_workspace_still_exists(self):
         old = self.root / "old-live-workspace"
         old.mkdir()
-        make_runtime_db(self.workspace / ".ai-work/db/demo.db", self.project_id, old)
+        make_runtime_db(self.workspace / ".tp-spec/db/demo.db", self.project_id, old)
         plan = runtime_rebind_plan(self.workspace, self.project_id)
         self.assertEqual(plan["status"], "BLOCKED", plan)
         self.assertTrue(any("previous Runtime root still exists" in b for b in plan["blockers"]))
 
     def test_sqlite_wal_shm_are_reported_as_transient_not_portable_truth(self):
-        db_path = self.workspace / ".ai-work/db/demo.db"
+        db_path = self.workspace / ".tp-spec/db/demo.db"
         make_runtime_db(db_path, self.project_id, self.workspace)
         Path(str(db_path) + "-wal").touch()
         Path(str(db_path) + "-shm").touch()
@@ -137,7 +137,7 @@ base_version: 5.1.3
         inventory = self.user / "workspaces.yaml"
         write_workspace_inventory([{"id": "demo", "root": str(stale), "enabled": True}], path=inventory)
         dbmod.register_project(
-            project_id="demo", project_name="demo", db_path=str(self.workspace / ".ai-work/db/demo.db"),
+            project_id="demo", project_name="demo", db_path=str(self.workspace / ".tp-spec/db/demo.db"),
             root_path=str(self.workspace), base_version="5.1.3", schema_version=1,
         )
         rows = inventory_rows(inventory_path=str(inventory))
@@ -147,13 +147,13 @@ base_version: 5.1.3
         self.assertIn(str(stale.resolve(strict=False)), demo[0].get("reconciled_stale_roots") or [])
 
     def test_active_task_scanner_ignores_history_and_negated_mentions(self):
-        active = self.workspace / ".ai-work/tasks/TASK-1"
+        active = self.workspace / ".tp-spec/tasks/TASK-1"
         write(active / "status.yaml", "task_id: TASK-1\ncurrent_state: ACTIVE\n")
-        write(active / "tech-design.md", "知识沉淀后落 `.ai-work/knowledge/`。\n不得依赖旧 `.ai-work/wiki/` Junction。\n")
-        done = self.workspace / ".ai-work/tasks/TASK-2"
+        write(active / "tech-design.md", "知识沉淀后落 `.tp-spec/knowledge/`。\n不得依赖旧 `.tp-spec/wiki/` Junction。\n")
+        done = self.workspace / ".tp-spec/tasks/TASK-2"
         write(done / "status.yaml", "task_id: TASK-2\ncurrent_state: COMPLETED\n")
-        write(done / "tech-design.md", "执行 `.ai-work/scripts/run.ps1`。\n")
-        write(self.workspace / ".ai-work/tasksHistory/TASK-H/tech-design.md", "执行 `.ai-work/knowledge/`。\n")
+        write(done / "tech-design.md", "执行 `.tp-spec/scripts/run.ps1`。\n")
+        write(self.workspace / ".tp-spec/tasksHistory/TASK-H/tech-design.md", "执行 `.tp-spec/knowledge/`。\n")
         result = scan_active_task_portability(self.workspace)
         self.assertEqual(result["status"], "REVIEW_REQUIRED")
         self.assertEqual(len(result["findings"]), 1, result)
@@ -169,7 +169,7 @@ class InstallationLifecycleCase(unittest.TestCase):
         self.wiki = self.root / "wiki"; self.wiki.mkdir()
         self.knowledge = self.root / "knowledge"; self.knowledge.mkdir()
         self.install = self.user / "installation.yaml"
-        self.env = patch.dict(os.environ, {"AI_WORK_USER_ROOT": str(self.user)}, clear=False)
+        self.env = patch.dict(os.environ, {"TP_SPEC_USER_ROOT": str(self.user)}, clear=False)
         self.env.start()
 
     def tearDown(self):
@@ -198,7 +198,7 @@ class InstallationLifecycleCase(unittest.TestCase):
     def test_installation_migration_prefers_live_rebound_machine_entry_over_stale_legacy_root(self):
         configure_installation(base_root=BASE, wiki_root=self.wiki, knowledge_root=self.knowledge, installation_config=self.install)
         current_ws = self.root / "current-ws"; current_ws.mkdir()
-        current_db = current_ws / ".ai-work/db/demo.db"; current_db.parent.mkdir(parents=True)
+        current_db = current_ws / ".tp-spec/db/demo.db"; current_db.parent.mkdir(parents=True)
         current_db.touch()
         legacy = self.root / "legacy-registry.json"
         target = self.user / "registry.local.json"
@@ -227,9 +227,9 @@ class SchedulerBootstrapCase(unittest.TestCase):
     def test_wiki_scheduler_uses_installation_like_knowledge_scheduler(self):
         wiki = (BASE / "automation/wiki/SCHEDULER_BOOTSTRAP.md").read_text(encoding="utf-8")
         knowledge = (BASE / "automation/knowledge/SCHEDULER_BOOTSTRAP.md").read_text(encoding="utf-8")
-        for token in ("~/.ai-work/installation.yaml", "AI_WORK_INSTALLATION_CONFIG", "automation/wiki/daily-maintenance.md", "Invoke-AiWorkCli.ps1"):
+        for token in ("~/.tp-spec/installation.yaml", "TP_SPEC_INSTALLATION_CONFIG", "automation/wiki/daily-maintenance.md", "tp-spec.ps1"):
             self.assertIn(token, wiki)
-        self.assertIn("~/.ai-work/installation.yaml", knowledge)
+        self.assertIn("~/.tp-spec/installation.yaml", knowledge)
         self.assertNotIn("<BaseRoot> = <", wiki)
 
 

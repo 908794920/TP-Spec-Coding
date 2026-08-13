@@ -20,12 +20,12 @@
 
 ### 0. Base resolution
 
-Resolve physical Base Root from user Installation (`~/.ai-work/installation.yaml`) or `AI_WORK_BASE_ROOT`. Project-side Base Junctions are compatibility-only and must not be required. Wiki System Root may be central, but repository scope always comes from the Wiki Registry.
+Resolve physical Base Root from user Installation (`~/.tp-spec/installation.yaml`) or `TP_SPEC_BASE_ROOT`. Project-side Base Junctions are compatibility-only and must not be required. Wiki System Root may be central, but repository scope always comes from the Wiki Registry.
 
 ## 1. Doctor
 
 ```text
-<BaseRoot>/scripts/Invoke-AiWorkCli.ps1 wiki doctor --workspace-root <workspace>
+<BaseRoot>/scripts/tp-spec.ps1 wiki doctor --workspace-root <workspace>
 ```
 
 若 config/repo root 有 ERROR，停止并报告。
@@ -33,7 +33,7 @@ Resolve physical Base Root from user Installation (`~/.ai-work/installation.yaml
 ### 2. Deterministic preflight
 
 ```text
-<BaseRoot>/scripts/Invoke-AiWorkCli.ps1 wiki maintain --workspace-root <workspace>
+<BaseRoot>/scripts/tp-spec.ps1 wiki maintain --workspace-root <workspace>
 ```
 
 逐 repo 读取结构化结果：
@@ -68,7 +68,7 @@ meta/wiki-rebuild-plan.json
 AI 正文修改后或 deterministic finalize 时执行：
 
 ```text
-<BaseRoot>/scripts/Invoke-AiWorkCli.ps1 wiki manifest-refresh --workspace-root <workspace> --repo <repo-id>
+<BaseRoot>/scripts/tp-spec.ps1 wiki manifest-refresh --workspace-root <workspace> --repo <repo-id>
 ```
 
 不得手工修 hash 来过门。
@@ -76,7 +76,7 @@ AI 正文修改后或 deterministic finalize 时执行：
 ### 5. L1-L3 Verify
 
 ```text
-<BaseRoot>/scripts/Invoke-AiWorkCli.ps1 wiki verify --workspace-root <workspace> --repo <repo-id>
+<BaseRoot>/scripts/tp-spec.ps1 wiki verify --workspace-root <workspace> --repo <repo-id>
 ```
 
 若 FAIL：根据 issues 修 Wiki/引用/结构后，重新 `manifest-refresh → verify`；不推进 baseline。
@@ -88,7 +88,7 @@ WARN 必须阅读。明显灌水、topology 漏项、引用覆盖不足不能以
 在确定性 verify 后记录真实覆盖率：
 
 ```text
-<BaseRoot>/scripts/Invoke-AiWorkCli.ps1 wiki coverage --workspace-root <workspace> --repo <repo-id>
+<BaseRoot>/scripts/tp-spec.ps1 wiki coverage --workspace-root <workspace> --repo <repo-id>
 ```
 
 对外主指标使用 `effective_wiki_coverage`，同时报告 covered / eligible / uncovered、`citation_evidence_files`、`semantic_only_covered_files` 与 exclusion reasons，让百分比能解释成真实文件数量。不得把 `source_dependency_coverage` 冒充真实 Wiki 覆盖率；不得为了提高数字给无正文证据的文件批量添加 `reference` dependency。
@@ -98,7 +98,7 @@ WARN 必须阅读。明显灌水、topology 漏项、引用覆盖不足不能以
 若 verify 输出 `semantic_audit_required=true`，先执行：
 
 ```text
-<BaseRoot>/scripts/Invoke-AiWorkCli.ps1 wiki audit --workspace-root <workspace> --repo <repo-id>
+<BaseRoot>/scripts/tp-spec.ps1 wiki audit --workspace-root <workspace> --repo <repo-id>
 ```
 
 严格按 `meta/wiki-semantic-audit-plan.json` 的文档范围做 L4；不要每次自行发明抽样方法。然后：
@@ -111,7 +111,7 @@ WARN 必须阅读。明显灌水、topology 漏项、引用覆盖不足不能以
 真实通过后记录：
 
 ```text
-<BaseRoot>/scripts/Invoke-AiWorkCli.ps1 wiki audit-record --workspace-root <workspace> --repo <repo-id> --result PASS --summary "<本次实际核验内容>" --document <doc> [...] [--topology-reviewed]
+<BaseRoot>/scripts/tp-spec.ps1 wiki audit-record --workspace-root <workspace> --repo <repo-id> --result PASS --summary "<本次实际核验内容>" --document <doc> [...] [--topology-reviewed]
 ```
 
 若 audit plan 的 `topology_review_required=true`，只有逐项检查 `topology_review` 后才能加 `--topology-reviewed`；未实际审计不得写 PASS。
@@ -119,7 +119,7 @@ WARN 必须阅读。明显灌水、topology 漏项、引用覆盖不足不能以
 ### 8. Snapshot commit
 
 ```text
-<BaseRoot>/scripts/Invoke-AiWorkCli.ps1 wiki snapshot-commit --workspace-root <workspace> --repo <repo-id>
+<BaseRoot>/scripts/tp-spec.ps1 wiki snapshot-commit --workspace-root <workspace> --repo <repo-id>
 ```
 
 如果 source 在 scan 后又变了，命令必须阻止提交；重新从 maintain 开始。

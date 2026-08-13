@@ -57,7 +57,7 @@ class RootUnresolvedError(BaselineBlockedError):
 
 
 class ReconciliationRequiredError(BaselineBlockedError):
-    """投影存在漂移，必须先执行 ai-work reconcile。"""
+    """投影存在漂移，必须先执行 tp-spec reconcile。"""
 
     code = PROJECTION_RECONCILIATION_REQUIRED
 

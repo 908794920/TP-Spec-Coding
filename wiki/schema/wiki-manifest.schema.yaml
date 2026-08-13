@@ -1,4 +1,4 @@
-schema: ai-work.wiki-manifest/v1
+schema: tp-spec.wiki-manifest/v1
 required:
 - workspace_id
 - repo_id

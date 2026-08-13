@@ -34,7 +34,7 @@ def cmd_next(args) -> int:
 def cmd_doctor(args) -> int:
     errors = orchestration.validate_contract(args.base_root)
     data = {
-        "schema": "ai-work.workflow-doctor/v1",
+        "schema": "tp-spec.workflow-doctor/v1",
         "status": "PASS" if not errors else "FAIL",
         "errors": errors,
     }

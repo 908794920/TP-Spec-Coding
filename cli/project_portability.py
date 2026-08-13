@@ -68,11 +68,11 @@ def _walk_machine_paths(value: Any, prefix: str = "") -> List[Tuple[str, str]]:
 
 def project_portability_plan(workspace_root: "str | Path", *, installation_config: "str | Path | None" = None) -> Dict[str, Any]:
     workspace = Path(workspace_root).resolve(strict=False)
-    path = workspace / ".ai-work" / "config" / "content-systems.yaml"
+    path = workspace / ".tp-spec" / "config" / "content-systems.yaml"
     installation = load_installation_config(installation_config)
     if not path.is_file():
         return {
-            "schema": "ai-work.project-portability-plan/v1",
+            "schema": "tp-spec.project-portability-plan/v1",
             "workspace_root": str(workspace),
             "config_path": str(path),
             "status": "CURRENT",
@@ -85,7 +85,7 @@ def project_portability_plan(workspace_root: "str | Path", *, installation_confi
         original = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
     except Exception as exc:
         return {
-            "schema": "ai-work.project-portability-plan/v1",
+            "schema": "tp-spec.project-portability-plan/v1",
             "workspace_root": str(workspace),
             "config_path": str(path),
             "status": "BLOCKED",
@@ -96,7 +96,7 @@ def project_portability_plan(workspace_root: "str | Path", *, installation_confi
         }
     if not isinstance(original, dict):
         return {
-            "schema": "ai-work.project-portability-plan/v1",
+            "schema": "tp-spec.project-portability-plan/v1",
             "workspace_root": str(workspace),
             "config_path": str(path),
             "status": "BLOCKED",
@@ -112,11 +112,11 @@ def project_portability_plan(workspace_root: "str | Path", *, installation_confi
 
     paths = data.get("paths")
     if isinstance(paths, dict):
-        raw = str(paths.get("ai_work_root") or "").strip()
+        raw = str(paths.get("tp_spec_root") or "").strip()
         if not raw:
-            paths.pop("ai_work_root", None)
-            if "ai_work_root" in (original.get("paths") or {}):
-                changes.append({"action": "REMOVE_EMPTY_OVERRIDE", "field": "paths.ai_work_root"})
+            paths.pop("tp_spec_root", None)
+            if "tp_spec_root" in (original.get("paths") or {}):
+                changes.append({"action": "REMOVE_EMPTY_OVERRIDE", "field": "paths.tp_spec_root"})
 
     base_defaults = yaml.safe_load((Path(__file__).resolve().parents[1] / "governance" / "content-systems.yaml").read_text(encoding="utf-8-sig")) or {}
     default_systems = base_defaults.get("systems") or {}
@@ -165,7 +165,7 @@ def project_portability_plan(workspace_root: "str | Path", *, installation_confi
     changed = normalized != original or delete_config
     status = "BLOCKED" if blockers else ("SYNC_AVAILABLE" if changed else "CURRENT")
     return {
-        "schema": "ai-work.project-portability-plan/v1",
+        "schema": "tp-spec.project-portability-plan/v1",
         "workspace_root": str(workspace),
         "config_path": str(path),
         "status": status,

@@ -15,6 +15,12 @@ execution:
   prefer_parallel_isolated_subagents: true
   sequential_isolation_fallback: true
   concurrent_workflow_stages: false
+  delivery_fast_path:
+    max_incremental_ai_overhead_percent: 5
+    context_source: runtime_compact_fact_pack
+    allow_default_subagents: false
+    allow_full_task_reread: false
+    allow_full_knowledge_scan: false
 signals:
   include_stage_prefix: "workflow:include-stage:"
   skip_stage_prefix: "workflow:skip-stage:"
@@ -38,7 +44,7 @@ pipelines:
     - {stage: architecture_review, phase: architecture, role: tp-architecture-review, required: false, trigger: architecture_risk, mode: DIRECT}
     - {stage: development, phase: development, role: tp-development-engineering, required: true, mode: DIRECT}
     - {stage: verification, phase: verification, role: tp-verification-engineering, required: true, mode: AUTO_REVIEW}
-    - {stage: delivery, phase: delivery, role: tp-delivery-convergence, required: false, trigger: contextual, mode: DIRECT}
+    - {stage: delivery, phase: delivery, role: tp-delivery-convergence, required: true, mode: DIRECT}
   L3:
     - {stage: requirement, phase: requirement, role: tp-requirement-analysis, required: true, mode: DIRECT}
     - {stage: product, phase: product, role: tp-product-design, required: false, trigger: contextual, mode: DIRECT}
@@ -46,4 +52,4 @@ pipelines:
     - {stage: architecture_review, phase: architecture, role: tp-architecture-review, required: false, trigger: architecture_risk, mode: DIRECT}
     - {stage: development, phase: development, role: tp-development-engineering, required: true, mode: DIRECT}
     - {stage: verification, phase: verification, role: tp-verification-engineering, required: true, mode: AUTO_REVIEW}
-    - {stage: delivery, phase: delivery, role: tp-delivery-convergence, required: false, trigger: contextual, mode: DIRECT}
+    - {stage: delivery, phase: delivery, role: tp-delivery-convergence, required: true, mode: DIRECT}

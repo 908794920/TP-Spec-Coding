@@ -1,6 +1,6 @@
-schema: ai-work.content-systems/v1
+schema: tp-spec.content-systems/v1
 paths:
-  ai_work_root: ''
+  tp_spec_root: ''
 systems:
   wiki:
     enabled: true
@@ -51,7 +51,7 @@ systems:
       - .idea
       - .settings
       - .vscode
-      - .ai-work
+      - .tp-spec
       - __pycache__
       - .pytest_cache
       - .mypy_cache

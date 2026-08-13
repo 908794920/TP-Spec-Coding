@@ -1,4 +1,4 @@
-schema: ai-work.wiki-coverage/v1
+schema: tp-spec.wiki-coverage/v1
 purpose: >
   Auditable file-oriented Code Intelligence coverage. The headline effective_wiki_coverage
   measures current meaningfully represented wiki-eligible source files, not all scanner-visible files.

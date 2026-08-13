@@ -9,7 +9,7 @@
 - status.yaml 字段顺序与兼容投影契约完全一致
 - events.jsonl 每行 JSON：id/time/type/actor 非空，type 在 EventTypes 内
 - actor 非空保证（回退到 actor_agent，再回退 "unknown" 并告警）
-- 末条 STATE 事件的 state = task.current_state（Test-AiWorkTask.ps1 L765-L767 硬校验）
+- 末条 STATE 事件的 state = task.current_state（Test-TpSpecTask.ps1 L765-L767 硬校验）
 - 不生成 generated/（那是 flush 的产物）
 - UTF-8 无 BOM
 """
@@ -27,7 +27,7 @@ from . import db as dbmod
 from .version import active_version
 
 
-# 与 Test-AiWorkTask.ps1 L25 $EventTypes 完全一致
+# 与 Test-TpSpecTask.ps1 L25 $EventTypes 完全一致
 _EVENT_TYPES = {
     "STATE",
     "FACT",
@@ -61,7 +61,7 @@ _TYPE_MAP = {
     "SCOPE_CHANGE": "SCOPE_CHANGE",
     "KNOWLEDGE": "KNOWLEDGE",
     # V5.2.0 A-04：reconcile 追加的审计事件；投影为 FACT 保持
-    # events.jsonl 合法 type 集合不变（Test-AiWorkTask.ps1 EventTypes 零感知）。
+    # events.jsonl 合法 type 集合不变（Test-TpSpecTask.ps1 EventTypes 零感知）。
     "RECONCILIATION": "FACT",
 }
 
@@ -96,8 +96,8 @@ def _resolve_task_dir(args_task_dir: Optional[str], task_id: str, conn) -> Path:
 
     优先级：
     1. --task-dir 显式指定
-    2. registry 中 project root + .ai-work/tasks/<task_id>
-    3. cwd/.ai-work/tasks/<task_id>
+    2. registry 中 project root + .tp-spec/tasks/<task_id>
+    3. cwd/.tp-spec/tasks/<task_id>
     """
     if args_task_dir:
         return Path(args_task_dir).resolve()
@@ -114,13 +114,13 @@ def _resolve_task_dir(args_task_dir: Optional[str], task_id: str, conn) -> Path:
                     if proj.get("project_id") == project_id:
                         root_path = proj.get("root_path", ".")
                         if not os.path.isabs(root_path):
-                            # 相对路径以 ai-work-base 根为基准
+                            # 相对路径以 tp-spec-base 根为基准
                             base_root = Path(__file__).resolve().parent.parent
                             root_path = str(base_root / root_path)
-                        return (Path(root_path) / ".ai-work" / "tasks" / task_id).resolve()
+                        return (Path(root_path) / ".tp-spec" / "tasks" / task_id).resolve()
             except (json.JSONDecodeError, OSError):
                 pass
-    return (Path.cwd() / ".ai-work" / "tasks" / task_id).resolve()
+    return (Path.cwd() / ".tp-spec" / "tasks" / task_id).resolve()
 
 
 def _map_event_type(event_type: str) -> str:
@@ -231,7 +231,7 @@ def _build_events_jsonl(events: List[Dict[str, Any]], task_id: str) -> Tuple[str
             pass
 
         # REVIEW_COMPLETED 忠实回投：从 detail_json 补 decision/handoff_id/flush_id
-        # （M6 修复：校验器 Test-AiWorkTask.ps1 L819-822 交叉校验 REVIEW_COMPLETED 的
+        # （M6 修复：校验器 Test-TpSpecTask.ps1 L819-822 交叉校验 REVIEW_COMPLETED 的
         #   decision/time/evidence 与 codex-review.md 匹配；time 已由 created_at 正确回投
         #   （= flush 写入的 review.Timestamp），evidence 已由 evidence_path 回投；
         #   decision/handoff_id/flush_id 原先丢失，导致 rebuild 后过不了校验器。

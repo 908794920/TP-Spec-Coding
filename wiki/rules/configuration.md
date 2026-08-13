@@ -1,11 +1,11 @@
 # Content Systems 配置
 
-权威默认配置：`governance/content-systems.yaml`。用户级 `~/.ai-work/installation.yaml` 可一次配置 Base/Wiki/Knowledge 系统根；项目 Content Systems 仍作为最高优先级的例外覆盖。
+权威默认配置：`governance/content-systems.yaml`。用户级 `~/.tp-spec/installation.yaml` 可一次配置 Base/Wiki/Knowledge 系统根；项目 Content Systems 仍作为最高优先级的例外覆盖。
 
 项目可选覆盖：
 
 ```text
-<workspace>/.ai-work/config/content-systems.yaml
+<workspace>/.tp-spec/config/content-systems.yaml
 ```
 
 覆盖采用递归 merge；无需复制完整默认配置。
@@ -23,8 +23,8 @@ systems:
 解析为：
 
 ```text
-<workspace>/.ai-work/wiki
-<workspace>/.ai-work/knowledge
+<workspace>/.tp-spec/wiki
+<workspace>/.tp-spec/knowledge
 ```
 
 ## 外部中央存储
@@ -37,12 +37,12 @@ systems:
     root: "<knowledge-system-root>"
 ```
 
-Runtime/CLI 先解析 Wiki System Root，再通过 Repo Registry 解析当前 workspace/repository 的 Wiki scope；取消 Junction 绝不意味着扫描整个中央 Wiki。`.ai-work/wiki` / `.ai-work/knowledge` Junction 只用于 legacy 兼容或 IDE 浏览，不是可用性的前提。
+Runtime/CLI 先解析 Wiki System Root，再通过 Repo Registry 解析当前 workspace/repository 的 Wiki scope；取消 Junction 绝不意味着扫描整个中央 Wiki。`.tp-spec/wiki` / `.tp-spec/knowledge` Junction 只用于 legacy 兼容或 IDE 浏览，不是可用性的前提。
 
 ## Registry
 
 - 外部 root 下存在 `00-system/repo-registry.yaml` 时，`layout: auto` 自动进入 legacy-central 兼容布局；
-- 本地模式默认 registry 为 `.ai-work/config/wiki-repos.yaml`；
+- 本地模式默认 registry 为 `.tp-spec/config/wiki-repos.yaml`；
 - 已存在 registry 但当前 workspace 无匹配项时 fail-closed；可由 `project-binding.yaml` 的显式 `wiki_id` 提供受控 fallback，不按目录名猜仓库；
 - 同一 physical path 通过 canonical path 去重/诊断。
 

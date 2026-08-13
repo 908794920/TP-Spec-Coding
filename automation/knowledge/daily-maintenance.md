@@ -13,8 +13,8 @@ Never call `AskUserQuestion`. If a required business decision cannot be derived 
 3. Run:
 
 ```text
-ai-work knowledge doctor --workspace-root <workspace>
-ai-work knowledge maintain --workspace-root <workspace>
+tp-spec knowledge doctor --workspace-root <workspace>
+tp-spec knowledge maintain --workspace-root <workspace>
 ```
 
 Do not treat a missing optional Junction as a Knowledge failure. Do not use legacy `tools/kb-*` from the Vault as runtime authority.

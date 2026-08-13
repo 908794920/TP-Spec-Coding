@@ -3,7 +3,7 @@
 
 Historical task/evidence content is immutable evidence and intentionally out of
 scope.  This scanner only inspects top-level Markdown formal artifacts of tasks
-that are still NEW/ACTIVE/BLOCKED under ``.ai-work/tasks``.
+that are still NEW/ACTIVE/BLOCKED under ``.tp-spec/tasks``.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import yaml
 
 ACTIVE_STATES = {"NEW", "ACTIVE", "BLOCKED"}
 LEGACY_OPERATIONAL = re.compile(
-    r"(?i)(?:\.ai-work[\\/](?:knowledge|wiki|scripts|agents|governance|skills|templates|automation|cli))(?:[\\/]|\b)"
+    r"(?i)(?:\.tp-spec[\\/](?:knowledge|wiki|scripts|agents|governance|skills|templates|automation|cli))(?:[\\/]|\b)"
 )
 NEGATION_OR_HISTORY = re.compile(
     r"(?i)(?:不得|不要|禁止|不再|无需|不依赖|已移除|旧|历史|兼容|legacy|deprecated|removed|do\s+not|must\s+not|no\s+longer)"
@@ -35,13 +35,13 @@ def _status(task_dir: Path) -> Dict[str, Any]:
 
 def scan_active_task_portability(workspace_root: "str | Path") -> Dict[str, Any]:
     workspace = Path(workspace_root).resolve(strict=False)
-    tasks_root = workspace / ".ai-work" / "tasks"
+    tasks_root = workspace / ".tp-spec" / "tasks"
     findings: List[Dict[str, Any]] = []
     scanned_tasks = 0
     scanned_documents = 0
     if not tasks_root.is_dir():
         return {
-            "schema": "ai-work.active-task-portability/v1",
+            "schema": "tp-spec.active-task-portability/v1",
             "status": "CURRENT",
             "workspace_root": str(workspace),
             "scanned_tasks": 0,
@@ -74,7 +74,7 @@ def scan_active_task_portability(workspace_root: "str | Path") -> Dict[str, Any]
                     "classification": "LEGACY_ACTIVE_REFERENCE",
                 })
     return {
-        "schema": "ai-work.active-task-portability/v1",
+        "schema": "tp-spec.active-task-portability/v1",
         "status": "REVIEW_REQUIRED" if findings else "CURRENT",
         "workspace_root": str(workspace),
         "scanned_tasks": scanned_tasks,

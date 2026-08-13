@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-V5.1.0 DB-backend guard regression for Invoke-AiWorkHandoffFlush.ps1 (isolated).
+V5.1.0 DB-backend guard regression for Invoke-TpSpecHandoffFlush.ps1 (isolated).
 
 .DESCRIPTION
 Regression for the 2026-07-30 bug fix: when the DB backend is enabled, calling
@@ -9,19 +9,19 @@ guidance, zero side effects), because a direct call skips projection rebuild
 and event sync and silently leaves the SQLite ledger behind (TASK-21956).
 
 Builds an isolated temp project with its own SQLite ledger and a temp
-registry.local.json (wired through AI_WORK_REGISTRY), then asserts:
+registry.local.json (wired through TP_SPEC_REGISTRY), then asserts:
   S1  DB enabled + direct flush        -> rejected, file/DB state unchanged,
       no .flush-journal residue (true zero side effects)
-  S2  DB enabled + ai-work.ps1 wrapper -> file projection and SQLite task
+  S2  DB enabled + tp-spec.ps1 wrapper -> file projection and SQLite task
       state/owner consistent (rebuild -> flush -> sync)
   S4  event sync retried               -> idempotent, no duplicate flush_id
       events, task row stable
   S3  DB not enabled (task in no ledger) + direct flush -> original file-mode
       behavior preserved (exit 0, state advanced, no guard message)
   S5  detection cannot produce a trusted verdict (corrupt ledger via
-      AI_WORK_DB) + direct flush -> rejected fail-closed, zero side effects
-  S6  DB actually enabled but ai-work.ps1 detection cannot produce a trusted
-      verdict (corrupt ledger via AI_WORK_DB) -> wrapper rejects fail-closed
+      TP_SPEC_DB) + direct flush -> rejected fail-closed, zero side effects
+  S6  DB actually enabled but tp-spec.ps1 detection cannot produce a trusted
+      verdict (corrupt ledger via TP_SPEC_DB) -> wrapper rejects fail-closed
       (exit 9), no rebuild/flush/sync, file and SQLite state untouched
 
 Never touches real projects or production Runtime databases. The temp directory is kept
@@ -30,9 +30,9 @@ for audit. Exit code is non-zero on any failure.
 [CmdletBinding()]
 param()
 $ErrorActionPreference = 'Stop'
-$base = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)  # ai-work-base
-$flush = Join-Path $base 'scripts\Invoke-AiWorkHandoffFlush.ps1'
-$aiwork = Join-Path $base 'scripts\ai-work.ps1'
+$base = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)  # tp-spec-base
+$flush = Join-Path $base 'scripts\Invoke-TpSpecHandoffFlush.ps1'
+$tpspec = Join-Path $base 'scripts\tp-spec.ps1'
 $cliMain = Join-Path $base 'cli\main.py'
 $tpl = Join-Path $base 'templates\5.1.3'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
@@ -53,8 +53,8 @@ function Write-Text([string]$Path, [string]$Text) {
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("v510dbguard-" + [guid]::NewGuid().ToString('N'))
 $projRoot = Join-Path $work 'proj'
 $taskId = 'TASK-20260730-801'
-$taskDir = Join-Path $projRoot ".ai-work\tasks\$taskId"
-$dbPath = Join-Path $projRoot ".ai-work\db\guard.db"
+$taskDir = Join-Path $projRoot ".tp-spec\tasks\$taskId"
+$dbPath = Join-Path $projRoot ".tp-spec\db\guard.db"
 $registryPath = Join-Path $work 'registry.local.json'
 New-Item -ItemType Directory -Path $taskDir -Force | Out-Null
 
@@ -127,10 +127,10 @@ function Invoke-Flush([string]$dir, [string]$actor) {
     return @{ Code = $code; Out = $out }
 }
 
-function Invoke-AiWork([string]$dir, [string]$actor) {
+function Invoke-TpSpec([string]$dir, [string]$actor) {
     $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     try {
-        $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $aiwork -TaskPath $dir -Actor $actor 2>&1 | Out-String
+        $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $tpspec -TaskPath $dir -Actor $actor 2>&1 | Out-String
         $code = $LASTEXITCODE
     }
     finally { $ErrorActionPreference = $prev }
@@ -191,14 +191,14 @@ function Get-StatusState([string]$dir) {
 
 try {
     # ============================ setup ============================
-    # temp registry wired through AI_WORK_REGISTRY (inherited by all children)
+    # temp registry wired through TP_SPEC_REGISTRY (inherited by all children)
     $reg = @{ projects = @(@{
         project_id = 'guardproj'; project_name = 'guardproj'
         db_path = $dbPath; root_path = $projRoot
         base_version = '5.1.0'; schema_version = 1
     }) }
     Write-Text $registryPath ($reg | ConvertTo-Json -Depth 5)
-    $env:AI_WORK_REGISTRY = $registryPath
+    $env:TP_SPEC_REGISTRY = $registryPath
 
     # ledger: schema + project + task(DEVELOPING) + db_backend_enabled=true
     $setup = @"
@@ -230,7 +230,7 @@ print("SETUP_OK")
     # ================= S1: DB enabled + direct flush => rejected =================
     $r = Invoke-Flush $taskDir 'tp-development-engineering'
     Check 's1_direct_flush_rejected' ($r.Code -ne 0) "rc=$($r.Code)"
-    Check 's1_guidance_message' ($r.Out -match 'ai-work\.ps1' -and $r.Out -match 'event sync') ''
+    Check 's1_guidance_message' ($r.Out -match 'tp-spec\.ps1' -and $r.Out -match 'event sync') ''
     Check 's1_status_unchanged' ((Get-StatusState $taskDir) -eq 'DEVELOPING') "state=$(Get-StatusState $taskDir)"
     $ho = [System.IO.File]::ReadAllText((Join-Path $taskDir 'handoff.json'), $utf8) | ConvertFrom-Json
     Check 's1_handoff_not_consumed' (-not [bool]$ho.consumed) ''
@@ -238,9 +238,9 @@ print("SETUP_OK")
     $facts = Get-LedgerFacts $taskId
     Check 's1_db_state_unchanged' ($facts.State -eq 'DEVELOPING' -and $facts.Events -eq 0) "state=$($facts.State) events=$($facts.Events)"
 
-    # ============ S2: DB enabled + ai-work.ps1 => file/DB consistent ============
-    $r = Invoke-AiWork $taskDir 'tp-development-engineering'
-    Check 's2_aiwork_rc0' ($r.Code -eq 0) "rc=$($r.Code) $($r.Out.Trim())"
+    # ============ S2: DB enabled + tp-spec.ps1 => file/DB consistent ============
+    $r = Invoke-TpSpec $taskDir 'tp-development-engineering'
+    Check 's2_tpspec_rc0' ($r.Code -eq 0) "rc=$($r.Code) $($r.Out.Trim())"
     $statusText = [System.IO.File]::ReadAllText((Join-Path $taskDir 'status.yaml'), $utf8)
     Check 's2_status_verifying' ($statusText -match '(?m)^current_state:\s*"VERIFYING"') ''
     Check 's2_owner_verification' ($statusText -match '(?m)^current_owner:\s*"tp-verification-engineering"') ''
@@ -262,7 +262,7 @@ print("SETUP_OK")
 
     # ====== S3: DB not enabled (task in no ledger) + direct flush => intact ======
     $taskId3 = 'TASK-20260730-802'
-    $taskDir3 = Join-Path $work "proj2\.ai-work\tasks\$taskId3"
+    $taskDir3 = Join-Path $work "proj2\.tp-spec\tasks\$taskId3"
     New-TaskCopy $taskDir3 $taskId3 'NEW' 'tp-architecture-design'
     Write-Handoff $taskDir3 $taskId3 'tp-architecture-design' 'risk L1 -> dev' 'DEVELOPING' 'tp-development-engineering'
     $r = Invoke-Flush $taskDir3 'tp-architecture-design'
@@ -271,21 +271,21 @@ print("SETUP_OK")
     Check 's3_no_guard_message' ($r.Out -notmatch 'DB backend is enabled') ''
 
     # ==== S5: detection failure (no trusted verdict) + direct flush => reject ====
-    # AI_WORK_DB points at a non-SQLite file: resolve_db_path returns it, the
+    # TP_SPEC_DB points at a non-SQLite file: resolve_db_path returns it, the
     # config query raises -> detection prints 'error: ...' -> guard fail-closed.
     $taskId5 = 'TASK-20260730-803'
-    $taskDir5 = Join-Path $work "proj3\.ai-work\tasks\$taskId5"
+    $taskDir5 = Join-Path $work "proj3\.tp-spec\tasks\$taskId5"
     New-TaskCopy $taskDir5 $taskId5 'DEVELOPING' 'tp-development-engineering'
     Set-ImplReady $taskDir5
     Write-Handoff $taskDir5 $taskId5 'tp-development-engineering' 'impl done' 'VERIFYING' 'tp-verification-engineering'
     $corruptDb = Join-Path $work 'corrupt.db'
     Write-Text $corruptDb "this is not a sqlite database`n"
-    $env:AI_WORK_DB = $corruptDb
+    $env:TP_SPEC_DB = $corruptDb
     try {
         $r = Invoke-Flush $taskDir5 'tp-development-engineering'
     }
     finally {
-        Remove-Item Env:AI_WORK_DB -ErrorAction SilentlyContinue
+        Remove-Item Env:TP_SPEC_DB -ErrorAction SilentlyContinue
     }
     Check 's5_detectfail_rejected' ($r.Code -ne 0) "rc=$($r.Code)"
     Check 's5_failclosed_message' ($r.Out -match 'fail-closed' -and $r.Out -match 'trusted verdict') ''
@@ -295,11 +295,11 @@ print("SETUP_OK")
     Check 's5_handoff_not_consumed' (-not [bool]$ho.consumed) ''
 
     # == S6: DB actually enabled + wrapper detection failure => wrapper fail-closed ==
-    # Task registered in the enabled guardproj ledger; AI_WORK_DB points at the
+    # Task registered in the enabled guardproj ledger; TP_SPEC_DB points at the
     # corrupt file so the wrapper's own detection raises -> 'error: ...' verdict
-    # -> ai-work.ps1 must exit 9 without rebuild/flush/sync or artifact writes.
+    # -> tp-spec.ps1 must exit 9 without rebuild/flush/sync or artifact writes.
     $taskId6 = 'TASK-20260730-804'
-    $taskDir6 = Join-Path $projRoot ".ai-work\tasks\$taskId6"
+    $taskDir6 = Join-Path $projRoot ".tp-spec\tasks\$taskId6"
     $setup6 = @"
 import sys
 sys.path.insert(0, r'$base')
@@ -317,12 +317,12 @@ print("SETUP6_OK")
     New-TaskCopy $taskDir6 $taskId6 'DEVELOPING' 'tp-development-engineering'
     Set-ImplReady $taskDir6
     Write-Handoff $taskDir6 $taskId6 'tp-development-engineering' 'impl done' 'VERIFYING' 'tp-verification-engineering'
-    $env:AI_WORK_DB = $corruptDb
+    $env:TP_SPEC_DB = $corruptDb
     try {
-        $r = Invoke-AiWork $taskDir6 'tp-development-engineering'
+        $r = Invoke-TpSpec $taskDir6 'tp-development-engineering'
     }
     finally {
-        Remove-Item Env:AI_WORK_DB -ErrorAction SilentlyContinue
+        Remove-Item Env:TP_SPEC_DB -ErrorAction SilentlyContinue
     }
     Check 's6_wrapper_failclosed_rc9' ($r.Code -eq 9) "rc=$($r.Code)"
     Check 's6_trusted_verdict_message' ($r.Out -match 'trusted verdict' -and $r.Out -match 'error:') ''
@@ -335,9 +335,9 @@ print("SETUP6_OK")
     Check 's6_db_state_unchanged' ($facts.State -eq 'DEVELOPING' -and $facts.Events -eq 0) "state=$($facts.State) events=$($facts.Events)"
 }
 finally {
-    Remove-Item Env:AI_WORK_REGISTRY -ErrorAction SilentlyContinue
-    Remove-Item Env:AI_WORK_ORCHESTRATED -ErrorAction SilentlyContinue
-    Remove-Item Env:AI_WORK_DB -ErrorAction SilentlyContinue
+    Remove-Item Env:TP_SPEC_REGISTRY -ErrorAction SilentlyContinue
+    Remove-Item Env:TP_SPEC_ORCHESTRATED -ErrorAction SilentlyContinue
+    Remove-Item Env:TP_SPEC_DB -ErrorAction SilentlyContinue
 }
 
 # ============================ summary ============================

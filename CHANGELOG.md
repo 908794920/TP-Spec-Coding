@@ -3,7 +3,7 @@
 ## V5.2.0 TP-Spec-Coding Public Release — 2026-08-12
 
 - Windows 发布适配收口：统一 machine-local path identity（包含 symlink/Junction/Windows 8.3 短路径别名），修复 Project bootstrap 与 Runtime Registry migration 的字符串路径误判；CLI/版本扫描器建立 UTF-8 stdio 边界，GitHub Windows CI 显式启用 UTF-8；字节门禁以仓库 `.gitattributes` + manifest 为权威，不再强制用户全局 `core.autocrlf=false`。
-- 项目正式更名为 **TP-Spec-Coding**，对外首页、治理名称、CLI 帮助与核心 Agent/Skill 说明统一品牌；为兼容历史 Task/DB，`ai-work` CLI、`.ai-work/`、`ai-work.*` schema 与 `AI_WORK_BASE_ROOT` 等稳定技术 namespace 保持不变。
+- 项目正式更名为 **TP-Spec-Coding**，对外首页、治理名称、CLI 帮助与核心 Agent/Skill 说明统一品牌。
 - 正式开源采用 MIT License，新增 `LICENSE`、`CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md`、GitHub Actions CI 与可复现 Python requirements。
 - README 重写为公开项目入口：先说明项目价值与优势，再提供快速开始、4 个对外 Agent、开发组长 + 7 个内部专业 Skill、Record-first、UltraPlan/UltraReview、跨机器迁移和安全边界。
 - GitHub 发布面补齐贡献、安全、行为准则、PR/Issue 模板与 Linux + Windows CI；`project init` 同时创建 portable `project-binding.yaml`，并在已有 binding 身份冲突时 fail-closed，保证 README 的“初始化 → sync-project → 跨机器恢复”路径真实可执行。
@@ -14,6 +14,10 @@
 - Version Purity 扫描器补齐“上一 minor”检测：当前 5.2.x 活动面出现 5.1.x 等旧 5.x token 会被识别，历史证据仍通过精确 allowlist 保留。
 - 正式发布面补强：恢复首发提交遗漏的 `.github/` Actions / PR / Issue 模板，并新增 Git-index 级 `update_manifest.py --verify-release`；发布候选必须已 `git add -A`，防止“本地工作树验证通过，但新增点目录未进入最终 commit”的假绿。
 - 修复 B18 cutover 回归在普通用户/Linux CI 下的清理权限缺陷：目录解除只读时保留 execute/search 位，避免 root 本地测试假绿、GitHub Actions 因临时目录无法遍历而失败。
+- 完成命名空间收敛（`ai-work` → `tp-spec`）：新增一次性 `base namespace-migrate`（plan/apply）把 `.ai-work/`、`~/.ai-work` 与 `ai-work.*` schema 迁移到 `.tp-spec/`、`~/.tp-spec` 与 `tp-spec.*`；新旧命名空间共存时 fail-closed，不猜测权威副本。正常运行时不再回退到 legacy namespace。
+- 新增稳定 machine-local `tp-spec` 启动器（`cli/launcher.py` + `scripts/tp-spec{.ps1,.cmd,}`）与 Windows 用户级 PATH 持久化；新增 `cli/namespace_migration.py`、`docs/MIGRATION_V520_NAMESPACE.md` 与 `project-entry/tp-spec-readme.md`。
+- 新增 PowerShell 交接/基座自检脚本 `scripts/Invoke-TpSpecHandoff.ps1`、`Invoke-TpSpecHandoffFlush.ps1`、`Test-TpSpecTask.ps1`、`ci/Test-TpSpecBase.ps1`。
+- 新增命名空间迁移/收敛/最终一致性三组回归：`test_v520_namespace_migration.py`、`test_v520_namespace_purity.py`、`test_v520_final_convergence.py`；全仓既有测试同步收敛到 tp-spec 命名空间。
 
 ## V5.1.4 Workflow Orchestrator — 2026-08-12
 

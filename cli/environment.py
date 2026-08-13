@@ -6,11 +6,11 @@ This module separates four authorities:
 - Base installation: immutable program/rule assets.
 - Wiki system root: central Code Intelligence storage.
 - Knowledge system root: central long-lived knowledge storage.
-- Project-local ``.ai-work``: runtime/task state only.
+- Project-local ``.tp-spec``: runtime/task state only.
 
 Project-side Junctions remain compatibility-only.  Runtime code resolves physical
 roots from the user installation + project binding + registries instead of relying
-on linked directories under ``.ai-work``.
+on linked directories under ``.tp-spec``.
 """
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ import yaml
 from cli.config_loader import load_config
 from cli.path_identity import canonical_path, path_identity_key
 
-INSTALLATION_SCHEMA = "ai-work.installation/v1"
-BINDING_SCHEMA = "ai-work.project-binding/v1"
-INVENTORY_SCHEMA = "ai-work.workspace-inventory/v1"
+INSTALLATION_SCHEMA = "tp-spec.installation/v1"
+BINDING_SCHEMA = "tp-spec.project-binding/v1"
+INVENTORY_SCHEMA = "tp-spec.workspace-inventory/v1"
 
 
 class EnvironmentConfigError(ValueError):
@@ -37,29 +37,29 @@ def _home(home: "str | Path | None" = None) -> Path:
     return canonical_path(Path(home).expanduser()) if home else canonical_path(Path.home())
 
 
-def user_ai_work_root(home: "str | Path | None" = None) -> Path:
-    env = os.environ.get("AI_WORK_USER_ROOT")
+def user_tp_spec_root(home: "str | Path | None" = None) -> Path:
+    env = os.environ.get("TP_SPEC_USER_ROOT")
     if env:
         return canonical_path(env)
-    return canonical_path(_home(home) / ".ai-work")
+    return canonical_path(_home(home) / ".tp-spec")
 
 
 def default_installation_path(home: "str | Path | None" = None) -> Path:
-    env = os.environ.get("AI_WORK_INSTALLATION_CONFIG")
+    env = os.environ.get("TP_SPEC_INSTALLATION_CONFIG")
     if env:
         return canonical_path(env)
-    return user_ai_work_root(home) / "installation.yaml"
+    return user_tp_spec_root(home) / "installation.yaml"
 
 
 def default_inventory_path(home: "str | Path | None" = None) -> Path:
-    env = os.environ.get("AI_WORK_WORKSPACE_INVENTORY")
+    env = os.environ.get("TP_SPEC_WORKSPACE_INVENTORY")
     if env:
         return canonical_path(env)
-    return user_ai_work_root(home) / "workspaces.yaml"
+    return user_tp_spec_root(home) / "workspaces.yaml"
 
 
 def default_binding_path(workspace_root: "str | Path") -> Path:
-    return canonical_path(workspace_root) / ".ai-work" / "config" / "project-binding.yaml"
+    return canonical_path(workspace_root) / ".tp-spec" / "config" / "project-binding.yaml"
 
 
 def _as_abs(value: Any, *, anchor: Path) -> Optional[Path]:
@@ -208,7 +208,7 @@ def resolve_base_root(
     workspace = canonical_path(workspace_root)
     if explicit:
         return canonical_path(explicit)
-    env = os.environ.get("AI_WORK_BASE_ROOT")
+    env = os.environ.get("TP_SPEC_BASE_ROOT")
     if env:
         return canonical_path(env)
     binding = load_project_binding(workspace, binding_path)

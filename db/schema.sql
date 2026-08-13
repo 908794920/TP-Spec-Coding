@@ -1,4 +1,4 @@
--- AI Work Base V5.0 initial schema (schema_version = 1)
+-- TP-Spec-Coding V5.0 initial schema (schema_version = 1)
 -- 账本结构定义；历史升级计划已归档，不作为运行时依赖。
 -- 5 表 + 8 索引；连接时还需执行 PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
 

@@ -242,7 +242,7 @@ def lint_knowledge(cfg) -> Dict[str, Any]:
     warnings.sort(key=lambda x: (x["path"], x["rule_id"], x["location"], x["message"]))
     advisories.sort(key=lambda x: (x["path"], x["rule_id"], x["location"], x["message"]))
     return {
-        "schema": "ai-work.knowledge-lint/v1",
+        "schema": "tp-spec.knowledge-lint/v1",
         "status": "PASS" if not violations else "FAIL",
         "canonical_documents": len(canonical),
         "source_documents": len(sources),

@@ -40,7 +40,7 @@ class TestV512Maintenance(unittest.TestCase):
         self.registry = self.root / "registry.local.json"
         self.registry.write_text('{"projects": []}\n', encoding="utf-8")
         self.project_root = self.root / "project"
-        self.db = self.project_root / ".ai-work" / "db" / "demo.db"
+        self.db = self.project_root / ".tp-spec" / "db" / "demo.db"
 
     def bootstrap(self):
         return run([
@@ -112,7 +112,7 @@ class TestV512Maintenance(unittest.TestCase):
         self.assertEqual(after, before)
 
     def test_project_bootstrap_refuses_task_history_without_db(self):
-        orphan = self.project_root / ".ai-work" / "tasks" / "TASK-OLD"
+        orphan = self.project_root / ".tp-spec" / "tasks" / "TASK-OLD"
         orphan.mkdir(parents=True)
         (orphan / "events.jsonl").write_text('{"event":"old"}\n', encoding="utf-8")
         rc, out, err = self.bootstrap()
@@ -169,7 +169,7 @@ class TestV512Maintenance(unittest.TestCase):
         source_text += "\n| intake | 保留这条 intake 业务事实 | 影响正式需求理解 |\n"
         src.write_text(source_text, encoding="utf-8", newline="\n")
         source_hash = hashlib.sha256(src.read_bytes()).hexdigest()
-        task_dir = self.project_root / ".ai-work" / "tasks" / "TASK-INTAKE-1"
+        task_dir = self.project_root / ".tp-spec" / "tasks" / "TASK-INTAKE-1"
 
         rc2, out2, err2 = run([
             "task", "create", "--id", "TASK-INTAKE-1", "--project", "demo",
@@ -207,7 +207,7 @@ class TestV512Maintenance(unittest.TestCase):
         intake = self.root / "bad-intake"
         intake.mkdir()
         (intake / "notes.md").write_text("notes\n", encoding="utf-8")
-        task_dir = self.project_root / ".ai-work" / "tasks" / "TASK-INTAKE-BAD"
+        task_dir = self.project_root / ".tp-spec" / "tasks" / "TASK-INTAKE-BAD"
         rc2, out2, err2 = run([
             "task", "create", "--id", "TASK-INTAKE-BAD", "--project", "demo",
             "--risk", "L1", "--flow", "L1", "--db", str(self.db),

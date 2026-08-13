@@ -1,4 +1,4 @@
-schema: ai-work.installation/v1
+schema: tp-spec.installation/v1
 base:
   root: ""
 systems:

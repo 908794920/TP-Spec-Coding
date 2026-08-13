@@ -112,11 +112,12 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
     def test_delivery_keeps_truthful_knowledge_boundaries(self):
         self.assertContainsAll(
             "skills/tp-delivery-convergence/SKILL.md",
-            "knowledge_target=CONFIRMED",
+            "<= 5%",
             "90-sources",
             "DEFERRED",
-            "不重新做质量裁决",
-            "knowledge_required=true",
+            "不重新裁决 PASS/FAIL",
+            "targeted",
+            "tp-knowledge",
         )
 
     def test_tp_wiki_keeps_low_cost_semantic_truth_guardrails(self):

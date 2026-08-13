@@ -148,12 +148,12 @@ class TestV512RuntimeMaintenance2(unittest.TestCase):
         self.assertEqual(row["actor_role"], "tp-architecture-design")
 
     def test_validator_resolves_base_root_without_cli_junction_contract(self):
-        text = (BASE / "scripts" / "Test-AiWorkTask.ps1").read_text(encoding="utf-8-sig")
-        self.assertIn("function Resolve-AiWorkBaseRoot", text)
-        self.assertIn("AI_WORK_BASE_ROOT", text)
+        text = (BASE / "scripts" / "Test-TpSpecTask.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("function Resolve-TpSpecBaseRoot", text)
+        self.assertIn("TP_SPEC_BASE_ROOT", text)
         self.assertIn("$scriptItem.Target", text)
         self.assertIn("$script:BaseRoot", text)
-        self.assertNotIn("$mirrorBase = Split-Path -Parent $PSScriptRoot   # ai-work-base", text)
+        self.assertNotIn("$mirrorBase = Split-Path -Parent $PSScriptRoot   # tp-spec-base", text)
 
     def test_runtime_contract_and_roles_wire_timing_without_pretask_fabrication(self):
         runtime = yaml.safe_load((BASE / "governance" / "runtime-api.yaml").read_text(encoding="utf-8"))
@@ -169,5 +169,5 @@ class TestV512RuntimeMaintenance2(unittest.TestCase):
             "tp-product-design", "tp-verification-engineering", "tp-delivery-convergence",
         ):
             text = (BASE / by_role[role]["skill_path"]).read_text(encoding="utf-8")
-            self.assertNotIn("ai-work work start", text, role)
-            self.assertNotIn("ai-work work end", text, role)
+            self.assertNotIn("tp-spec work start", text, role)
+            self.assertNotIn("tp-spec work end", text, role)

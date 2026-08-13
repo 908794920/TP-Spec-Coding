@@ -14,7 +14,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$base = Split-Path -Parent $PSScriptRoot   # ai-work-base
+$base = Split-Path -Parent $PSScriptRoot   # tp-spec-base
 $py = Join-Path $base 'scripts\update_manifest.py'
 if (-not (Test-Path -LiteralPath $py)) { throw "missing $py" }
 if ($Verify) {

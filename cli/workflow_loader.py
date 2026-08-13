@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Optional
 
-# ai-work-base 根目录
+# tp-spec-base 根目录
 _BASE_ROOT = Path(__file__).resolve().parent.parent
 
 

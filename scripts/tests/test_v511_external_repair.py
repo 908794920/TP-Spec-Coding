@@ -83,11 +83,11 @@ class TestPersonalModeSurface(unittest.TestCase):
         conn.close()
 
     def test_powershell_flush_mirror_allows_verification_rework(self):
-        text = (ROOT / "scripts" / "Invoke-AiWorkHandoffFlush.ps1").read_text(encoding="utf-8-sig")
+        text = (ROOT / "scripts" / "Invoke-TpSpecHandoffFlush.ps1").read_text(encoding="utf-8-sig")
         self.assertIn("VERIFYING = @('DEVELOPING','BROWSER_VERIFYING','REVIEWING','CLOSING','DISCOVERY_REVIEW_REQUIRED','BLOCKED')", text)
 
     def test_active_powershell_uses_personal_deferred_schema(self):
-        text = (ROOT / "scripts" / "Test-AiWorkTask.ps1").read_text(encoding="utf-8")
+        text = (ROOT / "scripts" / "Test-TpSpecTask.ps1").read_text(encoding="utf-8")
         self.assertIn("recorded_at", text)
         self.assertNotIn("approved_by", text)
         self.assertNotIn("approved_at", text)

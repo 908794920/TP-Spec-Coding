@@ -17,7 +17,7 @@ def test_workflow_next_cli_is_readonly_and_json_stable():
         conn=dbmod.connect_readonly(db); before=conn.execute('select count(*) c from task_event').fetchone()['c']; conn.close()
         rc,out,err=run(['workflow','next','--task','TASK-V514','--db',db,'--json'])
         assert rc==0,(out,err); data=json.loads(out)
-        assert data['schema']=='ai-work.workflow-route/v1' and data['recommended_action']=='dispatch_role'
+        assert data['schema']=='tp-spec.workflow-route/v1' and data['recommended_action']=='dispatch_role'
         conn=dbmod.connect_readonly(db); after=conn.execute('select count(*) c from task_event').fetchone()['c']; conn.close()
         assert before==after
 
@@ -39,5 +39,8 @@ def test_l3_pass_reaches_complete_without_second_ledger():
         add_decision(db,'TASK-V514','workflow:material-confirmed:architecture->development')
         add_checkpoint(db,'TASK-V514','tp-development-engineering','development')
         add_verify(db,'TASK-V514','PASS')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='delivery' and r['role_id']=='tp-delivery-convergence'
+        add_checkpoint(db,'TASK-V514','tp-delivery-convergence','delivery')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='complete' and r['recommended_action']=='task_complete'

@@ -8,7 +8,7 @@ verification result.  This module therefore exposes three validation modes:
 - ``working``: validate structure that must already exist in the current state;
   completion outcomes (PASS, human witness, codex-review) are not required.
 - ``handoff``: validate readiness for a concrete target state using the same
-  transition_service rules used by ``ai-work commit`` (requires DB + task id).
+  transition_service rules used by ``tp-spec commit`` (requires DB + task id).
 - ``closing``: strict fail-closed completion validation (legacy default).
 """
 from __future__ import annotations

@@ -5,7 +5,7 @@
 崩溃（kill/断电/解释器崩溃）后由 reconcile 依据 journal + DB revision 判定恢复：
 
 - 阶段：PREPARED → FILES_REPLACED → DB_COMMITTED → COMPLETED（完成后删除 journal）；
-- journal 位置：``<task_dir>/.ai-work/transactions/<transaction_id>.json``；
+- journal 位置：``<task_dir>/.tp-spec/transactions/<transaction_id>.json``；
 - journal 本身原子写（临时文件 + os.replace），避免半写；
 - revision = task_event 行数（按 task_id 隔离，DB 推进的稳定度量）。
 
@@ -34,14 +34,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-JOURNAL_SCHEMA = "ai-work.transaction/v1"
+JOURNAL_SCHEMA = "tp-spec.transaction/v1"
 PHASE_PREPARED = "PREPARED"
 PHASE_FILES_REPLACED = "FILES_REPLACED"
 PHASE_DB_COMMITTED = "DB_COMMITTED"
 PHASE_COMPLETED = "COMPLETED"
 
 # 任务目录下与备份/临时区同盘的 journal 根（与任务书 §3.2 路径约定一致）
-JOURNAL_ROOT_NAME = ".ai-work"
+JOURNAL_ROOT_NAME = ".tp-spec"
 TRANSACTIONS_DIR_NAME = "transactions"
 
 
@@ -119,7 +119,7 @@ def strict_restore(task_dir: Path, journal: Dict[str, Any]) -> RestoreResult:
 
 
 def transactions_dir(task_dir: Path) -> Path:
-    """journal 目录：<task_dir>/.ai-work/transactions/。"""
+    """journal 目录：<task_dir>/.tp-spec/transactions/。"""
     return task_dir / JOURNAL_ROOT_NAME / TRANSACTIONS_DIR_NAME
 
 

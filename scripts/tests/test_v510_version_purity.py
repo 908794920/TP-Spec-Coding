@@ -16,7 +16,7 @@ import sys
 import unittest
 from pathlib import Path
 
-BASE = Path(__file__).resolve().parent.parent.parent  # ai-work-base
+BASE = Path(__file__).resolve().parent.parent.parent  # tp-spec-base
 
 
 _SCANNER = BASE / "scripts" / "check_version_consistency.py"

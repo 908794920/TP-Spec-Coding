@@ -116,7 +116,7 @@ def migration_plan(cfg) -> Dict[str, Any]:
     groups["UNCLASSIFIED_REVIEW"] = review_unique
 
     return {
-        "schema": "ai-work.knowledge-migration-plan/v1",
+        "schema": "tp-spec.knowledge-migration-plan/v1",
         "status": "PASS" if not review_unique else "NEEDS_REVIEW",
         "root": str(root),
         "read_only": True,

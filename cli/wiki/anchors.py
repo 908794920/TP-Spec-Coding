@@ -25,7 +25,7 @@ import yaml
 
 from .source import decode_text, normalize_text, resolve_repo_relative
 
-ANCHOR_SCHEMA = "ai-work.wiki-cite-anchors/v1"
+ANCHOR_SCHEMA = "tp-spec.wiki-cite-anchors/v1"
 _CITE_TAG = re.compile(r"<cite\b[^>]*?/?>", re.I)
 _PATH_ATTR = re.compile(r"\bpath=[\"']([^\"']+)[\"']", re.I)
 _LINE_ATTR = re.compile(r"\bline=[\"']([^\"']+)[\"']", re.I)

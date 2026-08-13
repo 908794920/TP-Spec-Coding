@@ -38,7 +38,7 @@ class RecordFirstCase(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp(prefix="v513-record-first-"))
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         self.project = self.root / "project"
-        self.db = self.project / ".ai-work" / "db" / "demo.db"
+        self.db = self.project / ".tp-spec" / "db" / "demo.db"
         self.registry = self.root / "registry.json"
         self.registry.write_text('{"projects": []}\n', encoding="utf-8")
         rc, out, err = run([
@@ -47,10 +47,10 @@ class RecordFirstCase(unittest.TestCase):
         ])
         self.assertEqual(rc, 0, (out, err))
         self.task_id = "TASK-V513-RECORD-FIRST"
-        self.task_dir = self.project / ".ai-work" / "tasks" / self.task_id
+        self.task_dir = self.project / ".tp-spec" / "tasks" / self.task_id
         rc, out, err = run([
             "task", "create", "--id", self.task_id, "--project", "demo",
-            "--risk", "L2", "--flow", "L2", "--db", str(self.db),
+            "--risk", "L0", "--flow", "L0", "--db", str(self.db),
             "--scaffold", "--task-dir", str(self.task_dir),
         ])
         self.assertEqual(rc, 0, (out, err))
@@ -170,6 +170,11 @@ class RecordFirstCase(unittest.TestCase):
         self.assertNotIn("ARTIFACT_REFRESH", types)
 
     def test_complete_after_pass_reports_pass(self):
+        rc, out, err = self.call(
+            "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
+            "--actor", "tp-development-engineering", "--phase", "development", "--summary", "implemented",
+        )
+        self.assertEqual(rc, 0, (out, err))
         evidence = self.task_dir / "evidence" / "test.txt"
         evidence.parent.mkdir(exist_ok=True)
         evidence.write_text("pass\n", encoding="utf-8")

@@ -128,9 +128,9 @@ NEW / ACTIVE / BLOCKED / COMPLETED / CANCELLED
 机器路径属于用户安装状态：
 
 ```text
-~/.ai-work/installation.yaml
-~/.ai-work/workspaces.yaml
-~/.ai-work/registry.local.json
+~/.tp-spec/installation.yaml
+~/.tp-spec/workspaces.yaml
+~/.tp-spec/registry.local.json
 ```
 
 项目仓库只保存 portable identity 和项目状态，不保存某台机器的 Base / Wiki / Knowledge 绝对路径。
@@ -197,7 +197,7 @@ python -m cli.main base installation-doctor
 Windows 也可以使用包装器：
 
 ```powershell
-pwsh -File scripts/Invoke-AiWorkCli.ps1 base installation-doctor
+pwsh -File scripts/tp-spec.ps1 base installation-doctor
 ```
 
 ### 5. 接入一个项目
@@ -215,7 +215,7 @@ python -m cli.main base sync-project \
   --apply
 ```
 
-`sync-project` 会维护项目里的 TP-Spec-Coding managed entry，让 AI 知道如何解析 Base / Wiki / Knowledge 和项目 `.ai-work` 状态，而不是复制机器绝对路径。
+`sync-project` 会维护项目里的 TP-Spec-Coding managed entry，让 AI 知道如何解析 Base / Wiki / Knowledge 和项目 `.tp-spec` 状态，而不是复制机器绝对路径。
 
 ### 6. 让 AI 开始工作
 
@@ -263,8 +263,8 @@ python -m cli.main workflow next --task <TASK-ID> --db <DB-PATH> --json
 | 内容 | 是否跟项目走 | 说明 |
 |---|---:|---|
 | TP-Spec-Coding 源码 | 否 | 在新机器重新 clone / checkout 对应版本 |
-| 项目 `.ai-work` Task/Runtime 状态 | 是 | 属于项目研发事实 |
-| `~/.ai-work/*` | 否 | 当前机器的安装、workspace 和 registry 状态，需要重新生成 |
+| 项目 `.tp-spec` Task/Runtime 状态 | 是 | 属于项目研发事实 |
+| `~/.tp-spec/*` | 否 | 当前机器的安装、workspace 和 registry 状态，需要重新生成 |
 | Wiki / Knowledge 数据 | 由你决定 | 可以复制、同步或重新指定存储根 |
 
 新机器上：
@@ -338,12 +338,12 @@ skills/
 
 项目正式名称从 v5.2.0 起为 **TP-Spec-Coding**。为兼容已有项目和历史 Task，以下技术命名暂不强制改名：
 
-- CLI：`ai-work`
-- 项目状态目录：`.ai-work/`
-- 用户机器状态：`~/.ai-work/`
-- schema namespace：`ai-work.*`
-- 环境变量：`AI_WORK_BASE_ROOT` 等
-- managed block marker：`ai-work-base:managed`（用于识别并安全更新旧项目中的受管区块）
+- CLI：`tp-spec`
+- 项目状态目录：`.tp-spec/`
+- 用户机器状态：`~/.tp-spec/`
+- schema namespace：`tp-spec.*`
+- 环境变量：`TP_SPEC_BASE_ROOT` 等
+- managed block marker：`tp-spec-base:managed`（用于识别并安全更新旧项目中的受管区块）
 
 这些名称属于持久化/兼容接口，不影响对外项目品牌。新项目的用户可见文案统一使用 **TP-Spec-Coding**。
 
@@ -407,7 +407,7 @@ python scripts/update_manifest.py --verify
 Windows 完整门禁：
 
 ```powershell
-pwsh -File scripts/ci/Test-AiWorkBase.ps1 -Mode Full
+pwsh -File scripts/ci/Test-TpSpecBase.ps1 -Mode Full
 ```
 
 GitHub Actions 也会执行 Linux Python 回归与 Windows Full CI。

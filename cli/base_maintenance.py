@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """TP-Spec-Coding installation/binding health and convergence commands.
 
-The project-side ``.ai-work`` directory owns runtime/task state. Base program
+The project-side ``.tp-spec`` directory owns runtime/task state. Base program
 assets and central Wiki/Knowledge data are resolved via installation config +
 registries. Legacy Junctions are compatibility-only and are removed only after
 an equivalent resolved target is proven.
@@ -42,6 +42,7 @@ from cli.project_surface import project_surface_plan, sync_project_surface
 from cli.runtime_portability import apply_runtime_rebind, runtime_rebind_plan
 from cli.active_task_portability import scan_active_task_portability
 from cli.installation_lifecycle import configure_installation, installation_doctor, installation_migration
+from cli.namespace_migration import namespace_plan, migrate_namespace
 from cli.wiki.registry import load_registry as load_wiki_registry, resolve_targets, resolve_workspace_identity, resolve_workspace_wiki_root
 from cli.version import active_version
 
@@ -109,7 +110,7 @@ def _runtime_project_status(workspace: Path, project_id: str) -> Dict[str, Any]:
     """Read project Runtime contract without creating or mutating SQLite."""
     candidates: List[Path] = []
     if project_id:
-        candidates.append(workspace / ".ai-work" / "db" / f"{project_id}.db")
+        candidates.append(workspace / ".tp-spec" / "db" / f"{project_id}.db")
     for row in dbmod.list_projects():
         try:
             root = row.get("root_path")
@@ -142,11 +143,11 @@ def _runtime_project_status(workspace: Path, project_id: str) -> Dict[str, Any]:
                 conn.close()
         except Exception as exc:
             return {"exists": True, "db_path": str(cp), "valid": False, "issues": [f"{type(exc).__name__}: {exc}"], "base_version": "", "schema_version": None}
-    return {"exists": False, "db_path": str((workspace / ".ai-work" / "db" / f"{project_id}.db").resolve(strict=False)) if project_id else None, "valid": False, "issues": [], "base_version": "", "schema_version": None}
+    return {"exists": False, "db_path": str((workspace / ".tp-spec" / "db" / f"{project_id}.db").resolve(strict=False)) if project_id else None, "valid": False, "issues": [], "base_version": "", "schema_version": None}
 
 
 def _simple_content_override_redundant(workspace: Path, cfg, installation) -> Dict[str, Any]:
-    path = workspace / ".ai-work" / "config" / "content-systems.yaml"
+    path = workspace / ".tp-spec" / "config" / "content-systems.yaml"
     if not path.is_file() or not installation.exists:
         return {"path": str(path), "exists": path.is_file(), "redundant": False, "reason": "missing override or installation"}
     try:
@@ -210,7 +211,7 @@ def resolve_workspace(workspace_root: "str | Path", *, installation_config: "str
     expected: Dict[str, Optional[Path]] = {name: base_root / name for name in BASE_LINK_DIRS}
     expected["wiki"] = wiki_workspace_root
     expected["knowledge"] = Path(knowledge["project_root"]) if knowledge.get("project_root") else None
-    legacy = {name: _candidate_link(workspace / ".ai-work" / name, target) for name, target in expected.items()}
+    legacy = {name: _candidate_link(workspace / ".tp-spec" / name, target) for name, target in expected.items()}
 
     project_id = binding.project_id or str(knowledge.get("project_id") or "") or str(wiki_identity.get("workspace_id") or "")
     if not project_id:
@@ -221,7 +222,7 @@ def resolve_workspace(workspace_root: "str | Path", *, installation_config: "str
     active_task_portability = scan_active_task_portability(workspace)
 
     return {
-        "schema": "ai-work.base-resolution/v1",
+        "schema": "tp-spec.base-resolution/v1",
         "workspace_root": str(workspace),
         "project_id": project_id,
         "base": base_health,
@@ -318,7 +319,7 @@ def workspace_doctor(workspace_root: "str | Path", *, installation_config: "str 
     if surface.get("status") == "BLOCKED":
         issues.extend([f"project entry surface: {msg}" for msg in surface.get("blockers") or []])
     elif surface.get("status") == "SYNC_AVAILABLE":
-        warnings.append("project README/AGENTS/.ai-work README entry surface needs Base sync")
+        warnings.append("project README/AGENTS/.tp-spec README entry surface needs Base sync")
     binding_version_mismatch = bool(r["binding"]["exists"] and r["binding"]["base_version"] and r["binding"]["base_version"] != active_version())
     runtime_version_mismatch = bool(r.get("runtime",{}).get("exists") and r.get("runtime",{}).get("valid") and r.get("runtime",{}).get("base_version") and r.get("runtime",{}).get("base_version") != active_version())
     legacy_safe = any(info["state"] == "LEGACY_LINK_SAFE_REMOVE" for info in r["legacy_paths"].values())
@@ -335,7 +336,7 @@ def workspace_doctor(workspace_root: "str | Path", *, installation_config: "str 
         semantic_health = "SYNC_AVAILABLE"
     else:
         semantic_health = "HEALTHY"
-    r["schema"] = "ai-work.base-doctor/v1"
+    r["schema"] = "tp-spec.base-doctor/v1"
     r["status"] = "PASS" if not issues else "FAIL"
     r["health"] = semantic_health
     r["issues"] = issues
@@ -395,7 +396,7 @@ def migration_plan_for_workspace(workspace_root: "str | Path", *, installation_c
     elif r.get("project_surface",{}).get("status") == "SYNC_AVAILABLE":
         actions.append({"action":"SYNC_PROJECT_ENTRY_SURFACE","files":[row["path"] for row in r["project_surface"].get("files") or [] if row.get("changed")]})
     return {
-        "schema":"ai-work.base-migration-plan/v1",
+        "schema":"tp-spec.base-migration-plan/v1",
         "status":"BLOCKED" if blockers else "READY",
         "workspace_root":r["workspace_root"],
         "project_id":r["project_id"],
@@ -447,9 +448,9 @@ def _discover_under(search_root: Path, max_depth: int) -> List[Dict[str, Any]]:
         if depth > max_depth:
             dirs[:] = []
             continue
-        if ".ai-work" in dirs:
+        if ".tp-spec" in dirs:
             out.append({"id":"","root":str(cur.resolve(strict=False)),"enabled":True,"source":"filesystem-discovery"})
-            dirs.remove(".ai-work")
+            dirs.remove(".tp-spec")
     return out
 
 
@@ -551,7 +552,7 @@ def cmd_installation_doctor(args) -> int:
         _emit(result)
         return 0 if result.get("status") == "PASS" else 1
     except Exception as exc:
-        _emit({"schema":"ai-work.installation-health/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+        _emit({"schema":"tp-spec.installation-health/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_installation_migrate(args) -> int:
@@ -560,12 +561,21 @@ def cmd_installation_migrate(args) -> int:
         _emit(result)
         return 1 if result.get("status") == "BLOCKED" else 0
     except Exception as exc:
-        _emit({"schema":"ai-work.installation-migration/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}"}); return 1
+        _emit({"schema":"tp-spec.installation-migration/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}"}); return 1
+
+
+def cmd_namespace_migrate(args) -> int:
+    try:
+        result = migrate_namespace(args.workspace_root, apply=bool(args.apply)) if args.apply else namespace_plan(args.workspace_root)
+        _emit(result)
+        return 1 if result.get("status") == "BLOCKED" else 0
+    except Exception as exc:
+        _emit({"schema":"tp-spec.namespace-migration/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_resolve(args) -> int:
     try: _emit(resolve_workspace(args.workspace_root,installation_config=args.installation_config)); return 0
-    except Exception as exc: _emit({"schema":"ai-work.base-resolution/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    except Exception as exc: _emit({"schema":"tp-spec.base-resolution/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_doctor(args) -> int:
@@ -573,8 +583,8 @@ def cmd_doctor(args) -> int:
         installation = installation_doctor(args.installation_config)
         rows=[workspace_doctor(p,installation_config=args.installation_config) for p in _all_workspaces(args)]
         status="PASS" if installation.get("status")=="PASS" and all(r["status"]=="PASS" for r in rows) else "FAIL"
-        _emit({"schema":"ai-work.base-doctor-batch/v1","status":status,"installation":installation,"projects":len(rows),"healthy":sum(1 for r in rows if r["status"]=="PASS"),"results":rows}); return 0 if status=="PASS" else 1
-    except Exception as exc: _emit({"schema":"ai-work.base-doctor-batch/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+        _emit({"schema":"tp-spec.base-doctor-batch/v1","status":status,"installation":installation,"projects":len(rows),"healthy":sum(1 for r in rows if r["status"]=="PASS"),"results":rows}); return 0 if status=="PASS" else 1
+    except Exception as exc: _emit({"schema":"tp-spec.base-doctor-batch/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_inventory(args) -> int:
@@ -591,8 +601,8 @@ def cmd_migration_plan(args) -> int:
     try:
         rows=[migration_plan_for_workspace(p,installation_config=args.installation_config) for p in _all_workspaces(args)]
         status="READY" if all(r["status"]=="READY" for r in rows) else "BLOCKED"
-        _emit({"schema":"ai-work.base-migration-plan-batch/v1","status":status,"projects":len(rows),"ready":sum(1 for r in rows if r["status"]=="READY"),"results":rows}); return 0 if status=="READY" else 1
-    except Exception as exc: _emit({"schema":"ai-work.base-migration-plan-batch/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}"}); return 1
+        _emit({"schema":"tp-spec.base-migration-plan-batch/v1","status":status,"projects":len(rows),"ready":sum(1 for r in rows if r["status"]=="READY"),"results":rows}); return 0 if status=="READY" else 1
+    except Exception as exc: _emit({"schema":"tp-spec.base-migration-plan-batch/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def _migrate_one(workspace: Path, args) -> Dict[str, Any]:
@@ -652,8 +662,8 @@ def cmd_migrate(args) -> int:
         rows=[_migrate_one(p,args) for p in _all_workspaces(args)]
         bad=[r for r in rows if r["status"].startswith("BLOCKED")]
         status="BLOCKED" if bad else ("DRY_RUN" if not args.apply else "PASS")
-        _emit({"schema":"ai-work.base-migration/v1","status":status,"apply":bool(args.apply),"projects":len(rows),"results":rows}); return 1 if bad else 0
-    except Exception as exc: _emit({"schema":"ai-work.base-migration/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}"}); return 1
+        _emit({"schema":"tp-spec.base-migration/v1","status":status,"apply":bool(args.apply),"projects":len(rows),"results":rows}); return 1 if bad else 0
+    except Exception as exc: _emit({"schema":"tp-spec.base-migration/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def cmd_sync_project(args) -> int:
@@ -700,10 +710,10 @@ def cmd_sync_project(args) -> int:
             overall="SYNC_AVAILABLE"
         else:
             overall="PASS" if args.apply else "CURRENT"
-        _emit({"schema":"ai-work.base-project-sync/v1","status":overall,"apply":bool(args.apply),"projects":len(results),"results":results})
+        _emit({"schema":"tp-spec.base-project-sync/v1","status":overall,"apply":bool(args.apply),"projects":len(results),"results":results})
         return 1 if bad else 0
     except Exception as exc:
-        _emit({"schema":"ai-work.base-project-sync/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}"}); return 1
+        _emit({"schema":"tp-spec.base-project-sync/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
 def _common_workspace(p: argparse.ArgumentParser) -> None:
@@ -722,6 +732,8 @@ def add_base_subparsers(root_subparsers) -> None:
     p.add_argument("--installation-config",default=None); p.set_defaults(func=cmd_installation_doctor)
     p=sub.add_parser("installation-migrate",help="Plan/apply recognized machine-local installation state migrations")
     p.add_argument("--installation-config",default=None); p.add_argument("--apply",action="store_true"); p.set_defaults(func=cmd_installation_migrate)
+    p=sub.add_parser("namespace-migrate",help="Plan/apply one-shot legacy namespace cutover to tp-spec/.tp-spec")
+    p.add_argument("--workspace-root",default="."); p.add_argument("--apply",action="store_true"); p.set_defaults(func=cmd_namespace_migrate)
     p=sub.add_parser("resolve",help="Resolve Base + project-scoped Wiki/Knowledge roots"); _common_workspace(p); p.set_defaults(func=cmd_resolve)
     p=sub.add_parser("doctor",help="Check installation/binding/Runtime portability/legacy-link health for one/all projects"); _common_workspace(p); p.set_defaults(func=cmd_doctor)
     p=sub.add_parser("inventory",help="Collect workspace roots from registries/inventory and optional bounded discovery"); p.add_argument("--installation-config",default=None); p.add_argument("--inventory",default=None); p.add_argument("--search-root",action="append",default=[]); p.add_argument("--max-depth",type=int,default=5); p.add_argument("--write",action="store_true"); p.set_defaults(func=cmd_inventory)

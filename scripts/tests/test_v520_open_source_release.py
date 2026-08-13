@@ -49,13 +49,13 @@ def test_open_source_surface_is_complete():
 def test_public_machine_configuration_examples_are_empty():
     installation = yaml.safe_load(read("config/installation.example.yaml"))
     assert installation == {
-        "schema": "ai-work.installation/v1",
+        "schema": "tp-spec.installation/v1",
         "base": {"root": ""},
         "systems": {"wiki": {"root": ""}, "knowledge": {"root": ""}},
     }
 
     workspaces = yaml.safe_load(read("config/workspaces.example.yaml"))
-    assert workspaces == {"schema": "ai-work.workspace-inventory/v1", "workspaces": []}
+    assert workspaces == {"schema": "tp-spec.workspace-inventory/v1", "workspaces": []}
 
     registry = json.loads(read("db/registry.local.json.example"))
     assert registry == {"projects": []}
@@ -128,7 +128,7 @@ def test_getting_started_supports_ai_assisted_clean_machine_setup():
         "base configure",
         "base installation-doctor",
         "base sync-project",
-        "AI_WORK_BASE_ROOT",
+        "TP_SPEC_BASE_ROOT",
         "registry.local.json",
     ):
         assert needle in text, needle
@@ -194,7 +194,7 @@ def test_blank_installation_profile_is_a_valid_unconfigured_template(tmp_path):
 
     path = tmp_path / "installation.yaml"
     path.write_text(
-        "schema: ai-work.installation/v1\n"
+        "schema: tp-spec.installation/v1\n"
         "base:\n  root: \"\"\n"
         "systems:\n  wiki:\n    root: \"\"\n  knowledge:\n    root: \"\"\n",
         encoding="utf-8",
@@ -223,11 +223,11 @@ def test_project_init_creates_portable_binding_for_public_onboarding(tmp_path):
     })()
 
     assert project_cmd.cmd_project_init(args) == 0
-    binding_path = workspace / ".ai-work" / "config" / "project-binding.yaml"
+    binding_path = workspace / ".tp-spec" / "config" / "project-binding.yaml"
     assert binding_path.is_file()
     binding = yaml.safe_load(binding_path.read_text(encoding="utf-8"))
     assert binding == {
-        "schema": "ai-work.project-binding/v1",
+        "schema": "tp-spec.project-binding/v1",
         "project": {"id": "stable-project-id"},
         "base_version": ACTIVE,
     }
@@ -237,10 +237,10 @@ def test_project_init_refuses_to_overwrite_conflicting_portable_binding(tmp_path
     from cli import project_cmd
 
     workspace = tmp_path / "workspace"
-    binding_path = workspace / ".ai-work" / "config" / "project-binding.yaml"
+    binding_path = workspace / ".tp-spec" / "config" / "project-binding.yaml"
     binding_path.parent.mkdir(parents=True)
     binding_path.write_text(
-        "schema: ai-work.project-binding/v1\n"
+        "schema: tp-spec.project-binding/v1\n"
         "project:\n  id: existing-project\n"
         f'base_version: "{ACTIVE}"\n',
         encoding="utf-8",
@@ -259,7 +259,7 @@ def test_project_init_refuses_to_overwrite_conflicting_portable_binding(tmp_path
     assert project_cmd.cmd_project_init(args) != 0
     binding = yaml.safe_load(binding_path.read_text(encoding="utf-8"))
     assert binding["project"]["id"] == "existing-project"
-    assert not (workspace / ".ai-work" / "db" / "different-project.db").exists()
+    assert not (workspace / ".tp-spec" / "db" / "different-project.db").exists()
 
 
 
@@ -269,12 +269,12 @@ def test_contributing_documents_git_release_closure():
     for needle in (
         "git add -A",
         "update_manifest.py --verify-release",
-        "Test-AiWorkBase.ps1 -Mode Full",
+        "Test-TpSpecBase.ps1 -Mode Full",
         "Git Tag",
         "GitHub Release",
     ):
         assert needle in text, needle
-    assert "full.release.git_manifest" in read("scripts/ci/Test-AiWorkBase.ps1")
+    assert "full.release.git_manifest" in read("scripts/ci/Test-TpSpecBase.ps1")
 
 def test_release_manifest_gate_distinguishes_working_tree_from_git_release(tmp_path):
     """A visible but untracked file may pass dev verify, but must fail release verify."""
@@ -326,7 +326,7 @@ def test_release_manifest_gate_distinguishes_working_tree_from_git_release(tmp_p
     assert "untracked" in combined.lower()
 
 def test_public_project_entry_uses_tp_spec_coding_brand():
-    for rel in ("project-entry/root-managed-block.md", "project-entry/ai-work-readme.md"):
+    for rel in ("project-entry/root-managed-block.md", "project-entry/tp-spec-readme.md"):
         text = read(rel)
         assert "TP-Spec-Coding" in text
-        assert "AI Work " not in text
+        assert "TP-Spec " not in text

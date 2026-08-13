@@ -44,7 +44,7 @@ The Base intentionally does not hard-code a historical benchmark percentage. His
 Use:
 
 ```text
-ai-work knowledge eval --workspace-root <workspace>
+tp-spec knowledge eval --workspace-root <workspace>
 ```
 
 The default Golden Set is configured under `systems.knowledge.evaluation.golden_set`. Evaluation is local and must not pollute real usage telemetry.
@@ -67,7 +67,7 @@ Normal `knowledge search` stores only a hash of the query plus retrieval mode, f
 Use:
 
 ```text
-ai-work knowledge telemetry --days 7
+tp-spec knowledge telemetry --days 7
 ```
 
 Product-facing signals are query volume, canonical-only hits, source fallback, no-result rate and latency. These are more useful than Markdown count for deciding whether Knowledge helps Agents.

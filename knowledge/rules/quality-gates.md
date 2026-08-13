@@ -17,7 +17,7 @@ Checks canonical syntax and stable structure:
 ### Gate 定级策略
 
 lint 只产生事实（`violations`/`warnings`/`advisories`）；verify 硬门通过质量政策
-`knowledge/rules/quality-policy.yaml` 定级（workspace 可在 `.ai-work/config/quality-policy.yaml` 按 rule_id 覆盖）：
+`knowledge/rules/quality-policy.yaml` 定级（workspace 可在 `.tp-spec/config/quality-policy.yaml` 按 rule_id 覆盖）：
 
 - `block`: violations 计入 `gate_errors`（决定 FAIL），warnings 计入 `gate_warnings`
 - `warn`: violations/warnings 计入 `gate_warnings`（决定 WARN，不 FAIL）

@@ -31,11 +31,11 @@ SCAN
 
 ## 数据与工具分离
 
-Wiki physical project root（由 Wiki System Root + Repo Registry 解析）只保存 Wiki 文档和 `meta/` 状态；zero-config 时才回退到 `.ai-work/wiki`。历史中央 Wiki `tools/` 不再是 Wiki 数据目录的一部分。确定性能力由 TP-Spec-Coding `cli/wiki/` 提供。
+Wiki physical project root（由 Wiki System Root + Repo Registry 解析）只保存 Wiki 文档和 `meta/` 状态；zero-config 时才回退到 `.tp-spec/wiki`。历史中央 Wiki `tools/` 不再是 Wiki 数据目录的一部分。确定性能力由 TP-Spec-Coding `cli/wiki/` 提供。
 
 ## 路径
 
-路径按“Base 默认 → 用户 `~/.ai-work/installation.yaml` → 可选项目 `.ai-work/config/content-systems.yaml` override”解析：
+路径按“Base 默认 → 用户 `~/.tp-spec/installation.yaml` → 可选项目 `.tp-spec/config/content-systems.yaml` override”解析：
 
 - `wiki.root` 表示 Wiki **System Root**；中央布局再由 Repo Registry 解析当前 workspace/repository scope；
 - `knowledge.root` 表示 Knowledge System Root，与 Wiki project scope 是不同系统；
@@ -44,22 +44,22 @@ Wiki physical project root（由 Wiki System Root + Repo Registry 解析）只�
 
 ## CLI
 
-项目侧/AI Scheduler 使用已安装 `ai-work` 命令，或直接调用 `<BaseRoot>/scripts/Invoke-AiWorkCli.ps1 wiki ...`。BaseRoot 由用户 Installation/环境变量解析；不得把 `.ai-work/scripts` Junction 当成稳定入口。下面列出逻辑命令：
+项目侧/AI Scheduler 使用已安装 `tp-spec` 命令，或直接调用 `<BaseRoot>/scripts/tp-spec.ps1 wiki ...`。BaseRoot 由用户 Installation/环境变量解析；不得把 `.tp-spec/scripts` Junction 当成稳定入口。下面列出逻辑命令：
 
 ```text
-ai-work wiki doctor
-ai-work wiki init
-ai-work wiki build
-ai-work wiki scan
-ai-work wiki plan
-ai-work wiki maintain
-ai-work wiki manifest-refresh
-ai-work wiki verify
-ai-work wiki coverage
-ai-work wiki audit
-ai-work wiki audit-record
-ai-work wiki snapshot-commit
-ai-work wiki status
+tp-spec wiki doctor
+tp-spec wiki init
+tp-spec wiki build
+tp-spec wiki scan
+tp-spec wiki plan
+tp-spec wiki maintain
+tp-spec wiki manifest-refresh
+tp-spec wiki verify
+tp-spec wiki coverage
+tp-spec wiki audit
+tp-spec wiki audit-record
+tp-spec wiki snapshot-commit
+tp-spec wiki status
 ```
 
 AI 定时维护应读取 `automation/wiki/daily-maintenance.md`，不得靠长期保存的一段自由提示词自行发明流程。

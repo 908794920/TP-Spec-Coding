@@ -436,7 +436,7 @@ def verify_repo(
     result = "PASS" if not errors else "FAIL"
     subject_digest = wiki_subject_digest(wiki_repo_root)
     report = {
-        "schema": "ai-work.wiki-verification/v1",
+        "schema": "tp-spec.wiki-verification/v1",
         "verified_at": utc_now(),
         "change_set_id": changeset.get("change_set_id"),
         "result": result,
@@ -515,7 +515,7 @@ def record_semantic_audit(wiki_repo_root: Path, *, result: str, summary: str, do
             raise ValueError("semantic audit PASS requires explicit topology review for this audit scope")
 
     receipt = {
-        "schema": "ai-work.wiki-semantic-audit/v1",
+        "schema": "tp-spec.wiki-semantic-audit/v1",
         "recorded_at": utc_now(),
         "mode": audit_plan.get("mode") or ("change-set" if changeset else "standalone"),
         "audit_scope": audit_plan.get("audit_scope"),

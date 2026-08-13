@@ -2,7 +2,7 @@
 """V5.2.0 高风险动作收据（execution receipt）命令。
 
 receipt 是动作发生时的不可变审计记录：
-- 固定落盘 `.ai-work/tasks/<TASK-ID>/evidence/receipts/REC-<UTC>-<UUID>.json`；
+- 固定落盘 `.tp-spec/tasks/<TASK-ID>/evidence/receipts/REC-<UTC>-<UUID>.json`；
 - 以 create-new 方式原子创建，禁止覆盖、改名或删除既有 receipt；
 - 不改变 workflow 状态，不写 SQLite 账本，不要求重写阶段主工件；
 - 高风险动作收据用于范围变化、阻塞、DML/DDL、生产动作和外部调用；它不承担人员审批。

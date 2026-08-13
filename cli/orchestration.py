@@ -22,7 +22,7 @@ from .version import active_version
 LEVELS = ("L0", "L1", "L2", "L3")
 TERMINAL = {"COMPLETED", "CANCELLED"}
 PUBLIC_STATES = {"NEW", "ACTIVE", "BLOCKED", "COMPLETED", "CANCELLED"}
-ROUTE_SCHEMA = "ai-work.workflow-route/v1"
+ROUTE_SCHEMA = "tp-spec.workflow-route/v1"
 
 
 class OrchestrationError(ValueError):
@@ -116,6 +116,13 @@ def validate_contract(base_root: Optional["str | Path"] = None) -> List[str]:
         errors.append("orchestration must prefer isolated parallel subagents when supported")
     if contract.get("execution", {}).get("sequential_isolation_fallback") is not True:
         errors.append("orchestration must retain isolated sequential fallback")
+    delivery_fast = (contract.get("execution") or {}).get("delivery_fast_path") or {}
+    if int(delivery_fast.get("max_incremental_ai_overhead_percent") or -1) != 5:
+        errors.append("delivery fast-path AI overhead budget must be exactly 5 percent")
+    if delivery_fast.get("allow_default_subagents") is not False:
+        errors.append("delivery fast path must forbid default subagents")
+    if delivery_fast.get("allow_full_task_reread") is not False or delivery_fast.get("allow_full_knowledge_scan") is not False:
+        errors.append("delivery fast path must forbid default full rereads/scans")
 
     # Deep-mode capabilities remain owned by the professional roles.  The
     # orchestrator only decides *when* to request them, so doctor verifies the
@@ -180,6 +187,8 @@ def validate_contract(base_root: Optional["str | Path"] = None) -> List[str]:
                 errors.append(f"{level}.{stage}: unknown phase {phase!r}")
             if mode not in {"DIRECT", "AUTO_PLANNING", "AUTO_REVIEW"}:
                 errors.append(f"{level}.{stage}: unknown mode {mode!r}")
+            if role == "tp-knowledge":
+                errors.append(f"{level}.{stage}: tp-knowledge is standalone and must never enter the development workflow")
 
     for role_id, item in roles.items():
         try:
@@ -340,6 +349,35 @@ def _stage_included(step: Dict[str, Any], level: str, task: Dict[str, Any], even
     return False
 
 
+def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build compact deterministic input so delivery does not reread the whole Task."""
+    facts: Dict[str, Dict[str, Any]] = {}
+    for stage, actor in (("requirement", "tp-requirement-analysis"),
+                         ("architecture", "tp-architecture-design"),
+                         ("development", "tp-development-engineering"),
+                         ("verification", "tp-verification-engineering")):
+        if stage == "verification":
+            latest = _latest_verification(events)
+            selected = latest["event"] if latest else None
+        else:
+            selected = _latest_checkpoint(events, actor=actor, phase=stage)
+        if selected:
+            detail = _parse_detail(selected.get("detail_json"))
+            facts[stage] = {
+                "event_id": int(selected.get("id") or 0),
+                "summary": str(selected.get("summary") or ""),
+                "evidence": list(detail.get("evidence") or []),
+            }
+    return {
+        "mode": "FAST_PATH",
+        "max_incremental_ai_overhead_percent": 5,
+        "task": {"task_id": task.get("task_id"), "risk_level": task.get("risk_level"), "flow_level": task.get("flow_level")},
+        "stage_facts": facts,
+        "read_policy": "targeted-only; no full Task/source/Knowledge reread by default",
+        "subagents": "forbidden-by-default",
+    }
+
+
 def _execution_mode(step: Dict[str, Any], level: str, signals: set[str]) -> str:
     mode = step.get("mode")
     if mode == "AUTO_PLANNING":
@@ -352,8 +390,9 @@ def _execution_mode(step: Dict[str, Any], level: str, signals: set[str]) -> str:
 def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], role_id: Optional[str],
                 skill_path: Optional[str], execution_mode: str = "DIRECT", confirmation_required: bool = False,
                 confirmation_reason: Optional[str] = None, blocker: Optional[str] = None,
-                reason_codes: Optional[List[str]] = None, action: Optional[str] = None) -> Dict[str, Any]:
-    return {
+                reason_codes: Optional[List[str]] = None, action: Optional[str] = None,
+                context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    data = {
         "schema": ROUTE_SCHEMA,
         "task_id": task.get("task_id"),
         "current_state": task.get("current_state"),
@@ -370,6 +409,9 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
         "reason_codes": reason_codes or [],
         "risk_escalation_signals": list(task.get("_risk_escalation_signals") or []),
     }
+    if context is not None:
+        data["context"] = context
+    return data
 
 
 def resolve_route(task_id: str, *, db_path: Optional[str] = None,
@@ -390,7 +432,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
     project_root = str(task.get("project_root_path") or "").strip()
     risk_scan = {"floor": None, "signals": []}
     if project_root:
-        task_dir = Path(project_root) / ".ai-work" / "tasks" / task_id
+        task_dir = Path(project_root) / ".tp-spec" / "tasks" / task_id
         risk_scan = risk_signals.scan_task_artifacts(task_dir, base_root=root)
         floor = str(risk_scan.get("floor") or "")
         if _rank(floor) > _rank(level):
@@ -474,6 +516,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             task, level, next_stage=stage, role_id=rid, skill_path=str(role["skill_path"]),
             execution_mode=_execution_mode(step, level, signals), confirmation_required=confirm,
             confirmation_reason=confirm_reason, reason_codes=["NEXT_STAGE_RESOLVED"], action="dispatch_role",
+            context=_delivery_fact_pack(task, events) if stage == "delivery" else None,
         )
 
     # All selected stages have completed. A truthful PASS means the task may close;

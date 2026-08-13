@@ -7,11 +7,11 @@ After the 9.9.9 -> 5.1.0 active-contract switch, a task declaring
 artifact_contract.version 9.9.9 must be rejected at two layers, while a 5.1.0
 task is accepted by the outer gate:
 
-  N1 validator : Test-AiWorkTask.ps1 must reject a 9.9.9 status.yaml with
+  N1 validator : Test-TpSpecTask.ps1 must reject a 9.9.9 status.yaml with
                  LEGACY_CONTRACT_REJECTED (non-zero exit).
-  N2 gate      : `ai-work config gate --task-version 9.9.9` must fail with
+  N2 gate      : `tp-spec config gate --task-version 9.9.9` must fail with
                  VERSION_MISMATCH (exit code 14).
-  N3 gate pos  : `ai-work config gate --task-version 5.1.0` must be accepted
+  N3 gate pos  : `tp-spec config gate --task-version 5.1.0` must be accepted
                  (exit 0), confirming the switch is live.
 
 All work happens in a self-created temp directory. Fully offline. Exit 0 only
@@ -22,7 +22,7 @@ param([switch]$KeepWorkDir)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$base = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)   # ai-work-base
+$base = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)   # tp-spec-base
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $script:failures = 0
 function Check([string]$Name, [bool]$Ok, [string]$Detail = '') {
@@ -33,7 +33,7 @@ function Check([string]$Name, [bool]$Ok, [string]$Detail = '') {
 $pyCmd = (Get-Command python -ErrorAction SilentlyContinue).Source
 if (-not (Test-Path -LiteralPath $pyCmd)) { throw 'python not found; offline prerequisite missing (fail, not skip)' }
 
-$workDir = Join-Path ([System.IO.Path]::GetTempPath()) ("aiwork-switchneg-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+$workDir = Join-Path ([System.IO.Path]::GetTempPath()) ("tpspec-switchneg-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $workDir -Force | Out-Null
 Write-Output "WORKDIR $workDir"
 
@@ -59,7 +59,7 @@ try {
         'current_owner: tp-development-engineering'
     ) -join "`n"
     [System.IO.File]::WriteAllText((Join-Path $taskDir 'status.yaml'), $statusYaml + "`n", $utf8NoBom)
-    $r1 = Invoke-Child (Join-Path $base 'scripts\Test-AiWorkTask.ps1') @($taskDir) 'n1-validator.log'
+    $r1 = Invoke-Child (Join-Path $base 'scripts\Test-TpSpecTask.ps1') @($taskDir) 'n1-validator.log'
     $n1Hit = Select-String -LiteralPath $r1.Log -Pattern 'LEGACY_CONTRACT_REJECTED' -Quiet
     Check 'N1.validator.legacy_9.9.9_rejected' (($r1.Code -ne 0) -and $n1Hit) "exit=$($r1.Code) LEGACY_CONTRACT_REJECTED=$n1Hit"
 
@@ -92,7 +92,7 @@ try {
 finally {
     if (-not $KeepWorkDir) {
         $resolved = Resolve-Path -LiteralPath $workDir -ErrorAction SilentlyContinue
-        if ($resolved -and (Split-Path -Leaf $resolved.Path).StartsWith('aiwork-switchneg-')) {
+        if ($resolved -and (Split-Path -Leaf $resolved.Path).StartsWith('tpspec-switchneg-')) {
             Remove-Item -LiteralPath $resolved.Path -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
