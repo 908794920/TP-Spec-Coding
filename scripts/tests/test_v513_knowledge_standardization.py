@@ -82,7 +82,7 @@ relations: {relations}{evidence}
 class TestKnowledgeContracts(KnowledgeCase):
     def test_shared_resolver_exposes_knowledge_projection_and_evaluation(self):
         self.assertEqual(self.cfg.paths.knowledge_physical_root, self.vault.resolve())
-        self.assertEqual(self.cfg.paths.knowledge_projection_db, self.vault / ".ai-kb/knowledge.db")
+        self.assertEqual(self.cfg.paths.knowledge_projection_db, (self.vault / ".ai-kb/knowledge.db").resolve(strict=False))
         self.assertEqual(self.cfg.knowledge_retrieval["strategy"], "canonical-first-fts5")
         self.assertEqual(self.cfg.knowledge_projection["vector_mode"], "retired-compatible")
         self.assertEqual(self.cfg.knowledge_evaluation["golden_set"], "00-system/eval/golden.jsonl")

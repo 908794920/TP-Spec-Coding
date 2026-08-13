@@ -89,8 +89,11 @@ Invoke-Check 'static.format.byte_policy' {
     $ga = Get-Content -LiteralPath (Join-Path $base '.gitattributes') -Raw
     if ($ga -notmatch '(?m)^\*\s+-text') { throw ".gitattributes lacks '* -text' byte-exact policy (G1)" }
     $crlf = (& git -C $base config core.autocrlf 2>$null)
-    if ($crlf -ne 'false') { throw "core.autocrlf is '$crlf', expected 'false' (G1)" }
-    "* -text; core.autocrlf=false"
+    if ([string]::IsNullOrWhiteSpace([string]$crlf)) { $crlf = '<unset>' }
+    # Repository byte policy is authoritative. Hosted/user Git may set
+    # core.autocrlf=true globally; '* -text' prevents checkout conversion, and
+    # manifest verification proves the actual bytes. Keep autocrlf diagnostic-only.
+    "* -text; core.autocrlf=$crlf (diagnostic only)"
 }
 
 Invoke-Check 'static.hash.manifest_recompute' {

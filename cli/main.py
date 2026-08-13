@@ -48,6 +48,17 @@ from cli.commit_errors import BaselineBlockedError
 from cli.encoding_guard import EncodingValidationError
 
 
+def _ensure_utf8_stdio() -> None:
+    """Keep CLI output Unicode-safe on Windows/non-UTF-8 parent consoles."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="strict")
+            except (OSError, ValueError):
+                pass
+
+
 def _cmd_not_implemented_m0(args) -> int:
     group = getattr(args, "group", None) or "unknown"
     print(f"not implemented in M0: {group}", file=sys.stderr)
@@ -152,6 +163,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    _ensure_utf8_stdio()
     parser = build_parser()
     args = parser.parse_args(argv)
     func = getattr(args, "func", None)

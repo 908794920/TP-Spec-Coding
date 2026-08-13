@@ -19,6 +19,7 @@ import yaml
 
 from cli import db as dbmod
 from cli.content_systems import load_content_systems, same_path
+from cli.path_identity import canonical_path, path_identity_key
 from cli.environment import (
     BINDING_SCHEMA,
     INSTALLATION_SCHEMA,
@@ -120,8 +121,8 @@ def _runtime_project_status(workspace: Path, project_id: str) -> Dict[str, Any]:
             continue
     seen: Set[str] = set()
     for candidate in candidates:
-        cp = candidate.resolve(strict=False)
-        key = os.path.normcase(str(cp))
+        cp = canonical_path(candidate)
+        key = path_identity_key(cp)
         if key in seen:
             continue
         seen.add(key)
@@ -467,13 +468,13 @@ def inventory_rows(*, installation_config: Optional[str]=None, inventory_path: O
         rows.append({**row,"source":"workspace-inventory"})
     rows.extend(_read_registry_workspace_roots(installation_config))
     for raw in search_roots:
-        p=Path(raw).resolve(strict=False)
+        p=canonical_path(raw)
         if p.is_dir(): rows.extend(_discover_under(p,max_depth))
     merged: Dict[str, Dict[str, Any]]={}
     for row in rows:
         root=str(row.get("root") or row.get("workspace_root") or "").strip()
         if not root: continue
-        rp=Path(root).resolve(strict=False); key=os.path.normcase(str(rp))
+        rp=canonical_path(root); key=path_identity_key(rp)
         cur=merged.setdefault(key,{"id":str(row.get("id") or ""),"root":str(rp),"enabled":bool(row.get("enabled",True)),"sources":[]})
         if not cur["id"] and row.get("id"): cur["id"]=str(row["id"])
         src=str(row.get("source") or "unknown")
@@ -511,7 +512,7 @@ def inventory_rows(*, installation_config: Optional[str]=None, inventory_path: O
         else:
             for item in items:
                 item=dict(item); item["identity_conflict"]="DUPLICATE_PROJECT_ID"; reconciled.append(item)
-    return sorted(reconciled,key=lambda x:os.path.normcase(x["root"]))
+    return sorted(reconciled,key=lambda x:path_identity_key(x["root"]))
 
 
 def reconcile_inventory_project(project_id: str, workspace_root: Path, inventory_path: Optional[str]=None) -> Optional[Path]:
@@ -519,7 +520,7 @@ def reconcile_inventory_project(project_id: str, workspace_root: Path, inventory
     if not inv.exists:
         return None
     rows=[dict(row) for row in inv.workspaces if str(row.get("id") or "") != project_id]
-    rows.append({"id":project_id,"root":str(workspace_root.resolve(strict=False)),"enabled":True})
+    rows.append({"id":project_id,"root":str(canonical_path(workspace_root)),"enabled":True})
     return write_workspace_inventory(rows,path=inventory_path or inv.path)
 
 

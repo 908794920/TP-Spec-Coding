@@ -22,6 +22,7 @@ import os
 import yaml
 
 from cli.config_loader import load_config
+from cli.path_identity import canonical_path, path_identity_key
 
 INSTALLATION_SCHEMA = "ai-work.installation/v1"
 BINDING_SCHEMA = "ai-work.project-binding/v1"
@@ -33,32 +34,32 @@ class EnvironmentConfigError(ValueError):
 
 
 def _home(home: "str | Path | None" = None) -> Path:
-    return Path(home).expanduser().resolve(strict=False) if home else Path.home().resolve(strict=False)
+    return canonical_path(Path(home).expanduser()) if home else canonical_path(Path.home())
 
 
 def user_ai_work_root(home: "str | Path | None" = None) -> Path:
     env = os.environ.get("AI_WORK_USER_ROOT")
     if env:
-        return Path(os.path.expandvars(os.path.expanduser(env))).resolve(strict=False)
-    return (_home(home) / ".ai-work").resolve(strict=False)
+        return canonical_path(env)
+    return canonical_path(_home(home) / ".ai-work")
 
 
 def default_installation_path(home: "str | Path | None" = None) -> Path:
     env = os.environ.get("AI_WORK_INSTALLATION_CONFIG")
     if env:
-        return Path(os.path.expandvars(os.path.expanduser(env))).resolve(strict=False)
+        return canonical_path(env)
     return user_ai_work_root(home) / "installation.yaml"
 
 
 def default_inventory_path(home: "str | Path | None" = None) -> Path:
     env = os.environ.get("AI_WORK_WORKSPACE_INVENTORY")
     if env:
-        return Path(os.path.expandvars(os.path.expanduser(env))).resolve(strict=False)
+        return canonical_path(env)
     return user_ai_work_root(home) / "workspaces.yaml"
 
 
 def default_binding_path(workspace_root: "str | Path") -> Path:
-    return Path(workspace_root).resolve(strict=False) / ".ai-work" / "config" / "project-binding.yaml"
+    return canonical_path(workspace_root) / ".ai-work" / "config" / "project-binding.yaml"
 
 
 def _as_abs(value: Any, *, anchor: Path) -> Optional[Path]:
@@ -69,7 +70,7 @@ def _as_abs(value: Any, *, anchor: Path) -> Optional[Path]:
     p = Path(text)
     if not p.is_absolute():
         p = anchor / p
-    return p.resolve(strict=False)
+    return canonical_path(p)
 
 
 def _read_optional_yaml(path: Path) -> Dict[str, Any]:
@@ -150,7 +151,7 @@ class WorkspaceInventory:
 
 
 def load_installation_config(path: "str | Path | None" = None, *, home: "str | Path | None" = None) -> InstallationConfig:
-    p = Path(path).resolve(strict=False) if path else default_installation_path(home)
+    p = canonical_path(path) if path else default_installation_path(home)
     data = _read_optional_yaml(p)
     _validate_installation(data, p)
     anchor = p.parent
@@ -167,8 +168,8 @@ def load_installation_config(path: "str | Path | None" = None, *, home: "str | P
 
 
 def load_project_binding(workspace_root: "str | Path", path: "str | Path | None" = None) -> ProjectBinding:
-    workspace = Path(workspace_root).resolve(strict=False)
-    p = Path(path).resolve(strict=False) if path else default_binding_path(workspace)
+    workspace = canonical_path(workspace_root)
+    p = canonical_path(path) if path else default_binding_path(workspace)
     data = _read_optional_yaml(p)
     _validate_binding(data, p)
     project = data.get("project") or {}
@@ -186,7 +187,7 @@ def load_project_binding(workspace_root: "str | Path", path: "str | Path | None"
 
 
 def load_workspace_inventory(path: "str | Path | None" = None, *, home: "str | Path | None" = None) -> WorkspaceInventory:
-    p = Path(path).resolve(strict=False) if path else default_inventory_path(home)
+    p = canonical_path(path) if path else default_inventory_path(home)
     data = _read_optional_yaml(p)
     _validate_inventory(data, p)
     workspaces = [dict(v) for v in (data.get("workspaces") or []) if isinstance(v, dict)]
@@ -204,12 +205,12 @@ def resolve_base_root(
     installation_path: "str | Path | None" = None,
     binding_path: "str | Path | None" = None,
 ) -> Path:
-    workspace = Path(workspace_root).resolve(strict=False)
+    workspace = canonical_path(workspace_root)
     if explicit:
-        return Path(explicit).resolve(strict=False)
+        return canonical_path(explicit)
     env = os.environ.get("AI_WORK_BASE_ROOT")
     if env:
-        return Path(os.path.expandvars(os.path.expanduser(env))).resolve(strict=False)
+        return canonical_path(env)
     binding = load_project_binding(workspace, binding_path)
     if binding.base_root_override:
         return binding.base_root_override
@@ -243,13 +244,13 @@ def write_installation_config(
     path: "str | Path | None" = None,
     home: "str | Path | None" = None,
 ) -> Path:
-    p = Path(path).resolve(strict=False) if path else default_installation_path(home)
+    p = canonical_path(path) if path else default_installation_path(home)
     payload: Dict[str, Any] = {
         "schema": INSTALLATION_SCHEMA,
-        "base": {"root": str(Path(base_root).resolve(strict=False))},
+        "base": {"root": str(canonical_path(base_root))},
         "systems": {
-            "wiki": {"root": str(Path(wiki_root).resolve(strict=False)) if wiki_root else ""},
-            "knowledge": {"root": str(Path(knowledge_root).resolve(strict=False)) if knowledge_root else ""},
+            "wiki": {"root": str(canonical_path(wiki_root)) if wiki_root else ""},
+            "knowledge": {"root": str(canonical_path(knowledge_root)) if knowledge_root else ""},
         },
     }
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -269,8 +270,8 @@ def write_project_binding(
     base_version: str = "",
     path: "str | Path | None" = None,
 ) -> Path:
-    workspace = Path(workspace_root).resolve(strict=False)
-    p = Path(path).resolve(strict=False) if path else default_binding_path(workspace)
+    workspace = canonical_path(workspace_root)
+    p = canonical_path(path) if path else default_binding_path(workspace)
     project: Dict[str, Any] = {"id": project_id}
     if wiki_id:
         project["wiki_id"] = wiki_id
@@ -288,15 +289,15 @@ def write_project_binding(
 
 
 def write_workspace_inventory(rows: Iterable[Dict[str, Any]], path: "str | Path | None" = None, *, home: "str | Path | None" = None) -> Path:
-    p = Path(path).resolve(strict=False) if path else default_inventory_path(home)
+    p = canonical_path(path) if path else default_inventory_path(home)
     normalized: List[Dict[str, Any]] = []
     seen: set[str] = set()
     for row in rows:
         root = str(row.get("root") or row.get("workspace_root") or "").strip()
         if not root:
             continue
-        rp = Path(root).resolve(strict=False)
-        key = os.path.normcase(str(rp))
+        rp = canonical_path(root)
+        key = path_identity_key(rp)
         if key in seen:
             continue
         seen.add(key)
@@ -304,7 +305,7 @@ def write_workspace_inventory(rows: Iterable[Dict[str, Any]], path: "str | Path 
         if row.get("id"):
             out["id"] = str(row["id"])
         normalized.append(out)
-    normalized.sort(key=lambda x: os.path.normcase(x["root"]))
+    normalized.sort(key=lambda x: path_identity_key(x["root"]))
     payload = {"schema": INVENTORY_SCHEMA, "workspaces": normalized}
     p.parent.mkdir(parents=True, exist_ok=True)
     text = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)

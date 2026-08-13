@@ -20,6 +20,7 @@ from cli.active_task_portability import scan_active_task_portability  # noqa: E4
 from cli.base_maintenance import inventory_rows, reconcile_inventory_project  # noqa: E402
 from cli.environment import load_workspace_inventory, write_workspace_inventory  # noqa: E402
 from cli.installation_lifecycle import configure_installation, installation_doctor, installation_migration  # noqa: E402
+from cli.path_identity import same_path  # noqa: E402
 from cli.runtime_portability import apply_runtime_rebind, runtime_rebind_plan  # noqa: E402
 
 
@@ -104,7 +105,7 @@ base_version: 5.1.3
         self.assertEqual(Path(row["root_path"]), self.workspace.resolve(strict=False))
         registry = dbmod.registry_default_path()
         self.assertTrue(registry.is_file())
-        self.assertTrue(str(registry).startswith(str(self.user)))
+        self.assertTrue(same_path(registry.parent, self.user))
         self.assertFalse((BASE / "db/registry.local.json").exists())
 
     def test_relative_legacy_runtime_root_is_rebindable_not_resolved_against_current_cwd(self):
@@ -182,8 +183,8 @@ class InstallationLifecycleCase(unittest.TestCase):
         second = configure_installation(base_root=BASE, installation_config=self.install)
         self.assertEqual(second["status"], "PASS", second)
         data = yaml.safe_load(self.install.read_text(encoding="utf-8"))
-        self.assertEqual(Path(data["systems"]["wiki"]["root"]), self.wiki)
-        self.assertEqual(Path(data["systems"]["knowledge"]["root"]), self.knowledge)
+        self.assertEqual(Path(data["systems"]["wiki"]["root"]), self.wiki.resolve(strict=False))
+        self.assertEqual(Path(data["systems"]["knowledge"]["root"]), self.knowledge.resolve(strict=False))
         health = installation_doctor(self.install, executing_base_root=BASE)
         self.assertEqual(health["status"], "PASS", health)
 

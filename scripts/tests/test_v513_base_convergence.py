@@ -23,6 +23,7 @@ from cli.base_maintenance import (
     _migrate_one,
 )
 from cli.content_systems import load_content_systems
+from cli.path_identity import same_path
 from cli.environment import (
     load_project_binding,
     write_installation_config,
@@ -99,11 +100,11 @@ class TestBaseConvergence(BaseConvergenceCase):
     def test_resolution_returns_system_roots_and_exact_project_scopes(self):
         r = resolve_workspace(self.workspace, installation_config=self.installation)
         self.assertTrue(r["base"]["valid"], r)
-        self.assertEqual(Path(r["base"]["root"]), self.base)
-        self.assertEqual(Path(r["wiki"]["system_root"]), self.wiki)
-        self.assertEqual(Path(r["wiki"]["workspace_root"]), self.wiki_project)
-        self.assertEqual(Path(r["knowledge"]["system_root"]), self.knowledge)
-        self.assertEqual(Path(r["knowledge"]["project_root"]), self.knowledge_project)
+        self.assertEqual(Path(r["base"]["root"]), self.base.resolve(strict=False))
+        self.assertEqual(Path(r["wiki"]["system_root"]), self.wiki.resolve(strict=False))
+        self.assertEqual(Path(r["wiki"]["workspace_root"]), self.wiki_project.resolve(strict=False))
+        self.assertEqual(Path(r["knowledge"]["system_root"]), self.knowledge.resolve(strict=False))
+        self.assertEqual(Path(r["knowledge"]["project_root"]), self.knowledge_project.resolve(strict=False))
         self.assertEqual(r["knowledge"]["default_retrieval_scope"], "project")
         self.assertTrue(r["knowledge"]["include_shared"])
         self.assertFalse(r["knowledge"]["global_fallback"])
@@ -111,8 +112,8 @@ class TestBaseConvergence(BaseConvergenceCase):
     def test_migration_removes_only_exact_matching_links_and_preserves_targets(self):
         links = {
             "agents": self._link("agents", self.base / "agents"),
-            "wiki": self._link("wiki", self.wiki_project),
-            "knowledge": self._link("knowledge", self.knowledge_project),
+            "wiki": self._link("wiki", self.wiki_project.resolve(strict=False)),
+            "knowledge": self._link("knowledge", self.knowledge_project.resolve(strict=False)),
         }
         plan = migration_plan_for_workspace(self.workspace, installation_config=self.installation)
         self.assertEqual(plan["status"], "READY", plan)
@@ -170,7 +171,7 @@ class TestBaseConvergence(BaseConvergenceCase):
                 installation_config=str(self.installation),
                 inventory_path=str(empty_inventory),
             )
-        found = [r for r in rows if Path(r["root"]) == self.workspace]
+        found = [r for r in rows if same_path(Path(r["root"]), self.workspace)]
         self.assertEqual(len(found), 1, rows)
         self.assertIn("wiki-registry", found[0]["sources"])
         self.assertIn("knowledge-registry", found[0]["sources"])
@@ -215,7 +216,7 @@ class TestLegacyKnowledgeBindingInference(BaseConvergenceCase):
         reg = yaml.safe_load(reg_path.read_text(encoding="utf-8"))
         reg["projects"][0].pop("workspace_roots", None)
         write(reg_path, yaml.safe_dump(reg, allow_unicode=True, sort_keys=False))
-        self._link("knowledge", self.knowledge_project)
+        self._link("knowledge", self.knowledge_project.resolve(strict=False))
         r = resolve_workspace(self.workspace, installation_config=self.installation)
         self.assertTrue(r["knowledge"]["resolved"], r)
         self.assertEqual(r["knowledge"]["project_id"], "demo")

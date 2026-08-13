@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from cli import db as dbmod
-from cli.content_systems import same_path
+from cli.path_identity import canonical_path, same_path
 
 
 def runtime_db_path(workspace_root: "str | Path", project_id: str) -> Path:
-    return Path(workspace_root).resolve(strict=False) / ".ai-work" / "db" / f"{project_id}.db"
+    return canonical_path(workspace_root) / ".ai-work" / "db" / f"{project_id}.db"
 
 
 def _transient_files(db_path: Path) -> List[Dict[str, Any]]:
@@ -51,7 +51,7 @@ def runtime_rebind_plan(
     *,
     registry_path: Optional[str] = None,
 ) -> Dict[str, Any]:
-    workspace = Path(workspace_root).resolve(strict=False)
+    workspace = canonical_path(workspace_root)
     db_path = runtime_db_path(workspace, project_id)
     result: Dict[str, Any] = {
         "schema": "ai-work.runtime-portability/v1",
@@ -160,7 +160,7 @@ def apply_runtime_rebind(
     if plan["status"] != "REBIND_AVAILABLE":
         return plan
 
-    workspace = Path(workspace_root).resolve(strict=False)
+    workspace = canonical_path(workspace_root)
     db_path = Path(plan["db_path"])
     conn = dbmod.connect(str(db_path))
     try:

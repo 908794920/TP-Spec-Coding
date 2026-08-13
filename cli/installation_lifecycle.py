@@ -2,11 +2,11 @@
 """Machine-local TP-Spec-Coding installation lifecycle helpers."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from cli import db as dbmod
+from cli.path_identity import canonical_path, same_path
 from cli.environment import (
     INSTALLATION_SCHEMA,
     EnvironmentConfigError,
@@ -29,7 +29,7 @@ def installation_doctor(
     *,
     executing_base_root: "str | Path | None" = None,
 ) -> Dict[str, Any]:
-    path = Path(installation_config).resolve(strict=False) if installation_config else default_installation_path()
+    path = canonical_path(installation_config) if installation_config else default_installation_path()
     result: Dict[str, Any] = {
         "schema": "ai-work.installation-health/v1",
         "path": str(path),
@@ -72,8 +72,8 @@ def installation_doctor(
     if not knowledge["configured"] or not knowledge["is_dir"]:
         result["issues"].append("configured Knowledge System Root is missing or not a directory")
 
-    executing = Path(executing_base_root).resolve(strict=False) if executing_base_root else current_base_root()
-    if cfg.base_root and os.path.normcase(str(cfg.base_root)) != os.path.normcase(str(executing)):
+    executing = canonical_path(executing_base_root) if executing_base_root else current_base_root()
+    if cfg.base_root and not same_path(cfg.base_root, executing):
         result["warnings"].append(f"executing Base differs from installation base.root: {executing}")
         result["actions"].append("REVIEW_BASE_ROOT_DRIFT")
     if dbmod.legacy_registry_default_path().is_file():
@@ -104,7 +104,7 @@ def configure_installation(
     Invalid existing config is never partially guessed: all required machine roots
     must be supplied explicitly before it can be replaced.
     """
-    path = Path(installation_config).resolve(strict=False) if installation_config else default_installation_path()
+    path = canonical_path(installation_config) if installation_config else default_installation_path()
     before = path.read_bytes() if path.is_file() else None
     existing = None
     invalid_existing = None
@@ -122,9 +122,9 @@ def configure_installation(
             "error": f"existing installation is invalid; provide all roots to repair: {type(invalid_existing).__name__}: {invalid_existing}",
         }
 
-    base = Path(base_root).resolve(strict=False) if base_root else (existing.base_root if existing and existing.base_root else current_base_root())
-    wiki = Path(wiki_root).resolve(strict=False) if wiki_root else (existing.wiki_root if existing else None)
-    knowledge = Path(knowledge_root).resolve(strict=False) if knowledge_root else (existing.knowledge_root if existing else None)
+    base = canonical_path(base_root) if base_root else (existing.base_root if existing and existing.base_root else current_base_root())
+    wiki = canonical_path(wiki_root) if wiki_root else (existing.wiki_root if existing else None)
+    knowledge = canonical_path(knowledge_root) if knowledge_root else (existing.knowledge_root if existing else None)
     missing = [name for name, value in (("wiki_root", wiki), ("knowledge_root", knowledge)) if value is None]
     if missing:
         return {"schema": INSTALLATION_SCHEMA, "status": "BLOCKED", "path": str(path), "error": "missing required roots: " + ", ".join(missing)}
@@ -165,7 +165,7 @@ def installation_migration(
     target_registry_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Migrate recognized machine-local installation state without guessing paths."""
-    path = Path(installation_config).resolve(strict=False) if installation_config else default_installation_path()
+    path = canonical_path(installation_config) if installation_config else default_installation_path()
     if not path.is_file():
         return {"schema": "ai-work.installation-migration/v1", "status": "BLOCKED", "path": str(path), "blockers": ["installation config missing"]}
     try:

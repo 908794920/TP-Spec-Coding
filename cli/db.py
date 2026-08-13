@@ -22,6 +22,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
+from cli.path_identity import canonical_path, same_path
+
 # 模块基目录（cli/db.py 所在目录）
 _MODULE_DIR = Path(__file__).resolve().parent
 # ai-work-base 根目录
@@ -171,15 +173,15 @@ def user_ai_work_root() -> Path:
     """Return the machine-local TP-Spec-Coding state root without importing Base resolvers."""
     env = os.environ.get("AI_WORK_USER_ROOT")
     if env:
-        return Path(os.path.expandvars(os.path.expanduser(env))).resolve(strict=False)
-    return (Path.home() / ".ai-work").resolve(strict=False)
+        return canonical_path(env)
+    return canonical_path(Path.home() / ".ai-work")
 
 
 def registry_default_path() -> Path:
     """Machine-local registry path, overridable with ``AI_WORK_REGISTRY``."""
     env = os.environ.get("AI_WORK_REGISTRY")
     if env:
-        return Path(os.path.expandvars(os.path.expanduser(env))).resolve(strict=False)
+        return canonical_path(env)
     return user_ai_work_root() / "registry.local.json"
 
 
@@ -196,7 +198,7 @@ def registry_read_path(registry_path: Optional[str] = None) -> Path:
     machine state inside the Base checkout.
     """
     if registry_path:
-        return Path(registry_path).resolve(strict=False)
+        return canonical_path(registry_path)
     current = registry_default_path()
     if current.exists():
         return current
@@ -216,7 +218,7 @@ def _registry_mutation_paths(registry_path: Optional[str] = None) -> Tuple[Path,
     write. Explicit registry paths retain their caller-selected semantics.
     """
     if registry_path:
-        explicit = Path(registry_path).resolve(strict=False)
+        explicit = canonical_path(registry_path)
         return explicit, explicit, False
     target = registry_default_path()
     if target.exists():
@@ -334,7 +336,7 @@ def register_project(
     db_path/root_path 作为 machine-local resolver cache 写入绝对路径。
     同 project_id 旧记录会被覆盖；portable identity 不依赖本文件。
     """
-    reg_path = Path(registry_path).resolve() if registry_path else registry_default_path()
+    reg_path = canonical_path(registry_path) if registry_path else registry_default_path()
     reg_path.parent.mkdir(parents=True, exist_ok=True)
     data: Dict[str, Any] = {"projects": []}
     seed_path = reg_path if reg_path.exists() else (registry_read_path() if registry_path is None else reg_path)
@@ -347,8 +349,8 @@ def register_project(
         except (json.JSONDecodeError, OSError):
             data = {"projects": []}
     projects = [p for p in data.get("projects", []) if p.get("project_id") != project_id]
-    db_path_abs = str(Path(db_path).resolve(strict=False))
-    root_path_abs = str(Path(root_path).resolve(strict=False))
+    db_path_abs = str(canonical_path(db_path))
+    root_path_abs = str(canonical_path(root_path))
     projects.append(
         {
             "project_id": project_id,
@@ -446,9 +448,9 @@ def migrate_legacy_registry_to_user(
     Conflicting project identities fail closed.  On successful apply, the legacy
     file is removed only after the machine-local replacement is durably written.
     """
-    legacy = Path(legacy_path).resolve(strict=False) if legacy_path else legacy_registry_default_path()
-    target = Path(target_path).resolve(strict=False) if target_path else registry_default_path()
-    if os.path.normcase(str(legacy)) == os.path.normcase(str(target)):
+    legacy = canonical_path(legacy_path) if legacy_path else legacy_registry_default_path()
+    target = canonical_path(target_path) if target_path else registry_default_path()
+    if same_path(legacy, target):
         return {"status": "CURRENT", "legacy_path": str(legacy), "target_path": str(target), "actions": [], "conflicts": []}
     if not legacy.is_file():
         return {"status": "CURRENT", "legacy_path": str(legacy), "target_path": str(target), "actions": [], "conflicts": []}
@@ -466,11 +468,13 @@ def migrate_legacy_registry_to_user(
             merged[pid] = dict(item)
             actions.append({"action": "MIGRATE_RUNTIME_REGISTRY_ENTRY", "project_id": pid})
             continue
-        old_root = os.path.normcase(os.path.normpath(str(item.get("root_path") or "")))
-        new_root = os.path.normcase(os.path.normpath(str(existing.get("root_path") or "")))
-        old_db = os.path.normcase(os.path.normpath(str(item.get("db_path") or "")))
-        new_db = os.path.normcase(os.path.normpath(str(existing.get("db_path") or "")))
-        if old_root and new_root and old_root != new_root:
+        old_root_raw = str(item.get("root_path") or "").strip()
+        new_root_raw = str(existing.get("root_path") or "").strip()
+        old_db_raw = str(item.get("db_path") or "").strip()
+        new_db_raw = str(existing.get("db_path") or "").strip()
+        roots_equal = bool(old_root_raw and new_root_raw and os.path.isabs(old_root_raw) and os.path.isabs(new_root_raw) and same_path(old_root_raw, new_root_raw))
+        dbs_equal = bool(old_db_raw and new_db_raw and os.path.isabs(old_db_raw) and os.path.isabs(new_db_raw) and same_path(old_db_raw, new_db_raw))
+        if old_root_raw and new_root_raw and not roots_equal:
             old_live = os.path.isabs(str(item.get("root_path") or "")) and Path(str(item.get("root_path"))).exists()
             new_live = os.path.isabs(str(existing.get("root_path") or "")) and Path(str(existing.get("root_path"))).exists()
             if old_live and new_live:
@@ -479,7 +483,7 @@ def migrate_legacy_registry_to_user(
                 conflicts.append(f"project {pid} legacy registry points to a live workspace while machine-local root is stale")
             else:
                 actions.append({"action": "DROP_STALE_LEGACY_RUNTIME_ENTRY", "project_id": pid, "legacy_root": item.get("root_path"), "current_root": existing.get("root_path")})
-        elif old_db and new_db and old_db != new_db:
+        elif old_db_raw and new_db_raw and not dbs_equal:
             old_db_live = os.path.isabs(str(item.get("db_path") or "")) and Path(str(item.get("db_path"))).exists()
             new_db_live = os.path.isabs(str(existing.get("db_path") or "")) and Path(str(existing.get("db_path"))).exists()
             if old_db_live and new_db_live:

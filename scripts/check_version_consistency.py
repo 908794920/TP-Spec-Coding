@@ -29,6 +29,17 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent  # ai-work-base
 
+
+def _ensure_utf8_stdio() -> None:
+    """Force deterministic Unicode output even under cp1252 Windows stdio."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="strict")
+            except (OSError, ValueError):
+                pass
+
 # 历史位置精确 allowlist（任务书 §12）：这些位置允许出现旧版本 token（归档证据、
 # 历史回归测试、旧版目录），保留原样以维持审计链；不参与活动契约纯度判定。
 # 前缀匹配（相对 BASE 的 posix 路径前缀）。
@@ -120,11 +131,39 @@ _TEXT_EXTS = {
 _NO_EXT_NAMES = {"VERSION", "Dockerfile", "Makefile"}
 
 
-def _iter_all_files(base: Path):
-    """递归枚举仓库内所有文本文件（排除目录黑名单）。"""
-    for p in sorted(base.rglob("*")):
-        if not p.is_file():
+def _git_visible_files(base: Path) -> "list[Path]":
+    """Return Git-visible files (tracked-existing + untracked non-ignored).
+
+    Mirrors ``update_manifest.py``: delivery artifacts that are git-ignored
+    (e.g. ``*.patch`` release carriers) are not source content and must not
+    contaminate the version-purity scan.  Falls back to recursive enumeration
+    when no Git checkout is present (release package mode).
+    """
+    git_dir = base / ".git"
+    if not git_dir.exists():
+        return sorted(p for p in base.rglob("*") if p.is_file())
+    import subprocess
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(base), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            capture_output=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return sorted(p for p in base.rglob("*") if p.is_file())
+    out: "list[Path]" = []
+    for rel in proc.stdout.decode("utf-8").split("\0"):
+        if not rel:
             continue
+        p = base / rel
+        if p.is_file():
+            out.append(p)
+    return sorted(set(out))
+
+
+def _iter_all_files(base: Path):
+    """递归枚举仓库内所有文本文件（排除目录黑名单与 Git 忽略的分发载体）。"""
+    for p in _git_visible_files(base):
         if any(part in EXCLUDE_DIRS for part in p.relative_to(base).parts):
             continue
         if _is_text(p):
@@ -183,6 +222,7 @@ def scan_file(path: Path, legacy_re: "re.Pattern[str]", version: str) -> list[st
 
 
 def main() -> int:
+    _ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description="版本纯度扫描器（全仓文本扫描）")
     parser.add_argument("--verbose", action="store_true", help="输出每个文件的扫描状态")
     args = parser.parse_args()

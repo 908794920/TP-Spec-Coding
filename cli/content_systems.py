@@ -14,6 +14,7 @@ import os
 
 from cli.config_loader import load_config
 from cli.environment import load_installation_config, load_project_binding, resolve_base_root
+from cli.path_identity import canonical_path, same_path
 
 BASE_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = BASE_ROOT / "governance" / "content-systems.yaml"
@@ -41,7 +42,7 @@ def _path_value(value: Any, *, anchor: Path) -> Path:
     path = Path(text)
     if not path.is_absolute():
         path = anchor / path
-    return path.resolve(strict=False)
+    return canonical_path(path)
 
 
 def _child_path(value: Any, *, anchor: Path, default: str) -> Path:
@@ -49,13 +50,6 @@ def _child_path(value: Any, *, anchor: Path, default: str) -> Path:
     return _path_value(text, anchor=anchor)
 
 
-def _canonical_compare(path: Path) -> str:
-    text = os.path.normpath(str(path.resolve(strict=False)))
-    return os.path.normcase(text).replace("\\", "/").rstrip("/")
-
-
-def same_path(a: Path, b: Path) -> bool:
-    return _canonical_compare(a) == _canonical_compare(b)
 
 
 @dataclass(frozen=True)
@@ -231,7 +225,7 @@ def load_content_systems(
     base_config_path: "str | Path | None" = None,
     installation_config_path: "str | Path | None" = None,
 ) -> ResolvedConfig:
-    workspace = Path(workspace_root).resolve(strict=False)
+    workspace = canonical_path(workspace_root)
     base_path = Path(base_config_path) if base_config_path else DEFAULT_CONFIG
     base = load_config(base_path, use_cache=False)
 

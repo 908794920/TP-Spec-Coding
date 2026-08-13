@@ -2,6 +2,7 @@
 
 ## V5.2.0 TP-Spec-Coding Public Release — 2026-08-12
 
+- Windows 发布适配收口：统一 machine-local path identity（包含 symlink/Junction/Windows 8.3 短路径别名），修复 Project bootstrap 与 Runtime Registry migration 的字符串路径误判；CLI/版本扫描器建立 UTF-8 stdio 边界，GitHub Windows CI 显式启用 UTF-8；字节门禁以仓库 `.gitattributes` + manifest 为权威，不再强制用户全局 `core.autocrlf=false`。
 - 项目正式更名为 **TP-Spec-Coding**，对外首页、治理名称、CLI 帮助与核心 Agent/Skill 说明统一品牌；为兼容历史 Task/DB，`ai-work` CLI、`.ai-work/`、`ai-work.*` schema 与 `AI_WORK_BASE_ROOT` 等稳定技术 namespace 保持不变。
 - 正式开源采用 MIT License，新增 `LICENSE`、`CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md`、GitHub Actions CI 与可复现 Python requirements。
 - README 重写为公开项目入口：先说明项目价值与优势，再提供快速开始、4 个对外 Agent、开发组长 + 7 个内部专业 Skill、Record-first、UltraPlan/UltraReview、跨机器迁移和安全边界。

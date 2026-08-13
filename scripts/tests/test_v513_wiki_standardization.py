@@ -106,9 +106,9 @@ class WikiCase(unittest.TestCase):
 
 class TestContentSystems(WikiCase):
     def test_empty_roots_default_under_ai_work(self):
-        self.assertEqual(self.cfg.paths.ai_work_root, self.workspace / ".ai-work")
-        self.assertEqual(self.cfg.paths.wiki_system_root, self.workspace / ".ai-work" / "wiki")
-        self.assertEqual(self.cfg.paths.knowledge_physical_root, self.workspace / ".ai-work" / "knowledge")
+        self.assertEqual(self.cfg.paths.ai_work_root, (self.workspace / ".ai-work").resolve(strict=False))
+        self.assertEqual(self.cfg.paths.wiki_system_root, (self.workspace / ".ai-work" / "wiki").resolve(strict=False))
+        self.assertEqual(self.cfg.paths.knowledge_physical_root, (self.workspace / ".ai-work" / "knowledge").resolve(strict=False))
         self.assertEqual(self.cfg.paths.wiki_layout, "workspace-root")
 
     def test_external_legacy_central_root_and_registry(self):
@@ -135,8 +135,8 @@ class TestContentSystems(WikiCase):
         override = self.workspace / ".ai-work" / "config" / "content-systems.yaml"
         write(override, yaml.safe_dump({"systems": {"knowledge": {"root": str(target)}}}, sort_keys=False))
         cfg = load_content_systems(self.workspace, base_config_path=BASE_CONFIG, installation_config_path=self.installation_config)
-        self.assertEqual(cfg.paths.knowledge_physical_root, target.resolve())
-        self.assertEqual(cfg.paths.knowledge_logical_root, self.workspace / ".ai-work" / "knowledge")
+        self.assertEqual(cfg.paths.knowledge_physical_root, target.resolve(strict=False))
+        self.assertEqual(cfg.paths.knowledge_logical_root, (self.workspace / ".ai-work" / "knowledge").resolve(strict=False))
 
     def test_invalid_quality_sampling_configuration_fails_closed(self):
         override = self.workspace / ".ai-work" / "config" / "content-systems.yaml"

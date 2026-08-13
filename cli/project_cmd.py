@@ -15,6 +15,7 @@ from typing import Optional
 from . import db as dbmod
 from .config_loader import ConfigLoadError, gate_task_contract
 from .environment import EnvironmentConfigError, load_project_binding, write_project_binding
+from .path_identity import canonical_path, same_path
 from .version import active_version
 
 # project_id 合法字符：小写字母、数字、连字符
@@ -29,7 +30,7 @@ def cmd_project_init(args) -> int:
             file=sys.stderr,
         )
         return 2
-    root_path = os.path.abspath(args.root or ".")
+    root_path = str(canonical_path(args.root or "."))
     base_version = args.base_version or active_version()
     try:
         binding = load_project_binding(root_path)
@@ -199,9 +200,9 @@ def cmd_project_bootstrap(args) -> int:
                 file=sys.stderr,
             )
             return 4
-        stored_root = os.path.normcase(os.path.normpath(str(row["root_path"] or "")))
-        current_root = os.path.normcase(os.path.normpath(root_path))
-        if stored_root and stored_root != current_root:
+        stored_root = str(row["root_path"] or "").strip()
+        same_root = bool(stored_root and os.path.isabs(stored_root) and same_path(stored_root, root_path))
+        if stored_root and not same_root:
             print(
                 f"PROJECT_REBIND_REQUIRED: Runtime root_path={row['root_path']} differs from current workspace={root_path}; "
                 "run base sync-project --apply after verifying project identity",
