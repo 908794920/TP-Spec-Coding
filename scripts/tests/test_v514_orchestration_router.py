@@ -16,9 +16,11 @@ def test_l1_standard_route():
         add_checkpoint(db,'TASK-V514','tp-requirement-analysis','requirement')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='architecture' and r['execution_mode']=='DIRECT'
+        assert r['transition_notice_required'] is True and r['transition_from_role']=='tp-requirement-analysis'
         add_checkpoint(db,'TASK-V514','tp-architecture-design','architecture')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='development'
+        assert r['transition_notice_required'] is True and r['transition_from_role']=='tp-architecture-design'
 
 def test_l3_ultraplan_only_on_multiple_route_signal():
     with tempfile.TemporaryDirectory() as td:
@@ -40,9 +42,11 @@ def test_l3_architecture_review_then_material_confirmation():
         add_review(db,'TASK-V514','PASS')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='development' and r['confirmation_required'] is True
+        assert r['recommended_action']=='await_confirmation' and r['skill_path'] is None
+        assert r['transition_from_role']=='tp-architecture-review'
         add_decision(db,'TASK-V514','workflow:material-confirmed:architecture->development')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
-        assert r['confirmation_required'] is False
+        assert r['confirmation_required'] is False and r['skill_path'].endswith('tp-development-engineering/SKILL.md')
 
 def test_verification_rework_and_deep_review():
     with tempfile.TemporaryDirectory() as td:
@@ -52,6 +56,8 @@ def test_verification_rework_and_deep_review():
         add_checkpoint(db,'TASK-V514','tp-development-engineering','development')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='verification' and r['execution_mode']=='DEEP_REVIEW'
+        assert r['transition_from_role']=='tp-development-engineering'
         add_verify(db,'TASK-V514','NEEDS_FIX')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='development' and 'VERIFICATION_NEEDS_FIX' in r['reason_codes']
+        assert r['transition_from_role']=='tp-verification-engineering'

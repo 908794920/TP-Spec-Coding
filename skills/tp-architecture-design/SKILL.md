@@ -44,6 +44,8 @@ description: 架构设计工程师（tp-architecture-design）：基于真实代
 
 ## Deep Planning Capability（UltraPlan 模式）
 
+**UltraPlan 只能由本角色启动、组织和收敛；Orchestrator 只决定是否进入 `COMPARATIVE`。** 候选方案只是内部输入。
+
 当任务涉及架构调整、迁移、重构、多模块影响或存在多条真实可行技术路线时，可进入深度规划模式。
 
 执行原则：
@@ -54,7 +56,7 @@ description: 架构设计工程师（tp-architecture-design）：基于真实代
    - 独立形成判断；
    - 独立输出方案。
 3. 禁止子代理之间共享中间结论，避免方案污染。
-4. 主 Agent 仅在所有独立分析完成后进行综合。
+4. 主 Agent 在全部独立分析完成后核验关键事实并收敛为唯一 decision-complete plan；候选方案不得直接提交给 `tp-architecture-review`。
 5. 如果编辑器不支持并发：
    - 使用顺序隔离方式模拟多视角；
    - 每个分析阶段重新加载任务上下文；

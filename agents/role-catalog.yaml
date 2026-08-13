@@ -11,7 +11,7 @@ roles:
   type: control-role
   skill_path: agents/tp-workflow-orchestrator/SKILL.md
   owns_states: []
-  content_sha256: 9F4436B529A5DD048DEA5B1E968DDF30F886B19ED70B0D5065D4B31E576566D9
+  content_sha256: 4FAF8A8926DA2DD6964DAB684362A89355D307BF462A3B7120DF4868B3AD8C9F
 - workflow_role: tp-requirement-analysis
   display_name: tp-需求分析
   type: workflow-role
@@ -30,7 +30,7 @@ roles:
   skill_path: skills/tp-architecture-design/SKILL.md
   owns_states:
   - NEW
-  content_sha256: 04BD67354894EF9F42504A6AD561A1CDF6801D340507D450A1D9EFDECF4D192B
+  content_sha256: F3E1BB8B4E0B516F19778CE87D2049376099072ECF788A61E2A20C657721E449
 - workflow_role: tp-architecture-review
   display_name: tp-架构评审
   type: optional-review-role
@@ -42,13 +42,13 @@ roles:
   type: workflow-role
   skill_path: skills/tp-development-engineering/SKILL.md
   owns_states: []
-  content_sha256: 3B671E0248D2CAADAE934A97673C2647FC4A31F5985E4ABF1335076E6FB4CE2A
+  content_sha256: D7B005668B2AD92BAC3A1C4340080BF9686E7B531D72384A24984E92E08BAB41
 - workflow_role: tp-verification-engineering
   display_name: tp-验收工程
   type: workflow-role
   skill_path: skills/tp-verification-engineering/SKILL.md
   owns_states: []
-  content_sha256: AFF3467DF7C1E1D5679C00860A87F9D65E6F4D30597ADC5CAE2325FB8967D421
+  content_sha256: 6DA669B35EB7B9E772688021DE07ABD6BD60A952F422E1A54CA9149D965CB33B
 - workflow_role: tp-delivery-convergence
   display_name: tp-交付/知识收敛
   type: workflow-role

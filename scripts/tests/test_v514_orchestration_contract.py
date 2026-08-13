@@ -32,6 +32,11 @@ def test_ultra_implementation_stays_in_existing_roles():
     assert 'Deep Planning Capability' in arch and 'UltraPlan' in arch
     assert 'Deep Review Capability' in verify and 'UltraReview' in verify
     assert '只决定**何时进入深度模式**' in orch
+    c=orchestration.load_contract(BASE)
+    for pipeline in c['pipelines'].values():
+        for step in pipeline:
+            if step['mode']=='AUTO_PLANNING': assert step['role']=='tp-architecture-design'
+            if step['mode']=='AUTO_REVIEW': assert step['role']=='tp-verification-engineering'
 
 def test_planning_parallel_fallback_is_isolated_and_nonblocking():
     p=yaml.safe_load((BASE/'governance/planning-strategy.yaml').read_text(encoding='utf-8'))

@@ -33,7 +33,9 @@ description: 工作流编排器（tp-workflow-orchestrator）：TP-Spec-Coding �
 tp-spec workflow next --task <TASK> --db <DB> --json
 ```
 
-然后只加载返回的 `skill_path`，不要一次性加载全部角色 Skill。
+若返回 `transition_notice_required=true`，先用一行通知用户 `角色切换：<transition_from_role> → <role_id>（<execution_mode>）`；普通切换只通知、不审批、不记账。
+
+若 `confirmation_required=true`，先处理 `confirmation_reason`，未满足不得加载下一 Skill；默认 material 路由在未确认时不会返回 `skill_path`。否则只加载返回的 `skill_path`，不要一次性加载全部角色 Skill。
 
 没有 TaskId 时属于 pre-task：先调用 `tp-requirement-analysis` 理清真正阻塞的问题；到现有规则认为适合建立正式 Task 时，复用 `task create --from-intake`。不要为了编排记账提前建 Task。
 
@@ -56,10 +58,10 @@ effective_level = max(risk_level, flow_level)
 
 ## 3. UltraPlan / UltraReview
 
-本角色只决定**何时进入深度模式**；专业执行仍分别属于：
+本角色只决定**何时进入深度模式**，不自行启动子视角：
 
-- UltraPlan → `tp-architecture-design`；
-- UltraReview → `tp-verification-engineering`。
+- UltraPlan → 仅由 `tp-architecture-design` 启动并收敛；
+- UltraReview → 仅由 `tp-verification-engineering` 启动并收敛。
 
 当当前 AI 编辑器支持并发 Sub-Agent / Reviewer 且可保持隔离上下文时，**优先并发隔离**。所有子代理只共享同一 verified evidence pack，互相不得读取中间方案/初始结论，最后由主角色综合。
 
@@ -78,7 +80,7 @@ effective_level = max(risk_level, flow_level)
 - 验证无法执行，需要 defer/waive 或接受残余风险；
 - 暂停、取消、重定义任务。
 
-普通无争议角色切换不审批、不写事件。真正的用户业务选择可复用既有 `DECISION`；真实 blocker 才用 `task block`，解除后用 `task resume`。
+七个专业角色之间的实际切换先通知用户；普通切换不审批、不写事件。真正的用户业务选择可复用既有 `DECISION`；真实 blocker 才用 `task block`，解除后用 `task resume`。
 
 ### 确定性路由信号
 

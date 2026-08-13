@@ -187,6 +187,10 @@ def validate_contract(base_root: Optional["str | Path"] = None) -> List[str]:
                 errors.append(f"{level}.{stage}: unknown phase {phase!r}")
             if mode not in {"DIRECT", "AUTO_PLANNING", "AUTO_REVIEW"}:
                 errors.append(f"{level}.{stage}: unknown mode {mode!r}")
+            if mode == "AUTO_PLANNING" and role != "tp-architecture-design":
+                errors.append(f"{level}.{stage}: AUTO_PLANNING must be owned by tp-architecture-design")
+            if mode == "AUTO_REVIEW" and role != "tp-verification-engineering":
+                errors.append(f"{level}.{stage}: AUTO_REVIEW must be owned by tp-verification-engineering")
             if role == "tp-knowledge":
                 errors.append(f"{level}.{stage}: tp-knowledge is standalone and must never enter the development workflow")
 
@@ -391,7 +395,8 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
                 skill_path: Optional[str], execution_mode: str = "DIRECT", confirmation_required: bool = False,
                 confirmation_reason: Optional[str] = None, blocker: Optional[str] = None,
                 reason_codes: Optional[List[str]] = None, action: Optional[str] = None,
-                context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                context: Optional[Dict[str, Any]] = None,
+                transition_from_role: Optional[str] = None) -> Dict[str, Any]:
     data = {
         "schema": ROUTE_SCHEMA,
         "task_id": task.get("task_id"),
@@ -411,6 +416,9 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
     }
     if context is not None:
         data["context"] = context
+    if transition_from_role and role_id and transition_from_role != role_id:
+        data["transition_from_role"] = transition_from_role
+        data["transition_notice_required"] = True
     return data
 
 
@@ -458,7 +466,8 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             code = "ARCHITECTURE_REVIEW_REVISE" if review["decision"] == "REVISE" else "ARCHITECTURE_REVIEW_BLOCKED_REWORK"
             mode = "COMPARATIVE" if "workflow:multiple-feasible-routes" in signals else "DIRECT"
             return _route_dict(task, level, next_stage="architecture", role_id="tp-architecture-design",
-                               skill_path=str(role["skill_path"]), execution_mode=mode, reason_codes=[code])
+                               skill_path=str(role["skill_path"]), execution_mode=mode, reason_codes=[code],
+                               transition_from_role="tp-architecture-review")
 
     verification = _latest_verification(events)
     if verification and verification["decision"] in {"NEEDS_FIX", "FAIL"}:
@@ -483,16 +492,19 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             rid = stage_to_role[target]
             mode = "COMPARATIVE" if target == "architecture" and "workflow:multiple-feasible-routes" in signals else "DIRECT"
             return _route_dict(task, level, next_stage=target, role_id=rid, skill_path=str(role_map[rid]["skill_path"]),
-                               execution_mode=mode, reason_codes=[code])
+                               execution_mode=mode, reason_codes=[code],
+                               transition_from_role="tp-verification-engineering")
 
     pipeline = (contract.get("pipelines") or {}).get(level) or []
     included = [s for s in pipeline if _stage_included(s, level, task, events, signals)]
     upstream_completion_id = 0
+    previous_role: Optional[str] = None
     for step in included:
         stage = str(step["stage"])
         completion = _stage_completion_event(stage, events)
         if completion is not None and int(completion.get("id") or 0) > upstream_completion_id:
             upstream_completion_id = int(completion.get("id") or 0)
+            previous_role = str(step.get("role") or "") or None
             continue
         rid = str(step["role"])
         role = role_map.get(rid)
@@ -512,11 +524,17 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             if int(signal_ids.get(marker, 0)) <= upstream_completion_id:
                 confirm = True
                 confirm_reason = "MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION"
+        skill_path = str(role["skill_path"])
+        action = "dispatch_role"
+        if confirm and str(confirm_reason or "").startswith("MATERIAL_"):
+            skill_path = None
+            action = "await_confirmation"
         return _route_dict(
-            task, level, next_stage=stage, role_id=rid, skill_path=str(role["skill_path"]),
+            task, level, next_stage=stage, role_id=rid, skill_path=skill_path,
             execution_mode=_execution_mode(step, level, signals), confirmation_required=confirm,
-            confirmation_reason=confirm_reason, reason_codes=["NEXT_STAGE_RESOLVED"], action="dispatch_role",
+            confirmation_reason=confirm_reason, reason_codes=["NEXT_STAGE_RESOLVED"], action=action,
             context=_delivery_fact_pack(task, events) if stage == "delivery" else None,
+            transition_from_role=previous_role,
         )
 
     # All selected stages have completed. A truthful PASS means the task may close;

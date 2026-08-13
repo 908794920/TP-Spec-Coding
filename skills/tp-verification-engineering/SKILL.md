@@ -42,6 +42,8 @@ PASS 必须有真实 `evidence/*`。记录 PASS 后必须把控制权返回 `tp-
 
 ## Deep Review Capability（UltraReview 模式）
 
+**UltraReview 只能由本角色启动、组织和收敛；Orchestrator 只决定是否进入 `DEEP_REVIEW`。**
+
 当任务涉及核心模块、架构变化、数据结构变化、Runtime/基础设施变化或大范围修改时，可进入深度评审模式。
 
 执行原则：
@@ -52,7 +54,7 @@ PASS 必须有真实 `evidence/*`。记录 PASS 后必须把控制权返回 `tp-
    - completeness：需求覆盖与交付完整性；
    - correctness：实现正确性、错误处理和边界风险；
    - impact：兼容性、回归和影响范围。
-4. 主 Reviewer 仅负责最终去重、合并和形成统一结论。
+4. 子 Reviewer 只产出 findings/evidence；主 Reviewer 去重、核验并形成唯一 `PASS | NEEDS_FIX | FAIL`，只有本角色写最终验收事实。
 5. 不支持并发时，采用隔离顺序评审，不允许基于前一个 Reviewer 结论继续推导。
 
 评审目标是提高发现质量，不增加无价值流程。
