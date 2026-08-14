@@ -135,7 +135,7 @@ def cmd_config_list(args) -> int:
         conn.close()
 
 
-# --- V5.2.0 C-01.4: controlled governed-YAML load subcommands ---
+# --- V5.2.1 C-01.4: controlled governed-YAML load subcommands ---
 
 def _schema_to_jsonable(schema):
     """Render a schema dict with Python type objects as type-name strings."""
@@ -278,7 +278,7 @@ def add_config_subparsers(config_parser) -> None:
     p_list.add_argument("--db", required=False, default=None)
     p_list.set_defaults(func=cmd_config_list)
 
-    # --- V5.2.0 C-01.4: controlled governed-YAML load subcommands ---
+    # --- V5.2.1 C-01.4: controlled governed-YAML load subcommands ---
     p_load = sub.add_parser("load", help="Load a governed YAML file, output read-only JSON")
     p_load.add_argument("--file", required=True, help="YAML file path (relative to base root or absolute)")
     p_load.add_argument("--schema", required=False, default=None, help="schema name for validation")

@@ -1,10 +1,10 @@
 ﻿<#
 .SYNOPSIS
-Atomically flushes handoff.json into task facts and verifiable generated views (V5.2.0 single contract).
+Atomically flushes handoff.json into task facts and verifiable generated views (V5.2.1 single contract).
 
 .DESCRIPTION
 The flush follows prepare -> validate -> commit -> consume. It operates only on
-artifact_contract.version=5.2.0 tasks with tool-agnostic tp-* / human_owner actors;
+artifact_contract.version=5.2.1 tasks with tool-agnostic tp-* / human_owner actors;
 legacy contracts are rejected. A task-scoped lock, transaction journal, staged
 files and backups make interrupted flushes recoverable. Replaying an already
 consumed handoff is a successful no-op.
@@ -163,7 +163,7 @@ function Get-GeneratedSources {
     foreach ($relative in $required) {
         $sourcePath = Join-Path $TaskDirectory $relative
         if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
-            throw "V5.2.0 generated view requires '$relative' before flush."
+            throw "V5.2.1 generated view requires '$relative' before flush."
         }
         $sources[$relative] = Get-Content -LiteralPath $sourcePath -Raw -Encoding UTF8
     }
@@ -294,7 +294,7 @@ try {
 
     $statusBefore = Get-Content -LiteralPath $statusPath -Raw -Encoding UTF8
     $artifactContractVersion = Get-YamlNestedScalar -Text $statusBefore -Parent 'artifact_contract' -Name 'version'
-    # V5.2.0 单一活动契约：旧契约非终态任务须先经官方 migrate/retire；flush 不负责跨契约迁移。
+    # V5.2.1 单一活动契约：旧契约非终态任务须先经官方 migrate/retire；flush 不负责跨契约迁移。
     if ([string]$artifactContractVersion -ne $script:ActiveVersion) {
         throw "legacy contract task is a frozen static archive; flush only supports artifact_contract.version=$($script:ActiveVersion) (found '$artifactContractVersion')."
     }
@@ -303,15 +303,15 @@ try {
     # File-mode equivalent of `tp-spec commit --review-only`: append one
     # REVIEW_COMPLETED event without changing state or consuming handoff.json.
     if ($ReviewOnly) {
-        if ($Actor -ne 'tp-verification-engineering') { throw 'V5.2.0 -ReviewOnly is only available to tp-verification-engineering.' }
+        if ($Actor -ne 'tp-verification-engineering') { throw 'V5.2.1 -ReviewOnly is only available to tp-verification-engineering.' }
         $stateBefore = Get-YamlScalar -Text $statusBefore -Name 'current_state'
-        if ($stateBefore -ne 'VERIFYING') { throw "V5.2.0 -ReviewOnly requires current_state=VERIFYING (got '$stateBefore')." }
+        if ($stateBefore -ne 'VERIFYING') { throw "V5.2.1 -ReviewOnly requires current_state=VERIFYING (got '$stateBefore')." }
         $review = Get-ReviewMetadata -Path (Join-Path $task.FullName 'codex-review.md')
         if ($null -eq $review -or $review.Actor -ne 'tp-verification-engineering' -or $review.Decision -notin @('PASS', 'FAIL', 'NEEDS_FIX') -or [string]::IsNullOrWhiteSpace($review.Evidence)) {
-            throw 'V5.2.0 -ReviewOnly requires valid codex-review.md review metadata.'
+            throw 'V5.2.1 -ReviewOnly requires valid codex-review.md review metadata.'
         }
         $reviewTime = [DateTimeOffset]::MinValue
-        if (-not [DateTimeOffset]::TryParse([string]$review.Timestamp, [ref]$reviewTime)) { throw 'V5.2.0 -ReviewOnly requires codex-review.md review.timestamp in ISO 8601 format.' }
+        if (-not [DateTimeOffset]::TryParse([string]$review.Timestamp, [ref]$reviewTime)) { throw 'V5.2.1 -ReviewOnly requires codex-review.md review.timestamp in ISO 8601 format.' }
 
         $existingEvents = @(Get-Content -LiteralPath $eventsPath -Encoding UTF8)
         foreach ($line in $existingEvents) {
@@ -349,7 +349,7 @@ try {
 
     $handoffRaw = Get-Content -LiteralPath $handoffPath -Raw -Encoding UTF8
     $handoff = $handoffRaw | ConvertFrom-Json -ErrorAction Stop
-    if ([string]$handoff.schema_version -ne $script:ActiveVersion) { throw "V5.2.0 handoff.json.schema_version must be $($script:ActiveVersion)." }
+    if ([string]$handoff.schema_version -ne $script:ActiveVersion) { throw "V5.2.1 handoff.json.schema_version must be $($script:ActiveVersion)." }
     if ([string]::IsNullOrWhiteSpace([string]$handoff.summary)) { throw 'handoff.json.summary is required.' }
     if ([string]$handoff.actor -ne $Actor) { throw 'handoff.json.actor must match -Actor.' }
     if ($null -eq $handoff.next -or [string]::IsNullOrWhiteSpace([string]$handoff.next.state) -or [string]::IsNullOrWhiteSpace([string]$handoff.next.owner)) {
@@ -359,28 +359,28 @@ try {
     if ([string]::IsNullOrWhiteSpace($handoffId)) {
         throw 'Versioned handoff.json.handoff_id is required.'
     }
-    # V5.2.0 next_prompt 完整性与目标一致性校验。
-    if ($null -eq $handoff.next_prompt) { throw 'V5.2.0 handoff.json.next_prompt is required.' }
+    # V5.2.1 next_prompt 完整性与目标一致性校验。
+    if ($null -eq $handoff.next_prompt) { throw 'V5.2.1 handoff.json.next_prompt is required.' }
     foreach ($field in @('target_role', 'invocation', 'task_id', 'target_state', 'risk_level', 'page_verification', 'entry', 'reading_order', 'actions', 'constraints', 'exit_expectation', 'fact_source_disclaimer')) {
         if (-not ($handoff.next_prompt.PSObject.Properties.Name -contains $field) -or $null -eq $handoff.next_prompt.$field -or
             (($field -notin @('reading_order', 'actions', 'constraints')) -and [string]::IsNullOrWhiteSpace([string]$handoff.next_prompt.$field)) -or
             (($field -in @('reading_order', 'actions', 'constraints')) -and @($handoff.next_prompt.$field).Count -eq 0)) {
-            throw "V5.2.0 handoff.json.next_prompt.$field is required."
+            throw "V5.2.1 handoff.json.next_prompt.$field is required."
         }
     }
-    if ([string]$handoff.next_prompt.target_role -ne [string]$handoff.next.owner) { throw 'V5.2.0 next_prompt.target_role must equal next.owner.' }
-    if ([string]$handoff.next_prompt.target_state -ne [string]$handoff.next.state) { throw 'V5.2.0 next_prompt.target_state must equal next.state.' }
-    if ([string]$handoff.next_prompt.task_id -ne $task.Name) { throw 'V5.2.0 next_prompt.task_id must equal task directory name.' }
-    if ([string]$handoff.next_prompt.risk_level -ne (Get-YamlScalar -Text $statusBefore -Name 'risk_level')) { throw 'V5.2.0 next_prompt.risk_level must equal status.yaml.risk_level.' }
-    if ([string]$handoff.next_prompt.entry -ne 'generated/continuation.md') { throw 'V5.2.0 next_prompt.entry must be generated/continuation.md.' }
+    if ([string]$handoff.next_prompt.target_role -ne [string]$handoff.next.owner) { throw 'V5.2.1 next_prompt.target_role must equal next.owner.' }
+    if ([string]$handoff.next_prompt.target_state -ne [string]$handoff.next.state) { throw 'V5.2.1 next_prompt.target_state must equal next.state.' }
+    if ([string]$handoff.next_prompt.task_id -ne $task.Name) { throw 'V5.2.1 next_prompt.task_id must equal task directory name.' }
+    if ([string]$handoff.next_prompt.risk_level -ne (Get-YamlScalar -Text $statusBefore -Name 'risk_level')) { throw 'V5.2.1 next_prompt.risk_level must equal status.yaml.risk_level.' }
+    if ([string]$handoff.next_prompt.entry -ne 'generated/continuation.md') { throw 'V5.2.1 next_prompt.entry must be generated/continuation.md.' }
     $stateOwners = @{ RISK_ANALYZING = 'tp-architecture-design'; REQUIREMENT_CLARIFYING = 'tp-architecture-design'; TECHNICAL_DISCOVERY = 'tp-development-engineering'; PRODUCT_DESIGNING = 'tp-product-design'; PRODUCT_CONFIRMING = 'human_owner'; TECH_DESIGNING = 'tp-architecture-design'; DISCOVERY_REVIEW_REQUIRED = 'tp-architecture-design'; CHANGE_CONFIRMING = 'human_owner'; BLOCKED = 'tp-architecture-design'; DEVELOPING = 'tp-development-engineering'; ASSISTING = 'tp-development-engineering'; VERIFYING = 'tp-verification-engineering'; BROWSER_VERIFYING = 'tp-architecture-design'; REVIEWING = 'tp-architecture-design'; CLOSING = 'tp-delivery-convergence'; CANCELLED = 'human_owner' }
     $expectedNextOwner = if ([string]$handoff.next.state -eq 'COMPLETED') {
-        # V5.2.0：结项由 tp-delivery-convergence 从 CLOSING 提交。
+        # V5.2.1：结项由 tp-delivery-convergence 从 CLOSING 提交。
         'tp-delivery-convergence'
     }
     elseif ($stateOwners.ContainsKey([string]$handoff.next.state)) { [string]$stateOwners[[string]$handoff.next.state] }
     else { '' }
-    if (-not [string]::IsNullOrWhiteSpace($expectedNextOwner) -and [string]$handoff.next_prompt.target_role -ne $expectedNextOwner) { throw "V5.2.0 next_prompt.target_role must equal owner '$expectedNextOwner' of next state '$($handoff.next.state)'." }
+    if (-not [string]::IsNullOrWhiteSpace($expectedNextOwner) -and [string]$handoff.next_prompt.target_role -ne $expectedNextOwner) { throw "V5.2.1 next_prompt.target_role must equal owner '$expectedNextOwner' of next state '$($handoff.next.state)'." }
 
     $isConsumed = ($handoff.PSObject.Properties.Name -contains 'consumed') -and [bool]$handoff.consumed
     $existingFlushId = if ($handoff.PSObject.Properties.Name -contains 'flush_id') { [string]$handoff.flush_id } else { '' }
@@ -390,7 +390,7 @@ try {
         return
     }
 
-    # SHD M3 转换合法性 + M2 flush 侧就绪声明校验（V5.2.0）
+    # SHD M3 转换合法性 + M2 flush 侧就绪声明校验（V5.2.1）
     $stateBefore = Get-YamlScalar -Text $statusBefore -Name 'current_state'
     $flushTransitions = @{
             NEW = @('RISK_ANALYZING','TECH_DESIGNING','DEVELOPING','CANCELLED')
@@ -412,7 +412,7 @@ try {
     }
     # M3：handoff.next.state 必须 ∈ transitions[current_state]
     if ($flushTransitions.ContainsKey($stateBefore) -and [string]$handoff.next.state -notin $flushTransitions[$stateBefore]) {
-        throw "V5.2.0 handoff.next.state '$($handoff.next.state)' is not a valid transition from '$stateBefore'."
+        throw "V5.2.1 handoff.next.state '$($handoff.next.state)' is not a valid transition from '$stateBefore'."
     }
     # M2 flush 侧：从产出态前向推进时，要求就绪声明 ready/PASS 且目标状态 == handoff.next.state
     $flushShdDriver = @{
@@ -432,35 +432,35 @@ try {
         $shdArtifactPath = Join-Path $task.FullName $shdDriver.artifact
         $shd = Get-ShdDeclarationForFlush -Path $shdArtifactPath -IsReview $shdDriver.review
         if ($null -eq $shd) {
-            throw "V5.2.0 state '$stateBefore' requires stage_handoff declaration in '$($shdDriver.artifact)' before flush."
+            throw "V5.2.1 state '$stateBefore' requires stage_handoff declaration in '$($shdDriver.artifact)' before flush."
         }
         if ($shdDriver.review) {
-            if ($shd.Decision -ne 'PASS') { throw "V5.2.0 state '$stateBefore' requires codex-review.md review.decision=PASS before flush (got '$($shd.Decision)')." }
-            if ([string]::IsNullOrWhiteSpace($shd.NextState)) { throw "V5.2.0 codex-review.md review.next_state is required before flush." }
-            if ([string]$shd.NextState -ne [string]$handoff.next.state) { throw "V5.2.0 codex-review.md review.next_state '$($shd.NextState)' must equal handoff.next.state '$($handoff.next.state)'." }
+            if ($shd.Decision -ne 'PASS') { throw "V5.2.1 state '$stateBefore' requires codex-review.md review.decision=PASS before flush (got '$($shd.Decision)')." }
+            if ([string]::IsNullOrWhiteSpace($shd.NextState)) { throw "V5.2.1 codex-review.md review.next_state is required before flush." }
+            if ([string]$shd.NextState -ne [string]$handoff.next.state) { throw "V5.2.1 codex-review.md review.next_state '$($shd.NextState)' must equal handoff.next.state '$($handoff.next.state)'." }
         }
         else {
-            if ($shd.Status -ne 'ready') { throw "V5.2.0 state '$stateBefore' requires $($shdDriver.artifact) stage_handoff.status=ready before flush (got '$($shd.Status)')." }
-            if ([string]::IsNullOrWhiteSpace($shd.IntendedNext)) { throw "V5.2.0 $($shdDriver.artifact) stage_handoff.intended_next is required before flush." }
-            if ([string]$shd.IntendedNext -ne [string]$handoff.next.state) { throw "V5.2.0 $($shdDriver.artifact) stage_handoff.intended_next '$($shd.IntendedNext)' must equal handoff.next.state '$($handoff.next.state)'." }
+            if ($shd.Status -ne 'ready') { throw "V5.2.1 state '$stateBefore' requires $($shdDriver.artifact) stage_handoff.status=ready before flush (got '$($shd.Status)')." }
+            if ([string]::IsNullOrWhiteSpace($shd.IntendedNext)) { throw "V5.2.1 $($shdDriver.artifact) stage_handoff.intended_next is required before flush." }
+            if ([string]$shd.IntendedNext -ne [string]$handoff.next.state) { throw "V5.2.1 $($shdDriver.artifact) stage_handoff.intended_next '$($shd.IntendedNext)' must equal handoff.next.state '$($handoff.next.state)'." }
         }
     }
 
-    # V5.2.0 结单链门控（与 tp-spec commit / task transition 一致）。
+    # V5.2.1 结单链门控（与 tp-spec commit / task transition 一致）。
     $nextState = [string]$handoff.next.state
     $nextOwner = [string]$handoff.next.owner
     if ($nextState -eq 'COMPLETED') {
-        if ($stateBefore -ne 'CLOSING') { throw 'V5.2.0 completion must come from CLOSING; VERIFYING cannot reach COMPLETED directly.' }
-        if ($Actor -ne 'tp-delivery-convergence' -or $nextOwner -ne 'tp-delivery-convergence') { throw 'V5.2.0 COMPLETED must be flushed by tp-delivery-convergence.' }
+        if ($stateBefore -ne 'CLOSING') { throw 'V5.2.1 completion must come from CLOSING; VERIFYING cannot reach COMPLETED directly.' }
+        if ($Actor -ne 'tp-delivery-convergence' -or $nextOwner -ne 'tp-delivery-convergence') { throw 'V5.2.1 COMPLETED must be flushed by tp-delivery-convergence.' }
     }
     elseif ($nextState -eq 'CLOSING') {
-        if ($Actor -ne 'tp-delivery-convergence' -or $nextOwner -ne 'tp-delivery-convergence') { throw 'V5.2.0 CLOSING may only be entered by tp-delivery-convergence.' }
+        if ($Actor -ne 'tp-delivery-convergence' -or $nextOwner -ne 'tp-delivery-convergence') { throw 'V5.2.1 CLOSING may only be entered by tp-delivery-convergence.' }
         $eventsRaw = Get-Content -LiteralPath $eventsPath -Raw -Encoding UTF8
         $hasReviewPass = $false
         foreach ($ln in ($eventsRaw -split "`r?`n")) {
             if ($ln -match '"type":\s*"REVIEW_COMPLETED"' -and $ln -match '"actor":\s*"tp-verification-engineering"' -and $ln -match '"(decision|note)":\s*"PASS"') { $hasReviewPass = $true; break }
         }
-        if (-not $hasReviewPass) { throw 'V5.2.0 CLOSING requires an existing tp-verification-engineering REVIEW_COMPLETED=PASS event.' }
+        if (-not $hasReviewPass) { throw 'V5.2.1 CLOSING requires an existing tp-verification-engineering REVIEW_COMPLETED=PASS event.' }
     }
 
     $flushId = $existingFlushId

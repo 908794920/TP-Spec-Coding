@@ -1,14 +1,14 @@
 ---
 id: tp-architecture-review
 name: tp-架构评审
-version: 5.2.0
+version: 5.2.1
 status: active
 type: optional-review-role
 role: tp-architecture-review
 description: 架构评审工程师（tp-architecture-review）：按风险触发的独立架构第二意见；基于紧凑证据检查方案语义，不重新设计、不重新全仓扫描。
 ---
 
-# tp-架构评审 — V5.2.0
+# tp-架构评审 — V5.2.1
 
 ## 定位
 按风险触发的独立第二意见，**不是所有 L2/L3 的固定门禁**。未被触发时不产生“缺少 PASS”的流程错误。
@@ -40,6 +40,10 @@ description: 架构评审工程师（tp-architecture-review）：按风险触发
 ## 原则
 评审保护业务语义，不要求 Markdown 字节永久冻结；不能因为格式、metadata 或无业务语义变化重复评审。Review 的存在不改变 Record-first 主状态机。
 
-## Orchestrator 协作（V5.2.0）
+## 机会式项目记忆
+
+只有在当前工作**自然出现**高价值项目记忆信号时，才按需加载 `skills/tp-memory-capture/SKILL.md`：例如 human_owner 明确强调“以后记住/不要再犯”，或发现有证据、跨会话可复用且重新发现成本高的项目规则/方法。**不得为了寻找 Memory 主动扫描 Task History、Knowledge、源码或全部 Skills。** Memory 缺失、损坏或不值得写时直接继续当前职责，不得形成 blocker。
+
+## Orchestrator 协作（V5.2.1）
 
 可由 `tp-workflow-orchestrator` 通过 `role-catalog.yaml` 调度；被调度后仍完整遵守本角色职责，不自行跨阶段替代其他专业角色。阶段形成有意义事实时最多记录一次现有 checkpoint/review/verify，不为编排创建空工件。返回紧凑 Stage Result（outcome/summary/evidence/user_decision_required/next_hint）供主编排器继续判断；该返回不是第二账本。

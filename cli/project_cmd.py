@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.2.0 project / db 基础命令组。
+"""TP-Spec-Coding V5.2.1 project / db 基础命令组。
 
 仅依赖 Python 标准库。包含 project bootstrap/init/list 与 db verify；其他活动命令组
 由 ``cli.main`` 分别注册。本模块不定义 Task 工作流语义。

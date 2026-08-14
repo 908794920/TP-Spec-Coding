@@ -1,14 +1,14 @@
 ---
 id: tp-delivery-convergence
 name: tp-交付/知识收敛
-version: 5.2.0
+version: 5.2.1
 status: active
 type: workflow-role
 role: tp-delivery-convergence
 description: 交付与知识收敛工程师（tp-delivery-convergence）：L2/L3 固定进入的轻量收敛阶段；默认只消费 Orchestrator 的 compact fact pack，在确有复杂交付或长期知识价值时做 targeted expansion。负责 Task 驱动的 canonical Knowledge 内容收敛，但绝不调度 tp-knowledge。
 ---
 
-# tp-交付/知识收敛 — V5.2.0
+# tp-交付/知识收敛 — V5.2.1
 
 ## 定位
 L2/L3 的固定末阶段，负责把**已经完成并验证的事实**收敛成可执行交付信息和必要的长期知识。它不是第二次需求分析、第二次 Review，也不是 Knowledge 系统维护 Agent。
@@ -66,6 +66,14 @@ L2/L3 的固定末阶段，负责把**已经完成并验证的事实**收敛成�
 上述能力属于独立的 `tp-knowledge` 专项系统。两者共享 Knowledge 基础设施，但**角色互相独立、互不调度**。
 
 发现 canonical 冲突、归属歧义、破坏性 merge/split 或证据不足时，记录真实 blocker/DEFERRED 并交 human_owner 判断；不得自行调用 `tp-knowledge` 逃避当前 workflow 职责。
+
+## 机会式 Project Memory 收敛
+
+Project Memory 不是本阶段固定工作项。仅当本 Task 在前序角色中已经自然修改 `.tp-spec/memory/`，或当前 compact fact pack 本身直接暴露出高价值记忆信号时，才按需加载 `skills/tp-memory-capture/SKILL.md`。
+
+- **未触碰 Memory：0 动作**，不得为了“收敛完整”再分析一次任务。
+- **已触碰 Memory：只检查 touched fragment**，做必要的去重、压缩、证据/敏感信息检查；禁止扫描整个 PROJECT、全部 Skills 或历史任务。
+- Memory 写入失败或没有合格内容时直接 SKIP，不影响 delivery checkpoint、Workflow 或任务完成。
 
 ## Runtime
 完成实际收敛后最多记录一次：

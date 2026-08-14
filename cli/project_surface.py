@@ -2,9 +2,10 @@
 """Deterministic project-facing TP-Spec-Coding entrypoint maintenance.
 
 The project root README/AGENTS managed block and ``.tp-spec/README.md`` are a
-portable integration surface.  They describe stable resolver behavior only;
+portable integration surface. They describe stable resolver behavior only;
 machine-specific paths stay in the installation profile and are never rendered
-into project files.
+into project files. ``.tp-spec/memory`` is bootstrapped create-once and remains
+project-owned after creation.
 """
 from __future__ import annotations
 
@@ -58,6 +59,22 @@ def _project_id(workspace: Path, explicit: str = "") -> str:
     return binding.project_id or workspace.name
 
 
+def _memory_bootstrap_rows(workspace: Path, *, project_id: str) -> List[Dict[str, Any]]:
+    """Return create-once project Memory rows; existing content is never managed by Base."""
+    rows: List[Dict[str, Any]] = []
+    for rel, template in (("INDEX.md", "memory-index.md"), ("PROJECT.md", "memory-project.md")):
+        path = workspace / ".tp-spec" / "memory" / rel
+        exists = path.is_file()
+        rows.append({
+            "path": str(path),
+            "state": "CURRENT" if exists else "MISSING",
+            "action": "NONE" if exists else "CREATE_PROJECT_MEMORY",
+            "changed": not exists,
+            "content": None if exists else _render(template, project_id=project_id),
+        })
+    return rows
+
+
 def project_surface_plan(workspace_root: "str | Path", *, project_id: str = "") -> Dict[str, Any]:
     workspace = Path(workspace_root).resolve(strict=False)
     pid = _project_id(workspace, project_id)
@@ -86,6 +103,7 @@ def project_surface_plan(workspace_root: "str | Path", *, project_id: str = "") 
     before = runtime_readme.read_text(encoding="utf-8-sig") if runtime_readme.is_file() else ""
     changed = before.replace("\r\n", "\n") != desired.replace("\r\n", "\n")
     rows.append({"path": str(runtime_readme), "state": "STALE" if changed else "CURRENT", "action": "WRITE_BASE_MANAGED_README" if changed else "NONE", "changed": changed, "content": desired})
+    rows.extend(_memory_bootstrap_rows(workspace, project_id=pid))
 
     return {
         "schema": "tp-spec.project-surface-plan/v1",
@@ -109,5 +127,6 @@ def sync_project_surface(workspace_root: "str | Path", *, project_id: str = "", 
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(str(row["content"]), encoding="utf-8", newline="\n")
         changes.append({"path": str(path), "action": row["action"]})
+    (Path(workspace_root).resolve(strict=False) / ".tp-spec" / "memory" / "skills").mkdir(parents=True, exist_ok=True)
     final = project_surface_plan(workspace_root, project_id=project_id)
     return {**final, "apply": True, "changes": changes}

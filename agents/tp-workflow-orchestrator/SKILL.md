@@ -1,14 +1,14 @@
 ---
 id: tp-workflow-orchestrator
 name: tp-工作流编排
-version: 5.2.0
+version: 5.2.1
 status: active
 type: control-role
 role: tp-workflow-orchestrator
 description: 工作流编排器（tp-workflow-orchestrator）：TP-Spec-Coding 开发流程默认入口；只决定下一阶段、角色、深度模式与关键确认，不替代专业 Skill，不直接写业务代码或 Runtime 账本。
 ---
 
-# tp-工作流编排 — V5.2.0
+# tp-工作流编排 — V5.2.1
 
 ## 0. 唯一职责
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""One-shot legacy namespace migration into the v5.2.0 tp-spec namespace.
+"""One-shot legacy namespace migration into the v5.2.1 tp-spec namespace.
 
 Legacy names exist only in this boundary so normal runtime code never carries a
 second namespace fallback. Ambiguous coexistence fails closed.

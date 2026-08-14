@@ -43,7 +43,7 @@ def cmd_doctor(args) -> int:
 
 
 def add_workflow_subparsers(subparsers) -> None:
-    p = subparsers.add_parser("workflow", help="V5.2.0 read-only workflow orchestration")
+    p = subparsers.add_parser("workflow", help="V5.2.1 read-only workflow orchestration")
     sub = p.add_subparsers(dest="subcommand", required=True)
     pn = sub.add_parser("next", help="Resolve the next workflow role from existing Task facts (read-only)")
     pn.add_argument("--task", required=True)

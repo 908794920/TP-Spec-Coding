@@ -1,4 +1,4 @@
-version: "5.2.0"
+version: "5.2.1"
 entry_role: tp-workflow-orchestrator
 level_resolution:
   rule: MAX_RISK_FLOW

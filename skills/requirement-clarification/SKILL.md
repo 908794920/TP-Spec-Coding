@@ -1,10 +1,10 @@
 ---
 name: requirement-clarification
-version: 5.2.0
+version: 5.2.1
 description: Use when a requirement is ambiguous, incomplete, or conflicts with project facts. Ask only high-value questions and keep facts, assumptions, decisions, and unknowns distinct.
 ---
 
-# 需求澄清 — V5.2.0 Record-first
+# 需求澄清 — V5.2.1 Record-first
 
 ## 目的
 用尽量少的用户交互消除真正影响实现或验收的不确定性；能通过已有事实自行确认的内容不反问用户。

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.0 front matter 解析与改写（A-01 修复：格式保真）。
+"""V5.2.1 front matter 解析与改写（A-01 修复：格式保真）。
 
 纯 stdlib、离线。统一 front matter 的读取与改写语义：
 
@@ -9,7 +9,7 @@
 - closing delimiter 之后的正文字节语义原样保留（不使用 lstrip）；
 - 改写只改 front matter 内的指定 key，正文不变。
 
-设计依据：V5.2.0 AI-A 定向修复任务书 §6（front matter 格式保真）与审查报告 §3.5。
+设计依据：V5.2.1 AI-A 定向修复任务书 §6（front matter 格式保真）与审查报告 §3.5。
 task_cmd._FM_RE 与 commit_cmd 的 front matter 读写均迁移到本模块。
 """
 from __future__ import annotations

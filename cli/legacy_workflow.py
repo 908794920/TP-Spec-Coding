@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Frozen pre-Record-first workflow decoder.
 
-V5.2.0 no longer exposes these microstates as an active governance contract.
+V5.2.1 no longer exposes these microstates as an active governance contract.
 They are retained only so old ledger history and recovery commands remain
 parseable during migration/forensics. New tasks must use NEW/ACTIVE/BLOCKED/
 COMPLETED/CANCELLED plus current_phase facts.

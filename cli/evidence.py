@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""V5.2.0 统一证据校验（Fourth Hardening P1-2：local_file 显式 schema）。
+"""V5.2.1 统一证据校验（Fourth Hardening P1-2：local_file 显式 schema）。
 
-《V5.2.0 第四轮最终收敛修复任务》P1-2：第三轮 Evidence validator 仍接受
+《V5.2.1 第四轮最终收敛修复任务》P1-2：第三轮 Evidence validator 仍接受
 ``none`` 与裸 hash（``sha256:...`` / 64 hex），导致"无真实证据的 PASS"可绕过。
 本轮将证据语义收敛为唯一 schema：
 
     {"type": "local_file", "path": "<相对路径>", "sha256": "<64 hex>"}
 
-V5.2.0 仅支持 local_file 类型。其余形式（external_uri / signed_attestation /
+V5.2.1 仅支持 local_file 类型。其余形式（external_uri / signed_attestation /
 inline_digest / none / 裸 hash / ``sha256:`` 前缀字符串）一律拒绝（fail-closed）。
 
 校验规则（10 条，全部满足才 ok=True）：
@@ -35,7 +35,7 @@ from typing import Dict, List, Optional, Union
 
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 
-# V5.2.0 仅支持的类型
+# V5.2.1 仅支持的类型
 _SUPPORTED_TYPES = ("local_file",)
 
 
@@ -76,14 +76,14 @@ def parse_evidence(item: Union[str, Dict, None]) -> EvidenceResult:
         if not raw:
             return EvidenceResult(ok=False, error="evidence path is empty")
         if raw.lower() == "none":
-            return EvidenceResult(ok=False, error="evidence type 'none' is rejected in V5.2.0 (local_file schema only)")
+            return EvidenceResult(ok=False, error="evidence type 'none' is rejected in V5.2.1 (local_file schema only)")
         if raw.lower().startswith("sha256:") or _HEX64.fullmatch(raw.lower()):
-            return EvidenceResult(ok=False, error="bare digest evidence is rejected in V5.2.0; provide a real local_file path")
+            return EvidenceResult(ok=False, error="bare digest evidence is rejected in V5.2.1; provide a real local_file path")
         return _validate_local_file(raw, raw)
     if isinstance(item, dict):
         etype = str(item.get("type") or "").strip().lower()
         if etype not in _SUPPORTED_TYPES:
-            return EvidenceResult(ok=False, error=f"evidence type {etype!r} is not supported in V5.2.0 (local_file only)")
+            return EvidenceResult(ok=False, error=f"evidence type {etype!r} is not supported in V5.2.1 (local_file only)")
         path = str(item.get("path") or "").strip()
         if not path:
             return EvidenceResult(ok=False, error="local_file evidence requires a non-empty 'path'")

@@ -1,4 +1,4 @@
-# TP-Spec-Coding Agent / Skill 入口（v5.2.0）
+# TP-Spec-Coding Agent / Skill 入口（v5.2.1）
 
 角色 ID 是 Runtime 账本中的稳定身份；物理目录只是加载位置。`agents/role-catalog.yaml` 是唯一 role → Skill path 权威，目录迁移不得重写历史 `task.owner_role` / `task_event.actor_role`。
 
@@ -23,6 +23,12 @@ skills/tp-architecture-review/SKILL.md
 skills/tp-development-engineering/SKILL.md
 skills/tp-verification-engineering/SKILL.md
 skills/tp-delivery-convergence/SKILL.md
+```
+
+## 内部共享辅助 Skill
+
+```text
+skills/tp-memory-capture/SKILL.md  # 机会式项目记忆；仅自然命中时按需加载，不进入 Workflow/Runtime
 ```
 
 ## 账本原则

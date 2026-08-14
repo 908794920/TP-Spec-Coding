@@ -1,5 +1,16 @@
 # Changelog
 
+## V5.2.1 Hardening + Opportunistic Project Memory — 2026-08-14
+
+- 正式将当前单活动契约从 5.2.0 收敛到 **5.2.1**；`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级，活动模板目录切换为 `templates/5.2.1`。
+- Workflow Hardening：普通角色切换提供轻量 transition notice 后自动继续；material confirmation 未解决时保持 fail-closed，不允许静默进入 Development；UltraPlan 仅由 Architecture Design 组织，UltraReview 仅由 Verification Engineering 组织。
+- Development 边界收紧：新增测试必须可追溯到 AC/直接改动/回归/已发现缺陷/明确风险；禁止开发阶段自行扩张为独立 Review/UltraReview；注释聚焦 Why / Constraint / Risk，避免机械注释。
+- 新增项目级 **Opportunistic Project Memory**：`.tp-spec/memory/INDEX.md` + `PROJECT.md` + `skills/`；Memory 是可重建热缓存/项目经验层，不替代 Source、Runtime、Knowledge 或 Git 真源。
+- Memory 采用 **No Evidence, No Memory** 与机会式捕获：只有自然出现高价值、跨会话可复用且重新发现成本高的事实/方法时，流程角色才按需加载内部 `tp-memory-capture`；不暴露 `tp-learn`、不加定时器、Miner、队列、Memory DB 或新的 Workflow 阶段。
+- `tp-delivery-convergence` 只对本 Task 已触碰的 Memory fragment 做轻量去重/压缩/证据检查；未触碰 Memory 时 0 额外动作，Memory 缺失或失败永不成为研发 blocker。
+- SQLite Runtime schema **不变**；历史 Task/evidence 不重写。已有 5.2.0 在途项目/Task 按现有 `project upgrade-contract` + 显式 task migration 链迁移，不建立第二状态机。
+- 发布收敛重新生成 Role Catalog 内容哈希与 `manifest.sha256`，并以 Version Purity / Role Catalog / Portability / Full Gate 作为最终发布门禁。
+
 ## V5.2.0 TP-Spec-Coding Public Release — 2026-08-12
 
 - Windows 发布适配收口：统一 machine-local path identity（包含 symlink/Junction/Windows 8.3 短路径别名），修复 Project bootstrap 与 Runtime Registry migration 的字符串路径误判；CLI/版本扫描器建立 UTF-8 stdio 边界，GitHub Windows CI 显式启用 UTF-8；字节门禁以仓库 `.gitattributes` + manifest 为权威，不再强制用户全局 `core.autocrlf=false`。

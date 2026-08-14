@@ -6,7 +6,7 @@ from cli.version import active_version
 BASE=Path(__file__).resolve().parents[2]
 
 def test_contract_and_catalog_are_valid():
-    assert active_version()=='5.2.0'
+    assert active_version()=='5.2.1'
     assert orchestration.validate_contract(BASE)==[]
 
 def test_contract_preserves_record_first_boundaries():

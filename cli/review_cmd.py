@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""V5.2.0 架构评审正式执行链（Hardening P0-2/P0-6）。
+"""V5.2.1 架构评审正式执行链（Hardening P0-2/P0-6）。
 
-依据：《V5.2.0 执行AI统一修复与自验证任务》§7 与《V5.2.0 源码级发布审查报告》
+依据：《V5.2.1 执行AI统一修复与自验证任务》§7 与《V5.2.1 源码级发布审查报告》
 P0-2（无架构评审可 DEVELOPING）/P0-6（新增角色不能通过正式 CLI 执行）。
 
 提供 ``tp-spec review record``：
@@ -13,7 +13,7 @@ P0-2（无架构评审可 DEVELOPING）/P0-6（新增角色不能通过正式 CL
 - 经 durable journal + projection 原子提交（复用 commit_cmd._commit_with_recovery），
   失败保留恢复依据，不产生半提交。
 
-V5.2.0 中 Architecture Review 是风险触发的历史事实，不是 DEVELOPING 许可证。
+V5.2.1 中 Architecture Review 是风险触发的历史事实，不是 DEVELOPING 许可证。
 事件仍绑定 review artifact / subject / evidence digest 以便审计，但后续文本变化
 不会自动阻止开发；是否需要重新评审由实际风险和变更语义决定。
 """
@@ -364,7 +364,7 @@ def cmd_review_record(args) -> int:
 
 
 def add_review_subparsers(subparsers) -> None:
-    p = subparsers.add_parser("review", help="V5.2.0: formal review commands (architecture review record)")
+    p = subparsers.add_parser("review", help="V5.2.1: formal review commands (architecture review record)")
     sub = p.add_subparsers(dest="subcommand", required=True)
 
     pr = sub.add_parser("record", help="Record an ARCHITECTURE review decision by tp-architecture-review")

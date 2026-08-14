@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.0 B-12 结构化事实引用与真实性校验（evidence_refs/code_refs）。
+"""V5.2.1 B-12 结构化事实引用与真实性校验（evidence_refs/code_refs）。
 
 设计依据：历史设计记录 B12-structured-refs-design §2/§3/§4/§6/§7/§9
 证据锚点：升级计划 §3.2 L121-143 / §7 L310·L312·L316 / §6 L302；
@@ -813,7 +813,7 @@ def add_refs_validate_subparsers(subparsers) -> None:
     """向 argparse 注册 refs-validate 子命令。"""
     p = subparsers.add_parser(
         "refs-validate",
-        help="V5.2.0 B-12 refs validate: structured references deterministic validation",
+        help="V5.2.1 B-12 refs validate: structured references deterministic validation",
     )
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--schema", action="store_true", help="print the machine-readable refs input contract and enums, then exit")

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding v5.2.0 public-release contract tests."""
+"""TP-Spec-Coding v5.2.1 public-release contract tests."""
 from __future__ import annotations
 
 import json
@@ -21,7 +21,7 @@ def read(rel: str) -> str:
 
 
 def test_public_brand_and_release_version():
-    assert ACTIVE == "5.2.0"
+    assert ACTIVE == "5.2.1"
     assert read("README.md").startswith("# TP-Spec-Coding\n")
     assert "TP-Spec-Coding" in read("governance/workflow.yaml")
 
@@ -167,11 +167,11 @@ def test_version_purity_scanner_rejects_previous_minor_after_v520_cutover():
     spec = importlib.util.spec_from_file_location("v520_purity", scanner_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    legacy_re = module._build_legacy_re("5.2.0")
+    legacy_re = module._build_legacy_re("5.2.1")
     previous = "5.1." + "4"
     match = legacy_re.search(f"active contract {previous} must not survive in live files")
     assert match is not None
-    assert module._is_legacy_dotted(match.group(0), "5.2.0")
+    assert module._is_legacy_dotted(match.group(0), "5.2.1")
 
 
 def test_public_repo_has_reproducible_dependencies_and_github_ci():
@@ -310,7 +310,7 @@ def test_release_manifest_gate_distinguishes_working_tree_from_git_release(tmp_p
     clean_release = run(sys.executable, "scripts/update_manifest.py", "--verify-release")
     assert clean_release.returncode == 0, clean_release.stderr
 
-    # Reproduce the v5.2.0 publication failure mode: the file is visible and
+    # Reproduce the v5.2.1 publication failure mode: the file is visible and
     # included by the development manifest, but it was never git-added.
     (repo / "release-surface.txt").write_text("untracked\n", encoding="utf-8")
     regenerated = run(sys.executable, "scripts/update_manifest.py")

@@ -62,4 +62,4 @@ def test_post_migration_contract_check_detects_any_leftover_explicit_version():
             f"---\nartifact: tech-design\nartifact_contract:\n  version: \"{LEGACY_CONTRACT}\"\n---\n",
             encoding="utf-8",
         )
-        assert task_cmd._post_migration_contract_issues(task_dir, "5.2.0") == [f"tech-design.md:{LEGACY_CONTRACT}"]
+        assert task_cmd._post_migration_contract_issues(task_dir, "5.2.1") == [f"tech-design.md:{LEGACY_CONTRACT}"]

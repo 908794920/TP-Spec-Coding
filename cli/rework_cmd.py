@@ -99,7 +99,7 @@ def cmd_rework_open(args) -> int:
             event_id = cur.lastrowid
         # 不自动改 task.current_state（返工可能落在 LOCAL_REWORK，无状态变更）
         print(f"Rework opened: {event_id} ({args.cause})")
-        # V5.2.0 B-13 W5：审查包复用告警（复用不替代 VERIFYING，每次复用动作发生时展示）
+        # V5.2.1 B-13 W5：审查包复用告警（复用不替代 VERIFYING，每次复用动作发生时展示）
         print(f"\n{w5_warning()}\n")
         return 0
     finally:

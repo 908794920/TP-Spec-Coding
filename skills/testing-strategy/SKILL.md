@@ -1,10 +1,10 @@
 ---
 name: testing-strategy
-version: 5.2.0
+version: 5.2.1
 description: Use to choose and execute risk-proportionate tests for code changes, mapping acceptance criteria to reproducible evidence without equating test count with confidence.
 ---
 
-# 分层测试 — V5.2.0 Record-first
+# 分层测试 — V5.2.1 Record-first
 
 ## 方法
 1. 将每个关键 AC/风险映射到合适验证方式与 evidence；没有必要时不追求测试数量。
