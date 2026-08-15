@@ -1575,13 +1575,22 @@ def _parse_knowledge_signal_args(values):
         result.append(item)
     return result
 
+
+def _parse_context_usage_arg(raw):
+    from . import context_usage as context_usage_mod
+    decoded, warnings = context_usage_mod.parse_context_usage_json(raw)
+    context_usage_mod.emit_warnings(warnings)
+    return decoded
+
+
 def cmd_task_checkpoint(args) -> int:
     from . import record_first
     result = record_first.checkpoint(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
         phase=args.phase, summary=args.summary, evidence=args.evidence,
         knowledge_signals=_parse_knowledge_signal_args(args.knowledge_signal_json),
-        delivery_signals=args.delivery_signal, db=args.db,
+        delivery_signals=args.delivery_signal,
+        context_usage=_parse_context_usage_arg(args.context_usage_json), db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1613,7 +1622,8 @@ def cmd_task_verify(args) -> int:
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
         decision=args.decision, summary=args.summary, evidence=args.evidence,
         knowledge_signals=_parse_knowledge_signal_args(args.knowledge_signal_json),
-        delivery_signals=args.delivery_signal, db=args.db,
+        delivery_signals=args.delivery_signal,
+        context_usage=_parse_context_usage_arg(args.context_usage_json), db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1626,7 +1636,8 @@ def cmd_task_delivery_converge(args) -> int:
         reason=args.reason, knowledge_refs=args.knowledge_ref, knowledge_queries=args.knowledge_query,
         evidence=args.evidence, source_refs=args.source_ref, recovery_condition=args.recovery_condition,
         blocker_kind=args.blocker_kind, responsibility=args.responsibility,
-        residual_risks=args.residual_risk, db=args.db,
+        residual_risks=args.residual_risk,
+        context_usage=_parse_context_usage_arg(args.context_usage_json), db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1690,6 +1701,7 @@ def add_task_subparsers(task_parser) -> None:
     p_cp.add_argument("--evidence", action="append")
     p_cp.add_argument("--knowledge-signal-json", action="append", help="structured JSON object with type/summary and optional evidence/source_refs")
     p_cp.add_argument("--delivery-signal", action="append")
+    p_cp.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks checkpoint")
     p_cp.add_argument("--db", default=None)
     p_cp.set_defaults(func=cmd_task_checkpoint)
 
@@ -1720,6 +1732,7 @@ def add_task_subparsers(task_parser) -> None:
     p_verify.add_argument("--evidence", action="append")
     p_verify.add_argument("--knowledge-signal-json", action="append", help="structured JSON object with type/summary and optional evidence/source_refs")
     p_verify.add_argument("--delivery-signal", action="append")
+    p_verify.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks verification")
     p_verify.add_argument("--db", default=None)
     p_verify.set_defaults(func=cmd_task_verify)
 
@@ -1736,6 +1749,7 @@ def add_task_subparsers(task_parser) -> None:
     p_delivery.add_argument("--blocker-kind", choices=["RESOLVER_UNAVAILABLE", "CANONICAL_CONFLICT", "DESTRUCTIVE_MERGE", "INSUFFICIENT_EVIDENCE", "HUMAN_DECISION"])
     p_delivery.add_argument("--responsibility")
     p_delivery.add_argument("--residual-risk", action="append")
+    p_delivery.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks delivery")
     p_delivery.add_argument("--db", default=None)
     p_delivery.set_defaults(func=cmd_task_delivery_converge)
 

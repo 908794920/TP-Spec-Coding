@@ -11,6 +11,7 @@ daily_api:
     - Do not checkpoint microsteps.
     - No handoff/frontmatter/refs payload is required.
     - Natural, evidence-backed Delivery/Knowledge hints may be attached with --knowledge-signal-json / --delivery-signal; never scan just to create signals.
+    - Task-bound Context Usage may be attached with --context-usage-json; invalid telemetry is WARN+DROP and never changes the operation result.
   task_verify:
     command: tp-spec task verify --task <TASK> --task-dir <DIR> --decision PASS|FAIL|NEEDS_FIX
       --summary <TEXT> [--evidence evidence/... ]
@@ -18,6 +19,7 @@ daily_api:
     notes:
     - PASS requires at least one real evidence/* file.
     - Verification is a fact, not a phase-transition gate.
+    - Task-bound Context Usage may be attached with --context-usage-json; invalid telemetry is WARN+DROP and never changes the operation result.
   task_block:
     command: tp-spec task block --task <TASK> --task-dir <DIR> --actor <ROLE> --reason
       <TEXT>
@@ -47,6 +49,7 @@ daily_api:
     - A plain delivery checkpoint never satisfies this contract.
     - Runtime executes the targeted current-project+shared search itself; CREATED/UPDATED additionally validate the exact canonical ref/Task evidence/source refs and run exact-canonical lint + incremental exact-ref index update/verify without a full Vault scan.
     - DEFERRED needs a recovery condition and matching human_owner delivery-accept-deferred event; BLOCKED never completes the pipeline.
+    - Task-bound Context Usage may be attached with --context-usage-json; Runtime-generated Knowledge search receipts are captured automatically; invalid telemetry is WARN+DROP and never changes the operation result.
 project_api:
   project_bootstrap_check: tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only
   project_bootstrap: tp-spec project bootstrap --id <PROJECT> --root <ROOT>
@@ -77,6 +80,9 @@ optional_capabilities:
   work_sessions: available for timing evidence; never a workflow blocker
   acceptance_override: human_owner defer/waive without forging PASS
   legacy_commit: compatibility/recovery surface; not the V5.2.1 daily role API
+  context_effectiveness: >-
+    Read-only report over Task-bound Context Usage receipts. It never gates workflow
+    and never mutates Context assets.
 rules:
   write_semantics:
     canonical_writer: Runtime SQLite transaction + durable journal; roles never edit

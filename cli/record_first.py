@@ -119,6 +119,7 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
                summary: str, evidence: Optional[Iterable[str]] = None,
                knowledge_signals: Optional[Iterable[Dict[str, Any]]] = None,
                delivery_signals: Optional[Iterable[str]] = None,
+               context_usage: Optional[Iterable[Dict[str, Any]]] = None,
                db: Optional[str] = None) -> Dict[str, Any]:
     if phase not in PHASES:
         raise ValueError(f"invalid phase {phase!r}; choose one of: {', '.join(PHASES)}")
@@ -140,6 +141,9 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
         ev = list(evidence or [])
         knowledge = _normalize_knowledge_signals(knowledge_signals)
         delivery = _normalize_delivery_signals(delivery_signals)
+        from . import context_usage as context_usage_mod
+        usage, context_warnings = context_usage_mod.normalize_context_usage(context_usage)
+        context_usage_mod.emit_warnings(context_warnings)
         risk_escalation = None
         effective_risk = str(task["risk_level"] or "L1")
         if actor == "tp-architecture-design" and phase == "architecture":
@@ -164,7 +168,7 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
             dbconn.execute(
                 "INSERT INTO task_event (task_id,event_type,from_stage,to_stage,actor_role,summary,detail_json,evidence_path,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (task_id, "FACT", task["current_stage"], phase, actor, summary,
-                 _detail("CHECKPOINT", flush_id, transaction_id=transaction_id, phase=phase, evidence=ev, risk_escalation=risk_escalation, knowledge_signals=knowledge, delivery_signals=delivery),
+                 _detail("CHECKPOINT", flush_id, transaction_id=transaction_id, phase=phase, evidence=ev, risk_escalation=risk_escalation, knowledge_signals=knowledge, delivery_signals=delivery, context_usage=usage),
                  ev[0] if ev else None, active_version(), now),
             )
             dbconn.execute(
@@ -289,6 +293,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
            summary: str, evidence: Optional[Iterable[str]] = None,
            knowledge_signals: Optional[Iterable[Dict[str, Any]]] = None,
            delivery_signals: Optional[Iterable[str]] = None,
+           context_usage: Optional[Iterable[Dict[str, Any]]] = None,
            db: Optional[str] = None) -> Dict[str, Any]:
     """Record an actual technical verification result without adding a workflow gate."""
     if actor != "tp-verification-engineering":
@@ -320,6 +325,9 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         subject_digest = compute_verification_subject_digest(tdir)
         knowledge = _normalize_knowledge_signals(knowledge_signals)
         delivery = _normalize_delivery_signals(delivery_signals)
+        from . import context_usage as context_usage_mod
+        usage, context_warnings = context_usage_mod.normalize_context_usage(context_usage)
+        context_usage_mod.emit_warnings(context_warnings)
 
         def writer(dbconn, transaction_id=""):
             if current != "ACTIVE":
@@ -337,6 +345,8 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                 "subject_digest": subject_digest, "evidence": [i["path"] for i in items],
                 "evidence_items": items, "knowledge_signals": knowledge, "delivery_signals": delivery,
             }
+            if usage:
+                detail_obj["context_usage"] = usage
             dbconn.execute(
                 "INSERT INTO task_event (task_id,event_type,from_stage,to_stage,actor_role,summary,detail_json,evidence_path,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (task_id, "VERIFICATION_COMPLETED", task["current_stage"], "verification", actor,

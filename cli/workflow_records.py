@@ -38,7 +38,8 @@ def build_delivery_detail(*, task_id: str, transaction_id: str, flush_id: str,
                           blocker_kind: Optional[str] = None,
                           responsibility: Optional[str] = None,
                           residual_risks: Optional[Iterable[str]] = None,
-                          evidence_items: Optional[Iterable[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                          evidence_items: Optional[Iterable[Dict[str, Any]]] = None,
+                          context_usage: Optional[Iterable[Dict[str, Any]]] = None) -> Dict[str, Any]:
     detail: Dict[str, Any] = {
         'operation': 'DELIVERY_CONVERGE',
         'flush_id': flush_id,
@@ -62,6 +63,7 @@ def build_delivery_detail(*, task_id: str, transaction_id: str, flush_id: str,
         'source_refs': source_refs,
         'residual_risks': residual_risks,
         'evidence_items': evidence_items,
+        'context_usage': context_usage,
     }
     for key, values in optional_lists.items():
         items = list(values or [])
@@ -447,11 +449,15 @@ def record_delivery_result(*, task_id: str, task_dir: str, knowledge_disposition
                            blocker_kind: Optional[str] = None,
                            responsibility: Optional[str] = None,
                            residual_risks: Optional[Iterable[str]] = None,
+                           context_usage: Optional[Iterable[Dict[str, Any]]] = None,
                            db: Optional[str] = None) -> Dict[str, Any]:
     from . import db as dbmod
     from . import record_first
+    from . import context_usage as context_usage_mod
     from .version import active_version
 
+    caller_usage, caller_warnings = context_usage_mod.normalize_context_usage(context_usage)
+    context_usage_mod.emit_warnings(caller_warnings)
     tdir = record_first._task_dir(task_dir)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
     conn = dbmod.connect(db_path)
@@ -491,6 +497,16 @@ def record_delivery_result(*, task_id: str, task_dir: str, knowledge_disposition
                     evidence_paths=evidence_paths, source_refs=source_ref_list, search_receipts=search_receipts,
                 )
                 lint_receipts, index_receipts = _run_targeted_knowledge_quality(cfg, resolved_knowledge_refs)
+        try:
+            automatic_usage = context_usage_mod.knowledge_usage_from_delivery(
+                search_receipts,
+                resolved_knowledge_refs,
+            )
+        except Exception as exc:
+            context_usage_mod.emit_warnings([f"automatic Delivery Knowledge telemetry dropped: {exc}"])
+            automatic_usage = []
+        combined_usage = context_usage_mod.merge_context_usage(caller_usage, automatic_usage)
+
         now = dbmod.now_iso()
         flush_id = f'DELIVERY-{uuid.uuid4().hex}'
         detail_args = dict(
@@ -513,6 +529,7 @@ def record_delivery_result(*, task_id: str, task_dir: str, knowledge_disposition
             responsibility=responsibility,
             residual_risks=list(residual_risks or []),
             evidence_items=evidence_items,
+            context_usage=combined_usage,
         )
 
         def writer(dbconn, transaction_id=''):
