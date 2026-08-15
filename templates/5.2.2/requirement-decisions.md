@@ -2,7 +2,7 @@
 artifact: requirement-decisions
 task_id: ""
 artifact_contract:
-  version: 5.2.1
+  version: 5.2.2
 ---
 
 # Requirement Decisions（按需）

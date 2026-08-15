@@ -1,5 +1,5 @@
-# TP-Spec-Coding V5.2.1 — Record-first active workflow
-version: "5.2.1"
+# TP-Spec-Coding V5.2.2 — Record-first active workflow
+version: "5.2.2"
 workflow:
   name: "TP-Spec-Coding Record-first Workflow"
   description: "个人本地开发黑匣子：开发优先，Runtime 旁路记录；phase 是事实，不是收费站。"

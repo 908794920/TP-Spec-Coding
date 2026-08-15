@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding controlled YAML loader (V5.2.1 C-01.4 contract).
+"""TP-Spec-Coding controlled YAML loader (V5.2.2 C-01.4 contract).
 
 Single controlled read path for governed YAML files, built on PyYAML 6.0.3
 SafeLoader (human_owner decision T1) with:

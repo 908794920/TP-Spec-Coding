@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""V5.2.1 C1 review-preflight 审查预检（B-17 C1-P1~P9）。
+"""V5.2.2 C1 review-preflight 审查预检（B-17 C1-P1~P9）。
 
 设计依据：历史设计记录 C1-review-preflight-design §3-§7
 证据锚点：升级计划 §3.1 L96-119；评审表 9.4 第 1 行（L333）、9.5 第 1/2/3 行（L346-348）。
 
 能力（T1-T6）：
-- T1 输入校验（仓库/base/head SHA/工作区 clean-dirty/任务声明 contract=5.2.1）
+- T1 输入校验（仓库/base/head SHA/工作区 clean-dirty/任务声明 contract=5.2.2）
   + 受控 diff 枚举稳定排序（路径字典序 + 状态分组，两次运行逐字节一致）；
 - T2 风险规则集（rules_version/rules_sha256 双锚点）+ 关联候选生成
   （algorithm/rationale/confidence/evidence_level，OCR README 归并仅 S1/S3 不作实现依据）；
@@ -39,7 +39,7 @@ from . import structured_refs
 
 # --- 版本常量 ---
 _PREFLIGHT_VERSION = "1.0.0"
-SUMMARY_FORMAT_VERSION = "1.0.0"  # 摘要格式版本：同步自 V5.2.1-B14-lossless-summary-design.md §2.1；
+SUMMARY_FORMAT_VERSION = "1.0.0"  # 摘要格式版本：同步自 V5.2.2-B14-lossless-summary-design.md §2.1；
 # 预算分包阈值语义与摘要三域（产物 schema/内容分类规则/sentinel 保护规则）语义均受该版本治理，
 # 版本变更使旧 package 失效（§3.1 L119 防逃逸）；值仍为 1.0.0（B-14 复合版本当前值）
 
@@ -247,8 +247,8 @@ def _build_manifest(
     两段式序列化解决 self-hash 循环依赖：
     ① body（无自引用）序列化 → content_hash；
     ② body + content_hash/package_hash 自引用 → 最终序列化（写入物）。
-    s1_validation 为 V5.2.1 C5 扩展字段：未提供时（C1 既有行为）不写入，保持字节兼容。
-    refs_validation 为 V5.2.1 B-12 扩展字段：未提供时（C1 既有行为）不写入，保持字节兼容。
+    s1_validation 为 V5.2.2 C5 扩展字段：未提供时（C1 既有行为）不写入，保持字节兼容。
+    refs_validation 为 V5.2.2 B-12 扩展字段：未提供时（C1 既有行为）不写入，保持字节兼容。
     """
     inputs = _package_hash_inputs()
     manifest_body = {
@@ -372,7 +372,7 @@ def _scan_for_seal(repo: Path, head_sha: str, files: list[dict[str, Any]], seria
 
 
 def _load_s1_declarations(s1_validate: str | None) -> list[dict[str, Any]] | None:
-    """V5.2.1 C5：加载 evidence_declaration 列表（--s1-validate）。未提供返回 None。"""
+    """V5.2.2 C5：加载 evidence_declaration 列表（--s1-validate）。未提供返回 None。"""
     if not s1_validate:
         return None
     path = Path(s1_validate)
@@ -453,7 +453,7 @@ def cmd_review_preflight(args) -> int:
             for code in result["errors"]:
                 print(f"ANCHOR: finding={result['finding_id']} error={code} file={result['file']}", file=sys.stderr)
 
-    # --- V5.2.1 C5：S1 声明拒绝校验（--s1-validate，正交于 anchor_check/封存流程）---
+    # --- V5.2.2 C5：S1 声明拒绝校验（--s1-validate，正交于 anchor_check/封存流程）---
     # getattr 兜底：C1 既有测试以手工 Namespace 调用，不传该参数时行为与 C1 完全一致
     s1_validate_arg = getattr(args, "s1_validate", None)
     s1_validation: list[dict[str, Any]] | None = None
@@ -469,7 +469,7 @@ def cmd_review_preflight(args) -> int:
                         file=sys.stderr,
                     )
 
-    # --- V5.2.1 B-12：结构化引用校验（--refs-file，可选串联）---
+    # --- V5.2.2 B-12：结构化引用校验（--refs-file，可选串联）---
     # getattr 兜底：不传该参数时行为与 C1 完全一致，不写 manifest.refs_validation[]
     refs_file_arg = getattr(args, "refs_file", None)
     refs_validation: dict[str, Any] | None = None
@@ -579,12 +579,12 @@ def cmd_review_preflight(args) -> int:
     if unverified:
         print(f"ERROR: {unverified} finding(s) unverified; hand over to tp-verification-engineering", file=sys.stderr)
         return 1
-    # --- V5.2.1 C5：任一 S1 declaration decision==rejected → fail-closed 预检未通过 ---
+    # --- V5.2.2 C5：任一 S1 declaration decision==rejected → fail-closed 预检未通过 ---
     if s1_validation is not None and s1_validator.any_rejected(s1_validation):
         rejected = [r for r in s1_validation if r["decision"] == "rejected"]
         print(f"ERROR: {len(rejected)} S1 declaration(s) rejected; S1 不得作为实施依据", file=sys.stderr)
         return 1
-    # --- V5.2.1 B-12：任一 refs validation decision==failed → fail-closed 预检未通过 ---
+    # --- V5.2.2 B-12：任一 refs validation decision==failed → fail-closed 预检未通过 ---
     if refs_validation is not None and structured_refs.any_failed(refs_validation["results"]):
         failed = [r for r in refs_validation["results"] if r["decision"] == "failed"]
         print(f"ERROR: {len(failed)} ref(s) validation failed; structured references not verifiable", file=sys.stderr)
@@ -596,7 +596,7 @@ def cmd_review_preflight(args) -> int:
 def add_review_preflight_subparsers(subparsers) -> None:
     p = subparsers.add_parser(
         "review-preflight",
-        help="V5.2.1 C1 review preflight: anchor_check deterministic validation + sealed review package (no state change)",
+        help="V5.2.2 C1 review preflight: anchor_check deterministic validation + sealed review package (no state change)",
     )
     p.add_argument("--task", required=True, help="task id (must match status.yaml)")
     p.add_argument("--task-dir", required=True, help="task directory containing status.yaml")
@@ -605,8 +605,8 @@ def add_review_preflight_subparsers(subparsers) -> None:
     p.add_argument("--head-sha", default="HEAD", help="head commit SHA (default HEAD)")
     p.add_argument("--findings-file", default=None, help="JSON list of findings {id,file,text,line,evidence_hash,hunk_context}")
     p.add_argument("--rules-file", default=None, help="external risk rules JSON {version,rules}; dual-anchor checked (C1-P6)")
-    p.add_argument("--s1-validate", default=None, help="JSON list of evidence_declarations for S1/S2/S3 validation (V5.2.1 C5)")
-    p.add_argument("--refs-file", default=None, help="JSON file with evidence_refs/code_refs for V5.2.1 B-12 structured refs validation")
+    p.add_argument("--s1-validate", default=None, help="JSON list of evidence_declarations for S1/S2/S3 validation (V5.2.2 C5)")
+    p.add_argument("--refs-file", default=None, help="JSON file with evidence_refs/code_refs for V5.2.2 B-12 structured refs validation")
     p.add_argument("--phase-exit", action="store_true", help="compatibility flag name: seal final package to evidence/review-packages/<package-hash>/; does not change Task state/phase")
     p.add_argument("--simulate", action="store_true", help="zero-write mode: compute everything, write nothing (C1-P9)")
     p.add_argument("--db", required=False, help="accepted for CLI consistency; preflight is file/git-only")

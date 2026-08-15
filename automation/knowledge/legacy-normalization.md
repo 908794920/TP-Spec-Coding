@@ -1,4 +1,4 @@
-# Knowledge Legacy Normalization Protocol — V5.2.1
+# Knowledge Legacy Normalization Protocol — V5.2.2
 
 Use this protocol for Stage 3A style migration of an existing Knowledge Vault. It is **not** the daily maintenance protocol.
 

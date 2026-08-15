@@ -1,14 +1,14 @@
 ---
 id: tp-requirement-analysis
 name: tp-需求分析
-version: 5.2.1
+version: 5.2.2
 status: active
 type: workflow-role
 role: tp-requirement-analysis
 description: 需求分析工程师（tp-requirement-analysis）：面向 Record-first 的需求分析角色；以最少流程成本形成可研发、可验证、可追溯的需求事实，不把假设静默升级为事实。
 ---
 
-# tp-需求分析 — V5.2.1
+# tp-需求分析 — V5.2.2
 
 ## 目标
 把用户输入整理到“AI 可以开始研发”的程度。优先澄清真正影响目标、范围、业务规则、风险或验收的问题，不为流程完整性制造问题或文档。
@@ -38,6 +38,6 @@ description: 需求分析工程师（tp-requirement-analysis）：面向 Record-
 
 只有在当前工作**自然出现**高价值项目记忆信号时，才按需加载 `skills/tp-memory-capture/SKILL.md`：例如 human_owner 明确强调“以后记住/不要再犯”，或发现有证据、跨会话可复用且重新发现成本高的项目规则/方法。**不得为了寻找 Memory 主动扫描 Task History、Knowledge、源码或全部 Skills。** Memory 缺失、损坏或不值得写时直接继续当前职责，不得形成 blocker。
 
-## Orchestrator 协作（V5.2.1）
+## Orchestrator 协作（V5.2.2）
 
 可由 `tp-workflow-orchestrator` 通过 `role-catalog.yaml` 调度；被调度后仍完整遵守本角色职责，不自行跨阶段替代其他专业角色。阶段形成有意义事实时最多记录一次现有 checkpoint/review/verify，不为编排创建空工件。返回紧凑 Stage Result（outcome/summary/evidence/user_decision_required/next_hint）供主编排器继续判断；该返回不是第二账本。

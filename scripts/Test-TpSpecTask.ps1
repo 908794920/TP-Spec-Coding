@@ -3,11 +3,11 @@
 Read-only validation for an TP-Spec-Coding task directory.
 
 .DESCRIPTION
-V5.2.1 single-contract validator. Public Record-first tasks are checked for
+V5.2.2 single-contract validator. Public Record-first tasks are checked for
 identity/text safety, SQLite/state integrity, valid phase values and truthful
 acceptance claims, then delegated to the Python Runtime validator. Optional
 design/review/knowledge artifacts, handoff metadata and closing completeness are
-not V5.2.1 progression gates. Legacy microstate checks remain below only for
+not V5.2.2 progression gates. Legacy microstate checks remain below only for
 historical compatibility/recovery. Never create, modify, or close task artifacts.
 #>
 [CmdletBinding()]
@@ -98,7 +98,7 @@ $TerminalOrReviewStates = @('REVIEWING', 'CLOSING', 'COMPLETED')
 $StrictAcceptanceStates = @('REVIEWING', 'CLOSING', 'COMPLETED')
 $ActiveWorkItemStates = @('active', 'in_progress', 'developing', 'doing')
 # ==================================================
-# V5.2.1 P3: governance owner/transition values now come from the controlled loader (C-01.4/D-06)
+# V5.2.2 P3: governance owner/transition values now come from the controlled loader (C-01.4/D-06)
 # ==================================================
 # The three P2 hardcoded mirror tables (StateOwners / ShdWorkflowTransitions /
 # expectedOwnerByState) are deleted: the validator no longer keeps a private
@@ -397,7 +397,7 @@ function Test-GeneratedSourcesContract {
     if ($CurrentState -eq 'COMPLETED') {
         $expected += 'quality-and-knowledge.md'
     }
-    # V5.2.1 §3.8/§10.2：五个新工件经集中注册表纳入 source digest（存在才纳入），
+    # V5.2.2 §3.8/§10.2：五个新工件经集中注册表纳入 source digest（存在才纳入），
     # 与生成器 commit_cmd._continuation_sources / projection_cmd.projection_source_names 对齐。
     $v511NewArtifacts = @('requirement-knowledge.md', 'requirement-clarifications.md', 'requirement-decisions.md', 'architecture-review.md', 'requirement-test-guide.md')
     foreach ($artifactName in $v511NewArtifacts) {
@@ -408,12 +408,12 @@ function Test-GeneratedSourcesContract {
     $actual = @(Get-YamlList -Text $front.Metadata -Name 'source_files' | Sort-Object -Unique)
     $want = @($expected | Sort-Object -Unique)
     if (($actual -join "`n") -ne ($want -join "`n")) {
-        Add-Issue Error 'GENERATED_SOURCE_SET_MISMATCH' "V5.2.1 generated view '$RelativePath' must cover the formal artifacts completed before state '$CurrentState'."
+        Add-Issue Error 'GENERATED_SOURCE_SET_MISMATCH' "V5.2.2 generated view '$RelativePath' must cover the formal artifacts completed before state '$CurrentState'."
     }
 }
 
 function Get-AutomatedRiskRules {
-    # V5.2.1 P3/C-02: read risk-rule.yaml (automated_validation) through the controlled
+    # V5.2.2 P3/C-02: read risk-rule.yaml (automated_validation) through the controlled
     # loader instead of a runtime regex parse. pattern is a plain string field the loader
     # does not compile (D-04); YAML parsing already unescaped it. Load failure returns
     # $null so the caller fails closed with RISK_RULES_UNAVAILABLE.
@@ -577,9 +577,9 @@ else {
     }
 }
 
-# V5.2.1 单一活动契约：旧契约非终态任务须先经官方 migrate/retire；本验证入口不代替跨契约迁移。
+# V5.2.2 单一活动契约：旧契约非终态任务须先经官方 migrate/retire；本验证入口不代替跨契约迁移。
 if (-not [string]::IsNullOrWhiteSpace($statusText) -and [string]$artifactContractVersion -ne $script:ActiveVersion) {
-    Write-Output 'TP-Spec-Coding task validation summary (V5.2.1 single active contract)'
+    Write-Output 'TP-Spec-Coding task validation summary (V5.2.2 single active contract)'
     Write-Output "Task directory: $($taskDirectory.FullName)"
     Write-Output "Task id: $taskId"
     Write-Output "Current state: $currentState"
@@ -587,11 +587,11 @@ if (-not [string]::IsNullOrWhiteSpace($statusText) -and [string]$artifactContrac
     Write-Output "Risk level: $riskLevel"
     Write-Output "Work item count: 0"
     Write-Output 'Errors: 1; warnings: 0'
-    Write-Output "[Error] LEGACY_CONTRACT_REJECTED - artifact_contract.version '$artifactContractVersion' is a frozen legacy contract; the V5.2.1 runtime validates only $($script:ActiveVersion). Historical tasks are static audit archives kept in Git release branches."
+    Write-Output "[Error] LEGACY_CONTRACT_REJECTED - artifact_contract.version '$artifactContractVersion' is a frozen legacy contract; the V5.2.2 runtime validates only $($script:ActiveVersion). Historical tasks are static audit archives kept in Git release branches."
     exit 1
 }
 
-# V5.2.1 Record-first fast path. The PowerShell wrapper validates identity/text basics
+# V5.2.2 Record-first fast path. The PowerShell wrapper validates identity/text basics
 # above, then delegates ledger truth to the Runtime. Legacy SHD/closing/artifact gates
 # below remain only for compatibility code reading and are not part of the active path.
 if (-not [string]::IsNullOrWhiteSpace($statusText) -and [string]$artifactContractVersion -eq $script:ActiveVersion -and
@@ -623,7 +623,7 @@ if (-not [string]::IsNullOrWhiteSpace($statusText) -and [string]$artifactContrac
     }
     $errors = @($script:Issues | Where-Object { $_.Level -eq 'Error' })
     $warnings = @($script:Issues | Where-Object { $_.Level -eq 'Warning' })
-    Write-Output 'TP-Spec-Coding task validation summary (V5.2.1 Record-first integrity)'
+    Write-Output 'TP-Spec-Coding task validation summary (V5.2.2 Record-first integrity)'
     Write-Output "Task directory: $($taskDirectory.FullName)"
     Write-Output "Task id: $taskId"
     Write-Output "Current state: $currentState"
@@ -643,7 +643,7 @@ $artifactDefaults = [ordered]@{
     work_items   = 'work-items'
 }
 
-# V5.2.1 单一活动契约：入口已拒绝旧契约，以下门控均按 5.2.1 语义恒定。
+# V5.2.2 单一活动契约：入口已拒绝旧契约，以下门控均按 5.2.2 语义恒定。
 $requiresCoreArtifacts = $true
 $requiresCanonicalRoleGate = $true
 $requiresArtifactContract = $true
@@ -747,7 +747,7 @@ if ($requiresArtifactContract) {
 }
 
 # ==================================================
-# V5.2.1 Hardening（审查报告 P0-2/P0-3/P1-3/P1-5）：
+# V5.2.2 Hardening（审查报告 P0-2/P0-3/P1-3/P1-5）：
 # 五新工件 / L2/L3 架构评审 PASS 与 stale / 验收结单门禁 / test guide lifecycle
 # 与 Python cli/transition_service.validate_transition 语义对齐（fail-closed）。
 # ==================================================
@@ -766,7 +766,7 @@ if ($requiresArtifactContract) {
         foreach ($name in $hardenNewArtifacts) {
             $p = Join-Path $taskDirectory.FullName $name
             if (-not (Test-Path -LiteralPath $p -PathType Leaf)) {
-                Add-Issue Error 'HARDEN_ARTIFACT_MISSING' "V5.2.1 L2/L3 requires new artifact '$name' for state '$currentState'."
+                Add-Issue Error 'HARDEN_ARTIFACT_MISSING' "V5.2.2 L2/L3 requires new artifact '$name' for state '$currentState'."
             }
         }
     }
@@ -781,11 +781,11 @@ if ($requiresArtifactContract) {
             if ($null -ne $archFront) {
                 $archDecision = Get-YamlNestedScalar -Text $archFront.Metadata -Parent 'review' -Name 'decision'
                 if ($archDecision -ne 'PASS') {
-                    Add-Issue Error 'HARDEN_ARCH_REVIEW_REQUIRED' "V5.2.1 L2/L3 architecture-review.md review.decision must be PASS, got '$archDecision'."
+                    Add-Issue Error 'HARDEN_ARCH_REVIEW_REQUIRED' "V5.2.2 L2/L3 architecture-review.md review.decision must be PASS, got '$archDecision'."
                 }
             }
             else {
-                Add-Issue Error 'HARDEN_ARCH_REVIEW_REQUIRED' 'V5.2.1 L2/L3 architecture-review.md is missing structured review front matter.'
+                Add-Issue Error 'HARDEN_ARCH_REVIEW_REQUIRED' 'V5.2.2 L2/L3 architecture-review.md is missing structured review front matter.'
             }
         }
         $archEventFound = $false
@@ -804,7 +804,7 @@ if ($requiresArtifactContract) {
             }
         }
         if (-not $archEventFound) {
-            Add-Issue Error 'HARDEN_ARCH_REVIEW_REQUIRED' "V5.2.1 L2/L3 requires a tp-architecture-review REVIEW_COMPLETED PASS event for state '$currentState'."
+            Add-Issue Error 'HARDEN_ARCH_REVIEW_REQUIRED' "V5.2.2 L2/L3 requires a tp-architecture-review REVIEW_COMPLETED PASS event for state '$currentState'."
         }
     }
 
@@ -818,7 +818,7 @@ if ($requiresArtifactContract) {
             if ($null -ne $tgFront) {
                 $tgVerification = Get-YamlNestedScalar -Text $tgFront.Metadata -Parent 'lifecycle' -Name 'verification_results'
                 if ($tgVerification -notin @('done', 'completed', 'complete')) {
-                    Add-Issue Error 'HARDEN_TEST_GUIDE_INCOMPLETE' "V5.2.1 closing state '$currentState' requires requirement-test-guide.md lifecycle.verification_results done."
+                    Add-Issue Error 'HARDEN_TEST_GUIDE_INCOMPLETE' "V5.2.2 closing state '$currentState' requires requirement-test-guide.md lifecycle.verification_results done."
                 }
             }
         }
@@ -829,7 +829,7 @@ if ($requiresArtifactContract) {
             $crFront = Get-FrontMatter -Text $crText
             $crBody = if ($null -ne $crFront) { $crFront.Content } else { $crText }
             if ($crBody -notmatch '结论' -or $crBody -notmatch '证据' -or $crBody -notmatch '残余风险') {
-                Add-Issue Error 'HARDEN_CODE_REVIEW_EMPTY' 'V5.2.1 closing requires codex-review.md body containing 结论/证据/残余风险 sections.'
+                Add-Issue Error 'HARDEN_CODE_REVIEW_EMPTY' 'V5.2.2 closing requires codex-review.md body containing 结论/证据/残余风险 sections.'
             }
         }
     }
@@ -995,7 +995,7 @@ if ($requiresHandoffClosure -and -not [string]::IsNullOrWhiteSpace($currentState
                             Add-Issue Error 'HANDOFF_PROMPT_TARGET_MISMATCH' "next_prompt.target_state '$($np.target_state)' 必须等于 intended_next '$($decl.IntendedNext)'。"
                         }
                         $hpbExpectedRole = if ([string]$decl.IntendedNext -eq 'COMPLETED') {
-                            # V5.2.1：结项由 tp-delivery-convergence 从 CLOSING 提交。
+                            # V5.2.2：结项由 tp-delivery-convergence 从 CLOSING 提交。
                             'tp-delivery-convergence'
                         }
                         elseif ($StateOwners.ContainsKey([string]$decl.IntendedNext)) { [string]$StateOwners[[string]$decl.IntendedNext] }
@@ -1047,7 +1047,7 @@ if ($requiresArtifactContract) {
             Get-ChildItem -LiteralPath $generatedDirectory -Force -Recurse | ForEach-Object {
                 $relative = $_.FullName.Substring($generatedDirectory.Length).TrimStart('\', '/')
                 if ($_.PSIsContainer -or $relative -notin $allowedGenerated) {
-                    Add-Issue Error 'GENERATED_UNMANAGED_FILE' "V5.2.1 generated directory may contain only generated continuation/final-result views; found '$relative'."
+                    Add-Issue Error 'GENERATED_UNMANAGED_FILE' "V5.2.2 generated directory may contain only generated continuation/final-result views; found '$relative'."
                 }
             }
         }
@@ -1095,18 +1095,18 @@ if ($requiresClosingChain) {
             $hasDmlEvidence = ($acceptanceText -match '(?m)^\s*dml_execution:\s*passed\s*$') -and ($acceptanceText -match '(?m)^\s*execution_evidence:\s*[^\s#]') -and ($acceptanceText -match '(?m)^\s*rollback_or_cleanup:\s*[^\s#]')
             $riskAccepted = ($acceptanceText -match '(?m)^\s*dml_residual_risk:\s*accepted\s*$') -and ($currentState -eq 'COMPLETED')
             if (-not $hasDmlEvidence -and -not $riskAccepted) {
-                Add-Issue Error 'DML_EVIDENCE_MISSING' 'V5.2.1 DML acceptance requires execution evidence, result verification and rollback/cleanup; EXPLAIN or read-only evidence is insufficient.'
+                Add-Issue Error 'DML_EVIDENCE_MISSING' 'V5.2.2 DML acceptance requires execution evidence, result verification and rollback/cleanup; EXPLAIN or read-only evidence is insufficient.'
             }
         }
     }
 
-    # V5.2.1 personal mode：COMPLETED 必须经过 tp-delivery-convergence CLOSING；不要求人员 APPROVE。
+    # V5.2.2 personal mode：COMPLETED 必须经过 tp-delivery-convergence CLOSING；不要求人员 APPROVE。
     if ($currentState -eq 'COMPLETED') {
         if ($currentOwner -ne 'tp-delivery-convergence') {
-            Add-Issue Error 'COMPLETION_OWNER_INVALID' "V5.2.1 COMPLETED must be owned by tp-delivery-convergence, not '$currentOwner'."
+            Add-Issue Error 'COMPLETION_OWNER_INVALID' "V5.2.2 COMPLETED must be owned by tp-delivery-convergence, not '$currentOwner'."
         }
         if (-not $script:VisitedStates.ContainsKey('CLOSING')) {
-            Add-Issue Error 'CLOSING_CHAIN_MISSING' 'V5.2.1 completion requires a CLOSING STATE event committed by tp-delivery-convergence.'
+            Add-Issue Error 'CLOSING_CHAIN_MISSING' 'V5.2.2 completion requires a CLOSING STATE event committed by tp-delivery-convergence.'
         }
     }
 
@@ -1266,7 +1266,7 @@ if (Test-Path -LiteralPath $acceptancePath -PathType Leaf) {
         }
     }
 
-    # 人工页面验收声明（page_verification 块）。V5.2.1 枚举：NOT_REQUIRED | human | verification | architecture（缺省视为无需页面验证）。
+    # 人工页面验收声明（page_verification 块）。V5.2.2 枚举：NOT_REQUIRED | human | verification | architecture（缺省视为无需页面验证）。
     $pageMode = ''
     $pageWitness = ''
     $pageWitnessEvidence = ''
@@ -1278,7 +1278,7 @@ if (Test-Path -LiteralPath $acceptancePath -PathType Leaf) {
             $pageWitnessEvidence = [string](Get-YamlScalar -Text $pageBlock.Groups['body'].Value -Name 'witness_evidence')
         }
         if (-not [string]::IsNullOrWhiteSpace($pageMode) -and $pageMode -notin @('NOT_REQUIRED', 'human', 'verification', 'architecture')) {
-            Add-Issue Error 'PAGE_MODE_INVALID' "page_verification.mode '$pageMode' is invalid; V5.2.1 allows NOT_REQUIRED, human, verification, or architecture (or omit the block)."
+            Add-Issue Error 'PAGE_MODE_INVALID' "page_verification.mode '$pageMode' is invalid; V5.2.2 allows NOT_REQUIRED, human, verification, or architecture (or omit the block)."
         }
         if ($pageMode -eq 'human' -and $pageWitness -eq 'confirmed' -and [string]::IsNullOrWhiteSpace($pageWitnessEvidence)) {
             Add-Issue Error 'PAGE_WITNESS_EVIDENCE_MISSING' 'page_verification.human_witness=confirmed requires a non-empty witness_evidence.'
@@ -1298,7 +1298,7 @@ if (Test-Path -LiteralPath $acceptancePath -PathType Leaf) {
             $headerCells = $headerLine.Split('|') | ForEach-Object { $_.Trim() }
             if ($headerCells.Count -ne 10 -or -not $headerLine.Trim().StartsWith('|') -or -not $headerLine.Trim().EndsWith('|') -or
                 $headerCells[1] -ne '编号' -or $headerCells[8] -ne '结论') {
-                Add-Issue Error 'ACCEPTANCE_HEADER_INVALID' 'V5.2.1 acceptance matrix must use the standard eight-column header ending with the verdict column.'
+                Add-Issue Error 'ACCEPTANCE_HEADER_INVALID' 'V5.2.2 acceptance matrix must use the standard eight-column header ending with the verdict column.'
             }
         }
     }
@@ -1451,7 +1451,7 @@ if ($requiresHandoffClosure -and -not [string]::IsNullOrWhiteSpace($currentState
 $errorCount = @($script:Issues | Where-Object { $_.Level -eq 'Error' }).Count
 $warningCount = @($script:Issues | Where-Object { $_.Level -eq 'Warning' }).Count
 
-Write-Output 'TP-Spec-Coding task validation summary (V5.2.1 single active contract: artifacts, SHD closure, acceptance closure, receipts, closing chain)'
+Write-Output 'TP-Spec-Coding task validation summary (V5.2.2 single active contract: artifacts, SHD closure, acceptance closure, receipts, closing chain)'
 Write-Output "Task directory: $($taskDirectory.FullName)"
 Write-Output "Task id: $taskId"
 Write-Output "Current state: $currentState"

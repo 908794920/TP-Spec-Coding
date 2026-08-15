@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""V5.2.1 架构评审 Subject Digest 单一来源（第三轮 P0-2）。
+"""V5.2.2 架构评审 Subject Digest 单一来源（第三轮 P0-2）。
 
-《V5.2.1 Final Hardening 外部源码复审报告》P0-2：第一轮 design digest 只含
+《V5.2.2 Final Hardening 外部源码复审报告》P0-2：第一轮 design digest 只含
 task/decisions/test-guide/acceptance，篡改 requirement-knowledge.md 或
 requirement-clarifications.md 不会使旧架构 PASS 失效。
 

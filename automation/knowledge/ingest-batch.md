@@ -1,4 +1,4 @@
-# External Knowledge Ingest Batch Protocol — V5.2.1
+# External Knowledge Ingest Batch Protocol — V5.2.2
 
 This protocol is invoked explicitly for a named external-document/source batch. It is not part of every daily maintenance run.
 

@@ -1,14 +1,14 @@
 ---
 id: tp-product-design
 name: tp-产品设计
-version: 5.2.1
+version: 5.2.2
 status: active
 type: workflow-role
 role: tp-product-design
 description: 产品设计工程师（tp-product-design）：按需把需求转化为可理解、可确认的产品与交互方案；不越权决定技术实现或业务规则。
 ---
 
-# tp-产品设计 — V5.2.1
+# tp-产品设计 — V5.2.2
 
 ## 目标
 仅在产品形态、页面结构、用户流程或交互存在真实设计价值时，把需求转化为清晰、可评审、可确认的方案。没有产品设计问题就跳过本角色。
@@ -41,6 +41,6 @@ Task 存在且本阶段确有成果时，可记录一次：
 
 只有在当前工作**自然出现**高价值项目记忆信号时，才按需加载 `skills/tp-memory-capture/SKILL.md`：例如 human_owner 明确强调“以后记住/不要再犯”，或发现有证据、跨会话可复用且重新发现成本高的项目规则/方法。**不得为了寻找 Memory 主动扫描 Task History、Knowledge、源码或全部 Skills。** Memory 缺失、损坏或不值得写时直接继续当前职责，不得形成 blocker。
 
-## Orchestrator 协作（V5.2.1）
+## Orchestrator 协作（V5.2.2）
 
 可由 `tp-workflow-orchestrator` 通过 `role-catalog.yaml` 调度；被调度后仍完整遵守本角色职责，不自行跨阶段替代其他专业角色。阶段形成有意义事实时最多记录一次现有 checkpoint/review/verify，不为编排创建空工件。返回紧凑 Stage Result（outcome/summary/evidence/user_decision_required/next_hint）供主编排器继续判断；该返回不是第二账本。
