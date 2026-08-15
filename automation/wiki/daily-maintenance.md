@@ -73,6 +73,27 @@ AI 正文修改后或 deterministic finalize 时执行：
 
 不得手工修 hash 来过门。
 
+若 `manifest-refresh` / `verify` 报 `MANIFEST_SCHEMA_INVALID` 且 metadata 仍是旧 namespace schema，先由基座维护执行一次受控 namespace migration；不得逐文件手改 schema：
+
+```text
+<BaseRoot>/scripts/tp-spec.ps1 base namespace-migrate --workspace-root <workspace> --apply
+```
+
+若报 `CITE_ANCHOR_RELOCATION_UNAVAILABLE` / `citation anchor ... missing`，先诊断 committed anchor 覆盖：
+
+```text
+<BaseRoot>/scripts/tp-spec.ps1 wiki anchors-doctor --workspace-root <workspace> --repo <repo-id>
+<BaseRoot>/scripts/tp-spec.ps1 wiki anchors-repair --workspace-root <workspace> --repo <repo-id>
+```
+
+只有 dry-run 返回 `repairable=true`（当前 source snapshot 与 committed baseline 完全一致，Wiki/manifest 也仍绑定原 anchor subject）时才允许：
+
+```text
+<BaseRoot>/scripts/tp-spec.ps1 wiki anchors-repair --workspace-root <workspace> --repo <repo-id> --apply
+```
+
+若 `source_baseline_current=false`，旧行签名已经无法从 hash 反推；必须 fail-closed，走 targeted re-verification/full-rebuild，不得把当前行签名伪装成旧 snapshot anchor。
+
 ### 5. L1-L3 Verify
 
 ```text

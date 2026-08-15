@@ -197,7 +197,7 @@ def _map_event_to_task_event(evt: Dict[str, Any], task_id: str, workflow_version
 def cmd_event_sync(args) -> int:
     """回流 flush 追加的 events.jsonl 事件到 DB（M5-C，v3 §4 R2）。
 
-    V5.2.1 Hardening（任务书 §4.3）：默认禁止 event sync 推进权威状态。
+    V5.2.2 Hardening（任务书 §4.3）：默认禁止 event sync 推进权威状态。
     - 允许：导入非状态历史 FACT/DECISION（不更新 task.current_state/owner_role）；
     - 禁止：从可编辑文件（events.jsonl / handoff.json）同步 STATE、HANDOFF 指向的
       新状态、owner_role、completed_at、cancel 状态；
@@ -242,7 +242,7 @@ def cmd_event_sync(args) -> int:
     next_state = handoff_next.get("state") if isinstance(handoff_next, dict) else None
     next_owner = handoff_next.get("owner") if isinstance(handoff_next, dict) else None
 
-    # ---- V5.2.1 状态推进字段检测（§4.3 禁止清单）----
+    # ---- V5.2.2 状态推进字段检测（§4.3 禁止清单）----
     _STATE_MUTATION_KEYS = ("state", "to_state", "next", "intended_next", "owner", "owner_role", "completed_at", "cancel")
     state_mutation_found = False
     for evt in flush_events:
@@ -393,7 +393,7 @@ def cmd_event_sync(args) -> int:
                         params,
                     )
                     inserted += 1
-        # V5.2.1 Hardening：非状态 FACT 导入禁止 UPDATE task 表（§4.3）。
+        # V5.2.2 Hardening：非状态 FACT 导入禁止 UPDATE task 表（§4.3）。
         # 权威状态只允许经 tp-spec commit / --admin-recovery 修改。
         print(
             f"event sync: imported {len(new_flush_ids)} non-state flush group(s), "
@@ -433,15 +433,15 @@ def add_event_subparsers(event_parser) -> None:
     p_add.add_argument("--db", required=False, default=None)
     p_add.set_defaults(func=cmd_event_add)
 
-    # event sync（M5-C：回流 flush 追加事件到 DB；V5.2.1 默认禁止状态推进）
+    # event sync（M5-C：回流 flush 追加事件到 DB；V5.2.2 默认禁止状态推进）
     p_sync = sub.add_parser("sync", help="Sync flush-appended non-state events to DB (state mutation forbidden)")
     p_sync.add_argument("--task", required=True, help="task id")
     p_sync.add_argument("--task-dir", required=True, help="task directory (events.jsonl location)")
     p_sync.add_argument("--project", required=False, default=None, help="resolve db via registry by project_id")
     p_sync.add_argument("--db", required=False, default=None)
-    # V5.2.1 Hardening：显式管理员恢复模式（走共享 transition_service）
-    p_sync.add_argument("--admin-recovery", action="store_true", help="V5.2.1 personal mode: explicit managed recovery through shared transition validation")
+    # V5.2.2 Hardening：显式管理员恢复模式（走共享 transition_service）
+    p_sync.add_argument("--admin-recovery", action="store_true", help="V5.2.2 personal mode: explicit managed recovery through shared transition validation")
     p_sync.add_argument("--confirm-admin-recovery", default=None, help="Exact text ADMIN_RECOVERY; explicit confirmation only")
     p_sync.add_argument("--reason", default=None, help="Reason recorded in the admin recovery audit event")
-    p_sync.add_argument("--actor", required=False, default=None, help="V5.2.1: recovery actor (default human_owner)")
+    p_sync.add_argument("--actor", required=False, default=None, help="V5.2.2: recovery actor (default human_owner)")
     p_sync.set_defaults(func=cmd_event_sync)

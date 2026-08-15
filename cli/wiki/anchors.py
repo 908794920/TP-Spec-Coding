@@ -26,6 +26,7 @@ import yaml
 from .source import decode_text, normalize_text, resolve_repo_relative
 
 ANCHOR_SCHEMA = "tp-spec.wiki-cite-anchors/v1"
+ANCHOR_HEALTH_SCHEMA = "tp-spec.wiki-anchor-health/v1"
 _CITE_TAG = re.compile(r"<cite\b[^>]*?/?>", re.I)
 _PATH_ATTR = re.compile(r"\bpath=[\"']([^\"']+)[\"']", re.I)
 _LINE_ATTR = re.compile(r"\bline=[\"']([^\"']+)[\"']", re.I)
@@ -169,6 +170,215 @@ def build_anchor_state(
         "sources": sources,
         "citations": citations,
     }
+
+
+
+
+def _citation_source_sets(manifest: Dict[str, Any]) -> Tuple[set[str], set[str]]:
+    cited: set[str] = set()
+    precise: set[str] = set()
+    for doc in manifest.get("documents") or []:
+        if not isinstance(doc, dict):
+            continue
+        for row in doc.get("citations") or []:
+            if not isinstance(row, dict) or not row.get("file"):
+                continue
+            source = str(row["file"]).replace("\\", "/")
+            cited.add(source)
+            if isinstance(row.get("line_start"), int) or _parse_line(row.get("line_raw")):
+                precise.add(source)
+    return cited, precise
+
+
+def _manifest_subject_current(wiki_repo_root: Path, manifest: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    """Check that machine manifest hashes/citations match the current Wiki bytes."""
+    issues: List[str] = []
+    try:
+        from .manifest import MANIFEST_SCHEMA, extract_citations
+    except Exception as exc:  # pragma: no cover - import cycle guard
+        return False, [f"manifest helpers unavailable: {type(exc).__name__}: {exc}"]
+    if manifest.get("schema") != MANIFEST_SCHEMA:
+        issues.append(f"manifest schema must be {MANIFEST_SCHEMA}")
+    for doc in manifest.get("documents") or []:
+        if not isinstance(doc, dict):
+            issues.append("manifest document entry is not a mapping")
+            continue
+        rel = str(doc.get("path") or "").replace("\\", "/")
+        if not rel:
+            issues.append("manifest document path missing")
+            continue
+        path = wiki_repo_root / Path(rel)
+        if not path.is_file():
+            issues.append(f"Wiki document missing: {rel}")
+            continue
+        actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        if str(doc.get("content_hash") or "").lower() != actual_hash:
+            issues.append(f"manifest document hash stale: {rel}")
+        try:
+            current_cites = extract_citations(path.read_text(encoding="utf-8"))
+        except UnicodeDecodeError:
+            issues.append(f"Wiki document is not UTF-8: {rel}")
+            continue
+        def canon(rows: Iterable[Dict[str, Any]]) -> List[Tuple[str, int, int, str]]:
+            out: List[Tuple[str, int, int, str]] = []
+            for row in rows or []:
+                if not isinstance(row, dict) or not row.get("file"):
+                    continue
+                out.append((
+                    str(row.get("file") or "").replace("\\", "/"),
+                    int(row.get("line_start") or 0),
+                    int(row.get("line_end") or row.get("line_start") or 0),
+                    str(row.get("line_raw") or ""),
+                ))
+            return out
+        if canon(current_cites) != canon(doc.get("citations") or []):
+            issues.append(f"manifest citations stale: {rel}")
+    return not issues, issues
+
+
+def _anchor_document_subject_current(wiki_repo_root: Path, manifest: Dict[str, Any], anchor_state: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    """Require current Wiki documents to be byte-identical to the anchor subject."""
+    issues: List[str] = []
+    bound = anchor_state.get("documents") if isinstance(anchor_state.get("documents"), dict) else {}
+    manifest_docs = [str(d.get("path") or "").replace("\\", "/") for d in (manifest.get("documents") or []) if isinstance(d, dict) and d.get("path")]
+    for rel in manifest_docs:
+        path = wiki_repo_root / Path(rel)
+        expected = str(bound.get(rel) or "")
+        if not expected:
+            issues.append(f"anchor document subject missing: {rel}")
+            continue
+        if not path.is_file():
+            issues.append(f"anchor document missing: {rel}")
+            continue
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual != expected:
+            issues.append(f"Wiki document changed after anchor baseline: {rel}")
+    return not issues, issues
+
+
+def anchor_health_report(
+    *, wiki_repo_root: Path, repo_root: Path, repo_id: str, source_cfg: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Diagnose committed citation-anchor coverage without mutating metadata."""
+    wiki_repo_root = Path(wiki_repo_root).resolve(strict=False)
+    repo_root = Path(repo_root).resolve(strict=False)
+    manifest = _manifest(wiki_repo_root)
+    anchor_state = _read_json(anchor_path(wiki_repo_root))
+    baseline = _read_json(_meta(wiki_repo_root, "wiki-snapshot.json"))
+    cited, precise = _citation_source_sets(manifest)
+    anchor_sources = set(str(x).replace("\\", "/") for x in ((anchor_state.get("sources") or {}).keys() if isinstance(anchor_state.get("sources"), dict) else []))
+    missing = sorted(precise - anchor_sources)
+    extra = sorted(anchor_sources - precise)
+
+    baseline_id = str(baseline.get("snapshot_id") or "")
+    current_id = ""
+    source_current = False
+    source_issue = ""
+    if baseline_id and baseline.get("schema"):
+        try:
+            from .snapshot import build_current_snapshot, SNAPSHOT_SCHEMA
+            if baseline.get("schema") != SNAPSHOT_SCHEMA:
+                source_issue = f"baseline schema must be {SNAPSHOT_SCHEMA}"
+            else:
+                current = build_current_snapshot(repo_id, repo_root, source_cfg, old=baseline)
+                current_id = str(current.get("snapshot_id") or "")
+                source_current = current_id == baseline_id
+        except Exception as exc:
+            source_issue = f"current source snapshot failed: {type(exc).__name__}: {exc}"
+    else:
+        source_issue = "committed source baseline missing"
+
+    manifest_current, manifest_issues = _manifest_subject_current(wiki_repo_root, manifest)
+    anchor_docs_current, anchor_doc_issues = _anchor_document_subject_current(wiki_repo_root, manifest, anchor_state)
+    schema_current = anchor_state.get("schema") == ANCHOR_SCHEMA
+    snapshot_aligned = bool(baseline_id and str(anchor_state.get("snapshot_id") or "") == baseline_id)
+
+    repair_issues: List[str] = []
+    if not schema_current:
+        repair_issues.append(f"anchor schema must be {ANCHOR_SCHEMA}")
+    if not snapshot_aligned:
+        repair_issues.append("anchor snapshot_id does not match committed source baseline")
+    if not source_current:
+        repair_issues.append("source baseline has drifted from committed snapshot")
+    if not manifest_current:
+        repair_issues.extend(manifest_issues)
+    if not anchor_docs_current:
+        repair_issues.extend(anchor_doc_issues)
+    repairable = bool(missing) and not repair_issues
+
+    return {
+        "schema": ANCHOR_HEALTH_SCHEMA,
+        "status": "PASS" if not missing and schema_current and snapshot_aligned else "DEGRADED",
+        "repo_id": repo_id,
+        "wiki_repo_root": str(wiki_repo_root),
+        "repo_root": str(repo_root),
+        "cited_source_count": len(cited),
+        "precise_cited_source_count": len(precise),
+        "anchor_source_count": len(anchor_sources),
+        "missing_source_count": len(missing),
+        "missing_sources": missing,
+        "extra_anchor_source_count": len(extra),
+        "extra_anchor_sources": extra,
+        "anchor_schema": str(anchor_state.get("schema") or ""),
+        "anchor_schema_current": schema_current,
+        "baseline_snapshot_id": baseline_id,
+        "anchor_snapshot_id": str(anchor_state.get("snapshot_id") or ""),
+        "current_snapshot_id": current_id,
+        "anchor_snapshot_aligned": snapshot_aligned,
+        "source_baseline_current": source_current,
+        "source_issue": source_issue,
+        "manifest_subject_current": manifest_current,
+        "anchor_document_subject_current": anchor_docs_current,
+        "repairable": repairable,
+        "repair_blockers": repair_issues,
+    }
+
+
+def repair_anchor_baseline(
+    *, wiki_repo_root: Path, repo_root: Path, repo_id: str, source_cfg: Dict[str, Any], apply: bool = False
+) -> Dict[str, Any]:
+    """Rebuild a partial anchor file only when its committed subject is unchanged.
+
+    The command never advances ``wiki-snapshot.json`` and never invents historical
+    line signatures.  If current source bytes differ from the committed snapshot,
+    recovery must go through re-verification/full rebuild instead.
+    """
+    report = anchor_health_report(
+        wiki_repo_root=wiki_repo_root, repo_root=repo_root, repo_id=repo_id, source_cfg=source_cfg
+    )
+    if report["missing_source_count"] == 0 and report["anchor_schema_current"] and report["anchor_snapshot_aligned"]:
+        return {**report, "status": "CURRENT", "apply": bool(apply)}
+    if not report["source_baseline_current"]:
+        raise ValueError("anchor repair refused: source baseline has drifted from committed snapshot; use full-rebuild or a new verified baseline")
+    if not report["anchor_schema_current"]:
+        raise ValueError("anchor repair refused: migrate legacy Wiki metadata namespace first")
+    if not report["anchor_snapshot_aligned"]:
+        raise ValueError("anchor repair refused: anchor snapshot does not bind the committed source baseline")
+    if not report["manifest_subject_current"]:
+        raise ValueError("anchor repair refused: Wiki manifest is not byte-current")
+    if not report["anchor_document_subject_current"]:
+        raise ValueError("anchor repair refused: Wiki document subject changed after anchor baseline")
+    if not report["repairable"]:
+        raise ValueError("anchor repair refused: " + "; ".join(report.get("repair_blockers") or ["preconditions not satisfied"]))
+    if not apply:
+        return {**report, "status": "REPAIR_AVAILABLE", "apply": False}
+
+    baseline_id = str(report["baseline_snapshot_id"])
+    rebuilt = build_anchor_state(
+        wiki_repo_root=Path(wiki_repo_root), repo_root=Path(repo_root), source_cfg=source_cfg,
+        snapshot_id=baseline_id,
+    )
+    _, expected_precise = _citation_source_sets(_manifest(Path(wiki_repo_root)))
+    rebuilt_sources = set((rebuilt.get("sources") or {}).keys())
+    if rebuilt_sources != expected_precise:
+        raise ValueError("anchor repair internal check failed: rebuilt source coverage does not match precise manifest citations")
+    write_anchor_state(Path(wiki_repo_root), rebuilt)
+    after = anchor_health_report(
+        wiki_repo_root=Path(wiki_repo_root), repo_root=Path(repo_root), repo_id=repo_id, source_cfg=source_cfg
+    )
+    if after["missing_source_count"] or not after["anchor_schema_current"] or not after["anchor_snapshot_aligned"]:
+        raise ValueError("anchor repair postcondition failed")
+    return {**after, "status": "REPAIRED", "apply": True}
 
 
 def write_anchor_state(wiki_repo_root: Path, state: Dict[str, Any]) -> Path:

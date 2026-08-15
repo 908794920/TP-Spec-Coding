@@ -1,6 +1,6 @@
-catalog_version: "5.2.1"
-base_version: "5.2.1"
-generated_utc: 20260814T070909Z
+catalog_version: "5.2.2"
+base_version: "5.2.2"
+generated_utc: 20260815T111315Z
 generated_by: update_role_catalog.py deterministic metadata/hash refresh
 human_actor:
   id: human_owner
@@ -11,68 +11,68 @@ roles:
   type: control-role
   skill_path: agents/tp-workflow-orchestrator/SKILL.md
   owns_states: []
-  content_sha256: 569561B2DBFCFE81ECCE9CDA2ED48CF718B45F513D76382BA64367256CE73FFD
+  content_sha256: 0D70959816168055F6881B21876976ABBB91248EF65720F204A3B9073A8596FF
 - workflow_role: tp-requirement-analysis
   display_name: tp-需求分析
   type: workflow-role
   skill_path: skills/tp-requirement-analysis/SKILL.md
   owns_states: []
-  content_sha256: 57513A93BCA7B55F1D7E3998A77968DF91F13B82DB4A53A5BC614A9715E21955
+  content_sha256: 934BFFA22DDF142A03012CBE3B18FD080CD32789D9A22EB4577B1A75DAC86A84
 - workflow_role: tp-product-design
   display_name: tp-产品设计
   type: workflow-role
   skill_path: skills/tp-product-design/SKILL.md
   owns_states: []
-  content_sha256: E760C1CF6FA0C657C48C8434F4BF2663EBD4018D8D871F366AF633B5FDE1EFB2
+  content_sha256: 52F67E401C6ECE7F6CFD5EDE55CA8C03A00187383267627BA42FB590524428F2
 - workflow_role: tp-architecture-design
   display_name: tp-架构设计
   type: workflow-role
   skill_path: skills/tp-architecture-design/SKILL.md
   owns_states:
   - NEW
-  content_sha256: 3B741D458EF28710E6D8BD6DDD0B72E4BFA56CAB881E3BB2C916674800CEEC85
+  content_sha256: AC2FD60FB475CF6D0ED181FDE1F8AA67E3BE85D58432485AA97BE273A4543C30
 - workflow_role: tp-architecture-review
   display_name: tp-架构评审
   type: optional-review-role
   skill_path: skills/tp-architecture-review/SKILL.md
   owns_states: []
-  content_sha256: 741A61F1FA278F4FB12BA0BA2AF3C8B0BB7030AEFEB2BFB037335FB48D9782C6
+  content_sha256: C61698BE30DA942FF49AFB4B090706BA8DAF79EEE201AD79289081946FB4ABD8
 - workflow_role: tp-development-engineering
   display_name: tp-开发工程
   type: workflow-role
   skill_path: skills/tp-development-engineering/SKILL.md
   owns_states: []
-  content_sha256: C68FD159D2D0E3EBEDE0571833392A9AFF9586BD2004795176200581C0FF5235
+  content_sha256: CADB0889E47FFB56C24D0E1B02C3EEC0671AB7C4BB385CAE2B1C9E10C5FE1341
 - workflow_role: tp-verification-engineering
   display_name: tp-验收工程
   type: workflow-role
   skill_path: skills/tp-verification-engineering/SKILL.md
   owns_states: []
-  content_sha256: 3B08FD57A38DD30C40BB4580ADB2D80031335E6AC3F24CDDE54ACD35DE38A0E6
+  content_sha256: 93E7336C411C8E6C6B9B1EF495341F57EBF65D5733C8A5F71C566A5FBD8C029E
 - workflow_role: tp-delivery-convergence
   display_name: tp-交付/知识收敛
   type: workflow-role
   skill_path: skills/tp-delivery-convergence/SKILL.md
   owns_states: []
-  content_sha256: 7A7E383367E75EB7C678BC4AAC36A1E5EB0EB9E0E45D21E56AC2534268B622F6
+  content_sha256: 44CFE2B1D0003C5E84B25C4DC34DE148D213F80FE7D81ABAAE038DF379A802EB
 - workflow_role: tp-base-maintenance
   display_name: tp-基座维护
   type: human-owner-skill
   skill_path: agents/tp-base-maintenance/SKILL.md
   owns_states: []
-  content_sha256: 5EC6BDA1695C85EB0A9E7A1B087E4C9D1DF257B0A12492325C9BC1466A4978FB
+  content_sha256: A78979CA2AC0F1EB92422B90B955931E049B9F3C02CF88FA21FC76BBA658E41A
 - workflow_role: tp-knowledge
   display_name: tp-knowledge
   type: human-owner-skill
   skill_path: agents/tp-knowledge/SKILL.md
   owns_states: []
-  content_sha256: C72B60B42D0E76822973830DC136539AF79B50B3041590D3CB0F89A0F297E950
+  content_sha256: 54027FBC0B5D205AA814F83EF736300AC38518D8DD4AC8ABAF0F02154EA582F5
 - workflow_role: tp-wiki
   display_name: tp-wiki
   type: human-owner-skill
   skill_path: agents/tp-wiki/SKILL.md
   owns_states: []
-  content_sha256: 81597D95E114D1B43C3C8ADAE0EB510A8894A281A365398B0F0FB4A00726ADAD
+  content_sha256: B5289C832CDD4E9F9BC7EE145D0EA8AEFB82C46F4593419FA164A90968501D1A
 state_owner_map:
   NEW: tp-architecture-design
   CANCELLED: human_owner

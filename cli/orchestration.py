@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.1 deterministic, read-only workflow orchestration.
+"""V5.2.2 deterministic, read-only workflow orchestration.
 
 Workflow chooses *when* to invoke a role.  Skills choose *how* to do the work.
 The existing Task Runtime remains the only durable fact ledger.
@@ -16,7 +16,10 @@ import yaml
 
 from . import config_loader
 from . import db as dbmod
+from . import delivery_contract
+from . import environment
 from . import risk_signals
+from . import workflow_controls
 from .version import active_version
 
 LEVELS = ("L0", "L1", "L2", "L3")
@@ -110,6 +113,15 @@ def validate_contract(base_root: Optional["str | Path"] = None) -> List[str]:
         errors.append("orchestration must not introduce public states")
     if contract.get("runtime", {}).get("new_database_objects") is not False:
         errors.append("orchestration must not introduce database objects")
+    confirmation = contract.get("confirmation") or {}
+    if confirmation.get("default_policy") != "material":
+        errors.append("Base default confirmation policy must remain material")
+    if set(confirmation.get("supported_policies") or []) != {"material", "each_stage"}:
+        errors.append("confirmation policies must be exactly material + each_stage")
+    if confirmation.get("user_preference_path") != "~/.tp-spec/preferences.yaml":
+        errors.append("confirmation preference must be user-level ~/.tp-spec/preferences.yaml")
+    if contract.get("runtime", {}).get("ordinary_confirmation_persisted") is not True:
+        errors.append("each-stage confirmations must be persisted as trusted Runtime events")
     if contract.get("execution", {}).get("concurrent_workflow_stages") is not False:
         errors.append("dependent workflow stages must remain sequential")
     if contract.get("execution", {}).get("prefer_parallel_isolated_subagents") is not True:
@@ -123,6 +135,11 @@ def validate_contract(base_root: Optional["str | Path"] = None) -> List[str]:
         errors.append("delivery fast path must forbid default subagents")
     if delivery_fast.get("allow_full_task_reread") is not False or delivery_fast.get("allow_full_knowledge_scan") is not False:
         errors.append("delivery fast path must forbid default full rereads/scans")
+    if delivery_fast.get("require_targeted_knowledge_search") is not True:
+        errors.append("delivery fast path must require targeted Knowledge search")
+
+    if "material_confirmation_prefix" in (contract.get("signals") or {}):
+        errors.append("legacy public DECISION material confirmation marker must not remain active")
 
     # Deep-mode capabilities remain owned by the professional roles.  The
     # orchestrator only decides *when* to request them, so doctor verifies the
@@ -245,7 +262,7 @@ def _load_task_facts(task_id: str, db_path: Optional[str] = None) -> Tuple[Dict[
         if row is None:
             raise OrchestrationError(f"task not found: {task_id}")
         events = conn.execute(
-            "SELECT id,event_type,from_state,to_state,from_stage,to_stage,actor_role,reason_code,summary,detail_json,created_at "
+            "SELECT id,task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,reason_code,summary,detail_json,workflow_version,created_at "
             "FROM task_event WHERE task_id=? ORDER BY id", (task_id,),
         ).fetchall()
         return dict(row), [dict(e) for e in events]
@@ -304,7 +321,6 @@ def _stage_completion_event(stage: str, events: List[Dict[str, Any]]) -> Optiona
         "product": ("tp-product-design", "product"),
         "architecture": ("tp-architecture-design", "architecture"),
         "development": ("tp-development-engineering", "development"),
-        "delivery": ("tp-delivery-convergence", "delivery"),
     }
     if stage in mapping:
         actor, phase = mapping[stage]
@@ -316,7 +332,6 @@ def _stage_completion_event(stage: str, events: List[Dict[str, Any]]) -> Optiona
         v = _latest_verification(events)
         return v["event"] if v and v["decision"] == "PASS" else None
     return None
-
 
 def _stage_done(stage: str, events: List[Dict[str, Any]]) -> bool:
     return _stage_completion_event(stage, events) is not None
@@ -353,34 +368,103 @@ def _stage_included(step: Dict[str, Any], level: str, task: Dict[str, Any], even
     return False
 
 
+def _current_verification_for_delivery(events: List[Dict[str, Any]], task_dir: Optional[Path]) -> Optional[Dict[str, Any]]:
+    verification = _latest_verification(events)
+    if not verification or verification["decision"] != "PASS":
+        return None
+    subject_digest = str((verification.get("detail") or {}).get("subject_digest") or "")
+    if not subject_digest:
+        return None
+    if task_dir is not None:
+        from .digest import compute_verification_subject_digest
+        if compute_verification_subject_digest(task_dir) != subject_digest:
+            return None
+    return verification
+
+def _delivery_completion_event(events: List[Dict[str, Any]], task_dir: Optional[Path]) -> Optional[Dict[str, Any]]:
+    verification = _current_verification_for_delivery(events, task_dir)
+    if not verification:
+        return None
+    subject_digest = str((verification.get("detail") or {}).get("subject_digest") or "")
+    return delivery_contract.find_delivery_completion_event(
+        events,
+        verification_event=verification["event"],
+        current_subject_digest=subject_digest,
+    )
+
+
 def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Build compact deterministic input so delivery does not reread the whole Task."""
+    """Build compact deterministic input so delivery can do targeted convergence only."""
     facts: Dict[str, Dict[str, Any]] = {}
+    knowledge_signals: List[Dict[str, Any]] = []
+    delivery_signals: List[str] = []
+    verification_binding: Optional[Dict[str, Any]] = None
     for stage, actor in (("requirement", "tp-requirement-analysis"),
+                         ("product", "tp-product-design"),
                          ("architecture", "tp-architecture-design"),
+                         ("architecture_review", "tp-architecture-review"),
                          ("development", "tp-development-engineering"),
                          ("verification", "tp-verification-engineering")):
         if stage == "verification":
             latest = _latest_verification(events)
             selected = latest["event"] if latest else None
+        elif stage == "architecture_review":
+            latest_review = _latest_arch_review(events)
+            selected = latest_review["event"] if latest_review else None
         else:
             selected = _latest_checkpoint(events, actor=actor, phase=stage)
-        if selected:
-            detail = _parse_detail(selected.get("detail_json"))
-            facts[stage] = {
+        if not selected:
+            continue
+        detail = _parse_detail(selected.get("detail_json"))
+        source_refs = list(detail.get("source_refs") or [])
+        evidence = list(detail.get("evidence") or [])
+        facts[stage] = {
+            "event_id": int(selected.get("id") or 0),
+            "summary": str(selected.get("summary") or ""),
+            "evidence": evidence,
+            "source_refs": source_refs,
+        }
+        for raw in detail.get("knowledge_signals") or []:
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            item.setdefault("source_stage", stage)
+            item.setdefault("source_event_id", int(selected.get("id") or 0))
+            if evidence and not item.get("evidence"):
+                item["evidence"] = evidence
+            if source_refs and not item.get("source_refs"):
+                item["source_refs"] = source_refs
+            knowledge_signals.append(item)
+        for raw in detail.get("delivery_signals") or []:
+            value = str(raw or "").strip()
+            if value and value not in delivery_signals:
+                delivery_signals.append(value)
+        if stage == "verification":
+            verification_binding = {
                 "event_id": int(selected.get("id") or 0),
-                "summary": str(selected.get("summary") or ""),
-                "evidence": list(detail.get("evidence") or []),
+                "subject_digest": str(detail.get("subject_digest") or ""),
+                "decision": str(detail.get("decision") or selected.get("summary") or "").upper(),
             }
     return {
         "mode": "FAST_PATH",
         "max_incremental_ai_overhead_percent": 5,
-        "task": {"task_id": task.get("task_id"), "risk_level": task.get("risk_level"), "flow_level": task.get("flow_level")},
+        "task": {
+            "task_id": task.get("task_id"),
+            "risk_level": task.get("risk_level"),
+            "flow_level": task.get("flow_level"),
+        },
         "stage_facts": facts,
+        "knowledge_signals": knowledge_signals,
+        "delivery_signals": delivery_signals,
+        "verification_binding": verification_binding,
+        "knowledge_requirement": {
+            "scope": "current project + shared",
+            "targeted_search_required": True,
+            "disposition_required": ["CREATED", "UPDATED", "NO_CHANGE", "DEFERRED", "BLOCKED"],
+        },
         "read_policy": "targeted-only; no full Task/source/Knowledge reread by default",
         "subagents": "forbidden-by-default",
     }
-
 
 def _execution_mode(step: Dict[str, Any], level: str, signals: set[str]) -> str:
     mode = step.get("mode")
@@ -396,7 +480,10 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
                 confirmation_reason: Optional[str] = None, blocker: Optional[str] = None,
                 reason_codes: Optional[List[str]] = None, action: Optional[str] = None,
                 context: Optional[Dict[str, Any]] = None,
-                transition_from_role: Optional[str] = None) -> Dict[str, Any]:
+                transition_from_role: Optional[str] = None,
+                confirmation_policy: Optional[str] = None,
+                confirmation_binding: Optional[Dict[str, Any]] = None,
+                wake_prompt: Optional[str] = None) -> Dict[str, Any]:
     data = {
         "schema": ROUTE_SCHEMA,
         "task_id": task.get("task_id"),
@@ -407,6 +494,7 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
         "role_id": role_id,
         "skill_path": skill_path,
         "execution_mode": execution_mode,
+        "confirmation_policy": confirmation_policy,
         "confirmation_required": bool(confirmation_required),
         "confirmation_reason": confirmation_reason,
         "blocker": blocker,
@@ -416,10 +504,64 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
     }
     if context is not None:
         data["context"] = context
+    if confirmation_binding is not None:
+        data["confirmation_binding"] = confirmation_binding
+    if wake_prompt:
+        data["wake_prompt"] = wake_prompt
     if transition_from_role and role_id and transition_from_role != role_id:
         data["transition_from_role"] = transition_from_role
         data["transition_notice_required"] = True
     return data
+
+def _route_role_boundary(task: Dict[str, Any], level: str, events: List[Dict[str, Any]], *,
+                         policy: str, next_stage: str, role_id: str, skill_path: str,
+                         execution_mode: str, reason_codes: List[str],
+                         source_event: Optional[Dict[str, Any]] = None,
+                         source_stage: Optional[str] = None,
+                         source_role: Optional[str] = None,
+                         context: Optional[Dict[str, Any]] = None,
+                         human_confirmation_already_satisfied: bool = False) -> Dict[str, Any]:
+    binding: Optional[Dict[str, Any]] = None
+    wake_prompt: Optional[str] = None
+    transition = bool(source_event and source_role and source_role != role_id)
+    if policy == "each_stage" and transition:
+        binding = workflow_controls.build_boundary_binding(
+            task_id=str(task.get("task_id") or ""),
+            source_stage=str(source_stage or source_event.get("to_stage") or task.get("current_stage") or "other"),
+            source_role=str(source_role),
+            source_event_id=int(source_event.get("id") or 0),
+            source_event_digest=workflow_controls.event_digest(source_event),
+            target_stage=next_stage,
+            target_role=role_id,
+            execution_mode=execution_mode,
+            confirmation_kind='ordinary',
+        )
+        confirmed = human_confirmation_already_satisfied or workflow_controls.find_matching_confirmation(events, binding) is not None
+        if not confirmed:
+            return _route_dict(
+                task, level, next_stage=next_stage, role_id=role_id, skill_path=None,
+                execution_mode=execution_mode, confirmation_required=True,
+                confirmation_reason="EACH_STAGE_POLICY", reason_codes=reason_codes,
+                action="await_confirmation", context=context,
+                transition_from_role=source_role, confirmation_policy=policy,
+                confirmation_binding=binding,
+            )
+        wake_prompt = workflow_controls.build_wake_prompt(
+            task_id=str(task.get("task_id") or ""),
+            workspace=str(task.get("project_root_path") or ""),
+            source_stage=str(source_stage or source_event.get("to_stage") or task.get("current_stage") or "other"),
+            source_role=str(source_role),
+            target_stage=next_stage,
+            target_role=role_id,
+            execution_mode=execution_mode,
+        )
+    return _route_dict(
+        task, level, next_stage=next_stage, role_id=role_id, skill_path=skill_path,
+        execution_mode=execution_mode, confirmation_required=False,
+        confirmation_reason=None, reason_codes=reason_codes, action="dispatch_role",
+        context=context, transition_from_role=source_role,
+        confirmation_policy=policy, wake_prompt=wake_prompt,
+    )
 
 
 def resolve_route(task_id: str, *, db_path: Optional[str] = None,
@@ -429,6 +571,14 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
     contract = load_contract(root)
     catalog = load_role_catalog(root)
     task, events = _load_task_facts(task_id, db_path)
+    try:
+        policy = workflow_controls.resolve_confirmation_policy(
+            confirmation_policy,
+            environment.user_tp_spec_root() / "preferences.yaml",
+            str((contract.get("confirmation") or {}).get("default_policy") or "material"),
+        )
+    except workflow_controls.PreferenceError as exc:
+        raise OrchestrationError(str(exc)) from exc
     if str(task.get("base_version") or "") != active_version(root):
         raise OrchestrationError(
             f"task contract {task.get('base_version')!r} != active {active_version(root)!r}; migrate first"
@@ -438,6 +588,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
         raise OrchestrationError(f"unknown public state: {state!r}")
     level = resolve_effective_level(task.get("risk_level"), task.get("flow_level"))
     project_root = str(task.get("project_root_path") or "").strip()
+    task_dir: Optional[Path] = None
     risk_scan = {"floor": None, "signals": []}
     if project_root:
         task_dir = Path(project_root) / ".tp-spec" / "tasks" / task_id
@@ -452,11 +603,12 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
 
     if state in TERMINAL:
         return _route_dict(task, level, next_stage=None, role_id=None, skill_path=None,
-                           reason_codes=["TASK_TERMINAL"], action="none")
+                           reason_codes=["TASK_TERMINAL"], action="none", confirmation_policy=policy)
     if state == "BLOCKED":
         blocker = next((str(e.get("summary") or "") for e in reversed(events) if e.get("event_type") == "BLOCKER"), "task is BLOCKED")
         return _route_dict(task, level, next_stage=None, role_id=None, skill_path=None,
-                           blocker=blocker, reason_codes=["TASK_BLOCKED"], action="task_resume_after_resolution")
+                           blocker=blocker, reason_codes=["TASK_BLOCKED"], action="task_resume_after_resolution",
+                           confirmation_policy=policy)
 
     review = _latest_arch_review(events)
     if review and review["decision"] in {"REVISE", "BLOCKED"}:
@@ -465,9 +617,12 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             role = role_map["tp-architecture-design"]
             code = "ARCHITECTURE_REVIEW_REVISE" if review["decision"] == "REVISE" else "ARCHITECTURE_REVIEW_BLOCKED_REWORK"
             mode = "COMPARATIVE" if "workflow:multiple-feasible-routes" in signals else "DIRECT"
-            return _route_dict(task, level, next_stage="architecture", role_id="tp-architecture-design",
-                               skill_path=str(role["skill_path"]), execution_mode=mode, reason_codes=[code],
-                               transition_from_role="tp-architecture-review")
+            return _route_role_boundary(
+                task, level, events, policy=policy, next_stage="architecture",
+                role_id="tp-architecture-design", skill_path=str(role["skill_path"]),
+                execution_mode=mode, reason_codes=[code], source_event=review["event"],
+                source_stage="architecture_review", source_role="tp-architecture-review",
+            )
 
     verification = _latest_verification(events)
     if verification and verification["decision"] in {"NEEDS_FIX", "FAIL"}:
@@ -491,53 +646,73 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             }
             rid = stage_to_role[target]
             mode = "COMPARATIVE" if target == "architecture" and "workflow:multiple-feasible-routes" in signals else "DIRECT"
-            return _route_dict(task, level, next_stage=target, role_id=rid, skill_path=str(role_map[rid]["skill_path"]),
-                               execution_mode=mode, reason_codes=[code],
-                               transition_from_role="tp-verification-engineering")
+            return _route_role_boundary(
+                task, level, events, policy=policy, next_stage=target, role_id=rid,
+                skill_path=str(role_map[rid]["skill_path"]), execution_mode=mode,
+                reason_codes=[code], source_event=verification["event"],
+                source_stage="verification", source_role="tp-verification-engineering",
+            )
 
     pipeline = (contract.get("pipelines") or {}).get(level) or []
     included = [s for s in pipeline if _stage_included(s, level, task, events, signals)]
     upstream_completion_id = 0
     previous_role: Optional[str] = None
+    previous_stage: Optional[str] = None
+    previous_completion: Optional[Dict[str, Any]] = None
     for step in included:
         stage = str(step["stage"])
-        completion = _stage_completion_event(stage, events)
+        completion = _delivery_completion_event(events, task_dir) if stage == "delivery" else _stage_completion_event(stage, events)
         if completion is not None and int(completion.get("id") or 0) > upstream_completion_id:
             upstream_completion_id = int(completion.get("id") or 0)
             previous_role = str(step.get("role") or "") or None
+            previous_stage = stage
+            previous_completion = completion
             continue
         rid = str(step["role"])
         role = role_map.get(rid)
         if role is None:
             raise OrchestrationError(f"pipeline references unknown role: {rid}")
-        policy = confirmation_policy or str((contract.get("confirmation") or {}).get("default_policy") or "material")
-        confirm = False
-        confirm_reason = None
-        if policy == "each_stage":
-            confirm = bool(events)
-            confirm_reason = "EACH_STAGE_POLICY" if confirm else None
-        elif policy == "material" and stage == "development" and level in {"L2", "L3"} and _stage_done("architecture", events):
-            marker = "workflow:material-confirmed:architecture->development"
-            # A confirmation from an older architecture/review cycle is stale.
-            # Require the durable marker to be newer than the current upstream
-            # decision-complete stage; same-session confirmations remain ephemeral.
-            if int(signal_ids.get(marker, 0)) <= upstream_completion_id:
-                confirm = True
-                confirm_reason = "MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION"
-        skill_path = str(role["skill_path"])
-        action = "dispatch_role"
-        if confirm and str(confirm_reason or "").startswith("MATERIAL_"):
-            skill_path = None
-            action = "await_confirmation"
-        return _route_dict(
-            task, level, next_stage=stage, role_id=rid, skill_path=skill_path,
-            execution_mode=_execution_mode(step, level, signals), confirmation_required=confirm,
-            confirmation_reason=confirm_reason, reason_codes=["NEXT_STAGE_RESOLVED"], action=action,
-            context=_delivery_fact_pack(task, events) if stage == "delivery" else None,
-            transition_from_role=previous_role,
+        mode = _execution_mode(step, level, signals)
+        context = _delivery_fact_pack(task, events) if stage == "delivery" else None
+
+        # Material confirmations are independent of each-stage flow control and
+        # therefore run first. A valid material decision may satisfy the ordinary
+        # boundary confirmation one-way; an ordinary WORKFLOW_CONFIRMATION can
+        # never satisfy a material decision.
+        material_satisfied = False
+        if stage == "development" and level in {"L2", "L3"} and _stage_done("architecture", events):
+            if previous_completion is None or previous_role is None or previous_stage is None:
+                raise OrchestrationError("material architecture->development boundary lacks a decision-complete source fact")
+            material_binding = workflow_controls.build_boundary_binding(
+                task_id=str(task.get("task_id") or ""),
+                source_stage=previous_stage,
+                source_role=previous_role,
+                source_event_id=int(previous_completion.get("id") or 0),
+                source_event_digest=workflow_controls.event_digest(previous_completion),
+                target_stage=stage,
+                target_role=rid,
+                execution_mode=mode,
+                confirmation_kind='material',
+            )
+            if workflow_controls.find_matching_confirmation(events, material_binding) is None:
+                return _route_dict(
+                    task, level, next_stage=stage, role_id=rid, skill_path=None,
+                    execution_mode=mode, confirmation_required=True,
+                    confirmation_reason="MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION",
+                    reason_codes=["NEXT_STAGE_RESOLVED"], action="await_confirmation",
+                    context=context, transition_from_role=previous_role,
+                    confirmation_policy=policy, confirmation_binding=material_binding,
+                )
+            material_satisfied = True
+
+        return _route_role_boundary(
+            task, level, events, policy=policy, next_stage=stage, role_id=rid,
+            skill_path=str(role["skill_path"]), execution_mode=mode,
+            reason_codes=["NEXT_STAGE_RESOLVED"], source_event=previous_completion,
+            source_stage=previous_stage, source_role=previous_role, context=context,
+            human_confirmation_already_satisfied=material_satisfied,
         )
 
-    # All selected stages have completed. A truthful PASS means the task may close;
-    # lack of a required verification step above would have returned that step.
     return _route_dict(task, level, next_stage="complete", role_id=None, skill_path=None,
-                       reason_codes=["PIPELINE_COMPLETE"], action="task_complete")
+                       reason_codes=["PIPELINE_COMPLETE"], action="task_complete",
+                       confirmation_policy=policy)

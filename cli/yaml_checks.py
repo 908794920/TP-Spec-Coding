@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""V5.2.1 fail-closed YAML 解析与工件结构校验（Hardening P0-3/P1-4）。
+"""V5.2.2 fail-closed YAML 解析与工件结构校验（Hardening P0-3/P1-4）。
 
-依据：《V5.2.1 执行AI统一修复与自验证任务》§9.1（使用真实 YAML 解析，禁止仅正则）
-与《V5.2.1 源码级发布审查报告》P1-4（deferred_acceptance 仍使用正则）。
+依据：《V5.2.2 执行AI统一修复与自验证任务》§9.1（使用真实 YAML 解析，禁止仅正则）
+与《V5.2.2 源码级发布审查报告》P1-4（deferred_acceptance 仍使用正则）。
 
 设计：
 - ``parse_yaml_fail_closed(text, name)``：真实 YAML 解析（pyyaml 可用时），

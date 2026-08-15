@@ -81,3 +81,17 @@ CITE_ANCHOR_RELOCATION_UNAVAILABLE
 ```
 
 必须 fail-closed，不允许保留“仍在范围内但已经指错位置”的旧行号。`wiki verify` 会再次检查是否还有待执行的 deterministic relocation，禁止绕过 `manifest-refresh`。
+
+### Anchor Baseline 受控恢复
+
+历史版本若留下部分 `wiki-cite-anchors.json`，先运行 `wiki anchors-doctor` 比较 manifest precise cited sources 与 committed anchor sources。
+
+`wiki anchors-repair --apply` **不推进 source snapshot**，仅在以下条件全部成立时允许从当前 source/manifest 重建完整 anchor metadata：
+
+- anchor/schema 已迁移到当前 `tp-spec.*`；
+- anchor `snapshot_id` 与 committed `wiki-snapshot.json` 一致；
+- 当前 source snapshot 与 committed source baseline 完全一致；
+- 当前 Wiki Markdown 与 manifest hash/citation 一致；
+- 当前 Wiki Markdown 仍与旧 anchor 的 document hash subject 一致。
+
+任何 source drift（即使只是 `COSMETIC`）都会拒绝 repair。原因是缺失的旧 semantic-line signatures 不存在于 snapshot hash 中，无法确定性反推；此时只能重新验证当前 citation 并建立新 baseline，或执行 full-rebuild。

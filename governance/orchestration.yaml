@@ -1,15 +1,16 @@
-version: "5.2.1"
+version: "5.2.2"
 entry_role: tp-workflow-orchestrator
 level_resolution:
   rule: MAX_RISK_FLOW
 confirmation:
   default_policy: material
   supported_policies: [material, each_stage]
+  user_preference_path: ~/.tp-spec/preferences.yaml
 runtime:
   new_public_states: false
   new_database_objects: false
-  ordinary_confirmation_persisted: false
-  trusted_completion_sources: [CHECKPOINT, REVIEW_COMPLETED, VERIFICATION_COMPLETED]
+  ordinary_confirmation_persisted: true
+  trusted_completion_sources: [CHECKPOINT, REVIEW_COMPLETED, VERIFICATION_COMPLETED, DELIVERY_RESULT]
 execution:
   lazy_load_role_skill: true
   prefer_parallel_isolated_subagents: true
@@ -21,12 +22,12 @@ execution:
     allow_default_subagents: false
     allow_full_task_reread: false
     allow_full_knowledge_scan: false
+    require_targeted_knowledge_search: true
 signals:
   include_stage_prefix: "workflow:include-stage:"
   skip_stage_prefix: "workflow:skip-stage:"
   multiple_routes: "workflow:multiple-feasible-routes"
   deep_review: "workflow:deep-review"
-  material_confirmation_prefix: "workflow:material-confirmed:"
   root_cause_prefix: "workflow:root-cause:"
 pipelines:
   L0:

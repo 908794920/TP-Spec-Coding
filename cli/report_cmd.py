@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from datetime import datetime, timedelta, timezone
@@ -547,7 +548,7 @@ def _fmt_value(v: float | None, fmt: str = _FMT_MONEY, na: str = "N/A") -> str:
 
 
 def cmd_report_cost_benefit(args) -> int:
-    """V5.2.1 B-15 成本披露报表（强制四列 + W1-W4 告警 + 净亏独立列）。
+    """V5.2.2 B-15 成本披露报表（强制四列 + W1-W4 告警 + 净亏独立列）。
 
     对齐升级计划 §3.5（L180-189）与 B-13 设计文档。
     仅披露不阻断：不改变 workflow 状态、不改变风险等级。
@@ -683,6 +684,88 @@ def cmd_report_cost_benefit(args) -> int:
     return 0
 
 
+def _positive_days(value: str) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError("--days must be an integer > 0") from exc
+    if number <= 0:
+        raise argparse.ArgumentTypeError("--days must be > 0")
+    return number
+
+
+def _render_context_effectiveness_text(data: Dict[str, Any]) -> str:
+    lines = [f"=== Context Effectiveness: {data['project_id']} ({data['days']}d) ===", ""]
+    labels = {
+        "wiki": "Wiki",
+        "knowledge": "Knowledge",
+        "memory_project": "Project Memory",
+        "memory_skill": "Project Skills",
+    }
+    for source_type in ("wiki", "knowledge", "memory_project", "memory_skill"):
+        item = data["sources"][source_type]
+        lines.extend([
+            labels[source_type],
+            f"  retrieved: {item['retrieved']}",
+            f"  adopted: {item['adopted']}",
+            f"  adoption_rate: {item['adoption_rate'] * 100:.1f}%",
+            "  effective_proxy: "
+            f"positive={item['effective_proxy']['positive']} "
+            f"negative={item['effective_proxy']['negative']} "
+            f"unknown={item['effective_proxy']['unknown']}",
+            "  source_followup: "
+            f"none={item['source_followup']['none']} "
+            f"targeted={item['source_followup']['targeted']} "
+            f"broad={item['source_followup']['broad']} "
+            f"unknown={item['source_followup']['unknown']}",
+            "",
+        ])
+    lines.append("Candidates")
+    if data["candidates"]:
+        for item in data["candidates"]:
+            lines.append(f"  - {item['asset_id']} :: {item['reason']}")
+    else:
+        lines.append("  (none)")
+    if data.get("limitations"):
+        lines.extend(["", "Limitations"])
+        lines.extend(f"  - {item}" for item in data["limitations"])
+    return "\n".join(lines)
+
+
+def cmd_report_context_effectiveness(args) -> int:
+    from . import context_effectiveness
+
+    db_path = dbmod.resolve_db_path(args.db, project_id=args.project)
+    try:
+        conn = dbmod.connect_readonly(db_path)
+    except Exception as exc:
+        print(f"ERROR: cannot open Runtime DB read-only: {exc}", file=sys.stderr)
+        return 4
+    try:
+        until = _now()
+        since = until - timedelta(days=args.days)
+        until_iso = until.strftime("%Y-%m-%dT%H:%M:%S+08:00")
+        since_iso = since.strftime("%Y-%m-%dT%H:%M:%S+08:00")
+        try:
+            data = context_effectiveness.build_context_effectiveness_report(
+                conn,
+                project_id=args.project,
+                days=args.days,
+                since_iso=since_iso,
+                until_iso=until_iso,
+            )
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 4
+    finally:
+        conn.close()
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+    else:
+        print(_render_context_effectiveness_text(data))
+    return 0
+
+
 def add_report_subparsers(report_parser) -> None:
     """注册 report 命令组的子命令。"""
     sub = report_parser.add_subparsers(dest="subcommand", required=True)
@@ -724,8 +807,19 @@ def add_report_subparsers(report_parser) -> None:
     p_cross.add_argument("--db", required=False, default=None)
     p_cross.set_defaults(func=cmd_report_cross)
 
-    # report cost-benefit（V5.2.1 B-15 成本披露报表）
-    p_cb = sub.add_parser("cost-benefit", help="Cost-benefit disclosure report (V5.2.1 B-15)")
+    # report context-effectiveness (V5.2.2 Context Effectiveness)
+    p_ctx = sub.add_parser(
+        "context-effectiveness",
+        help="Read-only Task-bound Context Effectiveness report",
+    )
+    p_ctx.add_argument("--project", required=True)
+    p_ctx.add_argument("--days", type=_positive_days, default=30)
+    p_ctx.add_argument("--json", action="store_true")
+    p_ctx.add_argument("--db", default=None)
+    p_ctx.set_defaults(func=cmd_report_context_effectiveness)
+
+    # report cost-benefit（V5.2.2 B-15 成本披露报表）
+    p_cb = sub.add_parser("cost-benefit", help="Cost-benefit disclosure report (V5.2.2 B-15)")
     p_cb.add_argument("--task", required=True, help="task id")
     p_cb.add_argument("--output", required=True, help="persist report to JSON file path")
     # 四列强制字段

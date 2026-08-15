@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""V5.2.1 可信事件注册表（Final Hardening 单一来源）。
+"""V5.2.2 可信事件注册表（Final Hardening 单一来源）。
 
-依据：《V5.2.1 Final Hardening Invariant 修复任务》Task 1（§3）与《V5.2.1
+依据：《V5.2.2 Final Hardening Invariant 修复任务》Task 1（§3）与《V5.2.2
 HARDENING 源码复审报告》P0-1/P0-2。INV-02：治理事件只能由可信生产者产生；
 INV-03：门禁不信任 type/actor/summary 三元组，只接受含完整身份链的可信事件。
 
@@ -80,7 +80,7 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
     "REVIEW_COMPLETED": _policy("governance", ("review_record", "commit"), True, _REVIEW_IDENTITY_FIELDS),
     "REVIEW": _policy("governance", ("review_record", "commit"), True, _EVENT_SCHEMA_FIELDS),
     "VERIFICATION": _policy("governance", ("commit",), True, _EVENT_SCHEMA_FIELDS),
-    # V5.2.1 Record-first verification is a trusted fact but no longer a state gate.
+    # V5.2.2 Record-first verification is a trusted fact but no longer a state gate.
     # It binds decision + current technical subject digest + real evidence without
     # requiring a role-authored review artifact.
     "VERIFICATION_COMPLETED": _policy(
@@ -95,6 +95,20 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
     # superseded by a rebuilt task). The last workflow state remains auditable.
     "TASK_RETIRED": _policy("governance", ("task_retire",), True, _EVENT_SCHEMA_FIELDS + ("reason",)),
     "OWNER_ACCEPTANCE_DECISION": _policy("governance", ("task_acceptance_override",), True, _EVENT_SCHEMA_FIELDS + ("mode", "acs", "reason", "residual_risk")),
+    "WORKFLOW_CONFIRMATION": _policy(
+        "governance", ("workflow_confirm",), True,
+        _EVENT_SCHEMA_FIELDS + ("confirmation_kind", "source_stage", "source_role", "source_event_id", "source_event_digest",
+                                "target_stage", "target_role", "execution_mode", "route_digest"),
+    ),
+    "DELIVERY_RESULT": _policy(
+        "governance", ("delivery_converge",), True,
+        _EVENT_SCHEMA_FIELDS + ("verification_event_id", "verification_subject_digest",
+                                "knowledge_disposition", "reason"),
+    ),
+    "DELIVERY_DEFERRED_ACCEPTED": _policy(
+        "governance", ("delivery_deferred_accept",), True,
+        _EVENT_SCHEMA_FIELDS + ("delivery_event_id", "delivery_event_digest", "reason"),
+    ),
     "SCOPE_CHANGE": _policy("governance", ("commit", "receipt_record"), True, _EVENT_SCHEMA_FIELDS + ("scope_id",)),
     "AUDIT": _policy("governance", ("admin_recovery", "reconcile"), True, _EVENT_SCHEMA_FIELDS),
     "PHASE_EXIT": _policy("governance", ("commit",), False, _EVENT_SCHEMA_FIELDS),

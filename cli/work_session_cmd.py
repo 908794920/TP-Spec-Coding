@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.2.1 work 命令组（M2）。
+"""TP-Spec-Coding V5.2.2 work 命令组（M2）。
 
 包含：
 - work start / end

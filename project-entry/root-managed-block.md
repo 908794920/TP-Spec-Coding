@@ -6,6 +6,7 @@
 - 需要确认当前解析结果时，使用标准 `tp-spec base resolve --workspace-root <workspace-root>`（或当前 Base 的等价 CLI）。项目文件不得保存 machine-local Base/Wiki/Knowledge 绝对路径。
 - 需要进一步理解代码时按 **Wiki → Knowledge → Source verification**；Wiki 是源码的结构化导航缓存，Knowledge 是长期 canonical 业务/经验知识，Source Code 是当前技术事实最终权威。
 - Knowledge 检索使用标准 `tp-spec knowledge search`，默认保持 `current project + shared`；除非任务明确要求，不得扩大为全局跨项目检索。
+- 正式 Task 中若本阶段真实使用了 Wiki / Knowledge / Project Memory / Project Skill，可在原本的 checkpoint / review / verify / delivery 写入上顺带附 `--context-usage-json`；不得为了 telemetry 额外搜索、扫描、读取或调用模型。`source_followup` 默认 `unknown`，只有存在明确 tool-call/source-read 证据时才填写 `none|targeted|broad`。Telemetry 失败不得阻塞研发。
 - `.tp-spec/` 承载项目 binding、Runtime/Task 状态、项目级 Memory 与配置 override；Memory 可随项目 Git 演进，但不得保存 machine-local/敏感信息。Base 程序、公共角色/规则/Skill/模板/脚本不依赖项目 Junction。
 - 进入具体任务时，以该任务 `status.yaml`、`events.jsonl` 与正式工件为事实记录；账本投影和 generated 文件按当前 Base contract 维护，不手工伪造。
 - 若 Resolver、Registry、Base contract 或项目 binding 无法可靠解析，fail-closed 并如实报告；不得根据本文件之外的旧提示词或历史目录结构自行恢复旧流程。

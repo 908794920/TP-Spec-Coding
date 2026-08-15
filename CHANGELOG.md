@@ -1,5 +1,16 @@
 # Changelog
 
+## V5.2.2 Context Effectiveness + Runtime/Wiki Hardening — 2026-08-15
+
+- 正式将单活动契约从 **5.2.1** 收敛到 **5.2.2**：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.2.2`，不再保留 `templates/5.2.1`。
+- Workflow Confirmation Hardening：用户级 `material` / `each_stage` 策略统一走可信 `WORKFLOW_CONFIRMATION`，普通边界与 material 边界使用不同 confirmation kind；确认绑定上游事实与 route digest，返工或上游变化后旧确认自然失效；Wake Prompt 保持短指针，不复制完整上下文。
+- Structured Delivery Convergence：L2/L3 只有结构化 `DELIVERY_RESULT` 才能完成交付；`CREATED/UPDATED/NO_CHANGE/DEFERRED/BLOCKED` 具有明确机器语义并绑定当前 Verification subject；Knowledge 检索/校验/index 均为 targeted 路径，普通 delivery checkpoint 不再解锁完成。
+- Wiki Daily Hardening：`base namespace-migrate` 覆盖 resolved central Wiki machine metadata 的 namespace/schema token；新增 `wiki anchors-doctor` 与受控 `wiki anchors-repair`，仅在 committed source baseline 仍当前时允许重建缺失 anchor，source drift 时继续 fail-closed。
+- Context Effectiveness / Retrieval Observability：正式 Task 可在既有 checkpoint/review/verify/delivery 写入中附加 best-effort Context Usage receipt，统一观测 Wiki、Knowledge、Project Memory、Project Skill 的 Retrieved/Adopted；只读 `report context-effectiveness` 通过 Runtime 事实推导 Effectiveness proxy，telemetry 失败永不成为 correctness gate。
+- SQLite Runtime schema 与公开 Workflow state **不变**；没有新增 Context DB、Context Gateway、后台 Miner/Daemon、Workflow Stage 或审批。Knowledge 中央 retrieval telemetry 因没有 project/task attribution，不被错误归因到项目级报告。
+- 旧项目和在途 Task 不由 Base Release 自动改写：项目继续通过 `project upgrade-contract --to 5.2.2` 与现有 `task migrate` 显式升级；历史 release/Task/evidence 由 Git 与既有迁移边界保留。
+- Release Convergence 重建 Role Catalog 内容哈希与 `manifest.sha256`，并以 Version Purity、Role Catalog、Manifest、Portability、pytest Full Gate 与 Windows Full Gate 作为发布门禁。
+
 ## V5.2.1 Hardening + Opportunistic Project Memory — 2026-08-14
 
 - 正式将当前单活动契约从 5.2.0 收敛到 **5.2.1**；`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级，活动模板目录切换为 `templates/5.2.1`。

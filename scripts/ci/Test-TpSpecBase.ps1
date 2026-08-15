@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-V5.2.1 P1 unified offline test entry (plan §5 B-02).
+V5.2.2 P1 unified offline test entry (plan §5 B-02).
 
 .DESCRIPTION
 PowerShell dispatcher for the TP-Spec-Coding local test chain. Fully offline:
@@ -11,8 +11,8 @@ containers or credentials.
     forbidden paths, network-primitive blacklist, Python byte-compile and
     test discovery. Deliberately contains NO YAML semantic checks; those
     join only after the P2 controlled loader lands (ruling P0-3).
--Mode Full   : active V5.2.1 release gate only.
--Mode LegacyV510 : frozen prior-contract archive compatibility diagnostics; failures do not make the active V5.2.1 gate red.
+-Mode Full   : active V5.2.2 release gate only.
+-Mode LegacyV510 : frozen prior-contract archive compatibility diagnostics; failures do not make the active V5.2.2 gate red.
 -KeepWorkDir : by default the work directory created by THIS run (resolved
     and verified before removal) is cleaned; only this switch keeps it.
     Child scripts' own audit temp dirs are never touched.
@@ -118,7 +118,7 @@ if ($Mode -eq 'Full') {
 
 Invoke-Check 'static.forbidden.paths' {
     $tracked = @(& git -C $base ls-files)
-    # docs/ 已纳入 Git 管理（V5.2.1 发布完整性）；仅禁止运行时产物与本地状态
+    # docs/ 已纳入 Git 管理（V5.2.2 发布完整性）；仅禁止运行时产物与本地状态
     $forbiddenPatterns = @('__pycache__', '\.pyc$', '^db/registry\.local\.json$', '\.db$', '\.flush-journal', '\.local\.', '\.pytest_cache', '^tp-spec-base\.zip$', '^docs/planning/')
     $hits = @()
     foreach ($p in $forbiddenPatterns) {
@@ -246,7 +246,7 @@ if ($Mode -eq 'Full') {
 # ==================== Full mode: dispatch existing suites ====================
 
 if ($Mode -eq 'Full') {
-    # Active V5.2.1 release gate.  Frozen V5.1.0 suites are intentionally not
+    # Active V5.2.2 release gate.  Frozen V5.1.0 suites are intentionally not
     # part of the default release result; run -Mode LegacyV510 for archive
     # compatibility diagnostics.
     $suites = @(

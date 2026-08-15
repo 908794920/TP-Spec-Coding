@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.1 legacy transition compatibility / recovery service.
+"""V5.2.2 legacy transition compatibility / recovery service.
 
 The active Record-first daily API is implemented by :mod:`cli.record_first` and uses
 the five public states from ``governance/workflow.yaml``.  This module intentionally
@@ -7,7 +7,7 @@ retains the older long-state transition validator/writer so frozen historical
 contracts, legacy ``tp-spec commit`` flows and explicit admin-recovery paths can be
 interpreted or repaired without duplicating durable-journal logic.
 
-It is therefore *not* the normal V5.2.1 role-flow permission engine.  Code that needs
+It is therefore *not* the normal V5.2.2 role-flow permission engine.  Code that needs
 ordinary task progress should use ``task checkpoint/block/resume/verify/complete``.
 
 Within the compatibility/recovery surface, ``validate_transition()`` is read-only and
@@ -786,7 +786,7 @@ def _check_codex_review_body(task_dir: Path, issues: List[ValidationIssue]) -> N
                     # Fourth Hardening（P0-3/P1-2）：PASS 不允许 evidence=none
                     issues.append(ValidationIssue(
                         code=CODE_REVIEW_EMPTY,
-                        message="codex-review PASS evidence 'none' is rejected in V5.2.1; requires a real local_file",
+                        message="codex-review PASS evidence 'none' is rejected in V5.2.2; requires a real local_file",
                         artifact="codex-review.md",
                         field="review.evidence",
                     ))

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from .audit import build_audit_plan
+from .anchors import anchor_health_report, repair_anchor_baseline
 from .config import junction_relation, load_content_systems
 from .coverage import compute_wiki_coverage, evaluate_first_build_readiness, write_coverage_report
 from .manifest import refresh_manifest, write_manifest
@@ -301,6 +302,54 @@ def cmd_audit_record(args) -> int:
         return 1
 
 
+def cmd_anchors_doctor(args) -> int:
+    """Report committed precise-citation anchor coverage without writes."""
+    try:
+        cfg, targets = _resolve(args)
+        results = []
+        degraded = False
+        for t in targets:
+            report = anchor_health_report(
+                wiki_repo_root=t.wiki_repo_root, repo_root=t.repo_root,
+                repo_id=t.repo_id, source_cfg=cfg.source,
+            )
+            results.append({"repo_id": t.repo_id, "report": report})
+            degraded = degraded or report.get("status") != "PASS"
+        _emit({"schema": "tp-spec.wiki-anchors-doctor/v1", "status": "DEGRADED" if degraded else "PASS", "results": results})
+        return 1 if degraded else 0
+    except Exception as exc:
+        _emit({"schema": "tp-spec.wiki-anchors-doctor/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
+        return 1
+
+
+def cmd_anchors_repair(args) -> int:
+    """Safely rebuild partial committed anchors without advancing source baseline."""
+    try:
+        cfg, targets = _resolve(args)
+        results = []
+        blocked = False
+        for t in targets:
+            try:
+                result = repair_anchor_baseline(
+                    wiki_repo_root=t.wiki_repo_root, repo_root=t.repo_root,
+                    repo_id=t.repo_id, source_cfg=cfg.source, apply=bool(args.apply),
+                )
+                results.append({"repo_id": t.repo_id, "result": result})
+            except ValueError as exc:
+                blocked = True
+                results.append({"repo_id": t.repo_id, "status": "BLOCKED", "error": str(exc)})
+        _emit({
+            "schema": "tp-spec.wiki-anchors-repair/v1",
+            "status": "BLOCKED" if blocked else ("PASS" if args.apply else "PLAN"),
+            "apply": bool(args.apply),
+            "results": results,
+        })
+        return 1 if blocked else 0
+    except Exception as exc:
+        _emit({"schema": "tp-spec.wiki-anchors-repair/v1", "status": "BLOCKED", "error": f"{type(exc).__name__}: {exc}"})
+        return 1
+
+
 def cmd_snapshot_commit(args) -> int:
     try:
         cfg, targets = _resolve(args)
@@ -446,6 +495,14 @@ def add_wiki_subparsers(root_subparsers) -> None:
     p.add_argument("--document", action="append", default=[])
     p.add_argument("--topology-reviewed", action="store_true", help="confirm every item in the deterministic audit plan topology_review was actually examined")
     p.set_defaults(func=cmd_audit_record)
+
+    p = subs.add_parser("anchors-doctor", help="Diagnose committed precise-citation anchor baseline coverage")
+    _add_common(p); p.set_defaults(func=cmd_anchors_doctor)
+
+    p = subs.add_parser("anchors-repair", help="Plan/apply safe partial anchor baseline rebuild without advancing source snapshot")
+    _add_common(p)
+    p.add_argument("--apply", action="store_true", help="write rebuilt anchor metadata only when committed source/Wiki subjects are unchanged")
+    p.set_defaults(func=cmd_anchors_repair)
 
     p = subs.add_parser("snapshot-commit", help="Advance source baseline only after current verification/audit PASS")
     _add_common(p); p.set_defaults(func=cmd_snapshot_commit)

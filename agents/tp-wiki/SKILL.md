@@ -1,12 +1,12 @@
 ---
 id: tp-wiki
 name: tp-wiki
-version: 5.2.1
+version: 5.2.2
 status: active
 type: human-owner-skill
 tool_agnostic: 本技能包不要求特定 IDE、账号、插件、模型或绝对路径；从 TP-Spec-Coding 相对路径加载即可。
 description: >
-  代码理解 Wiki 工程师（tp-wiki）：V5.2.1 代码理解 Wiki 专项 Skill：把当前源码事实维护为高信息密度、可溯源、可增量更新的代码认知地图。
+  代码理解 Wiki 工程师（tp-wiki）：V5.2.2 代码理解 Wiki 专项 Skill：把当前源码事实维护为高信息密度、可溯源、可增量更新的代码认知地图。
   不拥有 workflow state；可由 human_owner 显式调用，或由 human_owner 已配置的 canonical Wiki automation 调用。
 ---
 
@@ -123,6 +123,8 @@ SCAN → CLASSIFY → TOPOLOGY → PLAN → AI UPDATE
 ```
 
 以下任一发生都禁止推进 baseline：AI 未更新、质量 FAIL、UNCERTAIN 未解决、L4 未做/失败、运行中断、scan 后源码再次变化。
+
+Anchor baseline 异常时先 `wiki anchors-doctor`。只有 `repairable=true` 才允许 `wiki anchors-repair --apply`；若 current source 已偏离 committed snapshot，则旧行签名不可恢复，必须 fail-closed 转重新验证/full-rebuild。不得手改 `wiki-cite-anchors.json`、hash、snapshot_id 或 cite line。
 
 ## 8. Automation
 

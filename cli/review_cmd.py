@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""V5.2.1 架构评审正式执行链（Hardening P0-2/P0-6）。
+"""架构评审正式执行链（Hardening P0-2/P0-6）。
 
-依据：《V5.2.1 执行AI统一修复与自验证任务》§7 与《V5.2.1 源码级发布审查报告》
+依据：《V5.2.2 执行AI统一修复与自验证任务》§7 与《V5.2.2 源码级发布审查报告》
 P0-2（无架构评审可 DEVELOPING）/P0-6（新增角色不能通过正式 CLI 执行）。
 
 提供 ``tp-spec review record``：
@@ -13,7 +13,7 @@ P0-2（无架构评审可 DEVELOPING）/P0-6（新增角色不能通过正式 CL
 - 经 durable journal + projection 原子提交（复用 commit_cmd._commit_with_recovery），
   失败保留恢复依据，不产生半提交。
 
-V5.2.1 中 Architecture Review 是风险触发的历史事实，不是 DEVELOPING 许可证。
+Architecture Review 是风险触发的历史事实，不是 DEVELOPING 许可证。
 事件仍绑定 review artifact / subject / evidence digest 以便审计，但后续文本变化
 不会自动阻止开发；是否需要重新评审由实际风险和变更语义决定。
 """
@@ -276,6 +276,11 @@ def cmd_review_record(args) -> int:
         timestamp = dbmod.now_iso()
         flush_id = f"REVIEW-{uuid.uuid4().hex}"
         evidence = args.evidence or []
+        from . import context_usage as context_usage_mod
+        decoded_usage, parse_warnings = context_usage_mod.parse_context_usage_json(args.context_usage_json)
+        context_usage_mod.emit_warnings(parse_warnings)
+        usage, usage_warnings = context_usage_mod.normalize_context_usage(decoded_usage)
+        context_usage_mod.emit_warnings(usage_warnings)
         final_artifact_text = _build_review_artifact_text(
             _read(artifact_path), args.decision, args.round, timestamp, evidence, args.findings_count,
         )
@@ -325,6 +330,8 @@ def cmd_review_record(args) -> int:
             "producer": "review_record",
             "schema_version": ACTIVE_CONTRACT,
         }
+        if usage:
+            detail["context_usage"] = usage
         view_rel = _current_view_rel(task["current_state"])
 
         # ---- Task 3 Transaction 阶段：同一 durable transaction 处理
@@ -364,7 +371,7 @@ def cmd_review_record(args) -> int:
 
 
 def add_review_subparsers(subparsers) -> None:
-    p = subparsers.add_parser("review", help="V5.2.1: formal review commands (architecture review record)")
+    p = subparsers.add_parser("review", help="V5.2.2: formal review commands (architecture review record)")
     sub = p.add_subparsers(dest="subcommand", required=True)
 
     pr = sub.add_parser("record", help="Record an ARCHITECTURE review decision by tp-architecture-review")
@@ -378,6 +385,7 @@ def add_review_subparsers(subparsers) -> None:
     pr.add_argument("--findings-count", type=int, required=False, default=0, help="findings count")
     pr.add_argument("--evidence", action="append", help="evidence path(s)")
     pr.add_argument("--summary", required=False, default="architecture review", help="review summary")
+    pr.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks review record")
     pr.add_argument("--project", required=False, default=None)
     pr.add_argument("--db", required=False, default=None)
     pr.set_defaults(func=cmd_review_record)

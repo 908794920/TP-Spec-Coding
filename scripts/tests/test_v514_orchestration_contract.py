@@ -6,7 +6,7 @@ from cli.version import active_version
 BASE=Path(__file__).resolve().parents[2]
 
 def test_contract_and_catalog_are_valid():
-    assert active_version()=='5.2.1'
+    assert active_version()=='5.2.2'
     assert orchestration.validate_contract(BASE)==[]
 
 def test_contract_preserves_record_first_boundaries():
@@ -14,7 +14,9 @@ def test_contract_preserves_record_first_boundaries():
     assert c['entry_role']=='tp-workflow-orchestrator'
     assert c['runtime']['new_public_states'] is False
     assert c['runtime']['new_database_objects'] is False
-    assert c['runtime']['ordinary_confirmation_persisted'] is False
+    assert c['runtime']['ordinary_confirmation_persisted'] is True
+    assert c['confirmation']['default_policy']=='material'
+    assert c['confirmation']['user_preference_path']=='~/.tp-spec/preferences.yaml'
     assert c['execution']['lazy_load_role_skill'] is True
     assert c['execution']['concurrent_workflow_stages'] is False
 

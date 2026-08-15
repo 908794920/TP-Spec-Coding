@@ -8,7 +8,10 @@ from pathlib import Path
 
 import yaml
 
+from . import environment
 from . import orchestration
+from . import workflow_controls
+from . import workflow_records
 
 
 def _emit(data, as_json: bool) -> None:
@@ -16,6 +19,10 @@ def _emit(data, as_json: bool) -> None:
         print(json.dumps(data, ensure_ascii=False, indent=2))
     else:
         print(yaml.safe_dump(data, allow_unicode=True, sort_keys=False).rstrip())
+
+
+def _preferences_path() -> Path:
+    return environment.user_tp_spec_root() / "preferences.yaml"
 
 
 def cmd_next(args) -> int:
@@ -42,9 +49,49 @@ def cmd_doctor(args) -> int:
     return 0 if not errors else 1
 
 
+def cmd_preference(args) -> int:
+    try:
+        path = _preferences_path()
+        if args.set_policy:
+            workflow_controls.write_user_confirmation_policy(path, args.set_policy)
+        contract = orchestration.load_contract(args.base_root)
+        default = str((contract.get("confirmation") or {}).get("default_policy") or "material")
+        configured = workflow_controls.read_user_confirmation_policy(path)
+        effective = workflow_controls.resolve_confirmation_policy(None, path, default)
+        data = {
+            "schema": "tp-spec.workflow-preference/v1",
+            "path": str(path),
+            "configured_confirmation_policy": configured,
+            "effective_confirmation_policy": effective,
+            "base_default": default,
+            "project_override_supported": False,
+        }
+        _emit(data, args.json)
+        return 0
+    except Exception as exc:
+        print(f"WORKFLOW_PREFERENCE_ERROR: {exc}", file=sys.stderr)
+        return 4
+
+
+def cmd_confirm(args) -> int:
+    try:
+        route = workflow_records.confirm_boundary(
+            task_id=args.task,
+            task_dir=args.task_dir,
+            db=args.db,
+            confirmation_policy=args.confirmation_policy,
+        )
+    except Exception as exc:
+        print(f"WORKFLOW_CONFIRM_ERROR: {exc}", file=sys.stderr)
+        return 4
+    _emit(route, args.json)
+    return 0
+
+
 def add_workflow_subparsers(subparsers) -> None:
-    p = subparsers.add_parser("workflow", help="V5.2.1 read-only workflow orchestration")
+    p = subparsers.add_parser("workflow", help="Read-only workflow routing plus explicit human boundary confirmation")
     sub = p.add_subparsers(dest="subcommand", required=True)
+
     pn = sub.add_parser("next", help="Resolve the next workflow role from existing Task facts (read-only)")
     pn.add_argument("--task", required=True)
     pn.add_argument("--db", default=None)
@@ -52,6 +99,21 @@ def add_workflow_subparsers(subparsers) -> None:
     pn.add_argument("--confirmation-policy", choices=["material", "each_stage"], default=None)
     pn.add_argument("--json", action="store_true")
     pn.set_defaults(func=cmd_next)
+
+    pc = sub.add_parser("confirm", help="human_owner: confirm the currently bound ordinary(each_stage) or material workflow boundary")
+    pc.add_argument("--task", required=True)
+    pc.add_argument("--task-dir", required=True)
+    pc.add_argument("--db", default=None)
+    pc.add_argument("--confirmation-policy", choices=["material", "each_stage"], default=None)
+    pc.add_argument("--json", action="store_true")
+    pc.set_defaults(func=cmd_confirm)
+
+    pp = sub.add_parser("preference", help="Show or set the user-level workflow confirmation preference")
+    pp.add_argument("--set", dest="set_policy", choices=["material", "each_stage"], default=None)
+    pp.add_argument("--base-root", default=None)
+    pp.add_argument("--json", action="store_true")
+    pp.set_defaults(func=cmd_preference)
+
     pd = sub.add_parser("doctor", help="Validate orchestration contract and role references (read-only)")
     pd.add_argument("--base-root", default=None)
     pd.add_argument("--json", action="store_true")

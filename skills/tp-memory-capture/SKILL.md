@@ -1,6 +1,6 @@
 ---
 name: tp-memory-capture
-version: 5.2.1
+version: 5.2.2
 description: 内部机会式项目记忆能力；仅在当前角色自然发现高价值、已证实、跨会话可复用且重新发现成本高的项目经验时按需加载，做最小 Memory patch。
 ---
 

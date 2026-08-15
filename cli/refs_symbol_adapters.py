@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.1 B-12 symbol 适配器（Java/Python/Go/TS/JS 五语言行级正则确定性定位）。
+"""V5.2.2 B-12 symbol 适配器（Java/Python/Go/TS/JS 五语言行级正则确定性定位）。
 
 设计依据：历史设计记录 B12-structured-refs-design §4
 证据锚点：升级计划 §3.2 L138-139 / §6 L302 / §7 L316。
