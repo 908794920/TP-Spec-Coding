@@ -1,6 +1,6 @@
 catalog_version: "5.2.1"
 base_version: "5.2.1"
-generated_utc: 20260814T070909Z
+generated_utc: 20260815T070146Z
 generated_by: update_role_catalog.py deterministic metadata/hash refresh
 human_actor:
   id: human_owner
@@ -72,7 +72,7 @@ roles:
   type: human-owner-skill
   skill_path: agents/tp-wiki/SKILL.md
   owns_states: []
-  content_sha256: 81597D95E114D1B43C3C8ADAE0EB510A8894A281A365398B0F0FB4A00726ADAD
+  content_sha256: CCE99FA512F321968DE3699DB9345E580C41E053F106B3ED788E928B0597A676
 state_owner_map:
   NEW: tp-architecture-design
   CANCELLED: human_owner

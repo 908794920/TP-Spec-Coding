@@ -54,6 +54,8 @@ tp-spec wiki scan
 tp-spec wiki plan
 tp-spec wiki maintain
 tp-spec wiki manifest-refresh
+tp-spec wiki anchors-doctor
+tp-spec wiki anchors-repair [--apply]
 tp-spec wiki verify
 tp-spec wiki coverage
 tp-spec wiki audit

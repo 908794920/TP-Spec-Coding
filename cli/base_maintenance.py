@@ -566,7 +566,7 @@ def cmd_installation_migrate(args) -> int:
 
 def cmd_namespace_migrate(args) -> int:
     try:
-        result = migrate_namespace(args.workspace_root, apply=bool(args.apply)) if args.apply else namespace_plan(args.workspace_root)
+        result = migrate_namespace(args.workspace_root, installation_config=args.installation_config, apply=bool(args.apply)) if args.apply else namespace_plan(args.workspace_root, installation_config=args.installation_config)
         _emit(result)
         return 1 if result.get("status") == "BLOCKED" else 0
     except Exception as exc:
@@ -732,8 +732,8 @@ def add_base_subparsers(root_subparsers) -> None:
     p.add_argument("--installation-config",default=None); p.set_defaults(func=cmd_installation_doctor)
     p=sub.add_parser("installation-migrate",help="Plan/apply recognized machine-local installation state migrations")
     p.add_argument("--installation-config",default=None); p.add_argument("--apply",action="store_true"); p.set_defaults(func=cmd_installation_migrate)
-    p=sub.add_parser("namespace-migrate",help="Plan/apply one-shot legacy namespace cutover to tp-spec/.tp-spec")
-    p.add_argument("--workspace-root",default="."); p.add_argument("--apply",action="store_true"); p.set_defaults(func=cmd_namespace_migrate)
+    p=sub.add_parser("namespace-migrate",help="Plan/apply one-shot legacy namespace cutover to tp-spec/.tp-spec, including resolved central Wiki metadata")
+    p.add_argument("--workspace-root",default="."); p.add_argument("--installation-config",default=None); p.add_argument("--apply",action="store_true"); p.set_defaults(func=cmd_namespace_migrate)
     p=sub.add_parser("resolve",help="Resolve Base + project-scoped Wiki/Knowledge roots"); _common_workspace(p); p.set_defaults(func=cmd_resolve)
     p=sub.add_parser("doctor",help="Check installation/binding/Runtime portability/legacy-link health for one/all projects"); _common_workspace(p); p.set_defaults(func=cmd_doctor)
     p=sub.add_parser("inventory",help="Collect workspace roots from registries/inventory and optional bounded discovery"); p.add_argument("--installation-config",default=None); p.add_argument("--inventory",default=None); p.add_argument("--search-root",action="append",default=[]); p.add_argument("--max-depth",type=int,default=5); p.add_argument("--write",action="store_true"); p.set_defaults(func=cmd_inventory)
