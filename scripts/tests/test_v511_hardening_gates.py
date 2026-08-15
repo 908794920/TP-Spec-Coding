@@ -262,15 +262,15 @@ class TestStateBypassNegative(unittest.TestCase):
         rc, out, err = run([
             "task", "checkpoint", "--task", TASK_ID, "--task-dir", str(self.task_dir),
             "--db", self.db_path, "--actor", "tp-delivery-convergence",
-            "--phase", "delivery", "--summary", "delivery converged",
+            "--phase", "delivery", "--summary", "legacy-looking delivery checkpoint",
         ])
         self.assertEqual(rc, 0, (out, err))
         rc, out, err = run([
             "task", "complete", "--task", TASK_ID, "--task-dir", str(self.task_dir),
-            "--db", self.db_path, "--actor", "tp-delivery-convergence", "--summary", "done",
+            "--db", self.db_path, "--actor", "tp-delivery-convergence", "--summary", "still incomplete",
         ])
-        self.assertEqual(rc, 0, (out, err))
-        self.assertEqual(json.loads(out)["verification"], "PASS")
+        self.assertNotEqual(rc, 0)
+        self.assertIn("next_stage=delivery", err + out)
 
     def _advance_verifying_with_pass(self):
         _write_knowledge_complete(self.task_dir)

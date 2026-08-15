@@ -8,14 +8,14 @@ import yaml
 
 from cli import environment, orchestration, record_first
 from scripts.tests.v514_orchestration_testutil import (
-    make_db, add_checkpoint, add_decision, add_review, add_verify,
+    make_db, add_checkpoint, add_decision, add_review, add_verify, add_workflow_confirmation,
 )
 
 
 def _complete_l2_until_verification(db: str, task: str) -> None:
     add_checkpoint(db, task, "tp-requirement-analysis", "requirement", "req")
     add_checkpoint(db, task, "tp-architecture-design", "architecture", "arch")
-    add_decision(db, task, "workflow:material-confirmed:architecture->development")
+    add_workflow_confirmation(db, task)
     add_checkpoint(db, task, "tp-development-engineering", "development", "dev")
     add_verify(db, task, "PASS")
 
@@ -44,7 +44,7 @@ def test_l3_routes_to_required_delivery_after_verification():
         add_checkpoint(db, "TASK-V514", "tp-requirement-analysis", "requirement", "req")
         add_checkpoint(db, "TASK-V514", "tp-architecture-design", "architecture", "arch")
         add_review(db, "TASK-V514", "PASS")
-        add_decision(db, "TASK-V514", "workflow:material-confirmed:architecture->development")
+        add_workflow_confirmation(db, "TASK-V514")
         add_checkpoint(db, "TASK-V514", "tp-development-engineering", "development", "dev")
         add_verify(db, "TASK-V514", "PASS")
         route = orchestration.resolve_route("TASK-V514", db_path=db)
@@ -70,15 +70,15 @@ def test_task_complete_rejects_pending_delivery():
             raise AssertionError("complete must reject while required delivery is pending")
 
 
-def test_delivery_checkpoint_allows_completion_route():
+def test_delivery_checkpoint_does_not_substitute_for_structured_delivery_result():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td) / "p"
         db = make_db(root / ".tp-spec" / "db" / "a.db", risk="L2", flow="L2")
         _complete_l2_until_verification(db, "TASK-V514")
         add_checkpoint(db, "TASK-V514", "tp-delivery-convergence", "delivery", "delivery done")
         route = orchestration.resolve_route("TASK-V514", db_path=db)
-        assert route["recommended_action"] == "task_complete"
-        assert route["next_stage"] == "complete"
+        assert route["recommended_action"] == "dispatch_role"
+        assert route["next_stage"] == "delivery"
 
 
 def test_development_workflow_never_dispatches_tp_knowledge():

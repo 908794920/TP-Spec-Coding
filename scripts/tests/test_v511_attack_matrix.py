@@ -231,9 +231,15 @@ class TestAttackD_AutomaticCompletion(_AttackFixture):
             "--summary", "verified", "--evidence", "evidence/test-result.txt", expect=0,
         )
         run_cli(
-            self.db, self.task_dir, "task", "checkpoint", "--task", self.task_id,
-            "--actor", "tp-delivery-convergence", "--phase", "delivery",
-            "--summary", "delivery converged", expect=0,
+            self.db, self.task_dir, "task", "delivery-converge", "--task", self.task_id,
+            "--knowledge-disposition", "DEFERRED", "--blocker-kind", "RESOLVER_UNAVAILABLE",
+            "--reason", "Knowledge Resolver is unavailable in this completion-focused legacy fixture.",
+            "--recovery-condition", "Knowledge Resolver becomes available and delivery convergence is rerun",
+            "--responsibility", "restore Knowledge Resolver before real canonical convergence", expect=0,
+        )
+        run_cli(
+            self.db, self.task_dir, "task", "delivery-accept-deferred", "--task", self.task_id,
+            "--reason", "Accept temporary Knowledge deferral in this completion-focused legacy regression.", expect=0,
         )
 
     def test_d1_personnel_approval_cli_is_removed(self):
@@ -252,7 +258,7 @@ class TestAttackD_AutomaticCompletion(_AttackFixture):
         self.assertEqual(result["verification"], "PASS")
         self.assertNotIn("CLOSING", out + err)
 
-    def test_d3_acceptance_change_marks_verification_stale_without_fake_pass(self):
+    def test_d3_acceptance_change_invalidates_delivery_and_blocks_stale_completion(self):
         self._verification_ready()
         acceptance = self.task_dir / "acceptance.md"
         text = acceptance.read_text(encoding="utf-8")
@@ -260,12 +266,11 @@ class TestAttackD_AutomaticCompletion(_AttackFixture):
         acceptance.write_text(text, encoding="utf-8", newline="\n")
         rc, out, err = run_cli(
             self.db, self.task_dir, "task", "complete", "--task", self.task_id,
-            "--actor", "tp-verification-engineering", "--summary", "done after subject change", expect=0,
+            "--actor", "tp-verification-engineering", "--summary", "done after subject change",
         )
-        result = json.loads(out)
-        self.assertEqual(result["verification"], "PASS_STALE")
-        final = (self.task_dir / "generated" / "final-result.md").read_text(encoding="utf-8")
-        self.assertIn("PASS_STALE", final)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("INTEGRITY_PIPELINE_PENDING", out + err)
+        self.assertIn("next_stage=delivery", out + err)
 
 
 

@@ -295,9 +295,17 @@ class TestAutomaticCompletion(_TaskFixture):
             "--evidence", "evidence/test-result.txt",
         ], 0)
         run([
-            "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--db", self.db_path, "--actor", "tp-delivery-convergence",
-            "--phase", "delivery", "--summary", "delivery converged",
+            "task", "delivery-converge", "--task", self.task_id, "--task-dir", str(self.task_dir),
+            "--db", self.db_path, "--knowledge-disposition", "DEFERRED",
+            "--blocker-kind", "RESOLVER_UNAVAILABLE",
+            "--reason", "Knowledge Resolver is unavailable in this completion-focused legacy fixture.",
+            "--recovery-condition", "Knowledge Resolver becomes available and delivery convergence is rerun",
+            "--responsibility", "restore Knowledge Resolver before real canonical convergence",
+        ], 0)
+        run([
+            "task", "delivery-accept-deferred", "--task", self.task_id, "--task-dir", str(self.task_dir),
+            "--db", self.db_path,
+            "--reason", "Accept temporary Knowledge deferral in this completion-focused legacy regression.",
         ], 0)
 
     def test_inv08_no_personnel_approval_state_or_cli(self):
@@ -318,19 +326,19 @@ class TestAutomaticCompletion(_TaskFixture):
         self.assertEqual(result["verification"], "PASS")
         self.assertNotIn("CLOSING", out + err)
 
-    def test_inv08_acceptance_change_is_reported_as_stale_not_pass(self):
+    def test_inv08_acceptance_change_invalidates_delivery_and_blocks_stale_completion(self):
         self._verification_ready()
         acceptance = self.task_dir / "acceptance.md"
         text = acceptance.read_text(encoding="utf-8")
         text = text.replace("| AC-01 |  |", "| AC-01 | 新增验收语义 |", 1)
         acceptance.write_text(text, encoding="utf-8", newline="\n")
-        rc, out, _ = run([
+        rc, out, err = run([
             "task", "complete", "--task", self.task_id, "--task-dir", str(self.task_dir),
             "--db", self.db_path, "--actor", "tp-verification-engineering", "--summary", "done",
-        ], 0)
-        self.assertEqual(json.loads(out)["verification"], "PASS_STALE")
-        final = (self.task_dir / "generated" / "final-result.md").read_text(encoding="utf-8")
-        self.assertIn("PASS_STALE", final)
+        ])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("INTEGRITY_PIPELINE_PENDING", out + err)
+        self.assertIn("next_stage=delivery", out + err)
 
 
 # =============================================================================

@@ -11,7 +11,7 @@ roles:
   type: control-role
   skill_path: agents/tp-workflow-orchestrator/SKILL.md
   owns_states: []
-  content_sha256: 569561B2DBFCFE81ECCE9CDA2ED48CF718B45F513D76382BA64367256CE73FFD
+  content_sha256: DE97CE36841E8ED481D39EB813A12E44F8D6A28AD2D64017CC775F7FB92E6F5D
 - workflow_role: tp-requirement-analysis
   display_name: tp-需求分析
   type: workflow-role
@@ -54,7 +54,7 @@ roles:
   type: workflow-role
   skill_path: skills/tp-delivery-convergence/SKILL.md
   owns_states: []
-  content_sha256: 7A7E383367E75EB7C678BC4AAC36A1E5EB0EB9E0E45D21E56AC2534268B622F6
+  content_sha256: 721BEC7C922E5531A4419503103BB28C637A24CCC86B1FC5581C985710F6915C
 - workflow_role: tp-base-maintenance
   display_name: tp-基座维护
   type: human-owner-skill

@@ -1563,11 +1563,25 @@ def cmd_task_acceptance_override(args) -> int:
         conn.close()
 
 
+def _parse_knowledge_signal_args(values):
+    result = []
+    for raw in values or []:
+        try:
+            item = json.loads(raw)
+        except Exception as exc:
+            raise ValueError(f"invalid --knowledge-signal-json: {exc}") from exc
+        if not isinstance(item, dict):
+            raise ValueError("--knowledge-signal-json must decode to an object")
+        result.append(item)
+    return result
+
 def cmd_task_checkpoint(args) -> int:
     from . import record_first
     result = record_first.checkpoint(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
-        phase=args.phase, summary=args.summary, evidence=args.evidence, db=args.db,
+        phase=args.phase, summary=args.summary, evidence=args.evidence,
+        knowledge_signals=_parse_knowledge_signal_args(args.knowledge_signal_json),
+        delivery_signals=args.delivery_signal, db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1597,7 +1611,31 @@ def cmd_task_verify(args) -> int:
     from . import record_first
     result = record_first.verify(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
-        decision=args.decision, summary=args.summary, evidence=args.evidence, db=args.db,
+        decision=args.decision, summary=args.summary, evidence=args.evidence,
+        knowledge_signals=_parse_knowledge_signal_args(args.knowledge_signal_json),
+        delivery_signals=args.delivery_signal, db=args.db,
+    )
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def cmd_task_delivery_converge(args) -> int:
+    from . import workflow_records
+    result = workflow_records.record_delivery_result(
+        task_id=args.task, task_dir=args.task_dir, knowledge_disposition=args.knowledge_disposition,
+        reason=args.reason, knowledge_refs=args.knowledge_ref, knowledge_queries=args.knowledge_query,
+        evidence=args.evidence, source_refs=args.source_ref, recovery_condition=args.recovery_condition,
+        blocker_kind=args.blocker_kind, responsibility=args.responsibility,
+        residual_risks=args.residual_risk, db=args.db,
+    )
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def cmd_task_delivery_accept_deferred(args) -> int:
+    from . import workflow_records
+    result = workflow_records.accept_delivery_deferred(
+        task_id=args.task, task_dir=args.task_dir, reason=args.reason, db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1650,6 +1688,8 @@ def add_task_subparsers(task_parser) -> None:
     p_cp.add_argument("--phase", required=True, choices=record_first.PHASES)
     p_cp.add_argument("--summary", required=True)
     p_cp.add_argument("--evidence", action="append")
+    p_cp.add_argument("--knowledge-signal-json", action="append", help="structured JSON object with type/summary and optional evidence/source_refs")
+    p_cp.add_argument("--delivery-signal", action="append")
     p_cp.add_argument("--db", default=None)
     p_cp.set_defaults(func=cmd_task_checkpoint)
 
@@ -1678,8 +1718,33 @@ def add_task_subparsers(task_parser) -> None:
     p_verify.add_argument("--decision", required=True, choices=["PASS", "FAIL", "NEEDS_FIX"])
     p_verify.add_argument("--summary", required=True)
     p_verify.add_argument("--evidence", action="append")
+    p_verify.add_argument("--knowledge-signal-json", action="append", help="structured JSON object with type/summary and optional evidence/source_refs")
+    p_verify.add_argument("--delivery-signal", action="append")
     p_verify.add_argument("--db", default=None)
     p_verify.set_defaults(func=cmd_task_verify)
+
+    p_delivery = sub.add_parser("delivery-converge", help="L2/L3: record the structured Delivery/Knowledge disposition bound to current verification")
+    p_delivery.add_argument("--task", required=True)
+    p_delivery.add_argument("--task-dir", required=True)
+    p_delivery.add_argument("--knowledge-disposition", required=True, choices=["CREATED", "UPDATED", "NO_CHANGE", "DEFERRED", "BLOCKED"])
+    p_delivery.add_argument("--knowledge-ref", action="append")
+    p_delivery.add_argument("--knowledge-query", action="append", help="focused query; Runtime executes current project + shared search (max 3)")
+    p_delivery.add_argument("--evidence", action="append")
+    p_delivery.add_argument("--source-ref", action="append")
+    p_delivery.add_argument("--reason", required=True)
+    p_delivery.add_argument("--recovery-condition")
+    p_delivery.add_argument("--blocker-kind", choices=["RESOLVER_UNAVAILABLE", "CANONICAL_CONFLICT", "DESTRUCTIVE_MERGE", "INSUFFICIENT_EVIDENCE", "HUMAN_DECISION"])
+    p_delivery.add_argument("--responsibility")
+    p_delivery.add_argument("--residual-risk", action="append")
+    p_delivery.add_argument("--db", default=None)
+    p_delivery.set_defaults(func=cmd_task_delivery_converge)
+
+    p_delivery_defer = sub.add_parser("delivery-accept-deferred", help="human_owner: explicitly accept the latest bound DEFERRED delivery result")
+    p_delivery_defer.add_argument("--task", required=True)
+    p_delivery_defer.add_argument("--task-dir", required=True)
+    p_delivery_defer.add_argument("--reason", required=True)
+    p_delivery_defer.add_argument("--db", default=None)
+    p_delivery_defer.set_defaults(func=cmd_task_delivery_accept_deferred)
 
     p_complete = sub.add_parser("complete", help="Record terminal completion and expose actual verification facts; no CLOSING phase")
     p_complete.add_argument("--task", required=True)

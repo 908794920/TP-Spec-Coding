@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 from cli import orchestration
-from scripts.tests.v514_orchestration_testutil import make_db,add_checkpoint,add_decision,add_review,add_verify
+from scripts.tests.v514_orchestration_testutil import make_db,add_checkpoint,add_decision,add_review,add_verify,add_workflow_confirmation
 
 
 def test_effective_level_never_downgrades():
@@ -44,7 +44,7 @@ def test_l3_architecture_review_then_material_confirmation():
         assert r['next_stage']=='development' and r['confirmation_required'] is True
         assert r['recommended_action']=='await_confirmation' and r['skill_path'] is None
         assert r['transition_from_role']=='tp-architecture-review'
-        add_decision(db,'TASK-V514','workflow:material-confirmed:architecture->development')
+        add_workflow_confirmation(db,'TASK-V514')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['confirmation_required'] is False and r['skill_path'].endswith('tp-development-engineering/SKILL.md')
 
@@ -52,7 +52,7 @@ def test_verification_rework_and_deep_review():
     with tempfile.TemporaryDirectory() as td:
         db=make_db(Path(td)/'a.db',risk='L3',flow='L3')
         for actor,phase in [('tp-requirement-analysis','requirement'),('tp-architecture-design','architecture')]: add_checkpoint(db,'TASK-V514',actor,phase)
-        add_review(db,'TASK-V514','PASS'); add_decision(db,'TASK-V514','workflow:material-confirmed:architecture->development')
+        add_review(db,'TASK-V514','PASS'); add_workflow_confirmation(db,'TASK-V514')
         add_checkpoint(db,'TASK-V514','tp-development-engineering','development')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='verification' and r['execution_mode']=='DEEP_REVIEW'

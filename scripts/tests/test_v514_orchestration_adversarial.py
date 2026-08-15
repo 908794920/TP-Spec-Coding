@@ -2,7 +2,7 @@ import tempfile
 from pathlib import Path
 import pytest
 from cli import orchestration
-from scripts.tests.v514_orchestration_testutil import make_db,add_checkpoint,add_verify,add_review
+from scripts.tests.v514_orchestration_testutil import make_db,add_checkpoint,add_verify,add_review,add_workflow_confirmation
 
 
 def test_path_escape_is_rejected():
@@ -67,13 +67,12 @@ def test_architecture_revise_new_checkpoint_invalidates_stale_downstream_work():
 
 
 def test_old_material_confirmation_is_stale_after_architecture_revision():
-    from scripts.tests.v514_orchestration_testutil import add_decision
     with tempfile.TemporaryDirectory() as td:
         db=make_db(Path(td)/'a.db',risk='L3',flow='L3')
         add_checkpoint(db,'TASK-V514','tp-requirement-analysis','requirement')
         add_checkpoint(db,'TASK-V514','tp-architecture-design','architecture')
         add_review(db,'TASK-V514','PASS')
-        add_decision(db,'TASK-V514','workflow:material-confirmed:architecture->development')
+        add_workflow_confirmation(db,'TASK-V514')
         add_checkpoint(db,'TASK-V514','tp-development-engineering','development')
         add_review(db,'TASK-V514','REVISE')
         add_checkpoint(db,'TASK-V514','tp-architecture-design','architecture','revision done')

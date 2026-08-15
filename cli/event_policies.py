@@ -95,6 +95,20 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
     # superseded by a rebuilt task). The last workflow state remains auditable.
     "TASK_RETIRED": _policy("governance", ("task_retire",), True, _EVENT_SCHEMA_FIELDS + ("reason",)),
     "OWNER_ACCEPTANCE_DECISION": _policy("governance", ("task_acceptance_override",), True, _EVENT_SCHEMA_FIELDS + ("mode", "acs", "reason", "residual_risk")),
+    "WORKFLOW_CONFIRMATION": _policy(
+        "governance", ("workflow_confirm",), True,
+        _EVENT_SCHEMA_FIELDS + ("confirmation_kind", "source_stage", "source_role", "source_event_id", "source_event_digest",
+                                "target_stage", "target_role", "execution_mode", "route_digest"),
+    ),
+    "DELIVERY_RESULT": _policy(
+        "governance", ("delivery_converge",), True,
+        _EVENT_SCHEMA_FIELDS + ("verification_event_id", "verification_subject_digest",
+                                "knowledge_disposition", "reason"),
+    ),
+    "DELIVERY_DEFERRED_ACCEPTED": _policy(
+        "governance", ("delivery_deferred_accept",), True,
+        _EVENT_SCHEMA_FIELDS + ("delivery_event_id", "delivery_event_digest", "reason"),
+    ),
     "SCOPE_CHANGE": _policy("governance", ("commit", "receipt_record"), True, _EVENT_SCHEMA_FIELDS + ("scope_id",)),
     "AUDIT": _policy("governance", ("admin_recovery", "reconcile"), True, _EVENT_SCHEMA_FIELDS),
     "PHASE_EXIT": _policy("governance", ("commit",), False, _EVENT_SCHEMA_FIELDS),
