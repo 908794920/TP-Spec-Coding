@@ -31,7 +31,7 @@ def test_invalid_user_policy_fails_closed(tmp_path: Path):
 
 def test_boundary_confirmation_is_bound_to_source_fact_and_target():
     binding=build_boundary_binding(task_id='TASK-1',source_stage='verification',source_role='tp-verification-engineering',source_event_id=42,source_event_digest='abc',target_stage='development',target_role='tp-development-engineering',execution_mode='DIRECT')
-    event={'task_id':'TASK-1','event_type':'WORKFLOW_CONFIRMATION','actor_role':'human_owner','created_at':'2026-08-14T00:00:00Z','workflow_version':'5.2.2','detail_json':json.dumps({'producer':'workflow_confirm','transaction_id':'tx1','schema_version':'5.2.2','task_id':'TASK-1','actor_role':'human_owner','created_at':'2026-08-14T00:00:00Z',**binding})}
+    event={'task_id':'TASK-1','event_type':'WORKFLOW_CONFIRMATION','actor_role':'human_owner','created_at':'2026-08-14T00:00:00Z','workflow_version':'5.2.3','detail_json':json.dumps({'producer':'workflow_confirm','transaction_id':'tx1','schema_version':'5.2.3','task_id':'TASK-1','actor_role':'human_owner','created_at':'2026-08-14T00:00:00Z',**binding})}
     assert workflow_confirmation_matches(event,binding)
     stale=dict(binding); stale['source_event_id']=43
     assert not workflow_confirmation_matches(event,stale)
@@ -82,14 +82,14 @@ from cli.workflow_records import build_confirmation_detail, build_delivery_detai
 
 def test_confirmation_detail_keeps_binding_and_trusted_identity_fields():
     binding=build_boundary_binding(task_id='TASK-1',source_stage='requirement',source_role='tp-requirement-analysis',source_event_id=9,source_event_digest='sha256:event',target_stage='architecture',target_role='tp-architecture-design',execution_mode='DIRECT')
-    detail=build_confirmation_detail(task_id='TASK-1',binding=binding,transaction_id='tx-1',flush_id='CONFIRM-1',created_at='2026-08-14T00:00:00Z',schema_version='5.2.2')
+    detail=build_confirmation_detail(task_id='TASK-1',binding=binding,transaction_id='tx-1',flush_id='CONFIRM-1',created_at='2026-08-14T00:00:00Z',schema_version='5.2.3')
     assert detail['producer']=='workflow_confirm' and detail['actor_role']=='human_owner'
     assert detail['transaction_id']=='tx-1' and detail['task_id']=='TASK-1'
     assert all(detail[k]==v for k,v in binding.items())
 
 
 def test_delivery_detail_binds_verification_and_disposition_fields():
-    detail=build_delivery_detail(task_id='TASK-1',transaction_id='tx-2',flush_id='DELIVERY-1',created_at='2026-08-14T00:00:00Z',schema_version='5.2.2',verification_event_id=77,verification_subject_digest='sha256:subject',knowledge_disposition='NO_CHANGE',reason='Targeted project+shared search found no durable delta after verification.',search_receipts=[SEARCH_RECEIPT])
+    detail=build_delivery_detail(task_id='TASK-1',transaction_id='tx-2',flush_id='DELIVERY-1',created_at='2026-08-14T00:00:00Z',schema_version='5.2.3',verification_event_id=77,verification_subject_digest='sha256:subject',knowledge_disposition='NO_CHANGE',reason='Targeted project+shared search found no durable delta after verification.',search_receipts=[SEARCH_RECEIPT])
     assert detail['producer']=='delivery_converge' and detail['actor_role']=='tp-delivery-convergence'
     assert detail['verification_event_id']==77 and detail['verification_subject_digest']=='sha256:subject'
     assert detail['knowledge_disposition']=='NO_CHANGE' and detail['search_receipts']==[SEARCH_RECEIPT]
@@ -99,9 +99,9 @@ from cli.delivery_contract import find_delivery_completion_event
 
 
 def _trusted_event(event_id, event_type, actor, producer, detail_extra=None):
-    detail={'transaction_id':f'tx-{event_id}','producer':producer,'schema_version':'5.2.2','task_id':'TASK-1','actor_role':actor,'created_at':'2026-08-14T00:00:00Z'}
+    detail={'transaction_id':f'tx-{event_id}','producer':producer,'schema_version':'5.2.3','task_id':'TASK-1','actor_role':actor,'created_at':'2026-08-14T00:00:00Z'}
     detail.update(detail_extra or {})
-    return {'id':event_id,'task_id':'TASK-1','event_type':event_type,'actor_role':actor,'to_stage':'','summary':'','detail_json':json.dumps(detail,ensure_ascii=False),'workflow_version':'5.2.2','created_at':'2026-08-14T00:00:00Z'}
+    return {'id':event_id,'task_id':'TASK-1','event_type':event_type,'actor_role':actor,'to_stage':'','summary':'','detail_json':json.dumps(detail,ensure_ascii=False),'workflow_version':'5.2.3','created_at':'2026-08-14T00:00:00Z'}
 
 
 def test_trusted_event_detail_requires_identity_chain():

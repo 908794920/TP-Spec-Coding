@@ -9,3 +9,6 @@ Knowledge 的 Scheduler 执行者是对话模型，不是纯脚本守护进程�
 Scheduler bootstrap 必须先通过用户 `~/.tp-spec/installation.yaml`（或等价已安装命令）解析 physical BaseRoot，再读取 Base 内 canonical protocol；项目 `.tp-spec/scripts` Junction 不是运行前提。
 
 - Wiki Scheduler 可以以 Wiki System Root 作为执行锚点，但必须通过 Installation + Workspace Inventory + Repo Registry 逐个解析 Source Workspace；Wiki Root 永远不是 `--workspace-root`。
+
+
+Autonomous Maintenance 使用 `automation/autonomy/`；其 Scheduler 只负责唤醒，真正执行必须由可访问本地 Workspace/Git/Python/Agent 的 Executor 完成。

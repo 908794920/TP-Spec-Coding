@@ -1,4 +1,4 @@
-version: 5.2.2
+version: 5.2.3
 mode: record-first
 principle: business work first; Runtime owns bookkeeping
 daily_api:
@@ -53,7 +53,7 @@ daily_api:
 project_api:
   project_bootstrap_check: tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only
   project_bootstrap: tp-spec project bootstrap --id <PROJECT> --root <ROOT>
-  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.2.2
+  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.2.3
 errors:
   PROJECT_BOOTSTRAP_AVAILABLE: read-only bootstrap check found a pristine project that may be initialized only after explicit human_owner action
   PROJECT_NOT_INITIALIZED: project ledger is not initialized; run project bootstrap/init first
@@ -79,7 +79,7 @@ optional_capabilities:
     are WARN
   work_sessions: available for timing evidence; never a workflow blocker
   acceptance_override: human_owner defer/waive without forging PASS
-  legacy_commit: compatibility/recovery surface; not the V5.2.2 daily role API
+  legacy_commit: compatibility/recovery surface; not the V5.2.3 daily role API
   context_effectiveness: >-
     Read-only report over Task-bound Context Usage receipts. It never gates workflow
     and never mutates Context assets.

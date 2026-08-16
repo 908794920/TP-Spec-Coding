@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    TP-Spec-Coding V5.2.2 交接编排包装器
+    TP-Spec-Coding V5.2.3 交接编排包装器
 .DESCRIPTION
     检测 DB 后端是否启用：
     - 启用：projection rebuild → Invoke-TpSpecHandoffFlush.ps1 → event sync（顺序不可反）

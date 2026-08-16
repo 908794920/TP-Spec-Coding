@@ -1,4 +1,4 @@
-version: "5.2.2"
+version: "5.2.3"
 team:
   name: "Personal AI Software Development System"
   description: "个人本地 AI 研发协作；开发优先，Runtime 旁路留痕。"

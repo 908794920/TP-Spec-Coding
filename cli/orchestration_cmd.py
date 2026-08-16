@@ -30,6 +30,7 @@ def cmd_next(args) -> int:
         route = orchestration.resolve_route(
             args.task, db_path=args.db, base_root=args.base_root,
             confirmation_policy=args.confirmation_policy,
+            allowed_effects=args.allowed_effect,
         )
     except Exception as exc:
         print(f"WORKFLOW_ROUTE_ERROR: {exc}", file=sys.stderr)
@@ -97,6 +98,8 @@ def add_workflow_subparsers(subparsers) -> None:
     pn.add_argument("--db", default=None)
     pn.add_argument("--base-root", default=None)
     pn.add_argument("--confirmation-policy", choices=["material", "each_stage"], default=None)
+    pn.add_argument("--allowed-effect", action="append", choices=["repo_mutation"], default=None,
+                    help="optional execution-envelope effect allowed by an external controller")
     pn.add_argument("--json", action="store_true")
     pn.set_defaults(func=cmd_next)
 

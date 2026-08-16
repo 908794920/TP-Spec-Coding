@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.2 C1 anchor_check 确定性锚点校验（B-17 C1-P1~P9）。
+"""V5.2.3 C1 anchor_check 确定性锚点校验（B-17 C1-P1~P9）。
 
 设计依据：历史设计记录 C1-review-preflight-design §4
 证据锚点：升级计划 §3.1 L102-109；评审表 9.4 第 1 行（L333）。
@@ -11,7 +11,7 @@
 ④ hunk 滑动窗口确定性偏移（固定窗口/固定步长/确定性首匹配回溯）。
 
 失败不删除 finding，标 anchor_status: unverified 交 tp-verification-engineering；
-V5.2.2 不包含 OCR 式 LLM 评论过滤，所有预检命中保留。
+V5.2.3 不包含 OCR 式 LLM 评论过滤，所有预检命中保留。
 """
 
 from __future__ import annotations

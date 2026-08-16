@@ -1,14 +1,14 @@
 ---
 id: tp-architecture-design
 name: tp-架构设计
-version: 5.2.2
+version: 5.2.3
 status: active
 type: workflow-role
 role: tp-architecture-design
 description: 架构设计工程师（tp-architecture-design）：基于真实代码与需求事实形成可实施技术方案、风险判断和必要拆解；Architecture Review 仅按风险触发。
 ---
 
-# tp-架构设计 — V5.2.2
+# tp-架构设计 — V5.2.3
 
 ## 目标
 用最少流程成本给出可靠、可实施的技术判断。重点是需求覆盖、代码事实、影响范围、风险、方案与验证方式，不是维护状态机。
@@ -68,6 +68,6 @@ description: 架构设计工程师（tp-architecture-design）：基于真实代
 
 只有在当前工作**自然出现**高价值项目记忆信号时，才按需加载 `skills/tp-memory-capture/SKILL.md`：例如 human_owner 明确强调“以后记住/不要再犯”，或发现有证据、跨会话可复用且重新发现成本高的项目规则/方法。**不得为了寻找 Memory 主动扫描 Task History、Knowledge、源码或全部 Skills。** Memory 缺失、损坏或不值得写时直接继续当前职责，不得形成 blocker。
 
-## Orchestrator 协作（V5.2.2）
+## Orchestrator 协作（V5.2.3）
 
 可由 `tp-workflow-orchestrator` 通过 `role-catalog.yaml` 调度；被调度后仍完整遵守本角色职责，不自行跨阶段替代其他专业角色。阶段形成有意义事实时最多记录一次现有 checkpoint/review/verify，不为编排创建空工件。返回紧凑 Stage Result（outcome/summary/evidence/user_decision_required/next_hint）供主编排器继续判断；该返回不是第二账本。

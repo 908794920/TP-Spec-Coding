@@ -19,7 +19,7 @@ ACTIVE_VERSION = (BASE / "VERSION").read_text(encoding="utf-8").strip()
 ALL_AGENTS = (
     "tp-workflow-orchestrator", "tp-requirement-analysis", "tp-architecture-design", "tp-architecture-review",
     "tp-product-design", "tp-development-engineering", "tp-verification-engineering",
-    "tp-delivery-convergence", "tp-base-maintenance", "tp-knowledge", "tp-wiki",
+    "tp-delivery-convergence", "tp-base-maintenance", "tp-knowledge", "tp-wiki", "tp-project-autonomy",
 )
 
 
@@ -35,7 +35,7 @@ def read_skill(agent: str) -> str:
 
 
 class TestRoleCatalog(unittest.TestCase):
-    def test_catalog_has_nine_roles_and_hashes(self):
+    def test_catalog_has_expected_roles_and_hashes(self):
         catalog = yaml.safe_load((BASE / "agents" / "role-catalog.yaml").read_text(encoding="utf-8"))
         self.assertEqual(catalog["catalog_version"], ACTIVE_VERSION)
         self.assertEqual({r["workflow_role"] for r in catalog["roles"]}, set(ALL_AGENTS))

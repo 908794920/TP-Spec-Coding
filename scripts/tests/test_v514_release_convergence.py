@@ -23,6 +23,7 @@ EXPOSED_AGENTS = {
     "tp-base-maintenance",
     "tp-knowledge",
     "tp-wiki",
+    "tp-project-autonomy",
 }
 LEGACY_CONTRACT = "5.1." + "3"
 
@@ -62,4 +63,4 @@ def test_post_migration_contract_check_detects_any_leftover_explicit_version():
             f"---\nartifact: tech-design\nartifact_contract:\n  version: \"{LEGACY_CONTRACT}\"\n---\n",
             encoding="utf-8",
         )
-        assert task_cmd._post_migration_contract_issues(task_dir, "5.2.2") == [f"tech-design.md:{LEGACY_CONTRACT}"]
+        assert task_cmd._post_migration_contract_issues(task_dir, "5.2.3") == [f"tech-design.md:{LEGACY_CONTRACT}"]

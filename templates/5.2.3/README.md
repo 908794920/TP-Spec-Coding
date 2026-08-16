@@ -1,4 +1,4 @@
-# V5.2.2 Task 模板 — Record-first
+# V5.2.3 Task 模板 — Record-first
 
 这套模板服务于 **完成开发任务 + 事后溯源**。SQLite/event ledger 是权威记录；Markdown 只承载有业务价值的内容。
 

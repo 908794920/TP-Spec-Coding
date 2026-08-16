@@ -1,7 +1,7 @@
 ---
 id: tp-workflow-orchestrator
 name: tp-工作流编排
-version: 5.2.2
+version: 5.2.3
 status: active
 type: control-role
 role: tp-workflow-orchestrator

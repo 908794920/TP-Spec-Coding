@@ -2,7 +2,7 @@
 artifact: requirement-knowledge
 task_id: ""
 artifact_contract:
-  version: 5.2.2
+  version: 5.2.3
 ---
 
 # Requirement Knowledge（按需）

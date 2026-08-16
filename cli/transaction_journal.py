@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
-"""V5.2.2 durable transaction journal（P0：强制终止后可确定性恢复）。
+"""V5.2.3 durable transaction journal（P0：强制终止后可确定性恢复）。
 
-纯 stdlib、离线。commit/reconcile 在正式替换文件前写入持久化 journal，
-崩溃（kill/断电/解释器崩溃）后由 reconcile 依据 journal + DB revision 判定恢复：
+纯 stdlib、离线。commit/reconcile 在正式替换文件前写入持久化 journal。
+该机制面向进程被 kill、解释器崩溃等 process-crash recovery，由 reconcile 依据
+journal + DB revision 判定恢复；当前未执行文件/目录 fsync，因此不保证突然断电或
+存储缓存丢失后的 power-loss durability：
 
 - 阶段：PREPARED → FILES_REPLACED → DB_COMMITTED → COMPLETED（完成后删除 journal）；
 - journal 位置：``<task_dir>/.tp-spec/transactions/<transaction_id>.json``；
@@ -21,7 +23,7 @@
 的 flush 可能使事件数撞上 expected_revision_after。因此情况 B 必须同时满足
 state+owner+目标事件+flush_id+revision 五要素，任一不满足即情况 C。
 
-设计依据：V5.2.2 AI-A 定向修复任务书 §3 与审查报告 §3.2。
+设计依据：V5.2.3 AI-A 定向修复任务书 §3 与审查报告 §3.2。
 """
 from __future__ import annotations
 
@@ -196,7 +198,7 @@ def remove_journal(task_dir: Path, transaction_id: str) -> None:
 def current_revision(conn, task_id: Optional[str] = None) -> int:
     """DB 推进度量：task_event 行数（按 task_id 隔离）。
 
-    V5.2.2 P0-3：revision 必须按 task_id 隔离，禁止使用全局 COUNT(*)。
+    V5.2.3 P0-3：revision 必须按 task_id 隔离，禁止使用全局 COUNT(*)。
     全局计数会导致任务 A 未提交时任务 B 增加 event 使 A 误判提交成功。
     task_id 为 None 时回退全局计数（仅向后兼容旧调用点）。
     """

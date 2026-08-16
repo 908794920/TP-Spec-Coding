@@ -1,5 +1,5 @@
 version: "1.0.0"
-contract_version: "5.2.2"
+contract_version: "5.2.3"
 purpose: "Optional architecture planning strategy. Comparative mode is UltraPlan Lite; it is never a mandatory workflow state."
 default_mode: DIRECT
 modes:
