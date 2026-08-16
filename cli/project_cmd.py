@@ -44,6 +44,27 @@ def cmd_project_init(args) -> int:
             file=sys.stderr,
         )
         return 4
+
+    # v5.2.3 identity hardening: one project_id may not silently acquire a second
+    # live canonical workspace.  Stale/non-existent roots remain recoverable through
+    # the existing rebind/bootstrap flows; only a provably live duplicate is blocked.
+    registered = _registered_project(project_id, getattr(args, "registry", None))
+    if registered is not None:
+        existing_root = str(registered.get("root_path") or "").strip()
+        if (
+            existing_root
+            and os.path.isabs(existing_root)
+            and not same_path(existing_root, root_path)
+            and os.path.exists(existing_root)
+        ):
+            print(
+                f"PROJECT_IDENTITY_CONFLICT: project '{project_id}' is already bound to live workspace "
+                f"{existing_root}; refusing second live workspace {root_path}. "
+                "If the project moved, use 'base sync-project --apply' after verifying identity.",
+                file=sys.stderr,
+            )
+            return 4
+
     # 唯一活动契约门控：显式传入任何非当前版本立即拒绝（审计 P0-1 修复）
     try:
         gate_task_contract(base_version)

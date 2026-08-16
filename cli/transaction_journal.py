@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """V5.2.2 durable transaction journal（P0：强制终止后可确定性恢复）。
 
-纯 stdlib、离线。commit/reconcile 在正式替换文件前写入持久化 journal，
-崩溃（kill/断电/解释器崩溃）后由 reconcile 依据 journal + DB revision 判定恢复：
+纯 stdlib、离线。commit/reconcile 在正式替换文件前写入持久化 journal。
+该机制面向进程被 kill、解释器崩溃等 process-crash recovery，由 reconcile 依据
+journal + DB revision 判定恢复；当前未执行文件/目录 fsync，因此不保证突然断电或
+存储缓存丢失后的 power-loss durability：
 
 - 阶段：PREPARED → FILES_REPLACED → DB_COMMITTED → COMPLETED（完成后删除 journal）；
 - journal 位置：``<task_dir>/.tp-spec/transactions/<transaction_id>.json``；

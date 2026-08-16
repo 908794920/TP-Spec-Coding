@@ -27,6 +27,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import db as dbmod
 from . import workflow_loader
 from .frontmatter import FRONTMATTER_RE
+from .environment import EnvironmentConfigError, load_project_binding
+from .path_identity import same_path
 from .version import active_version
 from .workflow_loader import WorkflowLoadError
 
@@ -303,6 +305,83 @@ def _adopt_intake_artifacts(scaffold_dir: Path, intake_dir: Path, task_id: str, 
     return adopted
 
 
+_TASK_CREATE_TX_SCHEMA = "tp-spec.task-create/v1"
+_TASK_CREATE_TX_NAME = "create-transaction.json"
+
+
+def _task_create_workspace_root(args, project_id: str) -> Optional[Path]:
+    """Return the workspace root when the invocation provides enough proof.
+
+    Modern project bindings and canonical ``.tp-spec/tasks/<task>`` locations are
+    authoritative enough for a mutation-time identity check.  Legacy/custom task
+    layouts without either signal keep their existing behavior rather than guessing.
+    """
+    task_dir_arg = getattr(args, "task_dir", None)
+    if task_dir_arg:
+        task_dir = Path(task_dir_arg).resolve()
+        parent = task_dir.parent
+        if parent.name == "tasks" and parent.parent.name == ".tp-spec":
+            return parent.parent.parent.resolve()
+
+    cwd = Path.cwd().resolve()
+    try:
+        binding = load_project_binding(cwd)
+    except EnvironmentConfigError:
+        return None
+    if binding.exists and binding.project_id == project_id:
+        return cwd
+    return None
+
+
+def _task_create_marker_path(task_dir: Path) -> Path:
+    return task_dir / ".tp-spec" / _TASK_CREATE_TX_NAME
+
+
+def _write_task_create_marker(task_dir: Path, payload: Dict[str, Any]) -> Path:
+    marker = _task_create_marker_path(task_dir)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    tmp = marker.with_name(f".{marker.name}.{uuid.uuid4().hex[:8]}.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+    os.replace(tmp, marker)
+    return marker
+
+
+def _recover_interrupted_task_create(
+    conn, task_dir: Path, *, task_id: str, project_id: str, db_path: str
+) -> str:
+    """Recover only a scaffold proven to belong to an interrupted task create.
+
+    If SQLite has no matching task row, the marked scaffold is an uncommitted
+    projection and is removed so the create can be retried.  If SQLite already has
+    the task, only the stale marker is removed.  Unmarked/malformed directories are
+    never guessed about and remain fail-closed through normal scaffold preflight.
+    """
+    marker = _task_create_marker_path(task_dir)
+    if not marker.is_file():
+        return ""
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(payload, dict) or payload.get("schema") != _TASK_CREATE_TX_SCHEMA:
+        return ""
+    if str(payload.get("task_id") or "") != task_id or str(payload.get("project_id") or "") != project_id:
+        return ""
+    marker_db = str(payload.get("db_path") or "").strip()
+    if not marker_db or not same_path(marker_db, db_path):
+        return ""
+
+    row = conn.execute("SELECT task_id FROM task WHERE task_id=?", (task_id,)).fetchone()
+    if row is None:
+        shutil.rmtree(task_dir)
+        return "ORPHAN_REMOVED"
+    try:
+        marker.unlink()
+    except OSError:
+        pass
+    return "COMMITTED_MARKER_CLEANED"
+
+
 def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, flow: str, created_at: str) -> Path:
     """Build a complete V5.2.2 task scaffold in a temporary sibling directory.
 
@@ -392,7 +471,7 @@ def cmd_task_create(args) -> int:
                 )
                 return 4
             proj = probe.execute(
-                "SELECT project_id, base_version FROM project WHERE project_id = ?",
+                "SELECT project_id, root_path, base_version FROM project WHERE project_id = ?",
                 (project_id,),
             ).fetchone()
         finally:
@@ -407,6 +486,18 @@ def cmd_task_create(args) -> int:
     if proj is None:
         print(f"ERROR: project not found: {project_id}", file=sys.stderr)
         return 4
+
+    workspace_root = _task_create_workspace_root(args, project_id)
+    if workspace_root is not None:
+        stored_root = str(proj["root_path"] or "").strip()
+        if not stored_root or not os.path.isabs(stored_root) or not same_path(stored_root, workspace_root):
+            print(
+                f"PROJECT_WORKSPACE_MISMATCH: Runtime project '{project_id}' is bound to "
+                f"{stored_root or '<missing>'}, but this task create targets workspace {workspace_root}; "
+                "refusing cross-workspace mutation. Repair the registry/rebind the project before retrying.",
+                file=sys.stderr,
+            )
+            return 4
     try:
         conn = dbmod.connect(db_path)
     except Exception as exc:
@@ -426,6 +517,19 @@ def cmd_task_create(args) -> int:
                 file=sys.stderr,
             )
             return 4
+        requested_scaffold_target = None
+        intake_arg = getattr(args, 'from_intake', None)
+        if getattr(args, 'scaffold', False) or intake_arg:
+            requested_scaffold_target = (
+                Path(args.task_dir).resolve()
+                if getattr(args, 'task_dir', None)
+                else (Path.cwd() / '.tp-spec' / 'tasks' / task_id).resolve()
+            )
+            if requested_scaffold_target.exists():
+                _recover_interrupted_task_create(
+                    conn, requested_scaffold_target, task_id=task_id, project_id=project_id, db_path=db_path
+                )
+
         # 校验 task_id 不存在
         existing = conn.execute("SELECT task_id FROM task WHERE task_id = ?", (task_id,)).fetchone()
         if existing is not None:
@@ -435,13 +539,23 @@ def cmd_task_create(args) -> int:
         scaffold_target = None
         scaffold_tmp = None
         adopted_intake: List[str] = []
-        intake_arg = getattr(args, 'from_intake', None)
         if getattr(args, 'scaffold', False) or intake_arg:
-            scaffold_target = Path(args.task_dir).resolve() if getattr(args, 'task_dir', None) else (Path.cwd() / '.tp-spec' / 'tasks' / task_id).resolve()
+            scaffold_target = requested_scaffold_target
             try:
                 scaffold_tmp = _prepare_task_scaffold(scaffold_target, task_id, args.title or '', args.risk, args.flow, now)
                 if intake_arg:
                     adopted_intake = _adopt_intake_artifacts(scaffold_tmp, Path(intake_arg), task_id, now)
+                _write_task_create_marker(
+                    scaffold_tmp,
+                    {
+                        "schema": _TASK_CREATE_TX_SCHEMA,
+                        "task_id": task_id,
+                        "project_id": project_id,
+                        "db_path": str(Path(db_path).resolve()),
+                        "phase": "PREPARED",
+                        "created_at": now,
+                    },
+                )
             except Exception as e:
                 if scaffold_tmp is not None and scaffold_tmp.exists():
                     shutil.rmtree(scaffold_tmp, ignore_errors=True)
@@ -490,7 +604,23 @@ def cmd_task_create(args) -> int:
                 view_path.write_text(view_text, encoding='utf-8', newline='\n')
                 os.replace(scaffold_tmp, scaffold_target)
                 scaffold_tmp = None
+                _write_task_create_marker(
+                    scaffold_target,
+                    {
+                        "schema": _TASK_CREATE_TX_SCHEMA,
+                        "task_id": task_id,
+                        "project_id": project_id,
+                        "db_path": str(Path(db_path).resolve()),
+                        "phase": "FILES_REPLACED",
+                        "created_at": now,
+                    },
+                )
             conn.execute('COMMIT')
+            if scaffold_target is not None:
+                try:
+                    _task_create_marker_path(scaffold_target).unlink()
+                except OSError:
+                    pass
         except BaseException:
             try:
                 conn.execute('ROLLBACK')

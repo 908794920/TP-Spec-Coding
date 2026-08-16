@@ -33,6 +33,7 @@ from . import transaction_journal
 from .commit_errors import ProjectionCommitFailedError, ReconciliationRequiredError
 from .encoding_guard import EncodingValidationError, validate_input, validate_list
 from .frontmatter import FrontMatterError
+from .path_identity import same_path
 from . import frontmatter
 from .transaction_journal import (
     JOURNAL_SCHEMA,
@@ -740,6 +741,34 @@ def _sha256_file(path: Path) -> Optional[str]:
         return hashlib.sha256(handle.read()).hexdigest()
 
 
+def _assert_task_workspace_identity(conn, task_dir: Path, task_id: str) -> None:
+    """Fail closed when a canonical task directory belongs to another project root.
+
+    This is the mutation-time defense for stale or externally corrupted registry
+    state.  Custom task directories that do not prove a canonical workspace root are
+    left to their existing explicit-path semantics rather than guessed about.
+    """
+    if not task_id:
+        return
+    resolved = task_dir.resolve()
+    parent = resolved.parent
+    if parent.name != "tasks" or parent.parent.name != ".tp-spec":
+        return
+    workspace_root = parent.parent.parent.resolve()
+    task = conn.execute("SELECT project_id FROM task WHERE task_id=?", (task_id,)).fetchone()
+    if task is None:
+        return
+    project_id = str(task["project_id"] or "")
+    project = conn.execute("SELECT root_path FROM project WHERE project_id=?", (project_id,)).fetchone()
+    stored_root = str(project["root_path"] or "").strip() if project is not None else ""
+    if not stored_root or not os.path.isabs(stored_root) or not same_path(stored_root, workspace_root):
+        raise ValueError(
+            f"PROJECT_WORKSPACE_MISMATCH: Runtime project '{project_id}' is bound to "
+            f"{stored_root or '<missing>'}, but task directory belongs to workspace {workspace_root}; "
+            "refusing cross-workspace mutation"
+        )
+
+
 def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_render: Callable,
                          task_id: str = "", operation: str = "commit",
                          db_state_before: str = "", target_state: str = "",
@@ -747,123 +776,141 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
                          flush_id: str = "") -> Dict[str, str]:
     """一致性提交核心（V5.2.2 durable journal 版）：
 
-    1. 备份现有投影；2. 写 durable journal（PREPARED）；3. BEGIN；
-    4. db_and_render(conn) 在事务内写 DB 并渲染全部投影文本；
-    5. 暂存临时文件；6. 原子替换；7. journal(FILES_REPLACED)；8. COMMIT；
-    9. journal(DB_COMMITTED)；成功后清理并删除 journal。
+    1. BEGIN IMMEDIATE 获取 SQLite writer serialization；2. 读取 revision 并备份现有投影；
+    3. 写 durable journal（PREPARED）；4. db_and_render(conn) 写 DB 并渲染投影；
+    5. 暂存并原子替换文件；6. journal(FILES_REPLACED)；7. COMMIT；
+    8. journal(DB_COMMITTED)；成功后清理并删除 journal。
 
-    任一步失败：ROLLBACK + 从备份恢复 + 清理；恢复成功才删除 journal，
-    保证强制终止（kill/断电）后 reconcile 可依据 journal 确定性恢复。
+    任一步失败：未提交时 ROLLBACK；只有正式投影已进入 journal 管理后才执行严格恢复。
+    该机制用于进程被 kill、解释器崩溃等 process-crash recovery；由于没有对文件和目录
+    执行 fsync/等价持久化屏障，不保证突然断电或存储缓存丢失后的 power-loss durability。
     返回渲染文本（供调用方打印摘要）。
     """
-    import hashlib
-
     tx_id = transaction_journal.new_transaction_id()
     bak_dir = task_dir / f".v511-bak-{tx_id}"
-    rev_before = transaction_journal.current_revision(conn, task_id)
-    _backup(task_dir, bak_dir, rel_paths)
-    journal: Dict[str, Any] = {
-        "schema": JOURNAL_SCHEMA,
-        "transaction_id": tx_id,
-        "task_id": task_id,
-        "operation": operation,
-        "phase": PHASE_PREPARED,
-        "db_state_before": db_state_before,
-        "target_state": target_state,
-        "owner_before": owner_before,
-        "owner_after": owner_after,
-        "flush_id": flush_id,
-        "db_revision_before": rev_before,
-        "expected_revision_after": None,
-        "expected_event_ids": [],
-        "expected_event_types": [],
-        "expected_state_event_id": None,
-        "expected_handoff_event_id": None,
-        "backup_dir": str(bak_dir),
-        "temp_dir": "",
-        "files": [
-            transaction_journal.make_files_entry(
-                rel_path=rel,
-                backup=str(bak_dir / rel) if (bak_dir / rel).is_file() else None,
-                temp=None,
-                before_digest=_sha256_file(bak_dir / rel),
-                target_digest=None,
-            )
-            for rel in rel_paths
-        ],
-        "created_at": dbmod.now_iso(),
-        "updated_at": dbmod.now_iso(),
-    }
-    transaction_journal.write_journal(task_dir, journal)
+    journal: Dict[str, Any] = {}
+    journal_prepared = False
     db_committed = False
+    transaction_started = False
+    texts: Dict[str, str] = {}
+
     try:
-        conn.execute("BEGIN")
         try:
-            texts = db_and_render(conn, transaction_id=tx_id)
-            journal["expected_revision_after"] = transaction_journal.current_revision(conn, task_id)
-            _stage_and_replace(task_dir, texts, rel_paths)
-            journal["phase"] = PHASE_FILES_REPLACED
-            for entry in journal["files"]:
-                entry["target_digest"] = _sha256_file(task_dir / entry["path"])
-            # P0-7：记录本事务产生的 STATE/HANDOFF 事件 ID（detail.flush_id 与本次一致），
-            # reconcile 情况 B 依此做同任务事件身份判定（防事件数碰撞误判）。
-            if flush_id:
-                rows = conn.execute(
-                    "SELECT id, event_type FROM task_event WHERE task_id=? "
-                    "AND detail_json LIKE ? ORDER BY id",
-                    (task_id, f'%"{flush_id}"%'),
-                ).fetchall()
-                for row in rows:
-                    journal["expected_event_ids"].append(row["id"])
-                    journal["expected_event_types"].append(row["event_type"])
-                    if row["event_type"] == "STATE" and journal["expected_state_event_id"] is None:
-                        journal["expected_state_event_id"] = row["id"]
-                    if row["event_type"] == "HANDOFF" and journal["expected_handoff_event_id"] is None:
-                        journal["expected_handoff_event_id"] = row["id"]
-            transaction_journal.write_journal(task_dir, journal)
-            conn.execute("COMMIT")
-            db_committed = True
-            journal["phase"] = PHASE_DB_COMMITTED
-            transaction_journal.write_journal(task_dir, journal)
-        except BaseException:
-            if not db_committed:
-                try:
-                    conn.execute("ROLLBACK")
-                except sqlite3.Error:
-                    pass
+            # Acquire SQLite's single-writer lock before reading revision or copying
+            # projection backups.  Concurrent writers therefore cannot prepare file
+            # recovery state against a DB snapshot that another writer may advance.
+            conn.execute("BEGIN IMMEDIATE")
+            transaction_started = True
+            _assert_task_workspace_identity(conn, task_dir, task_id)
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower() or "busy" in str(exc).lower():
+                raise ValueError(
+                    "TASK_WRITER_BUSY: Runtime is already being updated by another writer; retry after it finishes"
+                ) from exc
             raise
-    except BaseException as e:
+
+        rev_before = transaction_journal.current_revision(conn, task_id)
+        _backup(task_dir, bak_dir, rel_paths)
+        journal = {
+            "schema": JOURNAL_SCHEMA,
+            "transaction_id": tx_id,
+            "task_id": task_id,
+            "operation": operation,
+            "phase": PHASE_PREPARED,
+            "db_state_before": db_state_before,
+            "target_state": target_state,
+            "owner_before": owner_before,
+            "owner_after": owner_after,
+            "flush_id": flush_id,
+            "db_revision_before": rev_before,
+            "expected_revision_after": None,
+            "expected_event_ids": [],
+            "expected_event_types": [],
+            "expected_state_event_id": None,
+            "expected_handoff_event_id": None,
+            "backup_dir": str(bak_dir),
+            "temp_dir": "",
+            "files": [
+                transaction_journal.make_files_entry(
+                    rel_path=rel,
+                    backup=str(bak_dir / rel) if (bak_dir / rel).is_file() else None,
+                    temp=None,
+                    before_digest=_sha256_file(bak_dir / rel),
+                    target_digest=None,
+                )
+                for rel in rel_paths
+            ],
+            "created_at": dbmod.now_iso(),
+            "updated_at": dbmod.now_iso(),
+        }
+        transaction_journal.write_journal(task_dir, journal)
+        journal_prepared = True
+
+        texts = db_and_render(conn, transaction_id=tx_id)
+        journal["expected_revision_after"] = transaction_journal.current_revision(conn, task_id)
+        _stage_and_replace(task_dir, texts, rel_paths)
+        journal["phase"] = PHASE_FILES_REPLACED
+        for entry in journal["files"]:
+            entry["target_digest"] = _sha256_file(task_dir / entry["path"])
+        if flush_id:
+            rows = conn.execute(
+                "SELECT id, event_type FROM task_event WHERE task_id=? "
+                "AND detail_json LIKE ? ORDER BY id",
+                (task_id, f'%"{flush_id}"%'),
+            ).fetchall()
+            for row in rows:
+                journal["expected_event_ids"].append(row["id"])
+                journal["expected_event_types"].append(row["event_type"])
+                if row["event_type"] == "STATE" and journal["expected_state_event_id"] is None:
+                    journal["expected_state_event_id"] = row["id"]
+                if row["event_type"] == "HANDOFF" and journal["expected_handoff_event_id"] is None:
+                    journal["expected_handoff_event_id"] = row["id"]
+        transaction_journal.write_journal(task_dir, journal)
+        conn.execute("COMMIT")
+        transaction_started = False
+        db_committed = True
+        journal["phase"] = PHASE_DB_COMMITTED
+        transaction_journal.write_journal(task_dir, journal)
+    except BaseException as exc:
+        if transaction_started and not db_committed:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
+            transaction_started = False
+
         if db_committed:
-            # P0-2: DB 已提交，禁止恢复旧文件/删除 journal/删除 backup。
-            # 保留全部恢复证据（journal、backup、transaction metadata），
-            # 返回 PROJECTION_RECONCILIATION_REQUIRED 等待 reconcile。
             raise ReconciliationRequiredError(
-                f"DB committed but post-commit step failed: {e}; "
+                f"DB committed but post-commit step failed: {exc}; "
                 f"evidence preserved (journal={tx_id}, backup={bak_dir}); "
-                f"run 'tp-spec reconcile' to resolve"
-            ) from e
-        try:
-            _restore(task_dir, bak_dir, rel_paths, journal)
-        except Exception as restore_err:
-            # P0-8：恢复失败必须保留 journal/backup 作为恢复证据并返回
-            # PROJECTION_RECONCILIATION_REQUIRED；禁止销毁恢复依据。
-            raise ReconciliationRequiredError(
-                f"DB rolled back but file restore FAILED: {restore_err}; "
-                f"evidence preserved (journal={tx_id}, backup={bak_dir}); "
-                f"run 'tp-spec reconcile' to resolve"
-            ) from e
-        # 恢复成功才删除 journal（恢复失败时保留恢复依据，交给 reconcile）
-        transaction_journal.remove_journal(task_dir, tx_id)
+                "run 'tp-spec reconcile' to resolve"
+            ) from exc
+
+        if journal_prepared:
+            try:
+                _restore(task_dir, bak_dir, rel_paths, journal)
+            except Exception as restore_err:
+                raise ReconciliationRequiredError(
+                    f"DB rolled back but file restore FAILED: {restore_err}; "
+                    f"evidence preserved (journal={tx_id}, backup={bak_dir}); "
+                    "run 'tp-spec reconcile' to resolve"
+                ) from exc
+            transaction_journal.remove_journal(task_dir, tx_id)
+        else:
+            # No formal projection replacement could have occurred before PREPARED;
+            # cleanup only copied backup/journal preparation artifacts.
+            transaction_journal.remove_journal(task_dir, tx_id)
+
         shutil.rmtree(bak_dir, ignore_errors=True)
-        if isinstance(e, (ValueError, EncodingValidationError)):
+        if isinstance(exc, (ValueError, EncodingValidationError)):
             raise
         raise ProjectionCommitFailedError(
-            f"commit write failed and was rolled back (db restored, files restored): {e}"
-        ) from e
+            f"commit write failed and was rolled back (db restored, files restored): {exc}"
+        ) from exc
+
     transaction_journal.remove_journal(task_dir, tx_id)
     shutil.rmtree(bak_dir, ignore_errors=True)
     return texts
-
 
 def _warn_projection(warnings: List[str]) -> None:
     for w in warnings:
