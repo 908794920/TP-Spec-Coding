@@ -1,5 +1,15 @@
 # Changelog
 
+## V5.2.3 Autonomous Maintenance + Runtime Hardening — 2026-08-16
+
+- 按项目所有者明确要求，活动契约从 **5.2.2** 收敛到 **5.2.3**；该版本承载 Runtime Hardening 与长期项目自治维护，不因功能体量自动改名为 5.3.0。
+- Runtime Hardening：补齐 Project Identity 防串账、Task Create crash recovery、same-task writer serialization，并收窄 durability 声明为 process-crash recovery。
+- 新增 `tp-project-autonomy` 薄控制入口与 `tp-autonomy-setup/cycle/review/integrate` Skills；Autonomy 不复制 `tp-workflow-orchestrator`，普通研发 Task 继续走现有治理。
+- 新增用户级 Autonomy Profile、独立 Git clone 的长期 Autonomous Workspace、canonical Wiki/Knowledge 只读复用、generation-fenced Cycle、Task discovery/dedup、薄 Batch、Task→Git commit 绑定与累积 staging line。
+- 新增 Stage Effects / Execution Envelope：`repo_mutation` 表示 mutable repo 的任何 git-visible 写入；无人值守 `requires_human` 一律 fail-closed，用户确认最快下一 Cycle 生效。
+- 新增只读 Inbox/Review 与 Canonical Integration Prepare/Verify/Apply；多 Repo Apply 使用 journaled recoverable Integration Set，拒绝目录覆盖和未验证 Apply。
+- 外部 Scheduler 只负责触发；真正 Executor 必须能访问本地 Workspace/Git/Python/Agent。`max_new_tasks_per_cycle` 是上限而不是 quota，0 Task 是合法结果。
+
 ## V5.2.2 Context Effectiveness + Runtime/Wiki Hardening — 2026-08-15
 
 - 正式将单活动契约从 **5.2.1** 收敛到 **5.2.2**：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.2.2`，不再保留 `templates/5.2.1`。

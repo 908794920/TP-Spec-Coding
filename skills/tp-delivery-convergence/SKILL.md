@@ -1,7 +1,7 @@
 ---
 id: tp-delivery-convergence
 name: tp-交付/知识收敛
-version: 5.2.2
+version: 5.2.3
 status: active
 type: workflow-role
 role: tp-delivery-convergence

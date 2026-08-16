@@ -1,10 +1,10 @@
 ---
 name: assumption-management
-version: 5.2.2
+version: 5.2.3
 description: Use when a task relies on inferred business, technical, data, permission, compatibility, or risk facts. Keep assumptions explicit, evidence-linked, and unable to silently become confirmed facts.
 ---
 
-# 假设管理 — V5.2.2 Record-first
+# 假设管理 — V5.2.3 Record-first
 
 ## 目的
 在不增加固定流程的前提下，把“已知事实”和“为了继续工作暂时采用的推断”分开，避免后续 Agent 把推测当成需求或授权。

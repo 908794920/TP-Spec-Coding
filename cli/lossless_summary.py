@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.2 B-14 lossless-summary 仅无损的可回溯摘要（B-17 C7-P1~P10）。
+"""V5.2.3 B-14 lossless-summary 仅无损的可回溯摘要（B-17 C7-P1~P10）。
 
 设计依据：历史设计记录 B14-lossless-summary-design §2-§7
 证据锚点：升级计划 §3.4（L155-169）、§3.1（L117-119）、§7（L244 第 9 条）；
@@ -666,7 +666,7 @@ def rebuild(summary: dict[str, Any], source_base: Path) -> bytes:
 def add_lossless_summary_subparsers(subparsers) -> None:
     p = subparsers.add_parser(
         "lossless-summary",
-        help="V5.2.2 B-14 lossless reversible summary: content classify + sentinel protect + fold (no state change)",
+        help="V5.2.3 B-14 lossless reversible summary: content classify + sentinel protect + fold (no state change)",
     )
     p.add_argument("--source-base", required=True, help="base dir of original files (evidence/ or .execution/)")
     p.add_argument("--input", required=True, help="original file path (relative to source-base)")

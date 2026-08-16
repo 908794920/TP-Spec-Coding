@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.2 deterministic, read-only workflow orchestration.
+"""V5.2.3 deterministic, read-only workflow orchestration.
 
 Workflow chooses *when* to invoke a role.  Skills choose *how* to do the work.
 The existing Task Runtime remains the only durable fact ledger.
@@ -26,6 +26,8 @@ LEVELS = ("L0", "L1", "L2", "L3")
 TERMINAL = {"COMPLETED", "CANCELLED"}
 PUBLIC_STATES = {"NEW", "ACTIVE", "BLOCKED", "COMPLETED", "CANCELLED"}
 ROUTE_SCHEMA = "tp-spec.workflow-route/v1"
+DECISION_SCHEMA = "tp-spec.workflow-decision/v1"
+KNOWN_EFFECTS = {"repo_mutation"}
 
 
 class OrchestrationError(ValueError):
@@ -195,6 +197,13 @@ def validate_contract(base_root: Optional["str | Path"] = None) -> List[str]:
             role = str(step.get("role") or "")
             phase = str(step.get("phase") or "")
             mode = str(step.get("mode") or "")
+            effects = step.get("effects")
+            if not isinstance(effects, list):
+                errors.append(f"{level}.{stage or i}: effects must be a list")
+            else:
+                unknown_effects = sorted({str(x) for x in effects} - KNOWN_EFFECTS)
+                if unknown_effects:
+                    errors.append(f"{level}.{stage or i}: unknown effects {unknown_effects}")
             if not stage or stage in seen:
                 errors.append(f"{level}: duplicate/missing stage {stage!r}")
             seen.add(stage)
@@ -475,6 +484,17 @@ def _execution_mode(step: Dict[str, Any], level: str, signals: set[str]) -> str:
     return "DIRECT"
 
 
+def _decision_for_action(action: Optional[str]) -> str:
+    return {
+        "dispatch_role": "DISPATCH_ROLE",
+        "await_confirmation": "AWAIT_CONFIRMATION",
+        "await_effect_approval": "BOUNDARY_REACHED",
+        "task_complete": "TASK_COMPLETE",
+        "none": "NONE",
+        "task_resume_after_resolution": "TASK_BLOCKED",
+    }.get(str(action or ""), "NO_ACTION")
+
+
 def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], role_id: Optional[str],
                 skill_path: Optional[str], execution_mode: str = "DIRECT", confirmation_required: bool = False,
                 confirmation_reason: Optional[str] = None, blocker: Optional[str] = None,
@@ -483,9 +503,21 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
                 transition_from_role: Optional[str] = None,
                 confirmation_policy: Optional[str] = None,
                 confirmation_binding: Optional[Dict[str, Any]] = None,
-                wake_prompt: Optional[str] = None) -> Dict[str, Any]:
+                wake_prompt: Optional[str] = None,
+                required_effects: Optional[Iterable[str]] = None,
+                allowed_effects: Optional[Iterable[str]] = None,
+                decision_reason: Optional[str] = None) -> Dict[str, Any]:
+    effects = sorted({str(x) for x in (required_effects or []) if str(x)})
+    allowed = None if allowed_effects is None else sorted({str(x) for x in allowed_effects if str(x)})
+    decision = _decision_for_action(action)
+    requires_human = bool(confirmation_required or decision == "BOUNDARY_REACHED")
     data = {
         "schema": ROUTE_SCHEMA,
+        "decision_schema": DECISION_SCHEMA,
+        "decision": decision,
+        "required_effects": effects,
+        "requires_human": requires_human,
+        "reason": decision_reason or str(action or "none"),
         "task_id": task.get("task_id"),
         "current_state": task.get("current_state"),
         "current_phase": task.get("current_stage"),
@@ -502,6 +534,8 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
         "reason_codes": reason_codes or [],
         "risk_escalation_signals": list(task.get("_risk_escalation_signals") or []),
     }
+    if allowed is not None:
+        data["allowed_effects"] = allowed
     if context is not None:
         data["context"] = context
     if confirmation_binding is not None:
@@ -520,7 +554,9 @@ def _route_role_boundary(task: Dict[str, Any], level: str, events: List[Dict[str
                          source_stage: Optional[str] = None,
                          source_role: Optional[str] = None,
                          context: Optional[Dict[str, Any]] = None,
-                         human_confirmation_already_satisfied: bool = False) -> Dict[str, Any]:
+                         human_confirmation_already_satisfied: bool = False,
+                         required_effects: Optional[Iterable[str]] = None,
+                         allowed_effects: Optional[Iterable[str]] = None) -> Dict[str, Any]:
     binding: Optional[Dict[str, Any]] = None
     wake_prompt: Optional[str] = None
     transition = bool(source_event and source_role and source_role != role_id)
@@ -544,7 +580,8 @@ def _route_role_boundary(task: Dict[str, Any], level: str, events: List[Dict[str
                 confirmation_reason="EACH_STAGE_POLICY", reason_codes=reason_codes,
                 action="await_confirmation", context=context,
                 transition_from_role=source_role, confirmation_policy=policy,
-                confirmation_binding=binding,
+                confirmation_binding=binding, required_effects=required_effects,
+                allowed_effects=allowed_effects,
             )
         wake_prompt = workflow_controls.build_wake_prompt(
             task_id=str(task.get("task_id") or ""),
@@ -561,15 +598,22 @@ def _route_role_boundary(task: Dict[str, Any], level: str, events: List[Dict[str
         confirmation_reason=None, reason_codes=reason_codes, action="dispatch_role",
         context=context, transition_from_role=source_role,
         confirmation_policy=policy, wake_prompt=wake_prompt,
+        required_effects=required_effects, allowed_effects=allowed_effects,
     )
 
 
 def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                   base_root: Optional["str | Path"] = None,
-                  confirmation_policy: Optional[str] = None) -> Dict[str, Any]:
+                  confirmation_policy: Optional[str] = None,
+                  allowed_effects: Optional[Iterable[str]] = None) -> Dict[str, Any]:
     root = _root(base_root)
     contract = load_contract(root)
     catalog = load_role_catalog(root)
+    allowed_set = None if allowed_effects is None else {str(x) for x in allowed_effects}
+    if allowed_set is not None:
+        unknown_allowed = sorted(allowed_set - KNOWN_EFFECTS)
+        if unknown_allowed:
+            raise OrchestrationError(f"unknown allowed effects: {unknown_allowed}")
     task, events = _load_task_facts(task_id, db_path)
     try:
         policy = workflow_controls.resolve_confirmation_policy(
@@ -674,6 +718,18 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             raise OrchestrationError(f"pipeline references unknown role: {rid}")
         mode = _execution_mode(step, level, signals)
         context = _delivery_fact_pack(task, events) if stage == "delivery" else None
+        step_effects = [str(x) for x in (step.get("effects") or [])]
+        if allowed_set is not None:
+            missing_effects = sorted(set(step_effects) - allowed_set)
+            if missing_effects:
+                return _route_dict(
+                    task, level, next_stage=stage, role_id=None, skill_path=None,
+                    execution_mode=mode, confirmation_required=False,
+                    reason_codes=["EXECUTION_BOUNDARY_REACHED"], action="await_effect_approval",
+                    context=context, transition_from_role=previous_role,
+                    confirmation_policy=policy, required_effects=missing_effects,
+                    allowed_effects=allowed_set, decision_reason="effect_not_allowed",
+                )
 
         # Material confirmations are independent of each-stage flow control and
         # therefore run first. A valid material decision may satisfy the ordinary
@@ -702,6 +758,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                     reason_codes=["NEXT_STAGE_RESOLVED"], action="await_confirmation",
                     context=context, transition_from_role=previous_role,
                     confirmation_policy=policy, confirmation_binding=material_binding,
+                    required_effects=step_effects, allowed_effects=allowed_set,
                 )
             material_satisfied = True
 
@@ -711,6 +768,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             reason_codes=["NEXT_STAGE_RESOLVED"], source_event=previous_completion,
             source_stage=previous_stage, source_role=previous_role, context=context,
             human_confirmation_already_satisfied=material_satisfied,
+            required_effects=step_effects, allowed_effects=allowed_set,
         )
 
     return _route_dict(task, level, next_stage="complete", role_id=None, skill_path=None,

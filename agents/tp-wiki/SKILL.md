@@ -1,12 +1,12 @@
 ---
 id: tp-wiki
 name: tp-wiki
-version: 5.2.2
+version: 5.2.3
 status: active
 type: human-owner-skill
 tool_agnostic: 本技能包不要求特定 IDE、账号、插件、模型或绝对路径；从 TP-Spec-Coding 相对路径加载即可。
 description: >
-  代码理解 Wiki 工程师（tp-wiki）：V5.2.2 代码理解 Wiki 专项 Skill：把当前源码事实维护为高信息密度、可溯源、可增量更新的代码认知地图。
+  代码理解 Wiki 工程师（tp-wiki）：V5.2.3 代码理解 Wiki 专项 Skill：把当前源码事实维护为高信息密度、可溯源、可增量更新的代码认知地图。
   不拥有 workflow state；可由 human_owner 显式调用，或由 human_owner 已配置的 canonical Wiki automation 调用。
 ---
 

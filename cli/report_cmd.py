@@ -548,7 +548,7 @@ def _fmt_value(v: float | None, fmt: str = _FMT_MONEY, na: str = "N/A") -> str:
 
 
 def cmd_report_cost_benefit(args) -> int:
-    """V5.2.2 B-15 成本披露报表（强制四列 + W1-W4 告警 + 净亏独立列）。
+    """V5.2.3 B-15 成本披露报表（强制四列 + W1-W4 告警 + 净亏独立列）。
 
     对齐升级计划 §3.5（L180-189）与 B-13 设计文档。
     仅披露不阻断：不改变 workflow 状态、不改变风险等级。
@@ -807,7 +807,7 @@ def add_report_subparsers(report_parser) -> None:
     p_cross.add_argument("--db", required=False, default=None)
     p_cross.set_defaults(func=cmd_report_cross)
 
-    # report context-effectiveness (V5.2.2 Context Effectiveness)
+    # report context-effectiveness (V5.2.3 Context Effectiveness)
     p_ctx = sub.add_parser(
         "context-effectiveness",
         help="Read-only Task-bound Context Effectiveness report",
@@ -818,8 +818,8 @@ def add_report_subparsers(report_parser) -> None:
     p_ctx.add_argument("--db", default=None)
     p_ctx.set_defaults(func=cmd_report_context_effectiveness)
 
-    # report cost-benefit（V5.2.2 B-15 成本披露报表）
-    p_cb = sub.add_parser("cost-benefit", help="Cost-benefit disclosure report (V5.2.2 B-15)")
+    # report cost-benefit（V5.2.3 B-15 成本披露报表）
+    p_cb = sub.add_parser("cost-benefit", help="Cost-benefit disclosure report (V5.2.3 B-15)")
     p_cb.add_argument("--task", required=True, help="task id")
     p_cb.add_argument("--output", required=True, help="persist report to JSON file path")
     # 四列强制字段

@@ -197,7 +197,7 @@ def knowledge_usage_from_delivery(
                 "source_type": "knowledge",
                 "asset_id": f"knowledge:{stable_id}",
                 "stage": "retrieved",
-                # V5.2.2 telemetry convention: a source-layer hit is represented as
+                # V5.2.3 telemetry convention: a source-layer hit is represented as
                 # fallback, even though an explicit source-layer query can also cause it.
                 "outcome": "fallback" if layer == "source" else "success",
                 "confidence": "high",

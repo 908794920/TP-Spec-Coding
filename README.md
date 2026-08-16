@@ -4,7 +4,7 @@
 
 TP-Spec-Coding 是一个**本地优先、可追溯、可迁移、可扩展**的 AI 研发工作流框架。你把研发任务交给 `tp-workflow-orchestrator`，它像“开发组长”一样判断任务复杂度，并按需组织需求分析、产品设计、架构设计、开发、验证和交付；真正的专业结论仍由对应专业 Skill 负责，过程事实写入本地 Runtime 账本。
 
-当前版本：**v5.2.2** · License：**MIT**
+当前版本：**v5.2.3** · License：**MIT**
 
 ## 为什么做这个项目
 
@@ -136,6 +136,12 @@ NEW / ACTIVE / BLOCKED / COMPLETED / CANCELLED
 项目仓库只保存 portable identity 和项目状态，不保存某台机器的 Base / Wiki / Knowledge 绝对路径。
 
 因此换电脑后不需要修改历史 Task 或 DB 里的专业角色身份，只需要重新配置当前机器路径并执行项目同步。
+
+## 长期项目自治维护
+
+`tp-project-autonomy` 是长期 Autonomous Maintenance 的薄入口：一次配置维护目标、L0～L3 上限、每 Cycle 新 Task 上限与隔离 Workspace 后，可由具备本地文件/Git/Python/Agent 能力的外部 Executor 周期性唤醒。自治开发只发生在独立 Git clone 中；普通 Task 仍由 `tp-workflow-orchestrator` 治理，Canonical 代码只有经过 Review + Integration Prepare/Verification + human_owner 明确 Apply 才会改变。
+
+详细外部自动化协议见 `automation/autonomy/`。
 
 ## 快速开始
 

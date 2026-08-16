@@ -1,7 +1,7 @@
 ---
 id: tp-base-maintenance
 name: tp-基座维护
-version: 5.2.2
+version: 5.2.3
 status: active
 type: human-owner-skill
 tool_agnostic: 本技能不依赖特定 IDE；Base/Wiki/Knowledge 根必须来自 Installation/Resolver，不在 Skill 中硬编码用户绝对路径。

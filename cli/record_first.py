@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.2 Record-first task operations.
+"""V5.2.3 Record-first task operations.
 
 The public workflow records business facts instead of forcing role-authored
 workflow bookkeeping. SQLite remains authoritative; readable projections are
@@ -371,7 +371,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
 def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
     """Validate only acceptance claims that would become false history if forged.
 
-    V5.2.2 deliberately does *not* require every AC to be complete.  PENDING is a
+    V5.2.3 deliberately does *not* require every AC to be complete.  PENDING is a
     valid factual outcome.  This check therefore ignores completeness/formality and
     protects only positive/owner-authority claims: PASS evidence, human witness, and
     DEFERRED_ACCEPTED/OWNER_WAIVED ledger authority.

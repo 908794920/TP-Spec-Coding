@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""V5.2.2 可信事件注册表（Final Hardening 单一来源）。
+"""V5.2.3 可信事件注册表（Final Hardening 单一来源）。
 
-依据：《V5.2.2 Final Hardening Invariant 修复任务》Task 1（§3）与《V5.2.2
+依据：《V5.2.3 Final Hardening Invariant 修复任务》Task 1（§3）与《V5.2.3
 HARDENING 源码复审报告》P0-1/P0-2。INV-02：治理事件只能由可信生产者产生；
 INV-03：门禁不信任 type/actor/summary 三元组，只接受含完整身份链的可信事件。
 
@@ -80,7 +80,7 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
     "REVIEW_COMPLETED": _policy("governance", ("review_record", "commit"), True, _REVIEW_IDENTITY_FIELDS),
     "REVIEW": _policy("governance", ("review_record", "commit"), True, _EVENT_SCHEMA_FIELDS),
     "VERIFICATION": _policy("governance", ("commit",), True, _EVENT_SCHEMA_FIELDS),
-    # V5.2.2 Record-first verification is a trusted fact but no longer a state gate.
+    # V5.2.3 Record-first verification is a trusted fact but no longer a state gate.
     # It binds decision + current technical subject digest + real evidence without
     # requiring a role-authored review artifact.
     "VERIFICATION_COMPLETED": _policy(

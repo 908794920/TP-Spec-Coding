@@ -1,10 +1,10 @@
 ---
 name: systematic-debugging
-version: 5.2.2
+version: 5.2.3
 description: Use when a test, build, runtime behavior, integration, or verification fails. Drive evidence-based reproduction, hypotheses, root-cause confirmation, minimal repair, and regression prevention.
 ---
 
-# 系统化调试 — V5.2.2 Record-first
+# 系统化调试 — V5.2.3 Record-first
 
 ## 方法
 1. 固定复现条件：环境、输入、步骤、实际/预期结果、日志或失败证据。

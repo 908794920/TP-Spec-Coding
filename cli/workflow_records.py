@@ -384,25 +384,34 @@ def confirm_boundary(*, task_id: str, task_dir: str, db: Optional[str] = None,
     from . import orchestration, record_first
     from .version import active_version
 
-    route = orchestration.resolve_route(task_id, db_path=db, confirmation_policy=confirmation_policy)
-    confirmation_reason = str(route.get('confirmation_reason') or '')
-    if route.get('recommended_action') != 'await_confirmation' or confirmation_reason not in {
-        'EACH_STAGE_POLICY', 'MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION'
-    }:
+    db_path = dbmod.resolve_db_path(db, task_id=task_id)
+    route = orchestration.resolve_route(task_id, db_path=db_path, confirmation_policy=confirmation_policy)
+    autonomy_pending = None
+    if route.get('recommended_action') != 'await_confirmation':
+        try:
+            from . import autonomy_records
+            autonomy_pending = autonomy_records.pending_workflow_confirmation_any(task_id, db_path)
+        except Exception:
+            autonomy_pending = None
+    if autonomy_pending:
+        confirmation_reason = str(autonomy_pending.get('confirmation_reason') or '')
+        binding = autonomy_pending.get('confirmation_binding')
+    else:
+        confirmation_reason = str(route.get('confirmation_reason') or '')
+        binding = route.get('confirmation_binding')
+    if confirmation_reason not in {'EACH_STAGE_POLICY', 'MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION'}:
         raise ValueError('workflow confirm requires an active bound ordinary/material workflow confirmation')
-    binding = route.get('confirmation_binding')
     if not isinstance(binding, dict) or not binding:
         raise ValueError('workflow confirmation binding missing')
 
     tdir = record_first._task_dir(task_dir)
-    db_path = dbmod.resolve_db_path(db, task_id=task_id)
     conn = dbmod.connect(db_path)
     try:
         task = record_first._load(conn, task_id)
         current = str(task['current_state'] or '')
         if current in record_first.TERMINAL_STATES:
             raise ValueError(f'terminal task cannot accept workflow confirmation: {current}')
-        if current == 'BLOCKED':
+        if current == 'BLOCKED' and not autonomy_pending:
             raise ValueError("task is BLOCKED; use 'task resume' after the blocker is resolved")
         now = dbmod.now_iso()
         flush_id = f'WF-CONFIRM-{uuid.uuid4().hex}'
@@ -410,13 +419,12 @@ def confirm_boundary(*, task_id: str, task_dir: str, db: Optional[str] = None,
 
         def writer(dbconn, transaction_id=''):
             detail = build_confirmation_detail(
-                task_id=task_id,
-                binding=binding,
-                transaction_id=transaction_id,
-                flush_id=flush_id,
-                created_at=now,
-                schema_version=active_version(),
+                task_id=task_id, binding=binding, transaction_id=transaction_id,
+                flush_id=flush_id, created_at=now, schema_version=active_version(),
             )
+            if autonomy_pending:
+                detail['autonomy_next_cycle_effective'] = True
+                detail['autonomy_blocked_generation'] = autonomy_pending.get('generation')
             kind = str(binding.get('confirmation_kind') or 'ordinary')
             dbconn.execute(
                 'INSERT INTO task_event (task_id,event_type,actor_role,reason_code,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?)',
@@ -434,11 +442,18 @@ def confirm_boundary(*, task_id: str, task_dir: str, db: Optional[str] = None,
     finally:
         conn.close()
 
+    if autonomy_pending:
+        return {
+            'schema': 'tp-spec.workflow-route/v1', 'task_id': task_id,
+            'recommended_action': 'next_cycle_resume', 'next_cycle_effective': True,
+            'confirmation_reason': confirmation_reason, 'confirmation_binding': binding,
+            'decision_schema': 'tp-spec.workflow-decision/v1', 'decision': 'AWAIT_NEXT_CYCLE',
+            'requires_human': False, 'required_effects': [], 'reason': 'confirmed_next_cycle',
+        }
     resolved = orchestration.resolve_route(task_id, db_path=db_path, confirmation_policy=confirmation_policy)
     if resolved.get('recommended_action') != 'dispatch_role':
         raise ValueError('workflow confirmation was recorded but current route no longer dispatches; re-run workflow next')
     return resolved
-
 
 def record_delivery_result(*, task_id: str, task_dir: str, knowledge_disposition: str,
                            reason: str, knowledge_refs: Optional[Iterable[str]] = None,

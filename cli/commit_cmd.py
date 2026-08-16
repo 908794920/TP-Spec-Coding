@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""V5.2.2 legacy commit compatibility / recovery surface.
+"""V5.2.3 legacy commit compatibility / recovery surface.
 
-Normal V5.2.2 roles do not use ``tp-spec commit`` to advance work.  The public daily
+Normal V5.2.3 roles do not use ``tp-spec commit`` to advance work.  The public daily
 API is ``task checkpoint/block/resume/verify/complete`` in :mod:`cli.record_first`.
 This module is retained because its durable-journal / atomic-projection primitives are
 also useful to Record-first writes and because historical long-state tasks/admin
@@ -75,7 +75,7 @@ def _continuation_sources(task_dir: Path, state: str) -> List[Path]:
         names.extend(["implementation.md", "codex-review.md"])
     elif state == "VERIFYING":
         names.append("implementation.md")
-    # V5.2.2 §3.8/§10.2：新工件经集中注册表纳入 source digest（存在才纳入）
+    # V5.2.3 §3.8/§10.2：新工件经集中注册表纳入 source digest（存在才纳入）
     names.extend(projection_cmd.projection_source_names())
     return [task_dir / name for name in names if (task_dir / name).is_file()]
 
@@ -169,7 +169,7 @@ def _latest_projected_verification(task_dir: Path) -> str:
 def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str) -> str:
     """Render the readable current view from ledger facts.
 
-    V5.2.2 intentionally exposes state/phase/result facts, not handoff bureaucracy.
+    V5.2.3 intentionally exposes state/phase/result facts, not handoff bureaucracy.
     """
     state = str(task["current_state"] or "NEW")
     owner = str(task["owner_role"] or "unknown")
@@ -197,12 +197,12 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
         f"- 当前阶段：{phase}\n"
         f"- 最近执行角色：{owner}\n"
         f"- 最近记录：{summary}\n"
-        "\n> V5.2.2：phase 是查询事实，不是流程门禁；继续完成业务工作即可。\n"
+        "\n> V5.2.3：phase 是查询事实，不是流程门禁；继续完成业务工作即可。\n"
     )
     return _generated_view_text(task_dir, "continuation.md", body, sources, flush_id)
 
 def _handoff_record(task_dir: Path, args, flush_id: str, owner: str) -> Dict[str, Any]:
-    """构造 handoff.json record（V5.2.2 §5：同时入 HANDOFF 事件 payload 供无损重建）。"""
+    """构造 handoff.json record（V5.2.3 §5：同时入 HANDOFF 事件 payload 供无损重建）。"""
     handoff_id = f"HANDOFF-{args.task}-{uuid.uuid4().hex[:10].upper()}"
     return {
         "schema_version": ACTIVE_CONTRACT,
@@ -248,7 +248,7 @@ def _validate_db_requirement(task_dir: Path, args) -> None:
 
 
 # =============================================================================
-# V5.2.2 A-05：--payload-json 稳定输入
+# V5.2.3 A-05：--payload-json 稳定输入
 # =============================================================================
 
 _PAYLOAD_LIST_FIELDS = ("changes", "risks", "evidence", "action", "constraint")
@@ -317,7 +317,7 @@ def _validate_utf8_inputs(args) -> None:
 
 
 # =============================================================================
-# V5.2.2 A-02：preflight（任何写入前完成，失败零副作用）
+# V5.2.3 A-02：preflight（任何写入前完成，失败零副作用）
 # =============================================================================
 
 def _fm_artifact_rel(args, current: str, to_state: str) -> Optional[str]:
@@ -393,7 +393,7 @@ def _probe_writable(task_dir: Path) -> None:
 
 def run_transition_preflight(task_id: str, from_state: str, to_state: str, actor: str,
                              task_dir: Optional[Path] = None, conn=None):
-    """阶段 preflight hook（V5.2.2 §10.1，真实业务 validator）。
+    """阶段 preflight hook（V5.2.3 §10.1，真实业务 validator）。
 
     Hardening：替换 AI-A 的空实现。委托 cli/transition_service.validate_transition
     执行 L0~L3 风险等级工件门禁、架构评审 PASS/stale 校验、验收/结单门禁。
@@ -660,7 +660,7 @@ def _collect_commit_preflight(task_dir: Path, args, conn, task) -> Dict[str, Any
     }
 
 # =============================================================================
-# V5.2.2 A-03：一致性提交（备份 → 事务 → 暂存 → 原子替换 → COMMIT）
+# V5.2.3 A-03：一致性提交（备份 → 事务 → 暂存 → 原子替换 → COMMIT）
 # =============================================================================
 
 def _backup(task_dir: Path, bak_dir: Path, rel_paths: List[str]) -> None:
@@ -774,7 +774,7 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
                          db_state_before: str = "", target_state: str = "",
                          owner_before: str = "", owner_after: str = "",
                          flush_id: str = "") -> Dict[str, str]:
-    """一致性提交核心（V5.2.2 durable journal 版）：
+    """一致性提交核心（V5.2.3 durable journal 版）：
 
     1. BEGIN IMMEDIATE 获取 SQLite writer serialization；2. 读取 revision 并备份现有投影；
     3. 写 durable journal（PREPARED）；4. db_and_render(conn) 写 DB 并渲染投影；
@@ -1190,7 +1190,7 @@ def _cmd_commit_transition(args, conn, task_dir: Path, task, current: str, to: s
 
 
 def cmd_commit(args) -> int:
-    # V5.2.2 A-05：payload-json 合并先于一切校验（稳定 UTF-8 输入通道）
+    # V5.2.3 A-05：payload-json 合并先于一切校验（稳定 UTF-8 输入通道）
     if getattr(args, "payload_json", None):
         args = _apply_payload(args, _load_payload(args.payload_json))
     if not args.summary and not getattr(args, "dry_run", False):
@@ -1239,7 +1239,7 @@ def cmd_commit(args) -> int:
             _preflight_files(task_dir, args, current, current)
             return _cmd_commit_refresh(args, conn, task_dir, task)
         if args.review_only:
-            # V5.2.2：tp-验收工程 在 VERIFYING 记录独立验收结论，不流转、不结单。
+            # V5.2.3：tp-验收工程 在 VERIFYING 记录独立验收结论，不流转、不结单。
             if args.actor != "tp-verification-engineering":
                 raise ValueError("--review-only is reserved for tp-verification-engineering")
             if current != "VERIFYING":
@@ -1266,13 +1266,13 @@ def cmd_commit(args) -> int:
                     f"advance state {current} -> {args.to} (got {args.actor!r})"
                 )
         if args.to == "CLOSING":
-            # V5.2.2 personal mode：只有 tp-交付收敛可以进入 CLOSING；依赖自动质量门禁。
+            # V5.2.3 personal mode：只有 tp-交付收敛可以进入 CLOSING；依赖自动质量门禁。
             if args.actor != "tp-delivery-convergence":
-                raise ValueError("only tp-delivery-convergence may enter CLOSING (V5.2.2 closing chain)")
+                raise ValueError("only tp-delivery-convergence may enter CLOSING (V5.2.3 closing chain)")
         if args.to == "COMPLETED" and current != "CLOSING":
             raise ValueError(f"v{ACTIVE_CONTRACT} completion must be committed from CLOSING")
         if args.to == "COMPLETED" and args.actor != "tp-delivery-convergence":
-            raise ValueError("only tp-delivery-convergence may commit COMPLETED (V5.2.2 closing chain)")
+            raise ValueError("only tp-delivery-convergence may commit COMPLETED (V5.2.3 closing chain)")
         if args.phase_exit and args.actor != task["owner_role"]:
             raise ValueError("--phase-exit may only be submitted by the current owner")
         if args.direct_change:
@@ -1282,7 +1282,7 @@ def cmd_commit(args) -> int:
             raise ValueError("tp-verification-engineering must supply --decision PASS before downstream closure")
         # A-02：preflight 文件侧（业务规则全部通过后、任何写入前）
         _preflight_files(task_dir, args, current, args.to)
-        # V5.2.2 §10.1：阶段 preflight hook（真实业务 validator，任何写入之前）
+        # V5.2.3 §10.1：阶段 preflight hook（真实业务 validator，任何写入之前）
         preflight_result = run_transition_preflight(
             args.task, current, args.to, args.actor,
             task_dir=task_dir, conn=conn,
@@ -1341,7 +1341,7 @@ def add_commit_subparsers(parser: argparse.ArgumentParser) -> None:
     p.add_argument("--review-only", action="store_true", help="tp-verification-engineering only: record REVIEW_COMPLETED and codex-review.md metadata in VERIFYING without a state transition")
     p.add_argument("--phase-exit", action="store_true", help="Mark this transition as the one-shot phase-exit summary of the current owner's micro-loop work")
     p.add_argument("--dry-run", action="store_true", help="Read-only phase-exit preflight; report all detectable blockers as JSON without writing DB/files")
-    # V5.2.2 A-05：--summary 改为可选（--payload-json 可提供）；稳定性由 cmd_commit 强制
+    # V5.2.3 A-05：--summary 改为可选（--payload-json 可提供）；稳定性由 cmd_commit 强制
     p.add_argument("--summary")
     p.add_argument("--change", action="append")
     p.add_argument("--risk", action="append")
@@ -1354,7 +1354,7 @@ def add_commit_subparsers(parser: argparse.ArgumentParser) -> None:
     p.add_argument("--direct-change", action="store_true")
     p.add_argument(
         "--payload-json",
-        help=("V5.2.2 UTF-8 JSON file; summary/decision/authorization are strings; "
+        help=("V5.2.3 UTF-8 JSON file; summary/decision/authorization are strings; "
               "changes/risks/evidence/action/constraint are arrays of strings"),
     )
     p.add_argument("--db")
