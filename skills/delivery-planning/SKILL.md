@@ -1,10 +1,10 @@
 ---
 name: delivery-planning
-version: 5.2.3
+version: 5.2.4
 description: Use when a task benefits from an explicit technical delivery plan. Produce an implementation-ready, risk-aware plan without creating mandatory workflow gates or handoff bookkeeping.
 ---
 
-# 交付计划 — V5.2.3 Record-first
+# 交付计划 — V5.2.4 Record-first
 
 ## 目的
 把已理解的需求与代码事实收敛为可实施方案。简单、路径唯一的任务可以不单独写计划；复杂任务才投入更多规划成本。

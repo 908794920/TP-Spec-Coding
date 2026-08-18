@@ -1,7 +1,7 @@
 ---
 id: tp-knowledge
 name: tp-knowledge
-version: 5.2.3
+version: 5.2.4
 status: active
 type: human-owner-skill
 tool_agnostic: 本技能包不要求特定 IDE、账号、插件或用户目录绝对路径；从 TP-Spec-Coding/agents/tp-knowledge/SKILL.md 加载即可。
@@ -24,7 +24,9 @@ Knowledge 是 TP-Spec-Coding 的**长期可复用知识层**：业务规则、�
 
 本 Skill 不维护 Base VERSION、公共 Junction、`.tp-spec` 受管块或基座同步；需要时调用 `tp-base-maintenance`。不拥有 workflow state，不成为 Task 完成 Gate。
 
-**与开发工作流完全独立：** `tp-knowledge` 不是 `tp-workflow-orchestrator` 的阶段，也不得被 `tp-delivery-convergence` 调用、handoff 或等待。它保留本文定义的全部 Knowledge 专项能力；普通研发 Task 的内容收敛由 delivery 自己完成。
+**与软件生命周期解耦但可接收事实 handoff：** `tp-knowledge` 不是软件生命周期 phase，也不拥有 Task workflow state。`tp-integration-engineer` 只产生已验证的 compact delivery/knowledge facts，`tp-software-lifecycle` 可以把该 handoff 交给本 Agent 的 `task-scoped convergence`。Knowledge 的 `NO_CHANGE/DEFERRED` 不成为 Delivery 收费站；昂贵提炼可在交付后继续。
+
+**Task-scoped convergence 边界：** 只消费已验证 handoff，执行 current project + shared 的最小 targeted search，输出 CREATED / UPDATED / NO_CHANGE / DEFERRED / BLOCKED；不重新裁决 PASS/FAIL。正常 Fast Path 的纯治理增量 AI 开销目标 <= 5%。Task-scoped 模式不得扩张为 `90-sources` 原始 source ingest、source registry、Golden Set、全库 audit 或 migration/normalization；这些属于 Knowledge Domain 的独立系统维护模式。
 
 ## 1. 权威关系
 
@@ -86,6 +88,22 @@ maintain
 - 删除、冲突、归属不明、merge/split 不确定时 fail-closed；
 - baseline 只在当前 truth、verify、必要 L4 与 projection 都绑定同一状态后推进。
 - AI/canonical/evidence/disposition 最终写入后必须重新 `knowledge scan`；不得拿 AI UPDATE 前的 change set 做 L4 或推进 baseline。
+
+## 3A. Task-scoped convergence
+
+软件 Task 完成阶段只接收 compact verified handoff，不重新读取整个 Task/仓库：
+
+```text
+Integration verified facts
+→ tp-spec knowledge task-converge --handoff-json <JSON>
+→ NO_CHANGE | DEFERRED
+```
+
+- `NO_CHANGE`：没有可复用长期事实，立即结束；
+- `DEFERRED`：有候选事实，交给 Knowledge Domain 后续 targeted synthesis；
+- 两者都 `blocks_delivery=false`；
+- 不允许为了 Knowledge disposition 回退软件生命周期；
+- Knowledge Runtime/SQLite 自身损坏仍按 Knowledge 专项 health policy 处理，但不得伪造软件交付失败。
 
 ## 4. 外部文档接入
 

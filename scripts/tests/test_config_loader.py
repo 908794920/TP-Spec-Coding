@@ -126,10 +126,9 @@ class TestSuccessPaths(unittest.TestCase):
 
     def test_get_state_owner(self):
         self.assertEqual(cl.get_state_owner("NEW", base_root=str(BASE)),
-                         "tp-architecture-design")
-        # Legacy owners remain decodable internally, but are not active workflow states.
-        self.assertEqual(cl.get_state_owner("CLOSING", base_root=str(BASE)),
-                         "tp-delivery-convergence")
+                         "tp-software-lifecycle")
+        # Legacy microstates are migration/history-only and are not resolved by active config.
+        self.assertIsNone(cl.get_state_owner("CLOSING", base_root=str(BASE)))
 
     def test_workflow_transitions(self):
         tr = cl.get_workflow_transitions(base_root=str(BASE))

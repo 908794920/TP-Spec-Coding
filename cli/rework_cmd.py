@@ -18,6 +18,8 @@ import sys
 from typing import List, Optional
 
 from . import db as dbmod
+
+DEFAULT_ROLE = "tp-software-lifecycle"
 from .reuse_warnings import w5_warning
 
 
@@ -64,7 +66,7 @@ def cmd_rework_open(args) -> int:
         if task is None:
             print(f"ERROR: task not found: {task_id}", file=sys.stderr)
             return 4
-        actor_role = args.role or task["owner_role"] or "tp-architecture-design"
+        actor_role = args.role or task["owner_role"] or DEFAULT_ROLE
         actor_agent = args.by or task["owner_agent"] or ""
         affected_items = _parse_items(args.items)
         detail = {
@@ -99,7 +101,7 @@ def cmd_rework_open(args) -> int:
             event_id = cur.lastrowid
         # 不自动改 task.current_state（返工可能落在 LOCAL_REWORK，无状态变更）
         print(f"Rework opened: {event_id} ({args.cause})")
-        # V5.2.3 B-13 W5：审查包复用告警（复用不替代 VERIFYING，每次复用动作发生时展示）
+        # V5.2.4 B-13 W5：审查包复用告警（复用不替代 VERIFYING，每次复用动作发生时展示）
         print(f"\n{w5_warning()}\n")
         return 0
     finally:

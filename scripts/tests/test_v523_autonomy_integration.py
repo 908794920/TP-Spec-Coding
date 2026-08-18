@@ -46,8 +46,8 @@ def create_ready_batch(root: Path, profile, ws):
     c1=autonomy_cycle.begin_cycle("demo"); b=autonomy_batch.create_batch("demo",c1["cycle_id"],c1["generation"],["TASK-AUTO-1"]); autonomy_batch.start_task("demo",b["batch_id"],"TASK-AUTO-1",c1["cycle_id"],c1["generation"])
     for rid in (profile["canonical"]["repositories"]["mutable"]):
         repo=auto/rid["path"]; (repo/f"{rid['id']}.txt").write_text(f"{rid['id']} change\n",encoding="utf-8")
-    record_first.checkpoint(task_id="TASK-AUTO-1",task_dir=str(td),actor="tp-development-engineering",phase="development",summary="done",db=ws["db_path"])
-    record_first.complete(task_id="TASK-AUTO-1",task_dir=str(td),actor="tp-development-engineering",summary="complete",db=ws["db_path"])
+    record_first.checkpoint(task_id="TASK-AUTO-1",task_dir=str(td),actor="tp-development-engineer",phase="development",summary="done",db=ws["db_path"])
+    record_first.complete(task_id="TASK-AUTO-1",task_dir=str(td),actor="tp-development-engineer",summary="complete",db=ws["db_path"])
     autonomy_batch.commit_task("demo",b["batch_id"],"TASK-AUTO-1",c1["cycle_id"],c1["generation"]); b=autonomy_batch.finalize_batch("demo",b["batch_id"],c1["cycle_id"],c1["generation"])
     autonomy_cycle.end_cycle("demo",c1["cycle_id"],c1["generation"])
     return b

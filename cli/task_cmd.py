@@ -32,13 +32,15 @@ from .path_identity import same_path
 from .version import active_version
 from .workflow_loader import WorkflowLoadError
 
+INITIAL_TASK_OWNER = "tp-software-lifecycle"
+
 # task_id 格式：TASK-开头，后跟字母数字._-
 _TASK_ID_RE = re.compile(r"^TASK-[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 # risk/flow 等级
 _RISK_LEVELS = ("L0", "L1", "L2", "L3")
 
-# Frozen long-state SHD compatibility table. Active V5.2.3 Record-first tasks return through the fast path and do not use this table.
+# Frozen long-state SHD compatibility table. Active V5.2.4 Record-first tasks return through the fast path and do not use this table.
 _SHD_TRANSITIONS: Dict[str, List[str]] = {
     "NEW": ["RISK_ANALYZING", "TECH_DESIGNING", "DEVELOPING", "CANCELLED"],
     "RISK_ANALYZING": ["REQUIREMENT_CLARIFYING", "PRODUCT_DESIGNING", "TECH_DESIGNING", "DEVELOPING", "TECHNICAL_DISCOVERY"],
@@ -74,7 +76,7 @@ _SHD_FORWARD_CONSUMERS: Dict[str, List[str]] = {
     "VERIFYING": ["REVIEWING", "CLOSING", "COMPLETED"],
 }
 
-# V5.2.3 A-01：front matter 解析统一走 cli/frontmatter.py（LF/CRLF/BOM 兼容）
+# V5.2.4 A-01：front matter 解析统一走 cli/frontmatter.py（LF/CRLF/BOM 兼容）
 _FM_RE = FRONTMATTER_RE
 
 # HPB: next_prompt 必须完整的 12 字段
@@ -150,7 +152,7 @@ def _check_shd_closure(
     risk_level: str = "",
     flow_level: str = "",
 ) -> List[str]:
-    """SHD M1/M2 + HPB 校验（V5.2.3），返回错误消息列表。"""
+    """SHD M1/M2 + HPB 校验（V5.2.4），返回错误消息列表。"""
     errors: List[str] = []
     # M1 反向一致性
     if current_state in _SHD_DRIVER:
@@ -227,9 +229,13 @@ def _check_shd_closure(
 
 
 _INTAKE_ARTIFACTS = (
-    "requirement-knowledge.md",
-    "requirement-clarifications.md",
-    "requirement-decisions.md",
+    ("requirement.md", "requirement.md"),
+    # One-time source compatibility: old pre-task requirement facts are adopted
+    # into the v5.2.4 canonical requirement artifact, never copied as a second
+    # active requirement model.
+    ("requirement-knowledge.md", "requirement.md"),
+    ("requirement-clarifications.md", "requirement-clarifications.md"),
+    ("requirement-decisions.md", "requirement-decisions.md"),
 )
 
 
@@ -243,8 +249,8 @@ def _adopt_intake_artifacts(scaffold_dir: Path, intake_dir: Path, task_id: str, 
     if not intake_dir.is_dir():
         raise ValueError(f"intake directory not found: {intake_dir}")
     adopted: List[str] = []
-    for name in _INTAKE_ARTIFACTS:
-        src = intake_dir / name
+    for source_name, target_name in _INTAKE_ARTIFACTS:
+        src = intake_dir / source_name
         if not src.is_file():
             continue
         raw = src.read_bytes()
@@ -252,10 +258,10 @@ def _adopt_intake_artifacts(scaffold_dir: Path, intake_dir: Path, task_id: str, 
             text = raw.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             raise ValueError(f"intake artifact must be UTF-8: {src}") from exc
-        # V5.2.3 Record-first: business roles own content, Runtime owns machine metadata.
+        # V5.2.4 Record-first: business roles own content, Runtime owns machine metadata.
         # Missing/mismatched front matter is normalized instead of sending the role
         # through a bookkeeping retry loop.
-        artifact_type = name[:-3]
+        artifact_type = target_name[:-3]
         if not text.startswith("---"):
             text = (
                 "---\n"
@@ -288,19 +294,25 @@ def _adopt_intake_artifacts(scaffold_dir: Path, intake_dir: Path, task_id: str, 
         fm_end = text.find("\n---", 3)
         provenance = (
             "\nintake_provenance:\n"
-            f"  source_file: {json.dumps(name, ensure_ascii=False)}\n"
+            f"  source_file: {json.dumps(source_name, ensure_ascii=False)}\n"
             f"  source_sha256: {json.dumps('sha256:' + digest)}\n"
             f"  adopted_at: {json.dumps(adopted_at)}\n"
             "  policy: copy_preserve_source\n"
         )
         if "\nintake_provenance:\n" not in text[:fm_end]:
             text = text[:fm_end] + provenance + text[fm_end:]
-        (scaffold_dir / name).write_text(text, encoding="utf-8", newline="\n")
-        adopted.append(name)
+        target = scaffold_dir / target_name
+        # Prefer the canonical requirement.md when both canonical and legacy
+        # source names are present; do not let the legacy alias overwrite it.
+        if target.exists() and source_name != target_name:
+            continue
+        target.write_text(text, encoding="utf-8", newline="\n")
+        if target_name not in adopted:
+            adopted.append(target_name)
     if not adopted:
         raise ValueError(
             "intake contains no supported requirement artifacts; expected one of: "
-            + ", ".join(_INTAKE_ARTIFACTS)
+            + ", ".join(source for source, _ in _INTAKE_ARTIFACTS)
         )
     return adopted
 
@@ -383,7 +395,7 @@ def _recover_interrupted_task_create(
 
 
 def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, flow: str, created_at: str) -> Path:
-    """Build a complete V5.2.3 task scaffold in a temporary sibling directory.
+    """Build a complete V5.2.4 task scaffold in a temporary sibling directory.
 
     The caller may atomically rename the returned directory after the DB transaction
     has prepared successfully.  No existing task directory is overwritten.
@@ -401,7 +413,7 @@ def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, fl
     if tmp.exists():
         shutil.rmtree(tmp, ignore_errors=True)
     shutil.copytree(template_root, tmp)
-    # V5.2.3 Record-first scaffold: create only the durable task shell. Optional
+    # V5.2.4 Record-first scaffold: create only the durable task shell. Optional
     # business artifacts are created when a role has real content, never because a
     # state machine requires an empty form. Base templates remain available.
     essential = {'task.md', 'acceptance.md', 'status.yaml'}
@@ -569,18 +581,18 @@ def cmd_task_create(args) -> int:
                   (task_id, project_id, title, risk_level, flow_level,
                    current_state, current_stage, owner_role, owner_agent,
                    priority, base_version, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'NEW', 'intake', 'tp-architecture-design', '', NULL, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, 'NEW', 'intake', ?, '', NULL, ?, ?, ?)
                 """,
-                (task_id, project_id, args.title or '', args.risk, args.flow, base_version, now, now),
+                (task_id, project_id, args.title or '', args.risk, args.flow, INITIAL_TASK_OWNER, base_version, now, now),
             )
             cur = conn.execute(
                 """
                 INSERT INTO task_event
                   (task_id, event_type, from_state, to_state, from_stage, to_stage,
                    actor_role, actor_agent, summary, workflow_version, created_at)
-                VALUES (?, 'STATE', NULL, 'NEW', NULL, 'intake', 'tp-architecture-design', NULL, ?, ?, ?)
+                VALUES (?, 'STATE', NULL, 'NEW', NULL, 'intake', ?, NULL, ?, ?, ?)
                 """,
-                (task_id, args.summary or '任务创建', wf.version, now),
+                (task_id, INITIAL_TASK_OWNER, args.summary or '任务创建', wf.version, now),
             )
             event_id = cur.lastrowid
             if scaffold_tmp is not None and scaffold_target is not None:
@@ -593,10 +605,10 @@ def cmd_task_create(args) -> int:
                 # A scaffold is runtime-ready immediately: materialize the current
                 # generated view in the same create transaction instead of leaving
                 # the first role to repair an empty generated/ directory.
-                from . import commit_cmd
+                from . import transaction_commit
                 create_flush_id = f'CREATE-{uuid.uuid4().hex[:12].upper()}'
-                view_rel = commit_cmd._current_view_rel('NEW')
-                view_text = commit_cmd._rebuild_current_view_text(
+                view_rel = transaction_commit._current_view_rel('NEW')
+                view_text = transaction_commit._rebuild_current_view_text(
                     scaffold_tmp, created_task, args.summary or '任务创建', create_flush_id
                 )
                 view_path = scaffold_tmp / view_rel
@@ -643,15 +655,15 @@ def cmd_task_create(args) -> int:
 
 
 def cmd_task_transition(args) -> int:
-    """V5.2.3 Hardening：禁用活动任务的独立状态推进（任务书 §4.2 方案 A）。
+    """V5.2.4 Hardening：禁用活动任务的独立状态推进（任务书 §4.2 方案 A）。
 
-    V5.2.3 遗留的独立 transition（直接 UPDATE task + INSERT STATE 事件）可绕过
+    V5.2.4 遗留的独立 transition（直接 UPDATE task + INSERT STATE 事件）可绕过
     commit 的 durable journal、projection 原子提交、架构评审与验收门禁，已被移除。
 
-    V5.2.3 活动任务：
+    V5.2.4 活动任务：
     - 日常事实入口为 ``task checkpoint/block/resume/verify/complete``；这些命令复用
       durable journal + projection 原子提交，但不暴露旧 handoff/phase gate；
-    - ``tp-spec commit`` 仅保留兼容/恢复表面，不是日常角色 API；
+    - 旧 long-state commit 已迁入 migration/history-only；日常只使用 Record-first API；
     - 本命令对活动任务返回非零退出码 ``DIRECT_TRANSITION_DISABLED``；
     - 历史任务（base_version != active_version()）仍按静态归档只读拒绝。
 
@@ -668,10 +680,10 @@ def cmd_task_transition(args) -> int:
             return 4
         # 历史任务：静态归档，只读拒绝（不推进、不改写）。
         if (task["base_version"] or "") != active_version():
-            print(f"ERROR: legacy contract task is a frozen static archive; the V5.2.3 runtime operates only base_version={active_version()}", file=sys.stderr)
+            print(f"ERROR: legacy contract task is a frozen static archive; the V5.2.4 runtime operates only base_version={active_version()}", file=sys.stderr)
             return 3
         # 活动任务：独立状态推进被禁用（方案 A）。
-        print("DIRECT_TRANSITION_DISABLED: V5.2.3 uses record-first task checkpoint/block/resume/complete; direct transition is not a daily API", file=sys.stderr)
+        print("DIRECT_TRANSITION_DISABLED: V5.2.4 uses record-first task checkpoint/block/resume/complete; direct transition is not a daily API", file=sys.stderr)
         return 9
     finally:
         conn.close()
@@ -807,10 +819,10 @@ def cmd_task_validate(args) -> int:
             print(f"ERROR: {e}", file=sys.stderr)
             return 3
         if (task["base_version"] or "") != active_version():
-            print(f"ERROR: legacy contract task is a frozen static archive; the V5.2.3 runtime validates only base_version={active_version()}", file=sys.stderr)
+            print(f"ERROR: legacy contract task is a frozen static archive; the V5.2.4 runtime validates only base_version={active_version()}", file=sys.stderr)
             return 3
         errors = []
-        # V5.2.3 Record-first validation protects ledger truth, not process completeness.
+        # V5.2.4 Record-first validation protects ledger truth, not process completeness.
         quick = conn.execute("PRAGMA quick_check").fetchone()
         if quick is None or str(quick[0]).lower() != "ok":
             errors.append(f"sqlite integrity check failed: {quick[0] if quick else 'no result'}")
@@ -974,7 +986,7 @@ def _upgrade_contract_artifact_text(name: str, text: str, source: str, target: s
         out = out.replace(f"artifact_contract.version: {source}", f"artifact_contract.version: {target}")
         out = out.replace(f"templates/{source}", f"templates/{target}")
     if name == "codex-review.md":
-        # V5.2.3 review routing is Runtime-owned and unambiguously named next_state.
+        # V5.2.4 review routing is Runtime-owned and unambiguously named next_state.
         out = re.sub(r"(?m)^(\s*)intended_next\s*:\s*(.*)$", r"\1next_state: \2", out, count=1)
     if name == "acceptance.md" and "owner_waivers:" not in out:
         marker = "## 数据库验证声明"
@@ -1145,7 +1157,8 @@ def cmd_task_migrate(args) -> int:
         return 4
     conn = dbmod.connect(db_path)
     try:
-        from . import commit_cmd, projection_cmd, reconcile_cmd, event_policies
+        from . import transaction_commit, projection_cmd, reconcile_cmd, event_policies
+        from .migrations.v5_2_3.role_map import map_active_owner
         task = conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
         if task is None:
             print(f"ERROR: task not found: {args.task}", file=sys.stderr)
@@ -1195,6 +1208,7 @@ def cmd_task_migrate(args) -> int:
 
         current = str(task["current_state"] or "")
         owner = str(task["owner_role"] or "")
+        migrated_owner = map_active_owner(owner) or "tp-software-lifecycle"
         legacy_phase_map = {
             "NEW": "intake", "RISK_ANALYZING": "requirement",
             "REQUIREMENT_CLARIFYING": "requirement", "PRODUCT_DESIGNING": "product",
@@ -1202,11 +1216,11 @@ def cmd_task_migrate(args) -> int:
             "TECH_DESIGNING": "architecture", "DISCOVERY_REVIEW_REQUIRED": "architecture",
             "CHANGE_CONFIRMING": "requirement", "DEVELOPING": "development",
             "ASSISTING": "development", "VERIFYING": "verification",
-            "BROWSER_VERIFYING": "verification", "REVIEWING": "verification",
+            "BROWSER_VERIFYING": "verification", "REVIEWING": "review",
             "CLOSING": "delivery", "BLOCKED": str(task["current_stage"] or "other").lower(),
         }
         migrated_phase = legacy_phase_map.get(current, str(task["current_stage"] or "other").lower())
-        if migrated_phase not in {"intake","requirement","product","architecture","discovery","development","verification","delivery","other"}:
+        if migrated_phase not in {"intake","requirement","product","architecture","planning","discovery","development","verification","review","delivery","other"}:
             migrated_phase = "other"
         # Human-confirmation legacy states are genuine blockers; other legacy workflow
         # microstates collapse to ACTIVE. NEW remains NEW until first checkpoint.
@@ -1218,7 +1232,7 @@ def cmd_task_migrate(args) -> int:
             migrated_state = "ACTIVE"
         timestamp = dbmod.now_iso()
         flush_id = f"MIGRATE-{uuid.uuid4().hex}"
-        view_rel = commit_cmd._current_view_rel(migrated_state)
+        view_rel = transaction_commit._current_view_rel(migrated_state)
         grandfathered = _migration_grandfathered_gates(conn, args.task) if old != target else []
 
         def db_and_render(tx_conn, transaction_id=""):
@@ -1247,9 +1261,10 @@ def cmd_task_migrate(args) -> int:
             detail["legacy_state"] = current
             detail["record_first_state"] = migrated_state
             detail["record_first_phase"] = migrated_phase
+            detail["owner_role_migration"] = {"from": owner, "to": migrated_owner}
             tx_conn.execute(
-                "UPDATE task SET base_version=?, risk_level=?, current_state=?, current_stage=?, updated_at=? WHERE task_id=?",
-                (target, migrated_risk, migrated_state, migrated_phase, timestamp, args.task),
+                "UPDATE task SET base_version=?, risk_level=?, current_state=?, current_stage=?, owner_role=?, updated_at=? WHERE task_id=?",
+                (target, migrated_risk, migrated_state, migrated_phase, migrated_owner, timestamp, args.task),
             )
             tx_conn.execute(
                 "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?)",
@@ -1261,7 +1276,7 @@ def cmd_task_migrate(args) -> int:
                 tx_conn.execute(
                     "INSERT INTO task_event (task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (args.task, "STATE", current, migrated_state, task["current_stage"], migrated_phase,
-                     args.actor, "V5.2.3 record-first state collapse", json.dumps(detail, ensure_ascii=False), target, timestamp),
+                     args.actor, "V5.2.4 record-first state collapse", json.dumps(detail, ensure_ascii=False), target, timestamp),
                 )
             refreshed = tx_conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
             status_yaml, events_jsonl, warnings = projection_cmd.render_projection(tx_conn, refreshed)
@@ -1276,11 +1291,11 @@ def cmd_task_migrate(args) -> int:
             else:
                 template = Path(__file__).resolve().parent.parent / "templates" / active_version() / "handoff.json"
                 final_texts["handoff.json"] = template.read_text(encoding="utf-8")
-            return commit_cmd._finalize_texts(
+            return transaction_commit._finalize_texts(
                 task_dir,
                 final_texts,
                 view_rel,
-                lambda: commit_cmd._rebuild_current_view_text(
+                lambda: transaction_commit._rebuild_current_view_text(
                     task_dir, refreshed,
                     f"contract {'migrated' if old != target else 'repaired'} {old} -> {target}",
                     flush_id,
@@ -1288,11 +1303,11 @@ def cmd_task_migrate(args) -> int:
             )
 
         rel_paths = sorted(set(texts) | {"status.yaml", "events.jsonl", "handoff.json", view_rel})
-        commit_cmd._commit_with_recovery(
+        transaction_commit._commit_with_recovery(
             task_dir, conn, rel_paths, db_and_render,
             task_id=args.task, operation="contract_migrate",
             db_state_before=current, target_state=migrated_state,
-            owner_before=owner, owner_after=owner, flush_id=flush_id,
+            owner_before=owner, owner_after=migrated_owner, flush_id=flush_id,
         )
         refreshed = conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
         after_drift = _deep_projection_snapshot(conn, refreshed, task_dir, args.actor)
@@ -1312,7 +1327,8 @@ def cmd_task_migrate(args) -> int:
             return 7
         print(
             f"task migrate: {args.task} {old} -> {target}; kind={operation_kind}; "
-            f"state={migrated_state}; phase={migrated_phase}; grandfathered={','.join(grandfathered) or 'none'}; flush_id={flush_id}"
+            f"state={migrated_state}; phase={migrated_phase}; owner={migrated_owner}; "
+            f"grandfathered={','.join(grandfathered) or 'none'}; flush_id={flush_id}"
         )
         return 0
     finally:
@@ -1577,7 +1593,7 @@ def cmd_task_acceptance_override(args) -> int:
     rows = _acceptance_table_rows(text)
     conn = dbmod.connect(db_path)
     try:
-        from . import commit_cmd, projection_cmd, event_policies
+        from . import transaction_commit, projection_cmd, event_policies
         task = conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
         if task is None:
             print(f"ERROR: task not found: {args.task}", file=sys.stderr)
@@ -1642,7 +1658,7 @@ def cmd_task_acceptance_override(args) -> int:
             return 7
 
         flush_id = f"OWNER-ACCEPT-{uuid.uuid4().hex}"
-        view_rel = commit_cmd._current_view_rel(state)
+        view_rel = transaction_commit._current_view_rel(state)
         owner = str(task["owner_role"] or "")
 
         def db_and_render(tx_conn, transaction_id=""):
@@ -1672,16 +1688,16 @@ def cmd_task_acceptance_override(args) -> int:
             status_yaml, events_jsonl, warnings = projection_cmd.render_projection(tx_conn, refreshed)
             for warning in warnings:
                 print(f"WARN: {warning}", file=sys.stderr)
-            return commit_cmd._finalize_texts(
+            return transaction_commit._finalize_texts(
                 task_dir,
                 {"acceptance.md": updated, "status.yaml": status_yaml, "events.jsonl": events_jsonl},
                 view_rel,
-                lambda: commit_cmd._rebuild_current_view_text(
+                lambda: transaction_commit._rebuild_current_view_text(
                     task_dir, refreshed, f"human_owner acceptance {args.mode}: {', '.join(selected)}", flush_id
                 ),
             )
 
-        commit_cmd._commit_with_recovery(
+        transaction_commit._commit_with_recovery(
             task_dir, conn, ["acceptance.md", "status.yaml", "events.jsonl", view_rel], db_and_render,
             task_id=args.task, operation="owner_acceptance_override",
             db_state_before=state, target_state=state,
@@ -1762,21 +1778,12 @@ def cmd_task_verify(args) -> int:
 def cmd_task_delivery_converge(args) -> int:
     from . import workflow_records
     result = workflow_records.record_delivery_result(
-        task_id=args.task, task_dir=args.task_dir, knowledge_disposition=args.knowledge_disposition,
-        reason=args.reason, knowledge_refs=args.knowledge_ref, knowledge_queries=args.knowledge_query,
-        evidence=args.evidence, source_refs=args.source_ref, recovery_condition=args.recovery_condition,
-        blocker_kind=args.blocker_kind, responsibility=args.responsibility,
-        residual_risks=args.residual_risk,
+        task_id=args.task, task_dir=args.task_dir, delivery_status=args.delivery_status,
+        reason=args.reason, evidence=args.evidence, before_head=args.before_head,
+        after_head=args.after_head, merge_commit=args.merge_commit,
+        recovery_condition=args.recovery_condition, blocker_kind=args.blocker_kind,
+        responsibility=args.responsibility, residual_risks=args.residual_risk,
         context_usage=_parse_context_usage_arg(args.context_usage_json), db=args.db,
-    )
-    print(json.dumps(result, ensure_ascii=False))
-    return 0
-
-
-def cmd_task_delivery_accept_deferred(args) -> int:
-    from . import workflow_records
-    result = workflow_records.accept_delivery_deferred(
-        task_id=args.task, task_dir=args.task_dir, reason=args.reason, db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1815,12 +1822,12 @@ def add_task_subparsers(task_parser) -> None:
     p_create.add_argument("--flow", required=True, choices=["L0", "L1", "L2", "L3"])
     p_create.add_argument("--summary", required=False, default="任务创建")
     p_create.add_argument("--db", required=False, default=None)
-    p_create.add_argument("--scaffold", action="store_true", help="Create the V5.2.3 task directory and templates together with the DB task")
+    p_create.add_argument("--scaffold", action="store_true", help="Create the V5.2.4 task directory and templates together with the DB task")
     p_create.add_argument("--from-intake", required=False, default=None, help="Adopt pre-task requirement artifacts from an intake directory; implies --scaffold and preserves source")
     p_create.add_argument("--task-dir", required=False, default=None, help="Scaffold destination (default: .tp-spec/tasks/<TASK-ID>)")
     p_create.set_defaults(func=cmd_task_create)
 
-    # V5.2.3 Record-first daily API: business facts, not workflow bookkeeping.
+    # V5.2.4 Record-first daily API: business facts, not workflow bookkeeping.
     from . import record_first
     p_cp = sub.add_parser("checkpoint", help="Record meaningful task progress; auto-activates NEW and rebuilds projections")
     p_cp.add_argument("--task", required=True)
@@ -1856,7 +1863,7 @@ def add_task_subparsers(task_parser) -> None:
     p_verify = sub.add_parser("verify", help="Record actual technical verification; PASS requires real evidence/* and never acts as a phase gate")
     p_verify.add_argument("--task", required=True)
     p_verify.add_argument("--task-dir", required=True)
-    p_verify.add_argument("--actor", default="tp-verification-engineering", choices=["tp-verification-engineering"])
+    p_verify.add_argument("--actor", default="tp-test-engineer", choices=["tp-test-engineer"])
     p_verify.add_argument("--decision", required=True, choices=["PASS", "FAIL", "NEEDS_FIX"])
     p_verify.add_argument("--summary", required=True)
     p_verify.add_argument("--evidence", action="append")
@@ -1866,29 +1873,22 @@ def add_task_subparsers(task_parser) -> None:
     p_verify.add_argument("--db", default=None)
     p_verify.set_defaults(func=cmd_task_verify)
 
-    p_delivery = sub.add_parser("delivery-converge", help="L2/L3: record the structured Delivery/Knowledge disposition bound to current verification")
+    p_delivery = sub.add_parser("delivery-converge", help="L2/L3: record Integration-owned delivery facts bound to current verification")
     p_delivery.add_argument("--task", required=True)
     p_delivery.add_argument("--task-dir", required=True)
-    p_delivery.add_argument("--knowledge-disposition", required=True, choices=["CREATED", "UPDATED", "NO_CHANGE", "DEFERRED", "BLOCKED"])
-    p_delivery.add_argument("--knowledge-ref", action="append")
-    p_delivery.add_argument("--knowledge-query", action="append", help="focused query; Runtime executes current project + shared search (max 3)")
+    p_delivery.add_argument("--delivery-status", required=True, choices=["READY", "BLOCKED"])
     p_delivery.add_argument("--evidence", action="append")
-    p_delivery.add_argument("--source-ref", action="append")
     p_delivery.add_argument("--reason", required=True)
+    p_delivery.add_argument("--before-head")
+    p_delivery.add_argument("--after-head")
+    p_delivery.add_argument("--merge-commit")
     p_delivery.add_argument("--recovery-condition")
-    p_delivery.add_argument("--blocker-kind", choices=["RESOLVER_UNAVAILABLE", "CANONICAL_CONFLICT", "DESTRUCTIVE_MERGE", "INSUFFICIENT_EVIDENCE", "HUMAN_DECISION"])
+    p_delivery.add_argument("--blocker-kind", choices=["INTEGRATION_CONFLICT", "VERIFICATION_STALE", "WORKSPACE_DIRTY", "GIT_STATE_INVALID", "HUMAN_DECISION", "OTHER"])
     p_delivery.add_argument("--responsibility")
     p_delivery.add_argument("--residual-risk", action="append")
     p_delivery.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks delivery")
     p_delivery.add_argument("--db", default=None)
     p_delivery.set_defaults(func=cmd_task_delivery_converge)
-
-    p_delivery_defer = sub.add_parser("delivery-accept-deferred", help="human_owner: explicitly accept the latest bound DEFERRED delivery result")
-    p_delivery_defer.add_argument("--task", required=True)
-    p_delivery_defer.add_argument("--task-dir", required=True)
-    p_delivery_defer.add_argument("--reason", required=True)
-    p_delivery_defer.add_argument("--db", default=None)
-    p_delivery_defer.set_defaults(func=cmd_task_delivery_accept_deferred)
 
     p_complete = sub.add_parser("complete", help="Record terminal completion and expose actual verification facts; no CLOSING phase")
     p_complete.add_argument("--task", required=True)

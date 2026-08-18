@@ -87,7 +87,7 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
     def verify(self, task_id: str, task_dir: Path, decision: str = 'PASS'):
         args = [
             'task', 'verify', '--task', task_id, '--task-dir', str(task_dir),
-            '--actor', 'tp-verification-engineering', '--decision', decision,
+            '--actor', 'tp-test-engineer', '--decision', decision,
             '--summary', f'verification {decision}',
         ]
         if decision == 'PASS':
@@ -96,6 +96,14 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
             evidence.write_text('verified\n', encoding='utf-8')
             args += ['--evidence', str(evidence.relative_to(task_dir)).replace('\\', '/')]
         rc, out, err = self.call(*args)
+        self.assertEqual(rc, 0, (out, err))
+
+    def code_review(self, task_id: str, task_dir: Path, decision: str = 'PASS'):
+        rc, out, err = self.call(
+            'review', 'record', '--task', task_id, '--task-dir', str(task_dir),
+            '--actor', 'tp-code-reviewer', '--kind', 'CODE', '--decision', decision,
+            '--summary', f'code review {decision}',
+        )
         self.assertEqual(rc, 0, (out, err))
 
     def events(self, task_id: str):
@@ -126,20 +134,21 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         return json.loads(out)
 
     def prepare_l2_to_verification_pass(self, task_id: str, task_dir: Path):
-        self.checkpoint(task_id, task_dir, 'tp-requirement-analysis', 'requirement')
-        self.checkpoint(task_id, task_dir, 'tp-architecture-design', 'architecture')
+        self.checkpoint(task_id, task_dir, 'tp-product-manager', 'requirement')
+        self.checkpoint(task_id, task_dir, 'tp-software-architect', 'architecture')
+        self.checkpoint(task_id, task_dir, 'tp-tech-lead', 'planning')
         rc, out, err = self.call(
             'workflow', 'confirm', '--task', task_id, '--task-dir', str(task_dir), '--json',
         )
         self.assertEqual(rc, 0, (out, err))
-        self.checkpoint(task_id, task_dir, 'tp-development-engineering', 'development')
+        self.checkpoint(task_id, task_dir, 'tp-development-engineer', 'development')
         self.verify(task_id, task_dir, 'PASS')
 
 
     def test_new_gate_events_are_trusted_only_from_official_producers(self):
         self.assertTrue(event_policies.event_allowed_for_producer('WORKFLOW_CONFIRMATION', 'workflow_confirm'))
         self.assertTrue(event_policies.event_allowed_for_producer('DELIVERY_RESULT', 'delivery_converge'))
-        self.assertTrue(event_policies.event_allowed_for_producer('DELIVERY_DEFERRED_ACCEPTED', 'delivery_deferred_accept'))
+        self.assertNotIn('DELIVERY_DEFERRED_ACCEPTED', event_policies.EVENT_POLICIES)
         self.assertFalse(event_policies.event_allowed_for_producer('WORKFLOW_CONFIRMATION', 'event_add'))
         self.assertFalse(event_policies.event_allowed_for_producer('DELIVERY_RESULT', 'event_add'))
 
@@ -154,7 +163,7 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         first = orchestration.resolve_route(task_id, db_path=str(self.db))
         self.assertEqual(first['next_stage'], 'requirement')
         self.assertEqual(first['recommended_action'], 'dispatch_role')
-        self.checkpoint(task_id, task_dir, 'tp-requirement-analysis', 'requirement')
+        self.checkpoint(task_id, task_dir, 'tp-product-manager', 'requirement')
 
         pending = orchestration.resolve_route(task_id, db_path=str(self.db))
         self.assertEqual(pending['recommended_action'], 'await_confirmation')
@@ -164,16 +173,16 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
 
         dispatched = self.confirm_each_stage(task_id, task_dir)
         self.assertEqual(dispatched['recommended_action'], 'dispatch_role')
-        self.assertEqual(dispatched['role_id'], 'tp-architecture-design')
+        self.assertEqual(dispatched['role_id'], 'tp-software-architect')
         self.assertIn(task_id, dispatched['wake_prompt'])
         self.assertIn('workflow next', dispatched['wake_prompt'])
         self.assertLess(len(dispatched['wake_prompt']), 500)
 
-        self.checkpoint(task_id, task_dir, 'tp-architecture-design', 'architecture', 'architecture v1')
+        self.checkpoint(task_id, task_dir, 'tp-software-architect', 'architecture', 'architecture v1')
         self.assertEqual(orchestration.resolve_route(task_id, db_path=str(self.db))['recommended_action'], 'await_confirmation')
         self.confirm_each_stage(task_id, task_dir)
         # A new source fact creates a new binding; the old confirmation cannot be reused.
-        self.checkpoint(task_id, task_dir, 'tp-architecture-design', 'architecture', 'architecture v2')
+        self.checkpoint(task_id, task_dir, 'tp-software-architect', 'architecture', 'architecture v2')
         stale = orchestration.resolve_route(task_id, db_path=str(self.db))
         self.assertEqual(stale['recommended_action'], 'await_confirmation')
         self.assertIsNone(stale['skill_path'])
@@ -181,8 +190,11 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
     def test_material_gate_remains_stronger_than_each_stage_confirmation(self):
         task_id = 'TASK-V522-MATERIAL'
         task_dir = self.create_task(task_id, 'L2')
-        self.checkpoint(task_id, task_dir, 'tp-requirement-analysis', 'requirement')
-        self.checkpoint(task_id, task_dir, 'tp-architecture-design', 'architecture')
+        self.checkpoint(task_id, task_dir, 'tp-product-manager', 'requirement')
+        self.checkpoint(task_id, task_dir, 'tp-software-architect', 'architecture')
+        # each-stage ordinary confirmation is needed before planning; satisfy it first.
+        self.confirm_each_stage(task_id, task_dir)
+        self.checkpoint(task_id, task_dir, 'tp-tech-lead', 'planning')
         pending = orchestration.resolve_route(task_id, db_path=str(self.db), confirmation_policy='each_stage')
         self.assertEqual(pending['confirmation_reason'], 'MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION')
         self.assertEqual(pending['recommended_action'], 'await_confirmation')
@@ -199,19 +211,19 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         self.assertEqual(rc, 0, (out, err))
         dispatched = json.loads(out)
         self.assertEqual(dispatched['recommended_action'], 'dispatch_role')
-        self.assertEqual(dispatched['role_id'], 'tp-development-engineering')
+        self.assertEqual(dispatched['role_id'], 'tp-development-engineer')
         self.assertIn('wake_prompt', dispatched)
         material_events = [dict(x) for x in self.events(task_id) if x['event_type'] == 'WORKFLOW_CONFIRMATION']
         self.assertEqual(json.loads(material_events[-1]['detail_json'])['confirmation_kind'], 'material')
 
-    def test_each_stage_applies_to_verification_rework_and_pass_to_delivery(self):
+    def test_each_stage_applies_to_verification_rework_review_and_delivery(self):
         task_id = 'TASK-V522-REWORK'
         task_dir = self.create_task(task_id, 'L1')
-        self.checkpoint(task_id, task_dir, 'tp-requirement-analysis', 'requirement')
+        self.checkpoint(task_id, task_dir, 'tp-product-manager', 'requirement')
         self.confirm_each_stage(task_id, task_dir)
-        self.checkpoint(task_id, task_dir, 'tp-architecture-design', 'architecture')
+        self.checkpoint(task_id, task_dir, 'tp-software-architect', 'architecture')
         self.confirm_each_stage(task_id, task_dir)
-        self.checkpoint(task_id, task_dir, 'tp-development-engineering', 'development')
+        self.checkpoint(task_id, task_dir, 'tp-development-engineer', 'development')
         self.confirm_each_stage(task_id, task_dir)
         self.verify(task_id, task_dir, 'NEEDS_FIX')
         rework = orchestration.resolve_route(task_id, db_path=str(self.db), confirmation_policy='each_stage')
@@ -222,6 +234,11 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         task2 = 'TASK-V522-DELIVERY-BOUNDARY'
         dir2 = self.create_task(task2, 'L2')
         self.prepare_l2_to_verification_pass(task2, dir2)
+        review = orchestration.resolve_route(task2, db_path=str(self.db), confirmation_policy='each_stage')
+        self.assertEqual(review['next_stage'], 'review')
+        self.assertEqual(review['recommended_action'], 'await_confirmation')
+        self.confirm_each_stage(task2, dir2)
+        self.code_review(task2, dir2, 'PASS')
         delivery = orchestration.resolve_route(task2, db_path=str(self.db), confirmation_policy='each_stage')
         self.assertEqual(delivery['next_stage'], 'delivery')
         self.assertEqual(delivery['recommended_action'], 'await_confirmation')
@@ -231,25 +248,25 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         task_id = 'TASK-V522-DELIVERY'
         task_dir = self.create_task(task_id, 'L2')
         self.prepare_l2_to_verification_pass(task_id, task_dir)
+        self.code_review(task_id, task_dir, 'PASS')
         route = orchestration.resolve_route(task_id, db_path=str(self.db))
         self.assertEqual(route['next_stage'], 'delivery')
-        self.checkpoint(task_id, task_dir, 'tp-delivery-convergence', 'delivery', 'legacy-looking delivery checkpoint')
+        self.checkpoint(task_id, task_dir, 'tp-integration-engineer', 'delivery', 'legacy-looking delivery checkpoint')
         still_delivery = orchestration.resolve_route(task_id, db_path=str(self.db))
         self.assertEqual(still_delivery['next_stage'], 'delivery')
         self.assertEqual(still_delivery['recommended_action'], 'dispatch_role')
 
         rc, out, err = self.call(
             'task', 'complete', '--task', task_id, '--task-dir', str(task_dir),
-            '--actor', 'tp-delivery-convergence', '--summary', 'must not complete',
+            '--actor', 'tp-integration-engineer', '--summary', 'must not complete',
         )
         self.assertNotEqual(rc, 0)
         self.assertIn('INTEGRITY_PIPELINE_PENDING', err)
 
         rc, out, err = self.call(
             'task', 'delivery-converge', '--task', task_id, '--task-dir', str(task_dir),
-            '--knowledge-disposition', 'NO_CHANGE',
-            '--knowledge-query', 'verified delivery behavior and reusable rule',
-            '--reason', 'Targeted project+shared search found no durable Knowledge delta beyond already covered canonical facts.',
+            '--delivery-status', 'READY',
+            '--reason', 'Verified change is ready for integration and no delivery blocker remains.',
         )
         self.assertEqual(rc, 0, (out, err))
         complete_route = orchestration.resolve_route(task_id, db_path=str(self.db))
@@ -257,7 +274,7 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         self.assertEqual(complete_route['recommended_action'], 'task_complete')
         rc, out, err = self.call(
             'task', 'complete', '--task', task_id, '--task-dir', str(task_dir),
-            '--actor', 'tp-delivery-convergence', '--summary', 'done',
+            '--actor', 'tp-integration-engineer', '--summary', 'done',
         )
         self.assertEqual(rc, 0, (out, err))
 
@@ -265,118 +282,76 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         task_id = 'TASK-V522-STALE-DELIVERY'
         task_dir = self.create_task(task_id, 'L2')
         self.prepare_l2_to_verification_pass(task_id, task_dir)
+        self.code_review(task_id, task_dir, 'PASS')
         rc, out, err = self.call(
             'task', 'delivery-converge', '--task', task_id, '--task-dir', str(task_dir),
-            '--knowledge-disposition', 'NO_CHANGE', '--knowledge-query', 'current verified implementation durable behavior',
-            '--reason', 'Targeted project+shared search found no durable Knowledge delta after the current verified implementation.',
+            '--delivery-status', 'READY',
+            '--reason', 'Verified change is ready for integration and no delivery blocker remains.',
         )
         self.assertEqual(rc, 0, (out, err))
         self.assertEqual(orchestration.resolve_route(task_id, db_path=str(self.db))['next_stage'], 'complete')
         self.verify(task_id, task_dir, 'PASS')
         stale = orchestration.resolve_route(task_id, db_path=str(self.db))
-        self.assertEqual(stale['next_stage'], 'delivery')
-
-    def test_deferred_delivery_requires_matching_human_acceptance(self):
-        task_id = 'TASK-V522-DEFERRED'
-        task_dir = self.create_task(task_id, 'L2')
-        self.prepare_l2_to_verification_pass(task_id, task_dir)
-        rc, out, err = self.call(
-            'task', 'delivery-converge', '--task', task_id, '--task-dir', str(task_dir),
-            '--knowledge-disposition', 'DEFERRED',
-            '--reason', 'Knowledge Resolver is unavailable, so the required targeted canonical search cannot be completed safely.',
-            '--blocker-kind', 'RESOLVER_UNAVAILABLE',
-            '--recovery-condition', 'knowledge doctor passes and current project scope resolves without conflict',
-            '--responsibility', 'restore the Knowledge Resolver, then rerun delivery convergence',
-        )
-        self.assertEqual(rc, 0, (out, err))
+        self.assertEqual(stale['next_stage'], 'review')
+        self.code_review(task_id, task_dir, 'PASS')
         self.assertEqual(orchestration.resolve_route(task_id, db_path=str(self.db))['next_stage'], 'delivery')
-        rc, out, err = self.call(
-            'task', 'delivery-accept-deferred', '--task', task_id, '--task-dir', str(task_dir),
-            '--reason', 'Accept this temporary Knowledge deferral until the Resolver is restored; follow-up is required.',
-        )
-        self.assertEqual(rc, 0, (out, err))
-        accepted = orchestration.resolve_route(task_id, db_path=str(self.db))
-        self.assertEqual(accepted['next_stage'], 'complete')
 
-
-
-    def test_created_delivery_validates_exact_canonical_binding_then_runs_lint_and_index(self):
-        task_id = 'TASK-V522-CREATED'
+    def test_task_scoped_knowledge_deferred_does_not_block_ready_delivery(self):
+        task_id = 'TASK-V522-KNOWLEDGE-DEFERRED'
         task_dir = self.create_task(task_id, 'L2')
         self.prepare_l2_to_verification_pass(task_id, task_dir)
-        evidence_rel = sorted((task_dir / 'evidence').glob('verify-*.txt'))[-1].relative_to(task_dir).as_posix()
-        canonical_rel = '10-projects/demo/30-features/DEMO-FEAT-001-delivery-rule.md'
-        canonical = self.knowledge_root / canonical_rel
-        canonical.parent.mkdir(parents=True, exist_ok=True)
-        canonical.write_text(
-            '---\n'
-            'id: DEMO-FEAT-001\n'
-            'title: Delivery Rule\n'
-            'project: demo\n'
-            'kind: feature\n'
-            'status: active\n'
-            'canonical: true\n'
-            'source_refs: []\n'
-            'confidence: 0.95\n'
-            'last_verified: 2026-08-14\n'
-            'evidence_refs:\n'
-            f'  - type: task\n    ref: {task_id}\n    locator: {evidence_rel}\n'
-            '  - type: code\n    ref: repo/app.py:42\n'
-            '---\n\nA verified reusable delivery rule.\n',
-            encoding='utf-8',
-        )
+        self.code_review(task_id, task_dir, 'PASS')
         rc, out, err = self.call(
             'task', 'delivery-converge', '--task', task_id, '--task-dir', str(task_dir),
-            '--knowledge-disposition', 'CREATED', '--knowledge-query', 'delivery rule',
-            '--knowledge-ref', 'DEMO-FEAT-001', '--evidence', evidence_rel, '--source-ref', 'repo/app.py:42',
-            '--reason', 'Created a canonical reusable rule bound to this Task evidence and the verified source location.',
+            '--delivery-status', 'READY',
+            '--reason', 'Verified change is ready for integration and no delivery blocker remains.',
         )
         self.assertEqual(rc, 0, (out, err))
-        events = [dict(x) for x in self.events(task_id)]
-        delivery = [x for x in events if x['event_type'] == 'DELIVERY_RESULT'][-1]
-        detail = json.loads(delivery['detail_json'])
-        self.assertEqual(detail['knowledge_disposition'], 'CREATED')
-        self.assertEqual(detail['resolved_knowledge_refs'][0]['path'], canonical_rel)
-        self.assertEqual(detail['lint_receipts'][0]['status'], 'PASS')
-        self.assertTrue(detail['index_receipts'][0]['fresh'])
+        detail = json.loads([dict(x) for x in self.events(task_id) if x['event_type']=='DELIVERY_RESULT'][-1]['detail_json'])
+        handoff = detail['knowledge_handoff']
+        handoff['verified_facts'] = ['durable reusable fact']
+        rc, out, err = run(['knowledge', 'task-converge', '--handoff-json', json.dumps(handoff)])
+        self.assertEqual(rc, 0, (out, err))
+        knowledge = json.loads(out)
+        self.assertEqual(knowledge['status'], 'DEFERRED')
+        self.assertFalse(knowledge['blocks_delivery'])
         self.assertEqual(orchestration.resolve_route(task_id, db_path=str(self.db))['next_stage'], 'complete')
 
-    def test_stale_deferred_delivery_cannot_be_accepted_after_new_verification(self):
-        task_id = 'TASK-V522-STALE-DEFERRED'
+    def test_ready_delivery_handoff_can_finish_with_no_change_without_knowledge_scan(self):
+        task_id = 'TASK-V522-KNOWLEDGE-NOCHANGE'
         task_dir = self.create_task(task_id, 'L2')
         self.prepare_l2_to_verification_pass(task_id, task_dir)
+        self.code_review(task_id, task_dir, 'PASS')
         rc, out, err = self.call(
             'task', 'delivery-converge', '--task', task_id, '--task-dir', str(task_dir),
-            '--knowledge-disposition', 'DEFERRED',
-            '--reason', 'Knowledge Resolver ownership needs a human decision before the canonical convergence can proceed safely.',
-            '--blocker-kind', 'HUMAN_DECISION',
-            '--recovery-condition', 'human_owner resolves canonical ownership and delivery convergence is rerun',
-            '--responsibility', 'human_owner selects the canonical owner; delivery reruns against current verification',
+            '--delivery-status', 'READY',
+            '--reason', 'Verified change is ready for integration and no delivery blocker remains.',
         )
         self.assertEqual(rc, 0, (out, err))
-        self.verify(task_id, task_dir, 'PASS')
-        rc, out, err = self.call(
-            'task', 'delivery-accept-deferred', '--task', task_id, '--task-dir', str(task_dir),
-            '--reason', 'Do not accept a deferral that was bound to the previous verification event.',
-        )
-        self.assertNotEqual(rc, 0)
-        self.assertIn('stale against the current Verification PASS', err)
+        detail = json.loads([dict(x) for x in self.events(task_id) if x['event_type']=='DELIVERY_RESULT'][-1]['detail_json'])
+        rc, out, err = run(['knowledge', 'task-converge', '--handoff-json', json.dumps(detail['knowledge_handoff'])])
+        self.assertEqual(rc, 0, (out, err))
+        self.assertEqual(json.loads(out)['status'], 'NO_CHANGE')
 
     def test_blocked_delivery_result_prevents_pipeline_completion(self):
         task_id = 'TASK-V522-BLOCKED-DELIVERY'
         task_dir = self.create_task(task_id, 'L2')
         self.prepare_l2_to_verification_pass(task_id, task_dir)
+        self.code_review(task_id, task_dir, 'PASS')
         rc, out, err = self.call(
             'task', 'delivery-converge', '--task', task_id, '--task-dir', str(task_dir),
-            '--knowledge-disposition', 'BLOCKED',
-            '--reason', 'Canonical ownership conflict prevents safe merge and no human_owner deferral has been accepted.',
+            '--delivery-status', 'BLOCKED',
+            '--reason', 'Integration conflict prevents safe delivery of the verified subject.',
+            '--blocker-kind', 'INTEGRATION_CONFLICT',
+            '--recovery-condition', 'resolve integration conflict and rerun delivery readiness',
+            '--responsibility', 'integration engineer resolves the conflict or escalates to human_owner',
         )
         self.assertEqual(rc, 0, (out, err))
         route = orchestration.resolve_route(task_id, db_path=str(self.db))
         self.assertEqual(route['next_stage'], 'delivery')
         rc, out, err = self.call(
             'task', 'complete', '--task', task_id, '--task-dir', str(task_dir),
-            '--actor', 'tp-delivery-convergence', '--summary', 'must remain pending',
+            '--actor', 'tp-integration-engineer', '--summary', 'must remain pending',
         )
         self.assertNotEqual(rc, 0)
         self.assertIn('INTEGRITY_PIPELINE_PENDING', err)
@@ -384,9 +359,9 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
     def test_l1_existing_flow_does_not_gain_delivery_stage(self):
         task_id = 'TASK-V522-L1-NO-DELIVERY'
         task_dir = self.create_task(task_id, 'L1')
-        self.checkpoint(task_id, task_dir, 'tp-requirement-analysis', 'requirement')
-        self.checkpoint(task_id, task_dir, 'tp-architecture-design', 'architecture')
-        self.checkpoint(task_id, task_dir, 'tp-development-engineering', 'development')
+        self.checkpoint(task_id, task_dir, 'tp-product-manager', 'requirement')
+        self.checkpoint(task_id, task_dir, 'tp-software-architect', 'architecture')
+        self.checkpoint(task_id, task_dir, 'tp-development-engineer', 'development')
         self.verify(task_id, task_dir, 'PASS')
         route = orchestration.resolve_route(task_id, db_path=str(self.db))
         self.assertEqual(route['next_stage'], 'complete')

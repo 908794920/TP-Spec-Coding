@@ -17,9 +17,11 @@ import yaml
 BASE = Path(__file__).resolve().parent.parent.parent
 ACTIVE_VERSION = (BASE / "VERSION").read_text(encoding="utf-8").strip()
 ALL_AGENTS = (
-    "tp-workflow-orchestrator", "tp-requirement-analysis", "tp-architecture-design", "tp-architecture-review",
-    "tp-product-design", "tp-development-engineering", "tp-verification-engineering",
-    "tp-delivery-convergence", "tp-base-maintenance", "tp-knowledge", "tp-wiki", "tp-project-autonomy",
+    "tp-spec-coding", "tp-software-lifecycle", "tp-project-autonomy",
+    "tp-base-maintenance", "tp-knowledge", "tp-wiki",
+    "tp-product-manager", "tp-software-architect", "tp-tech-lead",
+    "tp-security-engineer", "tp-development-engineer", "tp-database-engineer",
+    "tp-test-engineer", "tp-code-reviewer", "tp-integration-engineer",
 )
 
 
@@ -54,16 +56,16 @@ class TestAgentSkills(unittest.TestCase):
             self.assertEqual(m.group(1), ACTIVE_VERSION, agent)
 
     def test_requirement_analysis_is_pretask_and_low_bookkeeping(self):
-        text = read_skill("tp-requirement-analysis")
+        text = read_skill("tp-product-manager")
         self.assertIn("需求分析允许发生在正式 Task 创建之前", text)
         self.assertIn("没有 TaskId", text)
-        self.assertIn("不要调用 `commit --refresh`", text)
-        self.assertIn("按需产生", text)
+        self.assertIn("task checkpoint --phase requirement|product", text)
+        self.assertIn("不创建空文档", text)
         self.assertNotIn("max_search_rounds", text)
 
     def test_architecture_review_is_risk_triggered_not_default_gate(self):
-        design = read_skill("tp-architecture-design")
-        review = read_skill("tp-architecture-review")
+        design = read_skill("tp-software-architect")
+        review = read_skill("tp-software-architect")
         self.assertIn("只有高风险", design)
         self.assertIn("缺失默认只是 WARN", design)
         self.assertIn("不是所有 L2/L3 的固定门禁", review)
@@ -71,13 +73,15 @@ class TestAgentSkills(unittest.TestCase):
 
     def test_roles_do_business_not_projection_bookkeeping(self):
         for agent in (
-            "tp-architecture-design", "tp-development-engineering",
-            "tp-verification-engineering", "tp-delivery-convergence",
+            "tp-software-architect", "tp-development-engineer",
+            "tp-test-engineer", "tp-integration-engineer",
         ):
             text = read_skill(agent)
             self.assertNotIn("stage_handoff:", text, agent)
-        self.assertIn("验收角色不得自行 `task complete`", read_skill("tp-verification-engineering"))
-        self.assertIn("`PIPELINE_COMPLETE`", read_skill("tp-delivery-convergence"))
+        self.assertIn("测试角色不自行 `task complete`", read_skill("tp-test-engineer"))
+        integration = read_skill("tp-integration-engineer")
+        self.assertIn("Delivery Result", integration)
+        self.assertIn("不重新裁决 PASS/FAIL", integration)
 
 
 class TestCostTiering(unittest.TestCase):

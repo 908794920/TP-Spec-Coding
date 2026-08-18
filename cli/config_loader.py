@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding controlled YAML loader (V5.2.3 C-01.4 contract).
+"""TP-Spec-Coding controlled YAML loader (V5.2.4 C-01.4 contract).
 
 Single controlled read path for governed YAML files, built on PyYAML 6.0.3
 SafeLoader (human_owner decision T1) with:
@@ -381,12 +381,7 @@ def get_state_owner(
         base_root=base_root,
     )
     owner = catalog["state_owner_map"].get(state)
-    if isinstance(owner, str):
-        return owner
-    # Frozen compatibility map is internal; active workflow/role-catalog stay small.
-    from .legacy_workflow import LEGACY_STATE_OWNERS
-    legacy_owner = LEGACY_STATE_OWNERS.get(state)
-    return legacy_owner if isinstance(legacy_owner, str) else None
+    return owner if isinstance(owner, str) else None
 
 
 def get_workflow_transitions(

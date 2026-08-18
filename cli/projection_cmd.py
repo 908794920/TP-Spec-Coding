@@ -26,6 +26,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import db as dbmod
 from .version import active_version
 
+DEFAULT_OWNER_ROLE = "tp-software-lifecycle"
+
 
 # 与 Test-TpSpecTask.ps1 L25 $EventTypes 完全一致
 _EVENT_TYPES = {
@@ -60,13 +62,13 @@ _TYPE_MAP = {
     "REVIEW_COMPLETED": "REVIEW_COMPLETED",
     "SCOPE_CHANGE": "SCOPE_CHANGE",
     "KNOWLEDGE": "KNOWLEDGE",
-    # V5.2.3 A-04：reconcile 追加的审计事件；投影为 FACT 保持
+    # V5.2.4 A-04：reconcile 追加的审计事件；投影为 FACT 保持
     # events.jsonl 合法 type 集合不变（Test-TpSpecTask.ps1 EventTypes 零感知）。
     "RECONCILIATION": "FACT",
 }
 
 
-# V5.2.3 新工件（AI-B 模板定义；AI-C 可继续追加）：存在才纳入 source digest。
+# V5.2.4 新工件（AI-B 模板定义；AI-C 可继续追加）：存在才纳入 source digest。
 _V511_SOURCE_NAMES = (
     "requirement-knowledge.md",
     "requirement-clarifications.md",
@@ -77,9 +79,9 @@ _V511_SOURCE_NAMES = (
 
 
 def projection_source_names() -> List[str]:
-    """current view source_files 集中注册表（V5.2.3 §10.2）。
+    """current view source_files 集中注册表（V5.2.4 §10.2）。
 
-    AI-C 接入 V5.2.3 新工件规则时可追加文件名；commit 的
+    AI-C 接入 V5.2.4 新工件规则时可追加文件名；commit 的
     _continuation_sources 与 reconcile 共用本注册表，存在性过滤保证
     旧任务/低风险任务不受影响。
     """
@@ -308,10 +310,10 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
     """
     task_id = task["task_id"]
     base_version = str(task["base_version"] or "")
-    # V5.2.3 单一活动契约：旧契约非终态任务须先经官方 migrate/retire 处理；业务命令不直接在旧契约上重建投影。
+    # V5.2.4 单一活动契约：旧契约非终态任务须先经官方 migrate/retire 处理；业务命令不直接在旧契约上重建投影。
     if base_version != active_version():
         raise ValueError(
-            f"legacy contract task is a frozen static archive; the V5.2.3 runtime "
+            f"legacy contract task is a frozen static archive; the V5.2.4 runtime "
             f"rebuilds projections only for base_version={active_version()}"
         )
     events = conn.execute(
@@ -329,7 +331,7 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
         base_version=base_version,
         current_state=task["current_state"] or "NEW",
         current_phase=task["current_stage"] or "intake",
-        current_owner=task["owner_role"] or "tp-architecture-design",
+        current_owner=task["owner_role"] or DEFAULT_OWNER_ROLE,
         risk_level=task["risk_level"] or "L1",
         flow_level=task["flow_level"] or "L1",
         blockers=blockers,
@@ -395,7 +397,7 @@ def _parse_status_yaml(text: str) -> Dict[str, str]:
 def validate_projection_files(conn, task, task_dir: Path) -> List[str]:
     """校验投影文件与 DB 一致，返回错误列表（空列表 = 一致）。
 
-    V5.2.3 A-04：reconcile 复用本函数做漂移检测（与 cmd_projection_validate 同逻辑）。
+    V5.2.4 A-04：reconcile 复用本函数做漂移检测（与 cmd_projection_validate 同逻辑）。
     """
     task_id = task["task_id"]
     status_path = task_dir / "status.yaml"

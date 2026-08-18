@@ -10,16 +10,19 @@ from cli import record_first, task_cmd
 BASE = Path(__file__).resolve().parents[2]
 
 FLOW_SKILLS = {
-    "tp-requirement-analysis",
-    "tp-product-design",
-    "tp-architecture-design",
-    "tp-architecture-review",
-    "tp-development-engineering",
-    "tp-verification-engineering",
-    "tp-delivery-convergence",
+    "tp-product-manager",
+    "tp-software-architect",
+    "tp-tech-lead",
+    "tp-security-engineer",
+    "tp-development-engineer",
+    "tp-database-engineer",
+    "tp-test-engineer",
+    "tp-code-reviewer",
+    "tp-integration-engineer",
 }
 EXPOSED_AGENTS = {
-    "tp-workflow-orchestrator",
+    "tp-spec-coding",
+    "tp-software-lifecycle",
     "tp-base-maintenance",
     "tp-knowledge",
     "tp-wiki",
@@ -28,7 +31,7 @@ EXPOSED_AGENTS = {
 LEGACY_CONTRACT = "5.1." + "3"
 
 
-def test_development_flow_exposes_only_orchestrator_as_agent_entry():
+def test_product_surface_exposes_entry_and_domain_agents_only():
     actual = {path.parent.name for path in (BASE / "agents").glob("tp-*/SKILL.md")}
     assert actual == EXPOSED_AGENTS
 
@@ -63,4 +66,4 @@ def test_post_migration_contract_check_detects_any_leftover_explicit_version():
             f"---\nartifact: tech-design\nartifact_contract:\n  version: \"{LEGACY_CONTRACT}\"\n---\n",
             encoding="utf-8",
         )
-        assert task_cmd._post_migration_contract_issues(task_dir, "5.2.3") == [f"tech-design.md:{LEGACY_CONTRACT}"]
+        assert task_cmd._post_migration_contract_issues(task_dir, "5.2.4") == [f"tech-design.md:{LEGACY_CONTRACT}"]

@@ -44,8 +44,11 @@ def _ensure_utf8_stdio() -> None:
 # 历史回归测试、旧版目录），保留原样以维持审计链；不参与活动契约纯度判定。
 # 前缀匹配（相对 BASE 的 posix 路径前缀）。
 _ALLOWED_HISTORY_PREFIXES = (
-    "docs/",          # 发布审查/基线/最终报告等历史证据
+    "docs/history/", # 显式历史/迁移证据
     "reports/",       # 历史质量报告
+    "cli/migrations/",
+    "scripts/migration/",
+    "scripts/tests/fixtures/history/",
 )
 # 精确文件 glob 匹配（相对 BASE）。
 _ALLOWED_HISTORY_GLOBS = (

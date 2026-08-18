@@ -1,6 +1,6 @@
 ---
 name: tp-autonomy-review
-version: 5.2.3
+version: 5.2.4
 description: 只读查看所有 Autonomy Profile 的 Inbox、Batch、Task、真实 Git commit/diff 与 Verification evidence；不写 Canonical。
 ---
 

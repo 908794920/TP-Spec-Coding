@@ -32,7 +32,7 @@ _BASE_ROOT = _MODULE_DIR.parent
 _SCHEMA_SQL_PATH = (_MODULE_DIR / ".." / "db" / "schema.sql").resolve()
 # migrations 目录
 _MIGRATIONS_DIR = (_MODULE_DIR / ".." / "db" / "migrations").resolve()
-# Runtime registry is machine-local state.  V5.2.3 originally stored the
+# Runtime registry is machine-local state.  V5.2.4 originally stored the
 # default under the Base checkout; that location remains read-only compatibility
 # input so old installations can be migrated without losing registrations.
 _LEGACY_REGISTRY_PATH = (_BASE_ROOT / "db" / "registry.local.json").resolve()

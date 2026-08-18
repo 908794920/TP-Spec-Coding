@@ -134,11 +134,11 @@ def test_digest_completed_this_cycle_excludes_tasks_completed_before_current_cyc
             auto_root = Path(ws["workspace_root"])
             task_dir = auto_root / ".tp-spec" / "tasks" / task
             record_first.checkpoint(
-                task_id=task, task_dir=str(task_dir), actor="tp-development-engineering",
+                task_id=task, task_dir=str(task_dir), actor="tp-development-engineer",
                 phase="development", summary="done", db=ws["db_path"],
             )
             record_first.complete(
-                task_id=task, task_dir=str(task_dir), actor="tp-development-engineering",
+                task_id=task, task_dir=str(task_dir), actor="tp-development-engineer",
                 summary="complete", db=ws["db_path"],
             )
             autonomy_cycle.end_cycle("demo", c1["cycle_id"], c1["generation"])

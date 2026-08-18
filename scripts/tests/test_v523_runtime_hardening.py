@@ -15,7 +15,7 @@ from unittest.mock import patch
 BASE = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE))
 
-from cli import commit_cmd  # noqa: E402
+from cli import transaction_commit  # noqa: E402
 from cli import db as dbmod  # noqa: E402
 from cli import main as climain  # noqa: E402
 from cli import transaction_journal  # noqa: E402
@@ -204,7 +204,7 @@ class V523RuntimeHardeningCase(unittest.TestCase):
             rc, out, err = run([
                 "task", "checkpoint", "--task", "TASK-CROSS-WRITE",
                 "--task-dir", str(task_dir_a),
-                "--actor", "tp-development-engineering",
+                "--actor", "tp-development-engineer",
                 "--phase", "development", "--summary", "must not cross-write",
             ])
         finally:
@@ -253,9 +253,9 @@ class V523RuntimeHardeningCase(unittest.TestCase):
         backup_called = []
         try:
             holder.execute("BEGIN IMMEDIATE")
-            with patch.object(commit_cmd, "_backup", side_effect=lambda *a, **k: backup_called.append(True)):
+            with patch.object(transaction_commit, "_backup", side_effect=lambda *a, **k: backup_called.append(True)):
                 with self.assertRaisesRegex(ValueError, "TASK_WRITER_BUSY"):
-                    commit_cmd._commit_with_recovery(
+                    transaction_commit._commit_with_recovery(
                         task_dir, contender, ["status.yaml"], lambda c, transaction_id="": {},
                         task_id="TASK-WRITER-BUSY", operation="busy-test",
                     )
@@ -275,7 +275,7 @@ class V523RuntimeHardeningCase(unittest.TestCase):
         task_dir = self._create_task(workspace)
         conn = dbmod.connect(str(db_path))
         seen = []
-        original_backup = commit_cmd._backup
+        original_backup = transaction_commit._backup
 
         def checking_backup(*args, **kwargs):
             seen.append(conn.in_transaction)
@@ -287,8 +287,8 @@ class V523RuntimeHardeningCase(unittest.TestCase):
             return {"status.yaml": status}
 
         try:
-            with patch.object(commit_cmd, "_backup", side_effect=checking_backup):
-                commit_cmd._commit_with_recovery(
+            with patch.object(transaction_commit, "_backup", side_effect=checking_backup):
+                transaction_commit._commit_with_recovery(
                     task_dir,
                     conn,
                     ["status.yaml"],
@@ -297,8 +297,8 @@ class V523RuntimeHardeningCase(unittest.TestCase):
                     operation="writer-serialization-test",
                     db_state_before="NEW",
                     target_state="NEW",
-                    owner_before="tp-architecture-design",
-                    owner_after="tp-architecture-design",
+                    owner_before="tp-software-architect",
+                    owner_after="tp-software-architect",
                     flush_id="",
                 )
         finally:
@@ -308,7 +308,7 @@ class V523RuntimeHardeningCase(unittest.TestCase):
 
     def test_durability_contract_does_not_claim_guaranteed_power_loss_recovery(self):
         journal_doc = transaction_journal.__doc__ or ""
-        commit_doc = commit_cmd._commit_with_recovery.__doc__ or ""
+        commit_doc = transaction_commit._commit_with_recovery.__doc__ or ""
         combined = journal_doc + "\n" + commit_doc
         self.assertNotIn("kill/断电", combined)
         self.assertIn("不保证突然断电", combined)

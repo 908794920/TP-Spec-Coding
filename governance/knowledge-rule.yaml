@@ -1,11 +1,11 @@
-# AI Knowledge Rule Definition — V5.2.3 Record-first
+# AI Knowledge Rule Definition — V5.2.4 Record-first
 #
 # Purpose:
 #   Define when long-lived Knowledge is worth capturing and which component owns
 #   retrieval/canonical maintenance.  Physical paths and retrieval implementation
 #   are owned by governance/content-systems.yaml, not this rule file.
 #
-# Compatibility version remains 2.1.0 for active V5.2.3 tasks; semantics are
+# Compatibility version remains 2.1.0 for active V5.2.4 tasks; semantics are
 # additive/Record-first and do not restore Knowledge as a completion gate.
 version: "2.1.0"
 
@@ -57,40 +57,28 @@ should_not_save:
   - "没有 evidence 的模型推断"
 
 responsibility:
-  tp-requirement-analysis:
+  tp-product-manager:
     role: "按需知识消费者"
     responsibilities:
     - "存在业务/历史知识缺口时优先使用标准 Knowledge Retrieval，而不是全库扫描历史资料"
     - "Knowledge 与当前需求/源码冲突时标注冲突，不静默采用"
-  tp-architecture-design:
-    role: "知识消费者与长期价值判断者"
+  tp-software-architect:
+    role: "知识消费者与长期价值信号提供者"
     responsibilities:
     - "设计/风险判断需要历史项目事实时优先 tp-spec knowledge search，并按需回 source/evidence"
-    - "判断当前任务是否产生长期知识价值；需要时确认 project/kind/knowledge_target 或记录 DEFERRED"
     - "不得直接把检索命中当成当前源码事实；代码事实仍回 Source/Wiki 核验"
-  tp-delivery-convergence:
-    role: "Task 驱动的 Knowledge 内容收敛者"
+    - "可以标记候选长期知识价值，但不直接维护 canonical Knowledge"
+  tp-integration-engineer:
+    role: "交付事实提供者"
     responsibilities:
-    - "只消费已验证的 Task/verification/交付事实；默认使用 compact fact pack，禁止全库重扫"
-    - "对本 Task 产生的长期知识执行 targeted search，优先 update/merge，必要时 create canonical 并绑定 evidence"
-    - "不得直接维护 source ingest/registry、Golden Set、全库 audit/migration/scheduler 治理；不得调度或 handoff tp-knowledge"
-    - "没有明确长期价值时走 Fast Path，不制造空文档或额外 AI 工作"
+    - "只形成 verified delivery facts / residual risk / integration result，不裁决长期 Knowledge"
+    - "不得把 Knowledge convergence 作为交付收费站"
   tp-knowledge:
-    role: "独立 Knowledge Content System 专项维护 Skill"
+    role: "Knowledge Content System 权威维护 Agent"
     responsibilities:
-    - "检索、外部文档/source 注册、canonical update/create/merge、evidence 维护"
-    - "运行 Knowledge L1-L4、index、telemetry、audit 与 trusted baseline"
-    - "无人值守定时维护按 automation/knowledge 当前 canonical protocol 执行"
-    - "保留全部现有 Knowledge 专项能力；不属于开发 workflow，不由 tp-workflow-orchestrator 或 tp-delivery-convergence 调度"
-  tp-base-maintenance:
-    role: "Base 健康/同步 owner"
-    responsibilities:
-    - "只负责项目引入的 TP-Spec-Coding、managed surfaces 与 Content Systems 路由健康"
-    - "不修改 Knowledge 内容"
-  human_owner:
-    role: "高风险/歧义最终决策者"
-    responsibilities:
-    - "确认破坏性清理、项目归属、冲突 merge/split 与重大长期规则"
+    - "接收 task-scoped verified handoff，执行 targeted convergence"
+    - "负责 source ingest/registry、canonical normalization、audit/projection 与长期治理"
+    - "默认 NO_CHANGE 合法；不得重做开发、测试或 Review"
 
 workflow:
   retrieval:
@@ -103,10 +91,10 @@ workflow:
   task_capture:
     trigger: "任务确实产生已验证、长期可复用知识"
     steps:
-    - "架构阶段只标记长期知识价值/target；交付阶段消费已验证 compact fact pack"
-    - "tp-delivery-convergence 对 Task 驱动事实执行 targeted search → update/create/merge，并绑定 evidence"
-    - "update/merge 优先于 create；没有长期价值时 Fast Path 直接收敛"
-    - "必要时 index update → verify → snapshot-commit；不得因此调度 tp-knowledge"
+    - "Integration Engineer 只提交 verified delivery facts / residual risk / integration result"
+    - "tp-software-lifecycle 仅在出现真实长期知识信号时向 tp-knowledge 发起 task-scoped handoff"
+    - "tp-knowledge 对 handoff 执行 targeted search → update/create/merge，并绑定 evidence；update/merge 优先于 create"
+    - "没有长期价值时 NO_CHANGE 合法；Knowledge convergence 不得成为 Delivery 收费站"
     completion_gate: false
   external_ingest:
     protocol: "automation/knowledge/ingest-batch.md"

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""V5.2.3 fail-closed YAML 解析与工件结构校验（Hardening P0-3/P1-4）。
+"""V5.2.4 fail-closed YAML 解析与工件结构校验（Hardening P0-3/P1-4）。
 
-依据：《V5.2.3 执行AI统一修复与自验证任务》§9.1（使用真实 YAML 解析，禁止仅正则）
-与《V5.2.3 源码级发布审查报告》P1-4（deferred_acceptance 仍使用正则）。
+依据：《V5.2.4 执行AI统一修复与自验证任务》§9.1（使用真实 YAML 解析，禁止仅正则）
+与《V5.2.4 源码级发布审查报告》P1-4（deferred_acceptance 仍使用正则）。
 
 设计：
 - ``parse_yaml_fail_closed(text, name)``：真实 YAML 解析（pyyaml 可用时），
@@ -16,7 +16,7 @@
   - 强制 AC 无 PENDING/BLOCKED。
 - ``validate_frontmatter_yaml(text, name)``：工件 front matter 真实解析校验。
 
-commit_cmd / transition_service / PowerShell validator 共用本模块，保证
+transaction_commit / migration transition compatibility / PowerShell validator 共用本模块，保证
 "accepted" 与 "rejected" 的判定在 Python 与 PowerShell 两侧语义一致。
 """
 from __future__ import annotations

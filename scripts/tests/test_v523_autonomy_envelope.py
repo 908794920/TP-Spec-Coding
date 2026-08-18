@@ -110,7 +110,7 @@ def test_repo_mutation_boundary_blocks_until_human_approval_then_next_cycle_disp
             assert rc == 0, (out, err)
             route = json.loads(out)
             assert route["decision"] == "DISPATCH_ROLE"
-            assert route["role_id"] == "tp-development-engineering"
+            assert route["role_id"] == "tp-development-engineer"
             assert task_state(db) == "ACTIVE"
 
 
@@ -119,8 +119,9 @@ def test_material_confirmation_blocked_in_unattended_cycle_can_be_confirmed_but_
         root = Path(td)
         with patch.dict(os.environ, {"TP_SPEC_USER_ROOT": str(root / "user")}, clear=False):
             profile, db, task_dir = setup_env(root, level="L2", confirmation="material")
-            add_checkpoint(str(db), "TASK-AUTO-1", "tp-requirement-analysis", "requirement")
-            add_checkpoint(str(db), "TASK-AUTO-1", "tp-architecture-design", "architecture")
+            add_checkpoint(str(db), "TASK-AUTO-1", "tp-product-manager", "requirement")
+            add_checkpoint(str(db), "TASK-AUTO-1", "tp-software-architect", "architecture")
+            add_checkpoint(str(db), "TASK-AUTO-1", "tp-tech-lead", "planning")
             # First cycle hits effect boundary; approve for next cycle.
             c1 = autonomy_cycle.begin_cycle("demo")
             run(["autonomy", "route", "--profile", "demo", "--task", "TASK-AUTO-1", "--cycle-id", c1["cycle_id"], "--generation", str(c1["generation"]), "--json"])
@@ -152,7 +153,7 @@ def test_material_confirmation_blocked_in_unattended_cycle_can_be_confirmed_but_
             assert rc == 0, (out, err)
             route = json.loads(out)
             assert route["decision"] == "DISPATCH_ROLE"
-            assert route["role_id"] == "tp-development-engineering"
+            assert route["role_id"] == "tp-development-engineer"
 
 
 def test_effects_empty_stage_guard_detects_git_visible_mutation():

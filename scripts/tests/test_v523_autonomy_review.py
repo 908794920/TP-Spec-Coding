@@ -44,8 +44,8 @@ def create_task(profile, task_id):
 
 
 def complete(ws, task_id, td):
-    record_first.checkpoint(task_id=task_id,task_dir=str(td),actor="tp-development-engineering",phase="development",summary="done",db=ws["db_path"])
-    record_first.complete(task_id=task_id,task_dir=str(td),actor="tp-development-engineering",summary="complete",db=ws["db_path"])
+    record_first.checkpoint(task_id=task_id,task_dir=str(td),actor="tp-development-engineer",phase="development",summary="done",db=ws["db_path"])
+    record_first.complete(task_id=task_id,task_dir=str(td),actor="tp-development-engineer",summary="complete",db=ws["db_path"])
 
 
 def test_review_inbox_batch_and_task_are_read_only_and_drill_down_to_real_git_diff():

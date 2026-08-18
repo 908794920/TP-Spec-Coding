@@ -76,7 +76,7 @@ def cmd_event_add(args) -> int:
             f"ERROR: {event_policies.GOVERNANCE_EVENT_REQUIRES_TRUSTED_PRODUCER}: "
             f"event add cannot produce governance event '{args.type}'; "
             f"it must be produced by its trusted command "
-            f"(e.g. 'tp-spec commit', 'tp-spec review record', 'tp-spec receipt record')",
+            f"(e.g. 'tp-spec task verify', 'tp-spec review record', 'tp-spec receipt record')",
             file=sys.stderr,
         )
         return 8
@@ -197,13 +197,13 @@ def _map_event_to_task_event(evt: Dict[str, Any], task_id: str, workflow_version
 def cmd_event_sync(args) -> int:
     """回流 flush 追加的 events.jsonl 事件到 DB（M5-C，v3 §4 R2）。
 
-    V5.2.3 Hardening（任务书 §4.3）：默认禁止 event sync 推进权威状态。
+    V5.2.4 Hardening（任务书 §4.3）：默认禁止 event sync 推进权威状态。
     - 允许：导入非状态历史 FACT/DECISION（不更新 task.current_state/owner_role）；
     - 禁止：从可编辑文件（events.jsonl / handoff.json）同步 STATE、HANDOFF 指向的
       新状态、owner_role、completed_at、cancel 状态；
     - 出现上述状态推进输入时返回 ``EVENT_SYNC_STATE_MUTATION_FORBIDDEN``；
     - 管理员恢复：显式 ``--admin-recovery`` + ``--confirm-admin-recovery ADMIN_RECOVERY`` 时，
-      转调共享 transition_service.transition_task（共享 validator + durable journal +
+      转调共享 migration-only transition_task（共享 validator + durable journal +
       AUDIT/RECONCILIATION 事件），不信任 handoff.json 自报 owner。
 
     幂等：重复 sync 既不重复插事件，也不重复推进 task 表。
@@ -242,7 +242,7 @@ def cmd_event_sync(args) -> int:
     next_state = handoff_next.get("state") if isinstance(handoff_next, dict) else None
     next_owner = handoff_next.get("owner") if isinstance(handoff_next, dict) else None
 
-    # ---- V5.2.3 状态推进字段检测（§4.3 禁止清单）----
+    # ---- V5.2.4 状态推进字段检测（§4.3 禁止清单）----
     _STATE_MUTATION_KEYS = ("state", "to_state", "next", "intended_next", "owner", "owner_role", "completed_at", "cancel")
     state_mutation_found = False
     for evt in flush_events:
@@ -261,8 +261,9 @@ def cmd_event_sync(args) -> int:
             print(
                 "EVENT_SYNC_STATE_MUTATION_FORBIDDEN: event sync must not advance authoritative "
                 "state (STATE/HANDOFF/owner/completed_at/cancel). "
-                "Use 'tp-spec commit' for state transitions, or '--admin-recovery' with "
-                "--confirm-admin-recovery ADMIN_RECOVERY for explicit managed recovery.",
+                "Use record-first task checkpoint/block/resume/verify/complete commands, or "
+                "'--admin-recovery' with --confirm-admin-recovery ADMIN_RECOVERY for explicit "
+                "five-state managed recovery.",
                 file=sys.stderr,
             )
             return 8
@@ -281,10 +282,8 @@ def cmd_event_sync(args) -> int:
                 )
                 return 8
 
-    # ---- 管理员恢复模式：转调共享 transition_service ----
+    # ---- 管理员恢复模式：只允许通过当前五态 Record-first API 恢复 ----
     if getattr(args, "admin_recovery", False):
-        # Personal mode: exact confirmation prevents accidental execution.
-        # It is intentionally not a personnel identity or cryptographic approval.
         confirmation = str(getattr(args, "confirm_admin_recovery", "") or "")
         if confirmation != "ADMIN_RECOVERY":
             print(
@@ -296,48 +295,91 @@ def cmd_event_sync(args) -> int:
         if next_state is None:
             print("ERROR: --admin-recovery requires handoff.json next.state", file=sys.stderr)
             return 8
-        db_path = dbmod.resolve_db_path(args.db, project_id=getattr(args, "project", None), task_id=task_id)
-        from .transition_service import transition_task
-        result = transition_task(
-            task_id=task_id,
-            task_dir=Path(task_dir),
-            to_state=next_state,
-            actor=getattr(args, "actor", None) or "human_owner",
-            summary=getattr(args, "reason", None) or "admin recovery via event sync",
-            evidence=[],
-            source_command="admin_recovery",
-            db_path=db_path,
-            extra_detail={
-                "recovery_mode": "explicit_personal",
-                "handoff_owner_declared": next_owner,
-                "confirmation": "ADMIN_RECOVERY",
-            },
-            extra_events=[
-                {
-                    "type": "AUDIT",
-                    "summary": "admin recovery",
-                    "detail_extra": {
-                        "audit_reason": getattr(args, "reason", None) or "managed recovery via event sync",
-                        "recovery_mode": "explicit_personal",
-                        "handoff_owner_declared": next_owner,
-                    },
-                },
-                {
-                    "type": "RECONCILIATION",
-                    "summary": "admin recovery",
-                    "detail_extra": {
-                        "target_state": next_state,
-                        "target_owner": next_owner,
-                    },
-                },
-            ],
-        )
-        if not result.ok:
-            print(f"ERROR: admin recovery transition failed: {result.message}", file=sys.stderr)
-            for issue in result.issues:
-                print(f"  - {issue.code}: {issue.message}", file=sys.stderr)
+
+        target = str(next_state).upper()
+        if target not in {"ACTIVE", "BLOCKED", "CANCELLED"}:
+            print(
+                "ERROR: ADMIN_RECOVERY_TARGET_UNSUPPORTED: active recovery only permits "
+                "ACTIVE, BLOCKED, or CANCELLED. COMPLETED must use trusted task complete; "
+                "legacy microstates belong to migration/history tooling.",
+                file=sys.stderr,
+            )
             return 8
-        print(f"event sync (admin recovery): {result.message}")
+
+        db_path = dbmod.resolve_db_path(args.db, project_id=getattr(args, "project", None), task_id=task_id)
+        conn = dbmod.connect(db_path)
+        try:
+            task = conn.execute("SELECT current_state,current_stage FROM task WHERE task_id=?", (task_id,)).fetchone()
+            if task is None:
+                print(f"ERROR: task not found: {task_id}", file=sys.stderr)
+                return 4
+            current = str(task["current_state"] or "")
+            phase = str(task["current_stage"] or "other")
+        finally:
+            conn.close()
+
+        from . import record_first
+        actor = str(getattr(args, "actor", None) or "human_owner")
+        reason = str(getattr(args, "reason", None) or "admin recovery via event sync")
+        try:
+            if target == "BLOCKED":
+                if current == "BLOCKED":
+                    result = {"task_id": task_id, "state": "BLOCKED", "phase": phase, "noop": True}
+                else:
+                    result = record_first.block(
+                        task_id=task_id, task_dir=str(task_dir), actor=actor, reason=reason,
+                        phase=phase if phase in record_first.PHASES else "other", db=db_path,
+                    )
+            elif target == "ACTIVE":
+                if current == "ACTIVE":
+                    result = {"task_id": task_id, "state": "ACTIVE", "phase": phase, "noop": True}
+                elif current == "BLOCKED":
+                    result = record_first.resume(
+                        task_id=task_id, task_dir=str(task_dir), actor=actor, summary=reason,
+                        phase=phase if phase in record_first.PHASES else "other", db=db_path,
+                    )
+                else:
+                    raise ValueError(
+                        f"ADMIN_RECOVERY_ACTIVE_REQUIRES_BLOCKED: current_state={current}; "
+                        "use task checkpoint for NEW work"
+                    )
+            else:  # CANCELLED
+                result = record_first.cancel(
+                    task_id=task_id, task_dir=str(task_dir), actor="human_owner", reason=reason, db=db_path,
+                )
+        except Exception as exc:
+            print(f"ERROR: admin recovery failed: {exc}", file=sys.stderr)
+            return 8
+
+        # Recovery audit is append-only and never performs the state mutation itself.
+        conn = dbmod.connect(db_path)
+        try:
+            now = dbmod.now_iso()
+            detail = json.dumps(
+                {
+                    "recovery_mode": "explicit_personal_five_state",
+                    "target_state": target,
+                    "handoff_owner_declared": next_owner,
+                    "confirmation": "ADMIN_RECOVERY",
+                    "result": result,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            with dbmod.transactional(conn):
+                conn.execute(
+                    "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (task_id, "AUDIT", "human_owner", "admin recovery", detail, "5.2.4", now),
+                )
+                conn.execute(
+                    "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (task_id, "RECONCILIATION", "human_owner", "admin recovery", detail, "5.2.4", now),
+                )
+        finally:
+            conn.close()
+        print(f"event sync (admin recovery): {target} via current record-first runtime")
         return 0
 
     # ---- 非状态历史 FACT 导入（禁止更新 task 表）----
@@ -393,8 +435,8 @@ def cmd_event_sync(args) -> int:
                         params,
                     )
                     inserted += 1
-        # V5.2.3 Hardening：非状态 FACT 导入禁止 UPDATE task 表（§4.3）。
-        # 权威状态只允许经 tp-spec commit / --admin-recovery 修改。
+        # V5.2.4：非状态 FACT 导入禁止 UPDATE task 表。
+        # 权威状态只允许经 record-first task API / explicit --admin-recovery 修改。
         print(
             f"event sync: imported {len(new_flush_ids)} non-state flush group(s), "
             f"inserted {inserted} FACT event(s); task table untouched (state/owner unchanged)"
@@ -433,15 +475,15 @@ def add_event_subparsers(event_parser) -> None:
     p_add.add_argument("--db", required=False, default=None)
     p_add.set_defaults(func=cmd_event_add)
 
-    # event sync（M5-C：回流 flush 追加事件到 DB；V5.2.3 默认禁止状态推进）
+    # event sync：回流 flush 追加事件到 DB；默认禁止状态推进
     p_sync = sub.add_parser("sync", help="Sync flush-appended non-state events to DB (state mutation forbidden)")
     p_sync.add_argument("--task", required=True, help="task id")
     p_sync.add_argument("--task-dir", required=True, help="task directory (events.jsonl location)")
     p_sync.add_argument("--project", required=False, default=None, help="resolve db via registry by project_id")
     p_sync.add_argument("--db", required=False, default=None)
-    # V5.2.3 Hardening：显式管理员恢复模式（走共享 transition_service）
-    p_sync.add_argument("--admin-recovery", action="store_true", help="V5.2.3 personal mode: explicit managed recovery through shared transition validation")
+    # V5.2.4：显式管理员恢复模式（只走当前五态 record-first runtime）
+    p_sync.add_argument("--admin-recovery", action="store_true", help="V5.2.4 personal mode: explicit managed recovery through current five-state runtime")
     p_sync.add_argument("--confirm-admin-recovery", default=None, help="Exact text ADMIN_RECOVERY; explicit confirmation only")
     p_sync.add_argument("--reason", default=None, help="Reason recorded in the admin recovery audit event")
-    p_sync.add_argument("--actor", required=False, default=None, help="V5.2.3: recovery actor (default human_owner)")
+    p_sync.add_argument("--actor", required=False, default=None, help="recovery actor (default human_owner; cancel is always human_owner)")
     p_sync.set_defaults(func=cmd_event_sync)

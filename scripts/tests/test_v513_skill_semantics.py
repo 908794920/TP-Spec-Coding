@@ -43,7 +43,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_requirement_keeps_fact_assumption_decision_boundary(self):
         self.assertContainsAll(
-            "skills/tp-requirement-analysis/SKILL.md",
+            "skills/tp-product-manager/SKILL.md",
             "确认事实 / AI 假设 / 待确认决策 / 未知现状",
             "不得静默升级为事实",
             "范围/非范围",
@@ -53,7 +53,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_product_keeps_product_reasoning_and_role_boundary(self):
         self.assertContainsAll(
-            "skills/tp-product-design/SKILL.md",
+            "skills/tp-product-manager/SKILL.md",
             "用户角色",
             "异常场景",
             "用户反馈",
@@ -63,7 +63,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_architecture_keeps_planning_risk_and_design_checklist(self):
         self.assertContainsAll(
-            "skills/tp-architecture-design/SKILL.md",
+            "skills/tp-software-architect/SKILL.md",
             "governance/risk-rule.yaml",
             "governance/planning-strategy.yaml",
             "并发",
@@ -76,7 +76,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_architecture_review_is_compact_but_professional(self):
         self.assertContainsAll(
-            "skills/tp-architecture-review/SKILL.md",
+            "skills/tp-software-architect/SKILL.md",
             "不是所有 L2/L3 的固定门禁",
             "不要重新扫描整个仓库",
             "数据、并发、事务、幂等风险",
@@ -87,7 +87,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_development_keeps_scope_truth_and_production_safety(self):
         self.assertContainsAll(
-            "skills/tp-development-engineering/SKILL.md",
+            "skills/tp-development-engineer/SKILL.md",
             "不自行改变业务目标",
             "开发自测不是独立验收",
             "production read",
@@ -98,7 +98,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_verification_keeps_independent_review_matrix(self):
         self.assertContainsAll(
-            "skills/tp-verification-engineering/SKILL.md",
+            "skills/tp-test-engineer/SKILL.md",
             "真实代码/diff/配置",
             "错误处理、边界条件、并发、事务、幂等",
             "安全与权限",
@@ -111,13 +111,20 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_delivery_keeps_truthful_knowledge_boundaries(self):
         self.assertContainsAll(
-            "skills/tp-delivery-convergence/SKILL.md",
+            "skills/tp-integration-engineer/SKILL.md",
             "<= 5%",
+            "DEFERRED",
+            "不重新裁决 PASS/FAIL",
+            "tp-knowledge",
+        )
+        self.assertContainsAll(
+            "agents/tp-knowledge/SKILL.md",
+            "task-scoped convergence",
+            "targeted search",
             "90-sources",
             "DEFERRED",
             "不重新裁决 PASS/FAIL",
-            "targeted",
-            "tp-knowledge",
+            "<= 5%",
         )
 
     def test_tp_wiki_keeps_low_cost_semantic_truth_guardrails(self):
@@ -151,13 +158,13 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_compact_roles_still_reject_old_daily_bookkeeping(self):
         for role in (
-            "tp-requirement-analysis",
-            "tp-product-design",
-            "tp-architecture-design",
-            "tp-architecture-review",
-            "tp-development-engineering",
-            "tp-verification-engineering",
-            "tp-delivery-convergence",
+            "tp-product-manager",
+            "tp-product-manager",
+            "tp-software-architect",
+            "tp-software-architect",
+            "tp-development-engineer",
+            "tp-test-engineer",
+            "tp-integration-engineer",
         ):
             text = read(f"skills/{role}/SKILL.md")
             self.assertNotIn("stage_handoff:", text, role)

@@ -227,7 +227,7 @@ def record_verification(profile_id: str, integration_id: str, *, decision: str, 
         rows.append({"path": str(path), "sha256": _sha256(path), "bytes": path.stat().st_size})
     if decision0 == "PASS" and not rows:
         raise AutonomyIntegrationError("INTEGRATION_EVIDENCE_REQUIRED")
-    data["verification"] = {"decision": decision0, "evidence": rows, "recorded_at": dbmod.now_iso(), "actor": "tp-verification-engineering"}
+    data["verification"] = {"decision": decision0, "evidence": rows, "recorded_at": dbmod.now_iso(), "actor": "tp-test-engineer"}
     data["status"] = "READY_TO_INTEGRATE" if decision0 == "PASS" else "VERIFICATION_FAILED"
     return _save(auto_root, data)
 

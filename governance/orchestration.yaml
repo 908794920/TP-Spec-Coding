@@ -1,5 +1,5 @@
-version: "5.2.3"
-entry_role: tp-workflow-orchestrator
+version: "5.2.4"
+entry_role: tp-software-lifecycle
 level_resolution:
   rule: MAX_RISK_FLOW
 confirmation:
@@ -16,6 +16,7 @@ execution:
   prefer_parallel_isolated_subagents: true
   sequential_isolation_fallback: true
   concurrent_workflow_stages: false
+  assignment_effects: true
   delivery_fast_path:
     max_incremental_ai_overhead_percent: 5
     context_source: runtime_compact_fact_pack
@@ -29,28 +30,51 @@ signals:
   multiple_routes: "workflow:multiple-feasible-routes"
   deep_review: "workflow:deep-review"
   root_cause_prefix: "workflow:root-cause:"
+  security_risk: "workflow:security-risk"
+  database_risk: "workflow:database-risk"
+conditional_roles:
+  - role: tp-database-engineer
+    trigger: database_risk
+    phases: [requirement, architecture, planning, development, verification, review]
+    read_effects: []
+    mutation_effects: [repo_mutation]
+  - role: tp-security-engineer
+    trigger: security_risk
+    phases: [requirement, architecture, development, verification, review]
+    read_effects: []
+  - role: tp-code-reviewer
+    trigger: deep_review
+    phases: [review]
+    read_effects: []
 pipelines:
   L0:
-    - {stage: development, phase: development, role: tp-development-engineering, required: true, mode: DIRECT, effects: [repo_mutation]}
-    - {stage: verification, phase: verification, role: tp-verification-engineering, required: false, trigger: behavioral_change, mode: AUTO_REVIEW, effects: []}
+    - {stage: development, phase: development, role: tp-development-engineer, required: true, mode: DIRECT, effects: [repo_mutation]}
+    - {stage: verification, phase: verification, role: tp-test-engineer, required: false, trigger: behavioral_change, mode: DIRECT, effects: []}
+    - {stage: review, phase: review, role: tp-code-reviewer, required: false, trigger: deep_review, mode: AUTO_REVIEW, effects: []}
   L1:
-    - {stage: requirement, phase: requirement, role: tp-requirement-analysis, required: true, mode: DIRECT, effects: []}
-    - {stage: architecture, phase: architecture, role: tp-architecture-design, required: true, mode: AUTO_PLANNING, effects: []}
-    - {stage: development, phase: development, role: tp-development-engineering, required: true, mode: DIRECT, effects: [repo_mutation]}
-    - {stage: verification, phase: verification, role: tp-verification-engineering, required: true, mode: AUTO_REVIEW, effects: []}
+    - {stage: requirement, phase: requirement, role: tp-product-manager, required: true, mode: DIRECT, effects: []}
+    - {stage: architecture, phase: architecture, role: tp-software-architect, required: true, mode: AUTO_PLANNING, effects: []}
+    - {stage: planning, phase: planning, role: tp-tech-lead, required: false, trigger: contextual, mode: DIRECT, effects: []}
+    - {stage: development, phase: development, role: tp-development-engineer, required: true, mode: DIRECT, effects: [repo_mutation]}
+    - {stage: verification, phase: verification, role: tp-test-engineer, required: true, mode: DIRECT, effects: []}
+    - {stage: review, phase: review, role: tp-code-reviewer, required: false, trigger: deep_review, mode: AUTO_REVIEW, effects: []}
   L2:
-    - {stage: requirement, phase: requirement, role: tp-requirement-analysis, required: true, mode: DIRECT, effects: []}
-    - {stage: product, phase: product, role: tp-product-design, required: false, trigger: contextual, mode: DIRECT, effects: []}
-    - {stage: architecture, phase: architecture, role: tp-architecture-design, required: true, mode: AUTO_PLANNING, effects: []}
-    - {stage: architecture_review, phase: architecture, role: tp-architecture-review, required: false, trigger: architecture_risk, mode: DIRECT, effects: []}
-    - {stage: development, phase: development, role: tp-development-engineering, required: true, mode: DIRECT, effects: [repo_mutation]}
-    - {stage: verification, phase: verification, role: tp-verification-engineering, required: true, mode: AUTO_REVIEW, effects: []}
-    - {stage: delivery, phase: delivery, role: tp-delivery-convergence, required: true, mode: DIRECT, effects: []}
+    - {stage: requirement, phase: requirement, role: tp-product-manager, required: true, mode: DIRECT, effects: []}
+    - {stage: product, phase: product, role: tp-product-manager, required: false, trigger: contextual, mode: DIRECT, effects: []}
+    - {stage: architecture, phase: architecture, role: tp-software-architect, required: true, mode: AUTO_PLANNING, effects: []}
+    - {stage: architecture_review, phase: architecture, role: tp-software-architect, required: false, trigger: architecture_risk, mode: DIRECT, effects: []}
+    - {stage: planning, phase: planning, role: tp-tech-lead, required: true, mode: DIRECT, effects: []}
+    - {stage: development, phase: development, role: tp-development-engineer, required: true, mode: DIRECT, effects: [repo_mutation]}
+    - {stage: verification, phase: verification, role: tp-test-engineer, required: true, mode: DIRECT, effects: []}
+    - {stage: review, phase: review, role: tp-code-reviewer, required: true, mode: AUTO_REVIEW, effects: []}
+    - {stage: delivery, phase: delivery, role: tp-integration-engineer, required: true, mode: DIRECT, effects: []}
   L3:
-    - {stage: requirement, phase: requirement, role: tp-requirement-analysis, required: true, mode: DIRECT, effects: []}
-    - {stage: product, phase: product, role: tp-product-design, required: false, trigger: contextual, mode: DIRECT, effects: []}
-    - {stage: architecture, phase: architecture, role: tp-architecture-design, required: true, mode: AUTO_PLANNING, effects: []}
-    - {stage: architecture_review, phase: architecture, role: tp-architecture-review, required: false, trigger: architecture_risk, mode: DIRECT, effects: []}
-    - {stage: development, phase: development, role: tp-development-engineering, required: true, mode: DIRECT, effects: [repo_mutation]}
-    - {stage: verification, phase: verification, role: tp-verification-engineering, required: true, mode: AUTO_REVIEW, effects: []}
-    - {stage: delivery, phase: delivery, role: tp-delivery-convergence, required: true, mode: DIRECT, effects: []}
+    - {stage: requirement, phase: requirement, role: tp-product-manager, required: true, mode: DIRECT, effects: []}
+    - {stage: product, phase: product, role: tp-product-manager, required: false, trigger: contextual, mode: DIRECT, effects: []}
+    - {stage: architecture, phase: architecture, role: tp-software-architect, required: true, mode: AUTO_PLANNING, effects: []}
+    - {stage: architecture_review, phase: architecture, role: tp-software-architect, required: false, trigger: architecture_risk, mode: DIRECT, effects: []}
+    - {stage: planning, phase: planning, role: tp-tech-lead, required: true, mode: DIRECT, effects: []}
+    - {stage: development, phase: development, role: tp-development-engineer, required: true, mode: DIRECT, effects: [repo_mutation]}
+    - {stage: verification, phase: verification, role: tp-test-engineer, required: true, mode: DIRECT, effects: []}
+    - {stage: review, phase: review, role: tp-code-reviewer, required: true, mode: AUTO_REVIEW, effects: []}
+    - {stage: delivery, phase: delivery, role: tp-integration-engineer, required: true, mode: DIRECT, effects: []}

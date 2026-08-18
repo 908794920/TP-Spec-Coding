@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.3 Windows portability and execution-boundary regression tests."""
+"""V5.2.4 Windows portability and execution-boundary regression tests."""
 from __future__ import annotations
 
 import json
@@ -35,7 +35,7 @@ def _make_runtime_db(db_path: Path, project_id: str, root_path: Path) -> None:
                 "INSERT OR REPLACE INTO project "
                 "(project_id, project_name, root_path, base_version, schema_version, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (project_id, project_id, str(root_path), "5.2.3", dbmod.EXPECTED_SCHEMA_VERSION, now, now),
+                (project_id, project_id, str(root_path), "5.2.4", dbmod.EXPECTED_SCHEMA_VERSION, now, now),
             )
     finally:
         conn.close()
@@ -81,7 +81,7 @@ def test_project_bootstrap_accepts_equivalent_alias_root(tmp_path: Path):
                 "project_name": project_id,
                 "db_path": str(db_path),
                 "root_path": str(alias),
-                "base_version": "5.2.3",
+                "base_version": "5.2.4",
                 "schema_version": 1,
             }]
         }),
@@ -92,7 +92,7 @@ def test_project_bootstrap_accepts_equivalent_alias_root(tmp_path: Path):
         root=str(real),
         db=str(db_path),
         registry=str(registry),
-        base_version="5.2.3",
+        base_version="5.2.4",
         check_only=False,
     )
     assert project_cmd.cmd_project_bootstrap(args) == 0
@@ -119,7 +119,7 @@ def test_legacy_registry_migration_treats_alias_roots_as_same_identity(tmp_path:
         json.dumps({"projects": [{
             "project_id": "demo", "project_name": "demo",
             "root_path": str(alias), "db_path": str(db_path),
-            "base_version": "5.2.3", "schema_version": 1,
+            "base_version": "5.2.4", "schema_version": 1,
         }]}),
     )
     _write(
@@ -127,7 +127,7 @@ def test_legacy_registry_migration_treats_alias_roots_as_same_identity(tmp_path:
         json.dumps({"projects": [{
             "project_id": "demo", "project_name": "demo",
             "root_path": str(real), "db_path": str(db_path),
-            "base_version": "5.2.3", "schema_version": 1,
+            "base_version": "5.2.4", "schema_version": 1,
         }]}),
     )
 

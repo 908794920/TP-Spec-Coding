@@ -1,6 +1,6 @@
 ---
 name: tp-autonomy-cycle
-version: 5.2.3
+version: 5.2.4
 description: 外部 Scheduler/本地 Executor 唤起的一次无人值守 Autonomous Maintenance Cycle；使用 generation fencing，复用普通 Task 与当前 tp-workflow-orchestrator。
 ---
 

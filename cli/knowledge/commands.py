@@ -14,7 +14,7 @@ from .migration import migration_plan
 from .normalization import normalization_plan, apply_normalization
 from .lint import lint_knowledge
 from .projection import build_projection, projection_status, search, telemetry_summary, update_projection
-from .state import commit_snapshot, create_audit_plan, maintain, record_audit, stage_scan, status as knowledge_status, verify
+from .state import commit_snapshot, create_audit_plan, maintain, record_audit, stage_scan, status as knowledge_status, task_scoped_convergence, verify
 
 
 def _emit(data: Any) -> None:
@@ -160,6 +160,17 @@ def cmd_status(args) -> int:
     except Exception as exc: _emit({"schema":"tp-spec.knowledge-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
+def cmd_task_converge(args) -> int:
+    """Consume a compact verified handoff without re-reading Task/repository."""
+    try:
+        payload = json.loads(args.handoff_json)
+        _emit(task_scoped_convergence(payload))
+        return 0
+    except Exception as exc:
+        _emit({"schema":"tp-spec.knowledge-task-convergence/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}","blocks_delivery":False})
+        return 1
+
+
 def cmd_ingest_register(args) -> int:
     try: _emit(register_batch(_cfg(args),project=args.project,batch=args.batch,source_root=Path(args.source_root))); return 0
     except Exception as exc: _emit({"schema":"tp-spec.knowledge-ingest-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
@@ -202,6 +213,8 @@ def add_knowledge_subparsers(root_subparsers) -> None:
     p=sub.add_parser("migrate-normalize",help="Deterministic legacy canonical frontmatter normalization; dry-run by default"); _common(p); p.add_argument("--apply",action="store_true",help="apply only semantics-preserving safe transformations and write a receipt/review queue"); p.set_defaults(func=cmd_migrate_normalize)
     p=sub.add_parser("audit",help="Create deterministic L4 semantic audit scope"); _common(p); p.add_argument("--full",action="store_true"); p.set_defaults(func=cmd_audit)
     p=sub.add_parser("audit-record",help="Record conversational-model L4 result"); _common(p); p.add_argument("--result",required=True,choices=["PASS","FAIL","pass","fail"]); p.add_argument("--summary",required=True); p.add_argument("--document",action="append",default=[]); p.set_defaults(func=cmd_audit_record)
+
+    p=sub.add_parser("task-converge",help="Cheap task-scoped Knowledge disposition from a verified compact handoff"); p.add_argument("--handoff-json",required=True,help="compact tp-spec.knowledge-task-handoff/v1 JSON object"); p.set_defaults(func=cmd_task_converge)
 
     idx=sub.add_parser("index",help="Knowledge SQLite FTS5 projection"); idxsub=idx.add_subparsers(dest="index_cmd",required=True)
     p=idxsub.add_parser("build"); _common(p); p.set_defaults(func=cmd_index_build)

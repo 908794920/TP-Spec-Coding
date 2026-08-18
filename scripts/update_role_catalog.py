@@ -114,6 +114,19 @@ def validate(catalog: dict[str, Any]) -> list[str]:
             errors.append(f"{role_id}: type catalog={role.get('type')!r} frontmatter={fm.get('type')!r}")
         if str(fm.get("version") or "") != version:
             errors.append(f"{role_id}: Skill version={fm.get('version')!r} != VERSION={version!r}")
+        phases = role.get("phases") or []
+        capabilities = role.get("capabilities") or []
+        if not isinstance(phases, list) or not phases:
+            errors.append(f"{role_id}: phases must be a non-empty list")
+        if not isinstance(capabilities, list) or not capabilities:
+            errors.append(f"{role_id}: capabilities must be a non-empty list")
+        for sub in role.get("subskills") or []:
+            if not isinstance(sub, dict) or not sub.get("id") or not sub.get("path"):
+                errors.append(f"{role_id}: invalid subskill metadata {sub!r}")
+                continue
+            subpath = (BASE / str(sub["path"])).resolve()
+            if not _inside_base(subpath) or not subpath.is_file():
+                errors.append(f"{role_id}: subskill path missing/unsafe: {sub.get('path')}")
         actual = _sha(skill)
         if str(role.get("content_sha256") or "").upper() != actual:
             errors.append(f"{role_id}: content_sha256 mismatch catalog={role.get('content_sha256')} actual={actual}")

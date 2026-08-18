@@ -91,11 +91,11 @@ def _parse_levels_block(lines, idx):
           name: ...
           flow:
             - state: "COMPLETED"
-              completion_owner: "tp-delivery-convergence"
+              completion_owner: "tp-integration-engineer"
           human_required: false
 
     返回 (levels_dict, next_idx)。
-    levels_dict: {"L0": "tp-delivery-convergence", "L1": "tp-delivery-convergence", ...}
+    levels_dict: {"L0": "tp-integration-engineer", "L1": "tp-integration-engineer", ...}
     """
     levels = {}
     if idx >= len(lines):
@@ -262,7 +262,7 @@ class WorkflowDef:
 
         优先级：risk_level 的 completion_owner，回退 flow_level，再回退 None。
         与 workflow.yaml levels.<Lx>.flow[COMPLETED].completion_owner 对齐：
-          V5.2.3 各等级均为 tp-delivery-convergence
+          V5.2.4 各等级均为 tp-integration-engineer
         """
         if risk_level and risk_level in self.levels:
             return self.levels[risk_level]
@@ -300,23 +300,13 @@ def load_workflow(base_root=None) -> WorkflowDef:
         raise
     except Exception as e:
         raise WorkflowLoadError(f"failed to parse workflow.yaml: {e}")
-    # Active governance stays intentionally small. Frozen legacy microstates are
-    # merged only inside the Runtime decoder so historical ledgers remain parseable
-    # without exposing the old process to roles.
-    from .legacy_workflow import LEGACY_STATE_OWNERS, LEGACY_TRANSITIONS
-    states = dict(data["states"])
-    for state, owner in LEGACY_STATE_OWNERS.items():
-        states.setdefault(state, {"owner": owner, "name": "legacy compatibility", "description": None})
-    transitions = {k: list(v) for k, v in data["transitions"].items()}
-    for state, next_states in LEGACY_TRANSITIONS.items():
-        merged = transitions.setdefault(state, [])
-        for target in next_states:
-            if target not in merged:
-                merged.append(target)
+    # Active runtime loads only the five-state current contract. Frozen
+    # pre-Record-first microstates live under cli.migrations.v5_2_3 and are
+    # imported only by explicit migration/history tooling.
     wf = WorkflowDef(
         version=data["version"],
-        states=states,
-        transitions=transitions,
+        states=dict(data["states"]),
+        transitions={k: list(v) for k, v in data["transitions"].items()},
         levels=data.get("levels", {}),
     )
     # 基本校验

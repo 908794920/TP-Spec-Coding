@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.3 C1 anchor_check 确定性锚点校验（B-17 C1-P1~P9）。
+"""V5.2.4 C1 anchor_check 确定性锚点校验（B-17 C1-P1~P9）。
 
 设计依据：历史设计记录 C1-review-preflight-design §4
 证据锚点：升级计划 §3.1 L102-109；评审表 9.4 第 1 行（L333）。
@@ -10,8 +10,8 @@
 ③ 证据哈希一致性（接受 64hex 或 sha256: 前缀，同 B-16 `_normalize_sha256` 形式）；
 ④ hunk 滑动窗口确定性偏移（固定窗口/固定步长/确定性首匹配回溯）。
 
-失败不删除 finding，标 anchor_status: unverified 交 tp-verification-engineering；
-V5.2.3 不包含 OCR 式 LLM 评论过滤，所有预检命中保留。
+失败不删除 finding，标 anchor_status: unverified 交 tp-code-reviewer；
+V5.2.4 不包含 OCR 式 LLM 评论过滤，所有预检命中保留。
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ from __future__ import annotations
 import hashlib
 import re
 from typing import Any
+
+from .review_locator import locate_existing_code
 
 # --- 版本与错误码枚举 ---
 _ANCHOR_CHECK_VERSION = "1.0.0"
@@ -138,3 +140,19 @@ def run_anchor_check(finding: dict[str, Any], file_content: str) -> dict[str, An
         "offset_correction": offset,
         "anchor_check_version": _ANCHOR_CHECK_VERSION,
     }
+
+
+def locate_finding(finding: dict[str, Any], diffs: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Best-effort deterministic relocation metadata for an unverified finding.
+
+    This never changes the finding's trust result.  It only supplies a unique
+    location candidate for the formal Code Reviewer; ambiguous matches return
+    ``None`` rather than guessing.
+    """
+    code = str(finding.get("existing_code") or finding.get("text") or "").strip()
+    if not code:
+        return None
+    loc = locate_existing_code(code, diffs, preferred_path=str(finding.get("file") or ""))
+    if loc is None:
+        return None
+    return {"file": loc.path, "start_line": loc.start_line, "end_line": loc.end_line, "source": loc.source}

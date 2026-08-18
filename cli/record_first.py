@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.3 Record-first task operations.
+"""V5.2.4 Record-first task operations.
 
 The public workflow records business facts instead of forcing role-authored
 workflow bookkeeping. SQLite remains authoritative; readable projections are
@@ -18,14 +18,15 @@ from . import projection_cmd
 from .version import active_version
 
 PHASES = (
-    "intake", "requirement", "product", "architecture", "discovery",
-    "development", "verification", "delivery", "other",
+    "intake", "requirement", "product", "discovery", "architecture", "planning",
+    "development", "verification", "review", "delivery", "other",
 )
 ACTORS = (
-    "tp-requirement-analysis", "tp-product-design", "tp-architecture-design",
-    "tp-architecture-review", "tp-development-engineering",
-    "tp-verification-engineering", "tp-delivery-convergence", "tp-knowledge",
-    "tp-wiki", "human_owner",
+    "tp-spec-coding", "tp-software-lifecycle", "tp-product-manager",
+    "tp-software-architect", "tp-tech-lead", "tp-security-engineer",
+    "tp-development-engineer", "tp-database-engineer", "tp-test-engineer",
+    "tp-code-reviewer", "tp-integration-engineer", "tp-knowledge",
+    "tp-wiki", "tp-base-maintenance", "tp-project-autonomy", "human_owner",
 )
 PUBLIC_STATES = {"NEW", "ACTIVE", "BLOCKED", "COMPLETED", "CANCELLED"}
 TERMINAL_STATES = {"COMPLETED", "CANCELLED"}
@@ -65,24 +66,24 @@ def _write_with_projection(conn, task_dir: Path, task, *, operation: str,
                            target_state: str, owner_after: str, flush_id: str,
                            writer, summary: str) -> None:
     """Reuse the durable journal without exposing commit/handoff semantics."""
-    from . import commit_cmd
+    from . import transaction_commit
 
     current = str(task["current_state"] or "")
-    view_rel = commit_cmd._current_view_rel(target_state)
+    view_rel = transaction_commit._current_view_rel(target_state)
 
     def db_and_render(dbconn, transaction_id=""):
         writer(dbconn, transaction_id)
         refreshed = dbconn.execute("SELECT * FROM task WHERE task_id=?", (task["task_id"],)).fetchone()
         status_yaml, events_jsonl, warnings = projection_cmd.render_projection(dbconn, refreshed)
-        commit_cmd._warn_projection(warnings)
-        return commit_cmd._finalize_texts(
+        transaction_commit._warn_projection(warnings)
+        return transaction_commit._finalize_texts(
             task_dir,
             {"status.yaml": status_yaml, "events.jsonl": events_jsonl},
             view_rel,
-            lambda: commit_cmd._rebuild_current_view_text(task_dir, refreshed, summary, flush_id),
+            lambda: transaction_commit._rebuild_current_view_text(task_dir, refreshed, summary, flush_id),
         )
 
-    commit_cmd._commit_with_recovery(
+    transaction_commit._commit_with_recovery(
         task_dir, conn, ["status.yaml", "events.jsonl", view_rel], db_and_render,
         task_id=str(task["task_id"]), operation=operation,
         db_state_before=current, target_state=target_state,
@@ -146,7 +147,7 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
         context_usage_mod.emit_warnings(context_warnings)
         risk_escalation = None
         effective_risk = str(task["risk_level"] or "L1")
-        if actor == "tp-architecture-design" and phase == "architecture":
+        if actor == "tp-software-architect" and phase == "architecture":
             from . import risk_signals
             scan = risk_signals.scan_task_artifacts(tdir)
             order = {"L0": 0, "L1": 1, "L2": 2, "L3": 3}
@@ -267,7 +268,7 @@ def _latest_verification(conn, task_id: str, task_dir: Optional[Path] = None) ->
         (task_id,),
     ).fetchall()
     for row in rows:
-        if str(row["actor_role"] or "") != "tp-verification-engineering":
+        if str(row["actor_role"] or "") != "tp-test-engineer":
             continue
         detail = {}
         try:
@@ -296,8 +297,8 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
            context_usage: Optional[Iterable[Dict[str, Any]]] = None,
            db: Optional[str] = None) -> Dict[str, Any]:
     """Record an actual technical verification result without adding a workflow gate."""
-    if actor != "tp-verification-engineering":
-        raise ValueError("technical verification must be recorded by tp-verification-engineering")
+    if actor != "tp-test-engineer":
+        raise ValueError("technical verification must be recorded by tp-test-engineer")
     decision0 = str(decision or "").upper()
     if decision0 not in {"PASS", "FAIL", "NEEDS_FIX"}:
         raise ValueError("decision must be PASS, FAIL or NEEDS_FIX")
@@ -371,7 +372,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
 def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
     """Validate only acceptance claims that would become false history if forged.
 
-    V5.2.3 deliberately does *not* require every AC to be complete.  PENDING is a
+    V5.2.4 deliberately does *not* require every AC to be complete.  PENDING is a
     valid factual outcome.  This check therefore ignores completeness/formality and
     protects only positive/owner-authority claims: PASS evidence, human witness, and
     DEFERRED_ACCEPTED/OWNER_WAIVED ledger authority.

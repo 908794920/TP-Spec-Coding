@@ -146,7 +146,7 @@ def _empty_asset(source_type: str, asset_id: str) -> dict[str, Any]:
 def _trusted_verification_decision(event: Any) -> str:
     if str(_row_value(event, "event_type", "") or "") != "VERIFICATION_COMPLETED":
         return ""
-    if str(_row_value(event, "actor_role", "") or "") != "tp-verification-engineering":
+    if str(_row_value(event, "actor_role", "") or "") != "tp-test-engineer":
         return ""
     detail = _parse_detail(_row_value(event, "detail_json", ""))
     if not is_trusted_context_capture_event("VERIFICATION_COMPLETED", detail):
@@ -286,7 +286,7 @@ def aggregate_context_usage(
         "candidates": candidates,
         "limitations": [
             "Knowledge retrieval_runs has no project_id/task_id; central retrieval telemetry is not attributed to this project.",
-            "Legacy VERIFICATION_COMPLETED events produced by commit are intentionally excluded from the V5.2.3 P0 effectiveness proxy.",
+            "Legacy VERIFICATION_COMPLETED events produced by commit are intentionally excluded from the V5.2.4 P0 effectiveness proxy.",
         ],
     }
 

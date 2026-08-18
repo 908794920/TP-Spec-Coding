@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""V5.2.3 可信事件注册表（Final Hardening 单一来源）。
+"""V5.2.4 可信事件注册表（Final Hardening 单一来源）。
 
-依据：《V5.2.3 Final Hardening Invariant 修复任务》Task 1（§3）与《V5.2.3
+依据：《V5.2.4 Final Hardening Invariant 修复任务》Task 1（§3）与《V5.2.4
 HARDENING 源码复审报告》P0-1/P0-2。INV-02：治理事件只能由可信生产者产生；
 INV-03：门禁不信任 type/actor/summary 三元组，只接受含完整身份链的可信事件。
 
@@ -35,7 +35,7 @@ UNKNOWN_EVENT_TYPE = "UNKNOWN_EVENT_TYPE"
 TRUSTED_EVENT_SCHEMA_INVALID = "TRUSTED_EVENT_SCHEMA_INVALID"
 ARCHITECTURE_REVIEW_ARTIFACT_MISMATCH = "ARCHITECTURE_REVIEW_ARTIFACT_MISMATCH"
 ARCHITECTURE_REVIEW_KIND_MISMATCH = "ARCHITECTURE_REVIEW_KIND_MISMATCH"
-# ARCHITECTURE_REVIEW_STALE 定义于 cli/transition_service.py（保持同义常量）
+# ARCHITECTURE_REVIEW_STALE 定义于 migration-only transition compatibility module（保持同义常量）
 ARCHITECTURE_REVIEW_STALE = "ARCHITECTURE_REVIEW_STALE"
 
 
@@ -80,7 +80,7 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
     "REVIEW_COMPLETED": _policy("governance", ("review_record", "commit"), True, _REVIEW_IDENTITY_FIELDS),
     "REVIEW": _policy("governance", ("review_record", "commit"), True, _EVENT_SCHEMA_FIELDS),
     "VERIFICATION": _policy("governance", ("commit",), True, _EVENT_SCHEMA_FIELDS),
-    # V5.2.3 Record-first verification is a trusted fact but no longer a state gate.
+    # V5.2.4 Record-first verification is a trusted fact but no longer a state gate.
     # It binds decision + current technical subject digest + real evidence without
     # requiring a role-authored review artifact.
     "VERIFICATION_COMPLETED": _policy(
@@ -103,11 +103,7 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
     "DELIVERY_RESULT": _policy(
         "governance", ("delivery_converge",), True,
         _EVENT_SCHEMA_FIELDS + ("verification_event_id", "verification_subject_digest",
-                                "knowledge_disposition", "reason"),
-    ),
-    "DELIVERY_DEFERRED_ACCEPTED": _policy(
-        "governance", ("delivery_deferred_accept",), True,
-        _EVENT_SCHEMA_FIELDS + ("delivery_event_id", "delivery_event_digest", "reason"),
+                                "delivery_status", "reason"),
     ),
     "SCOPE_CHANGE": _policy("governance", ("commit", "receipt_record"), True, _EVENT_SCHEMA_FIELDS + ("scope_id",)),
     "AUDIT": _policy("governance", ("admin_recovery", "reconcile"), True, _EVENT_SCHEMA_FIELDS),

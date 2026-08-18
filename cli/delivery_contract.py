@@ -2,146 +2,100 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, List
 
-DELIVERY_DISPOSITIONS = {'CREATED', 'UPDATED', 'NO_CHANGE', 'DEFERRED', 'BLOCKED'}
-DEFERRED_BLOCKER_KINDS = {'RESOLVER_UNAVAILABLE', 'CANONICAL_CONFLICT', 'DESTRUCTIVE_MERGE', 'INSUFFICIENT_EVIDENCE', 'HUMAN_DECISION'}
-
-
-def _list(detail: Dict[str, Any], key: str) -> List[Any]:
-    value = detail.get(key)
-    return value if isinstance(value, list) else []
+DELIVERY_STATUSES = {"READY", "BLOCKED"}
+DELIVERY_BLOCKER_KINDS = {
+    "INTEGRATION_CONFLICT", "VERIFICATION_STALE", "WORKSPACE_DIRTY",
+    "GIT_STATE_INVALID", "HUMAN_DECISION", "OTHER",
+}
 
 
 def _concrete_reason(value: Any) -> bool:
-    text = str(value or '').strip()
-    generic = {'无需更新', '无知识价值', '没有知识价值', 'no change', 'none', 'n/a'}
+    text = str(value or "").strip()
+    generic = {"ready", "blocked", "done", "ok", "none", "n/a"}
     return len(text) >= 12 and text.lower() not in generic
 
 
 def validate_delivery_result(detail: Dict[str, Any]) -> List[str]:
+    """Validate Integration-owned delivery facts.
+
+    Knowledge convergence is deliberately not part of this contract. A READY
+    delivery may complete the Task while tp-knowledge processes its compact
+    handoff separately.
+    """
     errors: List[str] = []
-    disposition = str(detail.get('knowledge_disposition') or '').upper()
-    if disposition not in DELIVERY_DISPOSITIONS:
-        return ['knowledge_disposition must be CREATED|UPDATED|NO_CHANGE|DEFERRED|BLOCKED']
-    if not _concrete_reason(detail.get('reason')):
-        errors.append('concrete reason is required')
-    if disposition in {'CREATED', 'UPDATED'}:
-        required_lists = {
-            'knowledge_refs': 'canonical knowledge ref', 'search_receipts': 'targeted search receipt',
-            'lint_receipts': 'lint receipt', 'index_receipts': 'index update/verify receipt',
-            'evidence': 'task evidence', 'source_refs': 'current source ref',
-        }
-        for key, label in required_lists.items():
-            if not _list(detail, key):
-                errors.append(f'{label} is required for {disposition}')
-        for ref in _list(detail, 'knowledge_refs'):
-            normalized = str(ref or '').replace('\\', '/').lower()
-            if '.tp-spec/memory/' in normalized or normalized.startswith('memory/'):
-                errors.append('Project Memory cannot substitute for a canonical Knowledge ref')
-                break
-        for receipt in _list(detail, 'search_receipts'):
-            errors.extend(validate_receipt_payload('search', receipt))
-        for receipt in _list(detail, 'lint_receipts'):
-            errors.extend(validate_receipt_payload('lint', receipt))
-        for receipt in _list(detail, 'index_receipts'):
-            errors.extend(validate_receipt_payload('index', receipt))
-    elif disposition == 'NO_CHANGE':
-        if not _list(detail, 'search_receipts'):
-            errors.append('targeted search receipt is required for NO_CHANGE')
-        for receipt in _list(detail, 'search_receipts'):
-            errors.extend(validate_receipt_payload('search', receipt))
-    elif disposition == 'DEFERRED':
-        blocker_kind = str(detail.get('blocker_kind') or '').upper()
-        if blocker_kind not in DEFERRED_BLOCKER_KINDS:
-            errors.append('DEFERRED blocker_kind must be one of: ' + ', '.join(sorted(DEFERRED_BLOCKER_KINDS)))
-        if not str(detail.get('recovery_condition') or '').strip():
-            errors.append('recovery_condition is required for DEFERRED')
-        if not str(detail.get('responsibility') or '').strip():
-            errors.append('responsibility is required for DEFERRED')
+    status = str(detail.get("delivery_status") or "").upper()
+    if status not in DELIVERY_STATUSES:
+        return ["delivery_status must be READY|BLOCKED"]
+    if not _concrete_reason(detail.get("reason")):
+        errors.append("concrete reason is required")
+    try:
+        if int(detail.get("verification_event_id") or 0) <= 0:
+            errors.append("verification_event_id is required")
+    except (TypeError, ValueError):
+        errors.append("verification_event_id is invalid")
+    if not str(detail.get("verification_subject_digest") or "").strip():
+        errors.append("verification_subject_digest is required")
+    snap = detail.get("repo_snapshot")
+    if snap is not None:
+        if not isinstance(snap, dict):
+            errors.append("repo_snapshot must be an object")
+        else:
+            for key in ("before_head", "after_head", "merge_commit"):
+                value = snap.get(key)
+                if value is not None and not isinstance(value, str):
+                    errors.append(f"repo_snapshot.{key} must be a string")
+    handoff = detail.get("knowledge_handoff")
+    if handoff is not None and not isinstance(handoff, dict):
+        errors.append("knowledge_handoff must be an object")
+    if status == "BLOCKED":
+        kind = str(detail.get("blocker_kind") or "").upper()
+        if kind not in DELIVERY_BLOCKER_KINDS:
+            errors.append("BLOCKED blocker_kind must be one of: " + ", ".join(sorted(DELIVERY_BLOCKER_KINDS)))
+        if not str(detail.get("recovery_condition") or "").strip():
+            errors.append("recovery_condition is required for BLOCKED delivery")
+        if not str(detail.get("responsibility") or "").strip():
+            errors.append("responsibility is required for BLOCKED delivery")
     return errors
 
 
 def delivery_result_matches_verification(detail: Dict[str, Any], event_id: int, subject_digest: str) -> bool:
     try:
-        recorded_id = int(detail.get('verification_event_id') or 0)
+        recorded_id = int(detail.get("verification_event_id") or 0)
     except (TypeError, ValueError):
         return False
-    return recorded_id == int(event_id) and str(detail.get('verification_subject_digest') or '') == str(subject_digest or '')
+    return recorded_id == int(event_id) and str(detail.get("verification_subject_digest") or "") == str(subject_digest or "")
 
 
 def disposition_allows_pipeline_completion(detail: Dict[str, Any], *, deferred_accepted: bool = False) -> bool:
-    disposition = str(detail.get('knowledge_disposition') or '').upper()
-    if validate_delivery_result(detail):
-        return False
-    if disposition in {'CREATED', 'UPDATED', 'NO_CHANGE'}:
-        return True
-    if disposition == 'DEFERRED':
-        return bool(deferred_accepted)
-    return False
+    # Compatibility function name retained inside the current module; the
+    # semantics are now delivery readiness, not Knowledge disposition.
+    return not validate_delivery_result(detail) and str(detail.get("delivery_status") or "").upper() == "READY"
 
 
 def find_delivery_completion_event(events: List[Dict[str, Any]], *, verification_event: Dict[str, Any],
                                    current_subject_digest: str) -> Dict[str, Any] | None:
-    from .workflow_controls import event_digest, trusted_event_detail
+    from .workflow_controls import trusted_event_detail
 
     verification_detail = trusted_event_detail(
-        verification_event,
-        event_type='VERIFICATION_COMPLETED',
-        producer='record-first',
-        actor='tp-verification-engineering',
-    ) or trusted_event_detail(
-        verification_event,
-        event_type='VERIFICATION_COMPLETED',
-        producer='commit',
-        actor='tp-verification-engineering',
+        verification_event, event_type="VERIFICATION_COMPLETED", producer="record-first", actor="tp-test-engineer"
     )
-    if verification_detail is None:
+    if verification_detail is None or str(verification_detail.get("decision") or "").upper() != "PASS":
         return None
-    if str(verification_detail.get('decision') or '').upper() != 'PASS':
+    if str(verification_detail.get("subject_digest") or "") != str(current_subject_digest or ""):
         return None
-    if str(verification_detail.get('subject_digest') or '') != str(current_subject_digest or ''):
-        return None
-    verification_id = int(verification_event.get('id') or 0)
+    verification_id = int(verification_event.get("id") or 0)
     if not verification_id:
         return None
-
     for event in reversed(events):
         detail = trusted_event_detail(
-            event,
-            event_type='DELIVERY_RESULT',
-            producer='delivery_converge',
-            actor='tp-delivery-convergence',
+            event, event_type="DELIVERY_RESULT", producer="delivery_converge", actor="tp-integration-engineer"
         )
-        if detail is None:
-            continue
-        if validate_delivery_result(detail):
+        if detail is None or validate_delivery_result(detail):
             continue
         if not delivery_result_matches_verification(detail, verification_id, current_subject_digest):
             continue
-        disposition = str(detail.get('knowledge_disposition') or '').upper()
-        if disposition in {'CREATED', 'UPDATED', 'NO_CHANGE'}:
-            return event
-        if disposition == 'BLOCKED':
-            return None
-        if disposition == 'DEFERRED':
-            target_id = int(event.get('id') or 0)
-            target_digest = event_digest(event)
-            for later in reversed(events):
-                if int(later.get('id') or 0) <= target_id:
-                    continue
-                accepted = trusted_event_detail(
-                    later,
-                    event_type='DELIVERY_DEFERRED_ACCEPTED',
-                    producer='delivery_deferred_accept',
-                    actor='human_owner',
-                )
-                if accepted is None:
-                    continue
-                if int(accepted.get('delivery_event_id') or 0) == target_id and str(accepted.get('delivery_event_digest') or '') == target_digest:
-                    return event
-            return None
+        return event if str(detail.get("delivery_status") or "").upper() == "READY" else None
     return None
-
-
 
 def validate_canonical_binding(frontmatter: Dict[str, Any], *, task_id: str,
                                evidence_paths: List[str], source_refs: List[str]) -> List[str]:

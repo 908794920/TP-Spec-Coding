@@ -1,10 +1,10 @@
 version: "1.0.0"
-contract_version: "5.2.3"
-purpose: "Optional architecture planning strategy. Comparative mode is UltraPlan Lite; it is never a mandatory workflow state."
+contract_version: "5.2.4"
+purpose: "Optional Software Architect planning strategy. Comparative mode is UltraPlan Lite; it is never a mandatory workflow state."
 default_mode: DIRECT
 modes:
   DIRECT:
-    description: "Single architecture-design pass using the verified requirement/evidence pack."
+    description: "Single software-architect pass using the verified requirement/evidence pack."
     applies:
       - "L0/L1"
       - "ordinary L2 with one obvious technical route"
@@ -42,7 +42,7 @@ modes:
           - "risks and mitigations"
           - "explicit decisions/assumptions"
     synthesis:
-      fact_check: "tp-architecture-design re-reads critical/disputed files before scoring; child-agent claims are not authoritative."
+      fact_check: "tp-software-architect re-reads critical/disputed files before scoring; child-agent claims are not authoritative."
       score_dimensions:
         - completeness
         - feasibility
@@ -54,10 +54,14 @@ modes:
         - "borrowed elements from alternatives"
         - "rejected alternatives and reasons"
         - "decision-complete implementation plan"
-    review_boundary: "tp-architecture-review is an optional independent second opinion; invoke it when risk/uncertainty or human_owner warrants it."
+    review_boundary: "tp-software-architect architecture-review capability is an optional independent second opinion; invoke it when risk/uncertainty or human_owner warrants it."
 constraints:
   side_effects: "Planning is read-only with respect to business code/data. Business artifacts are written only when they carry useful content; Runtime records checkpoints separately."
   no_new_state: true
   no_new_mandatory_artifact: true
   fallback_must_not_block: true
   cost_guardrail: "Use COMPARATIVE only when route-choice value is expected to outweigh the additional planning cost."
+
+technical_planning_handoff:
+  owner: tp-tech-lead
+  rule: "Architecture decides system shape; Tech Lead turns the decision into vertical-slice execution planning when the lifecycle preset requires planning."

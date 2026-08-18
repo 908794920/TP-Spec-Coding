@@ -24,13 +24,13 @@ sys.path.insert(0, str(BASE))
 from cli.config_loader import load_config  # noqa: E402
 
 AGENTS = (
-    "tp-requirement-analysis",
-    "tp-architecture-design",
-    "tp-architecture-review",
-    "tp-product-design",
-    "tp-development-engineering",
-    "tp-verification-engineering",
-    "tp-delivery-convergence",
+    "tp-product-manager",
+    "tp-software-architect",
+    "tp-software-architect",
+    "tp-product-manager",
+    "tp-development-engineer",
+    "tp-test-engineer",
+    "tp-integration-engineer",
     "tp-base-maintenance",
     "tp-knowledge",
     "tp-wiki",

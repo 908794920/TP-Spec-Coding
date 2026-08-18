@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.2.3 project / db 基础命令组。
+"""TP-Spec-Coding V5.2.4 project / db 基础命令组。
 
 仅依赖 Python 标准库。包含 project bootstrap/init/list 与 db verify；其他活动命令组
 由 ``cli.main`` 分别注册。本模块不定义 Task 工作流语义。
@@ -45,7 +45,7 @@ def cmd_project_init(args) -> int:
         )
         return 4
 
-    # v5.2.3 identity hardening: one project_id may not silently acquire a second
+    # v5.2.4 identity hardening: one project_id may not silently acquire a second
     # live canonical workspace.  Stale/non-existent roots remain recoverable through
     # the existing rebind/bootstrap flows; only a provably live duplicate is blocked.
     registered = _registered_project(project_id, getattr(args, "registry", None))
