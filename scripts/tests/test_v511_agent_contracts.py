@@ -31,14 +31,14 @@ def normalized_sha256(path: Path) -> str:
 
 
 def read_skill(agent: str) -> str:
-    catalog = yaml.safe_load((BASE / "agents" / "role-catalog.yaml").read_text(encoding="utf-8"))
+    catalog = yaml.safe_load((BASE / "governance" / "role-catalog.yaml").read_text(encoding="utf-8"))
     item = next(r for r in catalog["roles"] if r["workflow_role"] == agent)
     return (BASE / item["skill_path"]).read_text(encoding="utf-8")
 
 
 class TestRoleCatalog(unittest.TestCase):
     def test_catalog_has_expected_roles_and_hashes(self):
-        catalog = yaml.safe_load((BASE / "agents" / "role-catalog.yaml").read_text(encoding="utf-8"))
+        catalog = yaml.safe_load((BASE / "governance" / "role-catalog.yaml").read_text(encoding="utf-8"))
         self.assertEqual(catalog["catalog_version"], ACTIVE_VERSION)
         self.assertEqual({r["workflow_role"] for r in catalog["roles"]}, set(ALL_AGENTS))
         for role in catalog["roles"]:

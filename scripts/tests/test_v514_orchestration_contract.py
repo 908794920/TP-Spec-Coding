@@ -29,8 +29,8 @@ def test_software_lifecycle_is_the_only_software_domain_control_role_and_has_no_
     assert not any(r['workflow_role']=='tp-workflow-orchestrator' for r in cat['roles'])
 
 def test_ultra_implementation_is_hosted_by_formal_roles():
-    arch=(BASE/'skills/tp-software-architect/SKILL.md').read_text(encoding='utf-8')
-    review=(BASE/'skills/tp-code-reviewer/SKILL.md').read_text(encoding='utf-8')
+    arch=(BASE/'skills/roles/tp-software-architect/SKILL.md').read_text(encoding='utf-8')
+    review=(BASE/'skills/roles/tp-code-reviewer/SKILL.md').read_text(encoding='utf-8')
     lifecycle=(BASE/'agents/tp-software-lifecycle/SKILL.md').read_text(encoding='utf-8')
     assert 'Deep Planning Capability' in arch and 'UltraPlan' in arch
     assert 'Deep Review' in review and 'UltraReview' in review

@@ -106,7 +106,7 @@ class TestKnowledgeContracts(KnowledgeCase):
         boot=(BASE/"automation/knowledge/SCHEDULER_BOOTSTRAP.md").read_text(encoding="utf-8")
         daily=(BASE/"automation/knowledge/daily-maintenance.md").read_text(encoding="utf-8")
         knowledge_rule=(BASE/"governance/knowledge-rule.yaml").read_text(encoding="utf-8")
-        delivery=(BASE/"skills/tp-integration-engineer/SKILL.md").read_text(encoding="utf-8")
+        delivery=(BASE/"skills/roles/tp-integration-engineer/SKILL.md").read_text(encoding="utf-8")
         self.assertIn("TP-Spec-Coding Installation + Project Binding", base_skill)
         self.assertIn("Workspace Inventory", base_skill)
         self.assertIn("Project Scope", base_skill)

@@ -100,7 +100,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
         },
     },
     "role-catalog": {
-        "file": "agents/role-catalog.yaml",
+        "file": "governance/role-catalog.yaml",
         "version_field": "catalog_version",
         "supported_versions": ["5.2.4"],
         "properties": {
@@ -153,7 +153,7 @@ GOVERNANCE_FILES: Dict[str, str] = {
     "ai-role": "governance/ai-role.yaml",
     "risk-rule": "governance/risk-rule.yaml",
     "knowledge-rule": "governance/knowledge-rule.yaml",
-    "role-catalog": "agents/role-catalog.yaml",
+    "role-catalog": "governance/role-catalog.yaml",
     "orchestration": "governance/orchestration.yaml",
 }
 

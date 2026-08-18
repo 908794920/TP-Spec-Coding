@@ -18,7 +18,7 @@ def test_readme_exposes_only_current_product_and_software_domain_entry():
 def test_getting_started_uses_role_first_entry_and_formal_roles():
     text = read("docs/GETTING_STARTED.md")
     assert "tp-spec-coding" in text
-    assert "agents/tp-spec-coding/SKILL.md" in text
+    assert "entry/tp-spec-coding/SKILL.md" in text
     assert "tp-software-lifecycle" in text
     assert "tp-workflow-orchestrator" not in text
     for role in (

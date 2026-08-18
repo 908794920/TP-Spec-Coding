@@ -189,8 +189,8 @@ class TestV512Maintenance(unittest.TestCase):
 
     def test_role_contracts_encode_pristine_and_pretask_boundaries(self):
         base_maintenance = (BASE / "agents" / "tp-base-maintenance" / "SKILL.md").read_text(encoding="utf-8")
-        requirement = (BASE / "skills" / "tp-product-manager" / "SKILL.md").read_text(encoding="utf-8")
-        architecture = (BASE / "skills" / "tp-software-architect" / "SKILL.md").read_text(encoding="utf-8")
+        requirement = (BASE / "skills" / "roles" / "tp-product-manager" / "SKILL.md").read_text(encoding="utf-8")
+        architecture = (BASE / "skills" / "roles" / "tp-software-architect" / "SKILL.md").read_text(encoding="utf-8")
         lifecycle = (BASE / "agents" / "tp-software-lifecycle" / "SKILL.md").read_text(encoding="utf-8")
         runtime_api = (BASE / "governance" / "runtime-api.yaml").read_text(encoding="utf-8")
         self.assertIn("TP-Spec-Coding Installation + Project Binding", base_maintenance)

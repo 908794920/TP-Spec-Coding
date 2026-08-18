@@ -24,7 +24,7 @@ def test_governed_role_first_contract_versions_are_524():
         ("governance/workflow.yaml", "version"),
         ("governance/ai-role.yaml", "version"),
         ("governance/orchestration.yaml", "version"),
-        ("agents/role-catalog.yaml", "catalog_version"),
+        ("governance/role-catalog.yaml", "catalog_version"),
     ]:
         data = yaml.safe_load((BASE / rel).read_text(encoding="utf-8"))
         assert str(data[field]) == "5.2.4", rel

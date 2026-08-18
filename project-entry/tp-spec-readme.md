@@ -14,7 +14,7 @@
 
 ## 使用方式
 
-1. 研发任务默认从 `tp-workflow-orchestrator` 进入；已有 Task 可先运行只读 `tp-spec workflow next --task <TASK> --db <DB> --json` 决定下一专业角色。编排器故障时可按 `role-catalog.yaml` 手工加载对应内部专业 Skill 作为应急，但不得恢复并列开发入口或建立第二状态机。
+1. 默认产品入口是 `tp-spec-coding`；软件研发意图由它交给 `tp-software-lifecycle`。已有 Task 可先运行只读 `tp-spec workflow next --task <TASK> --db <DB> --json` 决定下一专业角色。生命周期路由异常时可按 `governance/role-catalog.yaml` 手工加载对应内部专业 Skill 作为应急，但不得恢复并列开发入口或建立第二状态机。
 2. 进入项目先读 `memory/INDEX.md`；默认不全文加载 `PROJECT.md`、全部 Skills、Task History 或 Knowledge，只按当前任务展开命中片段/Top 1 Skill。Memory 机会式生长：只有当前工作自然出现高价值、已证实且高重发现成本的经验时，流程角色才按需使用内部 `tp-memory-capture` 做最小 patch；不得为学习而扫描历史。
 3. 使用标准 TP-Spec-Coding Resolver 解析 Base、Wiki、Knowledge 与当前项目 scope；不要依赖历史 `.tp-spec/agents`、`wiki`、`knowledge`、`scripts` 等 Junction。
 4. 需要进一步理解代码时按 Wiki → Knowledge → Source Code 核对当前技术事实；Memory 只提供快速导航/执行提示。

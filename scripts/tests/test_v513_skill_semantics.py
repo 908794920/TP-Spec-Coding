@@ -24,7 +24,7 @@ def read(path: str) -> str:
 
 class TestRoleCatalogMetadata(unittest.TestCase):
     def test_catalog_metadata_matches_skill_frontmatter(self):
-        catalog = yaml.safe_load((BASE / "agents" / "role-catalog.yaml").read_text(encoding="utf-8"))
+        catalog = yaml.safe_load((BASE / "governance" / "role-catalog.yaml").read_text(encoding="utf-8"))
         for role in catalog["roles"]:
             text = (BASE / role["skill_path"]).read_text(encoding="utf-8-sig")
             self.assertTrue(text.startswith("---\n"), role["workflow_role"])
@@ -43,7 +43,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_requirement_keeps_fact_assumption_decision_boundary(self):
         self.assertContainsAll(
-            "skills/tp-product-manager/SKILL.md",
+            "skills/roles/tp-product-manager/SKILL.md",
             "确认事实 / AI 假设 / 待确认决策 / 未知现状",
             "不得静默升级为事实",
             "范围/非范围",
@@ -53,7 +53,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_product_keeps_product_reasoning_and_role_boundary(self):
         self.assertContainsAll(
-            "skills/tp-product-manager/SKILL.md",
+            "skills/roles/tp-product-manager/SKILL.md",
             "用户角色",
             "异常场景",
             "用户反馈",
@@ -63,7 +63,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_architecture_keeps_planning_risk_and_design_checklist(self):
         self.assertContainsAll(
-            "skills/tp-software-architect/SKILL.md",
+            "skills/roles/tp-software-architect/SKILL.md",
             "governance/risk-rule.yaml",
             "governance/planning-strategy.yaml",
             "并发",
@@ -76,7 +76,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_architecture_review_is_compact_but_professional(self):
         self.assertContainsAll(
-            "skills/tp-software-architect/SKILL.md",
+            "skills/roles/tp-software-architect/SKILL.md",
             "不是所有 L2/L3 的固定门禁",
             "不要重新扫描整个仓库",
             "数据、并发、事务、幂等风险",
@@ -87,7 +87,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_development_keeps_scope_truth_and_production_safety(self):
         self.assertContainsAll(
-            "skills/tp-development-engineer/SKILL.md",
+            "skills/roles/tp-development-engineer/SKILL.md",
             "不自行改变业务目标",
             "开发自测不是独立验收",
             "production read",
@@ -98,7 +98,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_verification_keeps_independent_review_matrix(self):
         self.assertContainsAll(
-            "skills/tp-test-engineer/SKILL.md",
+            "skills/roles/tp-test-engineer/SKILL.md",
             "真实代码/diff/配置",
             "错误处理、边界条件、并发、事务、幂等",
             "安全与权限",
@@ -111,7 +111,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
 
     def test_delivery_keeps_truthful_knowledge_boundaries(self):
         self.assertContainsAll(
-            "skills/tp-integration-engineer/SKILL.md",
+            "skills/roles/tp-integration-engineer/SKILL.md",
             "<= 5%",
             "DEFERRED",
             "不重新裁决 PASS/FAIL",
@@ -166,7 +166,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
             "tp-test-engineer",
             "tp-integration-engineer",
         ):
-            text = read(f"skills/{role}/SKILL.md")
+            text = read(f"skills/roles/{role}/SKILL.md")
             self.assertNotIn("stage_handoff:", text, role)
             self.assertNotIn("handoff.json.next_prompt", text, role)
             self.assertNotIn("每阶段显式 projection refresh", text, role)
@@ -192,7 +192,7 @@ class TestReusableMethodSkills(unittest.TestCase):
             "handoff.json", "next_prompt",
         )
         for skill in self.METHOD_SKILLS:
-            text = read(f"skills/{skill}/SKILL.md")
+            text = read(f"skills/capabilities/{skill}/SKILL.md")
             match = re.search(r"(?m)^version:\s*([\d.]+)\s*$", text)
             self.assertIsNotNone(match, skill)
             self.assertEqual(match.group(1), ACTIVE_VERSION, skill)
@@ -201,11 +201,11 @@ class TestReusableMethodSkills(unittest.TestCase):
                 self.assertNotIn(token, text, f"{skill}: stale active-contract token {token}")
 
     def test_method_skills_preserve_high_value_safety(self):
-        self.assertContains("skills/assumption-management/SKILL.md", "不得作为默认事实继续编码")
-        self.assertContains("skills/implementation-control/SKILL.md", "production read")
-        self.assertContains("skills/technical-review/SKILL.md", "真实代码/diff/配置")
-        self.assertContains("skills/testing-strategy/SKILL.md", "PASS_STALE")
-        self.assertContains("skills/knowledge-capture/SKILL.md", "90-sources")
+        self.assertContains("skills/capabilities/assumption-management/SKILL.md", "不得作为默认事实继续编码")
+        self.assertContains("skills/capabilities/implementation-control/SKILL.md", "production read")
+        self.assertContains("skills/capabilities/technical-review/SKILL.md", "真实代码/diff/配置")
+        self.assertContains("skills/capabilities/testing-strategy/SKILL.md", "PASS_STALE")
+        self.assertContains("skills/capabilities/knowledge-capture/SKILL.md", "90-sources")
 
     def test_active_method_skills_are_version_purity_scanned(self):
         import importlib.util
@@ -213,7 +213,7 @@ class TestReusableMethodSkills(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("v513_skill_purity", scanner_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        self.assertFalse(module._is_allowed_history("skills/technical-review/SKILL.md"))
+        self.assertFalse(module._is_allowed_history("skills/capabilities/technical-review/SKILL.md"))
 
     def assertContains(self, path: str, needle: str):
         self.assertIn(needle, read(path), f"{path}: missing {needle!r}")

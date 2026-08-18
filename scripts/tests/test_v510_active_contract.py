@@ -166,7 +166,7 @@ class TestActiveContract(unittest.TestCase):
         for rel, schema_name in (
             ("governance/workflow.yaml", "workflow"),
             ("governance/ai-role.yaml", "ai-role"),
-            ("agents/role-catalog.yaml", "role-catalog"),
+            ("governance/role-catalog.yaml", "role-catalog"),
         ):
             data = load_config(rel, schema_name=schema_name, base_root=str(BASE))
             field = config_schemas.get_schema(schema_name)["version_field"]

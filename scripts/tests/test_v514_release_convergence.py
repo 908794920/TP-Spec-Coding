@@ -21,7 +21,6 @@ FLOW_SKILLS = {
     "tp-integration-engineer",
 }
 EXPOSED_AGENTS = {
-    "tp-spec-coding",
     "tp-software-lifecycle",
     "tp-base-maintenance",
     "tp-knowledge",
@@ -32,14 +31,15 @@ LEGACY_CONTRACT = "5.1." + "3"
 
 
 def test_product_surface_exposes_entry_and_domain_agents_only():
+    assert (BASE / "entry/tp-spec-coding/SKILL.md").is_file()
     actual = {path.parent.name for path in (BASE / "agents").glob("tp-*/SKILL.md")}
     assert actual == EXPOSED_AGENTS
 
-    catalog = yaml.safe_load((BASE / "agents/role-catalog.yaml").read_text(encoding="utf-8"))
+    catalog = yaml.safe_load((BASE / "governance/role-catalog.yaml").read_text(encoding="utf-8"))
     by_id = {item["workflow_role"]: item for item in catalog["roles"]}
     assert FLOW_SKILLS <= set(by_id)
     for role_id in FLOW_SKILLS:
-        assert by_id[role_id]["skill_path"] == f"skills/{role_id}/SKILL.md"
+        assert by_id[role_id]["skill_path"] == f"skills/roles/{role_id}/SKILL.md"
         assert (BASE / by_id[role_id]["skill_path"]).is_file()
 
 

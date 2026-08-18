@@ -1,6 +1,6 @@
 ## TP-Spec-Coding 协作入口
 
-- 研发任务默认入口是 `tp-workflow-orchestrator`；已有 Task 先用只读 `tp-spec workflow next --task <TASK> --db <DB> --json` 解析下一阶段/角色。Orchestrator 只编排，不替代专业 Skill、不直接写 Runtime；故障时可按 `role-catalog.yaml` 手工加载对应内部专业 Skill 作为应急，不恢复并列开发入口。
+- 默认产品入口是 `tp-spec-coding`；软件研发意图交给 `tp-software-lifecycle`。已有 Task 先用只读 `tp-spec workflow next --task <TASK> --db <DB> --json` 解析下一阶段/角色。Software Lifecycle 只做生命周期/角色路由，不替代专业 Skill、不直接写 Runtime；故障时可按 `governance/role-catalog.yaml` 手工加载对应内部专业 Skill 作为应急，不恢复并列开发入口。
 - 进入项目先读 `.tp-spec/memory/INDEX.md`（若存在）；默认不展开整个 `PROJECT.md`、全部 Skills、Task History 或 Knowledge，只按当前任务加载命中片段/Top 1 Skill。Memory 是机会式热缓存，不替代事实真源；角色仅在当前工作自然出现高价值、已证实且高重发现成本的经验时按需加载内部 `tp-memory-capture`，不得主动扫描寻找记忆。
 - 项目身份以 `.tp-spec/config/project-binding.yaml` 为准；Base、Wiki、Knowledge 的物理路径属于机器安装信息，必须通过当前 TP-Spec-Coding Resolver 解析，不得从目录名、历史 Junction 或其他机器的绝对路径猜测。
 - 需要确认当前解析结果时，使用标准 `tp-spec base resolve --workspace-root <workspace-root>`（或当前 Base 的等价 CLI）。项目文件不得保存 machine-local Base/Wiki/Knowledge 绝对路径。

@@ -161,7 +161,7 @@ tp-software-lifecycle
 ```text
 请使用 TP-Spec-Coding 处理这个任务。
 先通过 TP_SPEC_BASE_ROOT 或 ~/.tp-spec/installation.yaml 定位 Base，
-读取 agents/tp-spec-coding/SKILL.md，
+读取 entry/tp-spec-coding/SKILL.md，
 再读取当前项目 managed entry 和已有 .tp-spec Task/Runtime 事实。
 如果属于软件研发，让 tp-software-lifecycle 继续调度；
 不要跳过已有历史，也不要让入口 Agent 代替专业角色做需求、架构、开发、测试或 Review。
@@ -262,7 +262,7 @@ TP-Spec-Coding 把“角色身份”和“Skill 文件路径”分开：
 
 ```text
 role id                 = 持久化身份
-skills/.../SKILL.md     = 当前实现位置
+skills/roles/.../SKILL.md 或 skills/capabilities/.../SKILL.md = 当前实现位置
 ```
 
 因此专业 Skill 移目录不会重写历史：
@@ -333,7 +333,7 @@ python -m cli.main base sync-project --workspace-root "<project-root>" --apply
 python -m cli.main workflow doctor --json
 ```
 
-Orchestrator 故障时可以按 `agents/role-catalog.yaml` 手工加载对应内部专业 Skill，但不要重新创建一套并列开发流程或第二状态机。
+Orchestrator 故障时可以按 `governance/role-catalog.yaml` 手工加载对应内部专业 Skill，但不要重新创建一套并列开发流程或第二状态机。
 
 ## 13. 兼容命名说明
 

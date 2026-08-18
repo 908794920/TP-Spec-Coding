@@ -78,7 +78,6 @@ def test_development_flow_has_one_external_lead_and_three_independent_agents():
         if p.is_file()
     }
     assert exposed == {
-        "tp-spec-coding",
         "tp-software-lifecycle",
         "tp-project-autonomy",
         "tp-base-maintenance",
@@ -86,7 +85,7 @@ def test_development_flow_has_one_external_lead_and_three_independent_agents():
         "tp-wiki",
     }
 
-    catalog = yaml.safe_load(read("agents/role-catalog.yaml"))
+    catalog = yaml.safe_load(read("governance/role-catalog.yaml"))
     role_paths = {row["workflow_role"]: row["skill_path"] for row in catalog["roles"]}
     internal = {
         "tp-product-manager",
@@ -100,8 +99,10 @@ def test_development_flow_has_one_external_lead_and_three_independent_agents():
         "tp-integration-engineer",
     }
     for role in internal:
-        assert role_paths[role] == f"skills/{role}/SKILL.md"
-    for role in ("tp-spec-coding", "tp-software-lifecycle", "tp-project-autonomy", "tp-base-maintenance", "tp-knowledge", "tp-wiki"):
+        assert role_paths[role] == f"skills/roles/{role}/SKILL.md"
+    assert (BASE / "entry/tp-spec-coding/SKILL.md").is_file()
+    assert role_paths["tp-spec-coding"] == "entry/tp-spec-coding/SKILL.md"
+    for role in ("tp-software-lifecycle", "tp-project-autonomy", "tp-base-maintenance", "tp-knowledge", "tp-wiki"):
         assert role_paths[role] == f"agents/{role}/SKILL.md"
 
 
@@ -153,7 +154,7 @@ def test_active_governance_and_catalog_are_v520():
     assert yaml.safe_load(read("governance/workflow.yaml"))["version"] == ACTIVE
     assert yaml.safe_load(read("governance/ai-role.yaml"))["version"] == ACTIVE
     assert yaml.safe_load(read("governance/orchestration.yaml"))["version"] == ACTIVE
-    catalog = yaml.safe_load(read("agents/role-catalog.yaml"))
+    catalog = yaml.safe_load(read("governance/role-catalog.yaml"))
     assert catalog["catalog_version"] == ACTIVE
     assert catalog["base_version"] == ACTIVE
     compat = yaml.safe_load(read("governance/compat-matrix.yaml"))

@@ -5,14 +5,14 @@ version: 5.2.4
 status: active
 type: control-role
 role: tp-project-autonomy
-description: 长期项目自治维护薄控制入口：识别配置、周期执行、Review、Integration 意图并路由到 tp-autonomy-* Skills；不复制 tp-workflow-orchestrator，不直接修改业务代码或 Runtime 真源。
+description: 长期项目自治维护薄控制入口：识别配置、周期执行、Review、Integration 意图并路由到 tp-autonomy-* Skills；不复制 tp-software-lifecycle，不直接修改业务代码或 Runtime 真源。
 ---
 
 # tp-项目自治维护
 
 ## 0. 唯一职责
 
-> Autonomy 决定“哪个长期隔离环境、哪个周期动作、用户想查看/接收什么”；`tp-workflow-orchestrator` 决定普通 Task 的专业研发流程。
+> Autonomy 决定“哪个长期隔离环境、哪个周期动作、用户想查看/接收什么”；`tp-software-lifecycle` 决定普通 Task 的专业研发流程。
 
 本角色是长期自治项目的用户入口，不是新的 Workflow Engine。
 
@@ -34,16 +34,16 @@ description: 长期项目自治维护薄控制入口：识别配置、周期执�
 
 ```text
 “我想让 idc 自动维护”
-→ skills/tp-autonomy-setup/SKILL.md
+→ skills/autonomy/tp-autonomy-setup/SKILL.md
 
 “执行一次 idc 自动维护 / Scheduler 唤醒”
-→ skills/tp-autonomy-cycle/SKILL.md
+→ skills/autonomy/tp-autonomy-cycle/SKILL.md
 
 “看看最近自动改了什么 / 哪些需要我处理”
-→ skills/tp-autonomy-review/SKILL.md
+→ skills/autonomy/tp-autonomy-review/SKILL.md
 
 “准备合并 / 接受这个 Batch”
-→ skills/tp-autonomy-integrate/SKILL.md
+→ skills/autonomy/tp-autonomy-integrate/SKILL.md
 ```
 
 批准/拒绝一个等待决策的普通 Task 属于 user-session Autonomy control：通过正式 `tp-spec autonomy decide ...` 写可信事实，不需要 Cycle token；批准后最快下一 Cycle 生效。
@@ -54,7 +54,7 @@ Autonomy 不知道“下一角色是谁”。任何普通 Task 都必须通过�
 
 ```text
 tp-spec autonomy route ...
-→ Execution Envelope + current tp-workflow-orchestrator
+→ Execution Envelope + current tp-software-lifecycle
 → WorkflowDecision
 ```
 

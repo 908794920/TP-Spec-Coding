@@ -50,7 +50,7 @@ class BaseConvergenceCase(unittest.TestCase):
             p.mkdir(parents=True, exist_ok=True)
         # Minimal valid Base + representative linked assets.
         write(self.base / "VERSION", "5.1.3\n")
-        for rel in ("cli/main.py", "governance/workflow.yaml", "agents/role-catalog.yaml"):
+        for rel in ("cli/main.py", "governance/workflow.yaml", "governance/role-catalog.yaml"):
             write(self.base / rel, "# base\n")
         for rel in ("agents", "cli", "docs", "governance", "scripts", "skills", "templates", "automation"):
             (self.base / rel).mkdir(parents=True, exist_ok=True)

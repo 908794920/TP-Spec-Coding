@@ -51,7 +51,7 @@ REAL_WATCH = (
     "governance/ai-role.yaml",
     "governance/risk-rule.yaml",
     "governance/knowledge-rule.yaml",
-    "agents/role-catalog.yaml",
+    "governance/role-catalog.yaml",
     f"templates/{_BASE_VERSION}/status.yaml",
 )
 
@@ -156,8 +156,8 @@ def _switch_copy_to_next(repo: Path) -> None:
 
     _bump_version("governance/workflow.yaml", f'version: "{_BASE_VERSION}"', f'version: "{_TARGET_VERSION}"')
     _bump_version("governance/ai-role.yaml", f'version: "{_BASE_VERSION}"', f'version: "{_TARGET_VERSION}"')
-    _bump_version("agents/role-catalog.yaml", f'catalog_version: "{_BASE_VERSION}"', f'catalog_version: "{_TARGET_VERSION}"')
-    _bump_version("agents/role-catalog.yaml", f'base_version: "{_BASE_VERSION}"', f'base_version: "{_TARGET_VERSION}"')
+    _bump_version("governance/role-catalog.yaml", f'catalog_version: "{_BASE_VERSION}"', f'catalog_version: "{_TARGET_VERSION}"')
+    _bump_version("governance/role-catalog.yaml", f'base_version: "{_BASE_VERSION}"', f'base_version: "{_TARGET_VERSION}"')
     _bump_version("governance/orchestration.yaml", f'version: "{_BASE_VERSION}"', f'version: "{_TARGET_VERSION}"')
 
     source_tpl = repo / "templates" / _BASE_VERSION
@@ -203,10 +203,10 @@ class TestB18CutoverRehearsal(unittest.TestCase):
 
         manifest = result["manifest"]
         entries = manifest["entries"]
-        # 23 = 7 governance + agents/role-catalog.yaml + 14 active templates + VERSION
+        # 23 = 7 governance + governance/role-catalog.yaml + 14 active templates + VERSION
         self.assertEqual(manifest["total_entries"], 23)
         paths = {e["path"] for e in entries}
-        self.assertIn("agents/role-catalog.yaml", paths)
+        self.assertIn("governance/role-catalog.yaml", paths)
         self.assertIn("governance/orchestration.yaml", paths)
         self.assertIn("VERSION", paths)
         self.assertIn(f"templates/{_BASE_VERSION}/status.yaml", paths)
@@ -275,7 +275,7 @@ class TestB18CutoverRehearsal(unittest.TestCase):
         # apply 还原
         applied = rollback_cmd.restore_snapshot(snap_dir, base_root=self.repo, apply=True)
         self.assertTrue(all(item["restored"] for item in applied["restored"]))
-        # 还原后逐项 sha256 与 manifest 一致（含 agents/role-catalog.yaml）
+        # 还原后逐项 sha256 与 manifest 一致（含 governance/role-catalog.yaml）
         for item in applied["restored"]:
             rel = item["path"]
             self.assertEqual(

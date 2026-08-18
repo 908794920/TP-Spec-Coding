@@ -60,7 +60,7 @@ def load_contract(base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
 
 def load_role_catalog(base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
     return config_loader.load_config(
-        "agents/role-catalog.yaml",
+        "governance/role-catalog.yaml",
         schema_name="role-catalog",
         base_root=base_root,
         strict_unknown_fields=True,

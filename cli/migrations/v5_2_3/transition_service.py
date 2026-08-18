@@ -96,7 +96,7 @@ class ValidationResult:
 #   allowed_actors: tuple[str]          合法执行者（空 = 不额外限制，仅 owner 校验）
 #   required_trusted_events: tuple[str] 需要的受信治理事件（"EVENT_TYPE:ACTOR:DECISION"；
 #                                       validate_transition 已独立校验，此处为审计声明）
-# 权威来源：governance/workflow.yaml（states/transitions/levels）+ agents/role-catalog.yaml
+# 权威来源：governance/workflow.yaml（states/transitions/levels）+ governance/role-catalog.yaml
 # （state_owner_map / completion_chain）。本矩阵补充 actor 与可信事件语义，
 # 与 commit / admin recovery / review record 共用；禁止各模块再维护独立 actor 白名单。
 TRANSITION_RULES = {

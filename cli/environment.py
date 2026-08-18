@@ -221,7 +221,7 @@ def resolve_base_root(
 
 
 def validate_base_root(path: Path) -> Dict[str, Any]:
-    required = ["VERSION", "cli/main.py", "governance/workflow.yaml", "agents/role-catalog.yaml"]
+    required = ["VERSION", "cli/main.py", "governance/workflow.yaml", "governance/role-catalog.yaml"]
     missing = [rel for rel in required if not (path / rel).is_file()]
     version = ""
     try:

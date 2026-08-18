@@ -59,7 +59,7 @@ def classify_reference(path: str) -> str:
         return "MIGRATION_TEST"
     if p.startswith("scripts/tests/") or p.startswith("tests/"):
         return "TEST"
-    if p.startswith("governance/") or p == "agents/role-catalog.yaml":
+    if p.startswith("governance/") or p == "governance/role-catalog.yaml":
         return "ACTIVE_GOVERNANCE"
     if p.startswith("agents/") or p.startswith("skills/"):
         return "ACTIVE_GOVERNANCE"

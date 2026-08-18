@@ -29,7 +29,7 @@ OLD = set(ROLE_MAP) | {"tp-workflow-orchestrator"}
 
 
 def _catalog():
-    return yaml.safe_load((BASE / "agents/role-catalog.yaml").read_text(encoding="utf-8"))
+    return yaml.safe_load((BASE / "governance/role-catalog.yaml").read_text(encoding="utf-8"))
 
 
 def test_catalog_has_only_new_active_role_model():

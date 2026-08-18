@@ -187,7 +187,7 @@ Invoke-Check 'static.yaml.semantic_validate' {
         'governance/knowledge-rule.yaml|knowledge-rule',
         'governance/compat-matrix.yaml|compat-matrix',
         'governance/orchestration.yaml|orchestration',
-        'agents/role-catalog.yaml|role-catalog',
+        'governance/role-catalog.yaml|role-catalog',
         ((Join-Path 'templates' ((Get-Content -LiteralPath (Join-Path $base 'VERSION') -Raw).Trim())) + '/status.yaml|status-template')
     )
     $failed = @()

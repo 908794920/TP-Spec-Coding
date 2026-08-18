@@ -39,8 +39,8 @@ description: tp-产品经理：TP-Spec-Coding v5.2.4 正式软件工程角色，
 - 哪些事项仍真正阻塞。
 
 ## 可按需加载
-- `skills/requirement-clarification/SKILL.md`
-- `skills/assumption-management/SKILL.md`
+- `skills/capabilities/requirement-clarification/SKILL.md`
+- `skills/capabilities/assumption-management/SKILL.md`
 - 其他 role-catalog 注册的 requirement/product capability
 
 ## Pre-task 与 Runtime

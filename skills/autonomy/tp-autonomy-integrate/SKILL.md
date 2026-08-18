@@ -16,7 +16,7 @@ tp-spec autonomy integrate prepare --profile <id> --batch <BATCH> ... --json
 Prepare 在 `.tp-spec/autonomy/integration/<ID>/repos/` 临时 clone 当前 Canonical，并将 Autonomous commit range 重放到**当前 Canonical HEAD**。冲突/脏工作区/分支变化均 fail-closed，真实 Canonical 不参与试错。
 
 ## 2. 重新验证 Candidate
-Prepare 结果初始是 `NEEDS_VERIFICATION`。由当前 `tp-workflow-orchestrator`/`tp-test-engineer` 在 integration candidate 上执行必要验证，将非空 evidence 放入该 Integration 的 `evidence/`，再：
+Prepare 结果初始是 `NEEDS_VERIFICATION`。由当前 `tp-software-lifecycle`/`tp-test-engineer` 在 integration candidate 上执行必要验证，将非空 evidence 放入该 Integration 的 `evidence/`，再：
 
 ```text
 tp-spec autonomy integrate verify ... --decision PASS --evidence <...>

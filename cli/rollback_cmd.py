@@ -3,7 +3,7 @@
 
 设计依据：历史设计记录 B18-cutover-design §2.2/§4.2-§4.3/§9.2-T2。
 - 从快照还原 governance/agents/VERSION/templates，还原后逐项 sha256 与 manifest 一致
-  （含 agents/role-catalog.yaml；§4.2 阶段 3）；
+  （含 governance/role-catalog.yaml；§4.2 阶段 3）；
 - 回滚后验证断言（§4.3 / §3.8 L258）：
   D1 目标版本（默认下一版本 5.2.4）新写入被拒（gate_task_contract → VERSION_MISMATCH）
   D2 当前活动版本（VERSION 文件）恢复为唯一可写契约（gate 通过）

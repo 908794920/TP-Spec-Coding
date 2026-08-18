@@ -94,7 +94,7 @@ class TestPersonalModeSurface(unittest.TestCase):
         self.assertNotIn("LEGACY_STATE", text)
 
     def test_role_catalog_completion_chain_has_no_human_gate(self):
-        data = yaml.safe_load((ROOT / "agents" / "role-catalog.yaml").read_text(encoding="utf-8"))
+        data = yaml.safe_load((ROOT / "governance" / "role-catalog.yaml").read_text(encoding="utf-8"))
         for chain in data["completion_chain"].values():
             self.assertNotIn("human_owner", chain)
             self.assertNotIn("HUMAN_APPROVAL", chain)

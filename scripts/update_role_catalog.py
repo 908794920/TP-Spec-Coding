@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Verify or refresh agents/role-catalog.yaml deterministically.
+"""Verify or refresh governance/role-catalog.yaml deterministically.
 
 The catalog remains the single role->Skill path authority.  This helper validates
 front matter, normalized bytes, repository boundaries, version alignment, state
@@ -20,7 +20,7 @@ from typing import Any
 import yaml
 
 BASE = Path(__file__).resolve().parent.parent
-CATALOG = BASE / "agents" / "role-catalog.yaml"
+CATALOG = BASE / "governance" / "role-catalog.yaml"
 WORKFLOW = BASE / "governance" / "workflow.yaml"
 VERSION = BASE / "VERSION"
 

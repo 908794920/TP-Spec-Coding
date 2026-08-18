@@ -95,9 +95,9 @@ def generate_prompt(profile_id: str) -> str:
     return (
         f"对 TP-Spec-Coding autonomy profile `{profile_id}` 执行一次 Autonomous Maintenance Cycle。\n\n"
         "先读取当前用户 Autonomy Profile、当前 TP-Spec-Coding Base 的 autonomy cycle protocol，"
-        "以及当前 tp-workflow-orchestrator。\n\n"
+        "以及当前 tp-software-lifecycle。\n\n"
         "不得自行复制、缓存或假设 Workflow；所有 Task 的阶段、角色、深度模式、Verification 与 Delivery "
-        "均由当前 tp-workflow-orchestrator 决定。\n\n"
+        "均由当前 tp-software-lifecycle 决定。\n\n"
         "Repo 写入只能发生在 Profile 声明的 Autonomous Workspace；不得直接修改 Canonical Workspace。\n\n"
         "这是无人值守周期，不得 AskUserQuestion。任何 requires_human 决策都必须保留可信 BLOCKED 状态并进入 Digest。\n\n"
         "max_new_tasks_per_cycle 是上限而不是目标；没有高价值改进时允许新增 0 个 Task，"

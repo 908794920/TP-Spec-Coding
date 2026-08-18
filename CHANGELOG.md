@@ -4,6 +4,7 @@
 
 - 将软件研发能力从 **Action-first** 正式迁移为 **Role-first**：需求分析、架构设计、开发、验证等旧 Action Role 归位为正式软件工程角色拥有的能力；旧 7 步的轻量流程经验继续通过 L0～L3 / lifecycle preset 保留。
 - 新增 `tp-spec-coding` 作为唯一默认产品入口，使用 signal-driven / low-context Domain routing；新增 `tp-software-lifecycle` 作为唯一软件工程 Domain Agent，不建立第二套 Workflow Runtime。
+- 物理目录同步收敛为产品层级：`entry/tp-spec-coding` 单独承载产品入口，`agents/` 只保留 Domain Agent，正式工程角色迁入 `skills/roles/`，共享能力迁入 `skills/capabilities/`，Autonomy 专项能力迁入 `skills/autonomy/`，`role-catalog.yaml` 归入 `governance/` 活动契约；不保留旧物理路径兼容层。
 - 建立 9 个 canonical Formal Role：`tp-product-manager`、`tp-software-architect`、`tp-tech-lead`、`tp-security-engineer`、`tp-development-engineer`、`tp-database-engineer`、`tp-test-engineer`、`tp-code-reviewer`、`tp-integration-engineer`。
 - 保持五态 `NEW/ACTIVE/BLOCKED/COMPLETED/CANCELLED`、phase-as-fact、Record-first、CLI-first、L0～L3、UltraPlan、UltraReview、Autonomy Execution Envelope、Wiki/Knowledge/Base 与恢复/迁移安全边界；未引入 Lifecycle/Gate/Role 第二状态机。
 - Requirement Ready 之前允许 Product Manager 在 pre-task 阶段规范化客户一句话/文档；已有成熟 Requirement 可直接进入 Task，简单 Bug/Code Task 仍允许 L0 快速路径。

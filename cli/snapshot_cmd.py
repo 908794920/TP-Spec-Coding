@@ -4,7 +4,7 @@
 设计依据：历史设计记录 B18-cutover-design §2.1-§2.3。
 - 快照落 base 仓根 cutover-snapshots/V<base_version>-<UTC-TIMESTAMP>/（不写入消费方 Junction 目标）；
 - 快照范围 = governance/{compat-matrix,lifecycle,workflow,ai-role,risk-rule,knowledge-rule,orchestration}
-  + agents/role-catalog.yaml + templates/<active-version>/（8 文件）+ VERSION；
+  + governance/role-catalog.yaml + templates/<active-version>/（8 文件）+ VERSION；
 - 生成 CUTOVER-SNAPSHOT-MANIFEST.json（每项 path/sha256/size/status；manifest 自身
   manifest_sha256 两段式防篡改，§2.2）；
 - cutover receipt 写入 base_root/evidence/receipts/REC-<UTC>-<UUID>.json
@@ -46,11 +46,11 @@ _GOVERNANCE_FILES = (
     "governance/knowledge-rule.yaml",
     "governance/orchestration.yaml",
 )
-_TOP_LEVEL_FILES = ("agents/role-catalog.yaml", "VERSION")
+_TOP_LEVEL_FILES = ("governance/role-catalog.yaml", "VERSION")
 
 
 def snapshot_source_paths(base_root: Path) -> list[Path]:
-    """枚举快照源文件（governance 7 + agents/role-catalog.yaml + templates/<active>/* + VERSION）。"""
+    """枚举快照源文件（governance 7 + governance/role-catalog.yaml + templates/<active>/* + VERSION）。"""
     sources = [base_root / rel for rel in _GOVERNANCE_FILES]
     sources.append(base_root / _TOP_LEVEL_FILES[0])
     tpl_dir = base_root / f"templates/{active_version(base_root)}"

@@ -226,7 +226,7 @@ python -m cli.main base sync-project \
 ```text
 请使用 TP-Spec-Coding 处理这个研发任务。
 先定位当前机器的 TP-Spec-Coding Base，读取
-agents/tp-spec-coding/SKILL.md，
+entry/tp-spec-coding/SKILL.md，
 由统一入口把软件意图交给 tp-software-lifecycle；
 然后根据当前项目事实决定下一步，不要跳过已有 Task/Runtime 记录。
 ```
@@ -295,11 +295,17 @@ Skill     = Role/Agent 内部可组合、按需加载的能力
 Runtime   = 记录真实发生了什么，并提供恢复/迁移/安全边界
 ```
 
-当前公开 Agent：
+当前产品入口：
+
+```text
+entry/
+└─ tp-spec-coding          # 唯一默认产品入口
+```
+
+当前公开 Domain Agent：
 
 ```text
 agents/
-├─ tp-spec-coding          # 唯一默认产品入口
 ├─ tp-software-lifecycle   # 软件工程 Domain Agent
 ├─ tp-base-maintenance
 ├─ tp-knowledge
@@ -307,7 +313,7 @@ agents/
 └─ tp-project-autonomy
 ```
 
-软件领域的 active formal Role 由 `agents/role-catalog.yaml` 统一登记；旧 action-role 只存在于 previous active contract → 5.2.4 migration/history，不参与 active routing。
+软件领域的 active formal Role 由 `governance/role-catalog.yaml` 统一登记；Role Skill 位于 `skills/roles/`，共享能力位于 `skills/capabilities/`，自治专项能力位于 `skills/autonomy/`。旧 action-role 只存在于 previous active contract → 5.2.4 migration/history，不参与 active routing。
 
 未来可以增加视频生成、数据分析等新的 Domain Agent；它们拥有自己的角色/Skill 体系，但复用底层 Runtime，而不把完全不同的生命周期塞进软件工程 Skill Pool。
 
@@ -376,16 +382,19 @@ python -m cli.main --help
 ## 仓库结构
 
 ```text
-agents/          对外专业 Agent 与 role catalog
-skills/          研发内部角色与可复用方法 Skill
-governance/      活动契约、风险、编排和内容系统规则
-cli/             确定性 Runtime / Base / Wiki / Knowledge CLI
-templates/       当前唯一活动 Task 契约模板
-project-entry/   注入业务项目的 managed entry 模板
-wiki/            Wiki 规则、schema、模板
-knowledge/       Knowledge 规则、schema、模板
-automation/      Wiki / Knowledge 可版本化维护协议
-scripts/         CI、manifest、portable 校验和 PowerShell 包装器
+entry/          唯一默认产品入口
+agents/         Domain Agent（软件生命周期 / Wiki / Knowledge / Base / Autonomy）
+skills/roles/   软件工程正式 Role Skill
+skills/capabilities/  Role 可按需加载的共享能力 Skill
+skills/autonomy/      Autonomy Domain 的专项 Skill
+governance/     活动契约、role catalog、风险、编排和内容系统规则
+cli/            确定性 Runtime / Base / Wiki / Knowledge CLI
+templates/      当前唯一活动 Task 契约模板
+project-entry/  注入业务项目的 managed entry 模板
+wiki/           Wiki 规则、schema、模板
+knowledge/      Knowledge 规则、schema、模板
+automation/     Wiki / Knowledge 可版本化维护协议
+scripts/        CI、manifest、portable 校验和 PowerShell 包装器
 ```
 
 ## 开发与验证
