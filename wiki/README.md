@@ -1,4 +1,4 @@
-# TP-Spec-Coding Wiki Subsystem (V5.2.4)
+# TP-Spec-Coding Wiki Subsystem (V5.2.5)
 
 Wiki 是 TP-Spec-Coding 的**代码理解层**：它把当前源码事实压缩成可导航、可引用、可增量维护的结构化地图，供人和 Agent 快速定位代码，但**源码始终是最终事实源**。
 

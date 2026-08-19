@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """架构评审正式执行链（Hardening P0-2/P0-6）。
 
-依据：《V5.2.4 执行AI统一修复与自验证任务》§7 与《V5.2.4 源码级发布审查报告》
+依据：《V5.2.5 执行AI统一修复与自验证任务》§7 与《V5.2.5 源码级发布审查报告》
 P0-2（无架构评审可 DEVELOPING）/P0-6（新增角色不能通过正式 CLI 执行）。
 
 提供 ``tp-spec review record``：
@@ -581,7 +581,7 @@ def cmd_review_record(args) -> int:
 
 
 def add_review_subparsers(subparsers) -> None:
-    p = subparsers.add_parser("review", help="V5.2.4: formal architecture/code review commands")
+    p = subparsers.add_parser("review", help="V5.2.5: formal architecture/code review commands")
     sub = p.add_subparsers(dest="subcommand", required=True)
 
     pr = sub.add_parser("record", help="Record a formal ARCHITECTURE or CODE review decision")

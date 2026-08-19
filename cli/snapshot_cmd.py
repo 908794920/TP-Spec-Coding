@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.4 B-18 cutover 快照工具（T1，非破坏性）。
+"""V5.2.5 B-18 cutover 快照工具（T1，非破坏性）。
 
 设计依据：历史设计记录 B18-cutover-design §2.1-§2.3。
 - 快照落 base 仓根 cutover-snapshots/V<base_version>-<UTC-TIMESTAMP>/（不写入消费方 Junction 目标）；
@@ -229,10 +229,10 @@ def cmd_cutover_snapshot(args) -> int:
 
 
 def add_cutover_snapshot_subparsers(subparsers) -> None:
-    """注册 cutover-snapshot 子命令（V5.2.4 B-18 T1）。"""
+    """注册 cutover-snapshot 子命令（V5.2.5 B-18 T1）。"""
     p = subparsers.add_parser(
         "cutover-snapshot",
-        help="V5.2.4 B-18 T1: create a read-only base-repo snapshot + manifest + cutover receipt (non-destructive, no state change)",
+        help="V5.2.5 B-18 T1: create a read-only base-repo snapshot + manifest + cutover receipt (non-destructive, no state change)",
     )
     p.add_argument("--base-root", default=None, help="base repo root (default: parent of cli/ package)")
     p.add_argument("--actor", default="human_owner", help="receipt actor (design §2.3 defaults to human_owner)")

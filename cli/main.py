@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.2.4 CLI 统一入口。
+"""TP-Spec-Coding V5.2.5 CLI 统一入口。
 
 注册当前活动命令与显式兼容/恢复工具；普通研发角色以 Record-first task API 为日常写入口，
 Wiki 子系统通过独立 ``wiki`` 命令组提供代码理解维护能力。
@@ -87,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     # tp-spec-coding unified product entry: shallow Domain routing only.
     product_cmd.add_product_subparsers(subparsers)
 
-    # V5.2.4 Base convergence：安装根、Workspace Inventory、项目绑定与 Junction 收敛。
+    # V5.2.5 Base convergence：安装根、Workspace Inventory、项目绑定与 Junction 收敛。
     base_maintenance.add_base_subparsers(subparsers)
 
     # project 组（M0 实现）
@@ -130,22 +130,22 @@ def build_parser() -> argparse.ArgumentParser:
     config_parser = subparsers.add_parser("config", help="Config management")
     config_cmd.add_config_subparsers(config_parser)
 
-    # V5.2.4 legacy commit compatibility/recovery surface; daily roles use task record-first APIs.
+    # V5.2.5 legacy commit compatibility/recovery surface; daily roles use task record-first APIs.
 
     # 高风险动作收据（不改变状态）
     receipt_cmd.add_receipt_subparsers(subparsers)
 
-    # V5.2.4 C1 审查预检（不改变状态；anchor_check 确定性校验 + 封存安全）
+    # V5.2.5 C1 审查预检（不改变状态；anchor_check 确定性校验 + 封存安全）
     review_preflight.add_review_preflight_subparsers(subparsers)
 
-    # V5.2.4 B-14 仅无损的可回溯摘要（不改变状态；分类 + sentinel 保护 + 可逆折叠）
+    # V5.2.5 B-14 仅无损的可回溯摘要（不改变状态；分类 + sentinel 保护 + 可逆折叠）
     lossless_summary.add_lossless_summary_subparsers(subparsers)
 
-    # V5.2.4 B-18 cutover 快照/回滚（非破坏性工具；回滚默认 dry-run 零写入）
+    # V5.2.5 B-18 cutover 快照/回滚（非破坏性工具；回滚默认 dry-run 零写入）
     snapshot_cmd.add_cutover_snapshot_subparsers(subparsers)
     rollback_cmd.add_cutover_rollback_subparsers(subparsers)
 
-    # V5.2.4 B-12 结构化引用校验（纯确定性，不依赖其他模块）
+    # V5.2.5 B-12 结构化引用校验（纯确定性，不依赖其他模块）
     structured_refs.add_refs_validate_subparsers(subparsers)
 
     # A-04 正式 reconciliation（以 DB 为权威重建投影，追加 RECONCILIATION 事件）
@@ -157,13 +157,13 @@ def build_parser() -> argparse.ArgumentParser:
     # Workflow Orchestrator：只读 L0-L3 路由与契约诊断。
     orchestration_cmd.add_workflow_subparsers(subparsers)
 
-    # v5.2.4 Autonomous Maintenance：用户级 Profile 与隔离自治控制面。
+    # v5.2.5 Autonomous Maintenance：用户级 Profile 与隔离自治控制面。
     autonomy_cmd.add_autonomy_subparsers(subparsers)
 
-    # V5.2.4 Wiki 标准化：代码理解层的确定性扫描/规划/质量门/基线提交。
+    # V5.2.5 Wiki 标准化：代码理解层的确定性扫描/规划/质量门/基线提交。
     wiki_commands.add_wiki_subparsers(subparsers)
 
-    # V5.2.4 Knowledge 标准化：长期知识、证据、FTS 投影、外部接入与定时维护。
+    # V5.2.5 Knowledge 标准化：长期知识、证据、FTS 投影、外部接入与定时维护。
     knowledge_commands.add_knowledge_subparsers(subparsers)
 
     return parser
@@ -183,11 +183,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     except SystemExit:
         raise
     except BaselineBlockedError as e:
-        # V5.2.4 A-06：基座阻塞标准语义；业务角色必须停止任务，不得自行修复基座。
+        # V5.2.5 A-06：基座阻塞标准语义；业务角色必须停止任务，不得自行修复基座。
         print(f"BASELINE_BLOCKED: {e}", file=sys.stderr)
         return 1
     except EncodingValidationError as e:
-        # V5.2.4 A-05：UTF-8 输入拒绝；数据库与投影必须零变化。
+        # V5.2.5 A-05：UTF-8 输入拒绝；数据库与投影必须零变化。
         print(f"ENCODING_VALIDATION_FAILED: {e}", file=sys.stderr)
         return 1
     except Exception as e:

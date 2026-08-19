@@ -14,7 +14,7 @@ def test_no_tail_allows_only_explicit_history_and_migration_paths(tmp_path):
     refs = [
         RoleReference("CHANGELOG.md", 1, old, old, "DOC_HISTORY"),
         RoleReference("cli/migrations/v5_2_3/role_map.py", 1, old, old, "MIGRATION_ONLY"),
-        RoleReference("docs/history/v5.2.4-migration/x.md", 1, old, old, "DOC_HISTORY"),
+        RoleReference("docs/history/v5.2.5-migration/x.md", 1, old, old, "DOC_HISTORY"),
         RoleReference("scripts/tests/fixtures/history/v5_1_0/x.py", 1, old, old, "FIXTURE"),
         RoleReference("scripts/tests/migration/test_role_map.py", 1, old, old, "TEST"),
         RoleReference("cli/runtime.py", 1, old, old, "ACTIVE_CLI"),

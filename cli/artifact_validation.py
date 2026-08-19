@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Current five-state artifact validation helpers for TP-Spec-Coding v5.2.4.
+"""Current five-state artifact validation helpers for TP-Spec-Coding v5.2.5.
 
 This module contains only artifact/evidence validation and trusted current-role
 checks. Frozen long-state transition rules live under cli.migrations.v5_2_3.
@@ -716,7 +716,7 @@ def _check_codex_review_body(task_dir: Path, issues: List[ValidationIssue]) -> N
                     # Fourth Hardening（P0-3/P1-2）：PASS 不允许 evidence=none
                     issues.append(ValidationIssue(
                         code=CODE_REVIEW_EMPTY,
-                        message="codex-review PASS evidence 'none' is rejected in V5.2.4; requires a real local_file",
+                        message="codex-review PASS evidence 'none' is rejected in V5.2.5; requires a real local_file",
                         artifact="codex-review.md",
                         field="review.evidence",
                     ))

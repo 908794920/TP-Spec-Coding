@@ -27,12 +27,12 @@ def test_scan_finds_active_and_legacy_callers(tmp_path):
 
 
 def test_baseline_inventory_preserves_known_v523_hotspots_and_legacy_dependencies():
-    inventory = json.loads((BASE / "docs/history/v5.2.4-migration/V523_ROLE_REFERENCE_INVENTORY.json").read_text(encoding="utf-8"))
+    inventory = json.loads((BASE / "docs/history/v5.2.5-migration/V523_ROLE_REFERENCE_INVENTORY.json").read_text(encoding="utf-8"))
     paths = {row["path"] for row in inventory["references"]}
     assert "cli/commit_cmd.py" in paths
     assert "cli/receipt_cmd.py" in paths
 
-    legacy_text = (BASE / "docs/history/v5.2.4-migration/V523_LEGACY_CALL_GRAPH.md").read_text(encoding="utf-8")
+    legacy_text = (BASE / "docs/history/v5.2.5-migration/V523_LEGACY_CALL_GRAPH.md").read_text(encoding="utf-8")
     assert "cli/config_loader.py" in legacy_text
     assert "cli/workflow_loader.py" in legacy_text
 

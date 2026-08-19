@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""V5.2.4 reconcile 命令（A-04 修复：durable recovery + 自身一致性）。
+"""V5.2.5 reconcile 命令（A-04 修复：durable recovery + 自身一致性）。
 
 ``tp-spec reconcile --task TASK-ID`` 以 SQLite 为唯一权威，检查并修复投影漂移。
 
-V5.2.4 修复内容：
+V5.2.5 修复内容：
 - **durable journal 恢复判定**（任务书 §3）：发现未完成 journal 时按
   DB revision 判定——A（DB 未推进）恢复全部备份；B（DB 已推进）按 DB
   完成全部投影；C（无法判定）不删除任何备份，输出
@@ -21,7 +21,7 @@ V5.2.4 修复内容：
 原则：不删除/修改历史事件；只追加 RECONCILIATION 事件（投影为 FACT，
 Test-TpSpecTask.ps1 零感知）；幂等（无漂移不写事件）；失败非零退出。
 
-设计依据：V5.2.4 AI-A 定向修复任务书 §3/§4/§5/§8 与审查报告 §3.2-§3.4/§3.7。
+设计依据：V5.2.5 AI-A 定向修复任务书 §3/§4/§5/§8 与审查报告 §3.2-§3.4/§3.7。
 """
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ def _journal_target_events_match(conn, task_id: str, journal: Dict[str, Any]) ->
     expected_state = journal.get("expected_state_event_id")
     expected_handoff = journal.get("expected_handoff_event_id")
     # 兼容旧 journal（无新字段）：无身份声明时不阻止按 revision 判定（向后兼容），
-    # 但 V5.2.4 新 journal 必须携带完整身份字段。
+    # 但 V5.2.5 新 journal 必须携带完整身份字段。
     if not (flush_id or expected_state or expected_handoff):
         return True
     for evt_id, evt_type in ((expected_state, "STATE"), (expected_handoff, "HANDOFF")):
@@ -168,7 +168,7 @@ def _journal_target_events_match(conn, task_id: str, journal: Dict[str, Any]) ->
 def _recover_journal(task_dir: Path, conn, task, journal: Dict[str, Any], actor: str) -> Tuple[str, List[str]]:
     """处理单个未完成 journal。返回 (decision, fixed_items)，decision in {'A','B','C'}。
 
-    V5.2.4 P0-7 增强：情况 B 需五要素全部满足——revision == expected_revision_after
+    V5.2.5 P0-7 增强：情况 B 需五要素全部满足——revision == expected_revision_after
     **且** current_state == target_state **且** owner_role == owner_after **且**
     journal 声明的目标 STATE/HANDOFF 事件存在且 flush_id 一致 **且**
     expected_event_ids 均在 DB 中存在。任一不满足即情况 C（不删除任何恢复依据）。
@@ -262,7 +262,7 @@ def _handoff_texts(conn, task, task_dir: Path, actor: str) -> Tuple[Optional[str
 
     返回 (expected_text, rebuild_text)；无 HANDOFF 事件返回 (None, None)。
     - expected_text：与 handoff.json 比对用的语义等价基准（无 reconstructed 元数据）；
-    - rebuild_text：写入文件用的文本（V5.2.4 payload 含完整 handoff_record；
+    - rebuild_text：写入文件用的文本（V5.2.5 payload 含完整 handoff_record；
       旧版事件回退为字段级重建并标记 reconstructed）。
     """
     row = conn.execute(
@@ -285,7 +285,7 @@ def _handoff_texts(conn, task, task_dir: Path, actor: str) -> Tuple[Optional[str
         rebuilt["reconstructed_at"] = dbmod.now_iso()
         rebuilt["reconstructed_by"] = actor
         return expected, json.dumps(rebuilt, ensure_ascii=False, indent=2) + "\n"
-    # 旧版事件（V5.2.4）：字段级回退重建
+    # 旧版事件（V5.2.5）：字段级回退重建
     owner = task["owner_role"] or ""
     state = task["current_state"] or "NEW"
     entry = "generated/final-result.md" if state == "COMPLETED" else "generated/continuation.md"
@@ -420,7 +420,7 @@ def _detect_drift(task_dir: Path, conn, task, actor: str) -> Tuple[List[str], Li
         pass
     # 3. generated view digest
     repairable.extend(_check_generated_digest(task_dir, task))
-    # 4. 主工件 front matter 可解析性（V5.2.4 可选工件存在时同样检查）
+    # 4. 主工件 front matter 可解析性（V5.2.5 可选工件存在时同样检查）
     for name in _MAIN_ARTIFACTS + tuple(projection_cmd.projection_source_names()):
         p = task_dir / name
         if not p.is_file():
@@ -616,7 +616,7 @@ def cmd_reconcile(args) -> int:
 
 
 def add_reconcile_subparsers(parser) -> None:
-    p = parser.add_parser("reconcile", help="V5.2.4: reconcile DB truth with projections; durable journal recovery; append-only RECONCILIATION event")
+    p = parser.add_parser("reconcile", help="V5.2.5: reconcile DB truth with projections; durable journal recovery; append-only RECONCILIATION event")
     p.add_argument("--task", required=True, help="task id")
     p.add_argument("--task-dir", required=False, default=None, help="task directory path")
     p.add_argument("--project", required=False, default=None, help="resolve db via registry by project_id")

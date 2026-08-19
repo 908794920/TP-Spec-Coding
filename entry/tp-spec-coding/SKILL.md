@@ -1,7 +1,7 @@
 ---
 id: tp-spec-coding
 name: tp-统一入口
-version: 5.2.4
+version: 5.2.5
 status: active
 type: control-role
 role: tp-spec-coding

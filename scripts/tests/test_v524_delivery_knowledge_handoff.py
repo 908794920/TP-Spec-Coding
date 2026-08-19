@@ -5,7 +5,7 @@ from cli.knowledge import state as knowledge_state
 def test_integration_delivery_detail_owns_delivery_not_knowledge():
     detail = workflow_records.build_delivery_detail(
         task_id="TASK-1", transaction_id="tx", flush_id="f",
-        created_at="2026-08-18T00:00:00+00:00", schema_version="5.2.4",
+        created_at="2026-08-18T00:00:00+00:00", schema_version="5.2.5",
         verification_event_id=7, verification_subject_digest="subject",
         delivery_status="READY", reason="verified change is ready for integration",
         repo_snapshot={"before_head": "a", "after_head": "b", "merge_commit": "m"},

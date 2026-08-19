@@ -1,17 +1,17 @@
 # Compatibility Matrix — TP-Spec-Coding single active contract
 #
-# V5.2.4 performs a canonical Role-first cutover. Current branches expose only
-# one active contract; V5.2.4 compatibility lives in migration/history code and
+# V5.2.5 performs a canonical Role-first cutover. Current branches expose only
+# one active contract; V5.2.5 compatibility lives in migration/history code and
 # Git release/tag history, never in active routing.
 version: "1.0.0"
 contracts:
-  "5.2.4":
-    base_version: "5.2.4"
+  "5.2.5":
+    base_version: "5.2.5"
     governance_ranges:
-      workflow: "[5.2.4, 5.3.0)"
-      ai-role: "[5.2.4, 5.3.0)"
+      workflow: "[5.2.5, 5.3.0)"
+      ai-role: "[5.2.5, 5.3.0)"
       risk-rule: "[2.0.0, 3.0.0)"
       knowledge-rule: "[2.1.0, 3.0.0)"
-      role-catalog: "[5.2.4, 5.3.0)"
-      orchestration: "[5.2.4, 5.3.0)"
-    status_contract: "5.2.4"
+      role-catalog: "[5.2.5, 5.3.0)"
+      orchestration: "[5.2.5, 5.3.0)"
+    status_contract: "5.2.5"

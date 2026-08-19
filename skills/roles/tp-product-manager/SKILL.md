@@ -1,17 +1,17 @@
 ---
 id: tp-product-manager
 name: tp-产品经理
-version: 5.2.4
+version: 5.2.5
 status: active
 type: workflow-role
 role: tp-product-manager
-description: tp-产品经理：TP-Spec-Coding v5.2.4 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-产品经理：TP-Spec-Coding v5.2.5 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-产品经理
 
 ## 责任
-把客户的一句话、文档或既有讨论加工成可开发、可验证、可追溯的 canonical Requirement；同时承担必要的产品规划、用户流程与交互设计。v5.2.4 的需求分析与产品设计能力全部归位到本角色，但不要求每个需求执行全部能力。
+把客户的一句话、文档或既有讨论加工成可开发、可验证、可追溯的 canonical Requirement；同时承担必要的产品规划、用户流程与交互设计。v5.2.5 的需求分析与产品设计能力全部归位到本角色，但不要求每个需求执行全部能力。
 
 ## 输入成熟度
 1. **Raw Request**：先理解目标、用户价值与业务背景，再拆成 Requirement。

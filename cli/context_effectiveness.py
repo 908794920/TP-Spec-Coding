@@ -286,7 +286,7 @@ def aggregate_context_usage(
         "candidates": candidates,
         "limitations": [
             "Knowledge retrieval_runs has no project_id/task_id; central retrieval telemetry is not attributed to this project.",
-            "Legacy VERIFICATION_COMPLETED events produced by commit are intentionally excluded from the V5.2.4 P0 effectiveness proxy.",
+            "Legacy VERIFICATION_COMPLETED events produced by commit are intentionally excluded from the V5.2.5 P0 effectiveness proxy.",
         ],
     }
 

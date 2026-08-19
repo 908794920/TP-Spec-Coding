@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.2.5] Open Release Line — 2026-08-20
+
+- 从 **5.2.4** 收敛到 **5.2.5** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.2.5`，不再保留 `templates/5.2.4`。
+- 继续维持 Role-first 产品形态：`tp-spec-coding` 唯一默认产品入口、`tp-software-lifecycle` 软件工程 Domain Agent 与 9 个 Formal Role 的活动契约不变。
+
 ## [5.2.4] Role-first Personal AI Software Engineering System — 2026-08-18
 
 - 将软件研发能力从 **Action-first** 正式迁移为 **Role-first**：需求分析、架构设计、开发、验证等旧 Action Role 归位为正式软件工程角色拥有的能力；旧 7 步的轻量流程经验继续通过 L0～L3 / lifecycle preset 保留。
