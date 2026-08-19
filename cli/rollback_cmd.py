@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""V5.2.3 B-18 cutover 回滚工具（T2，依赖 T1 快照）。
+"""V5.2.4 B-18 cutover 回滚工具（T2，依赖 T1 快照）。
 
 设计依据：历史设计记录 B18-cutover-design §2.2/§4.2-§4.3/§9.2-T2。
 - 从快照还原 governance/agents/VERSION/templates，还原后逐项 sha256 与 manifest 一致
-  （含 agents/role-catalog.yaml；§4.2 阶段 3）；
+  （含 governance/role-catalog.yaml；§4.2 阶段 3）；
 - 回滚后验证断言（§4.3 / §3.8 L258）：
-  D1 目标版本（默认下一版本 5.2.3）新写入被拒（gate_task_contract → VERSION_MISMATCH）
+  D1 目标版本（默认下一版本 5.2.4）新写入被拒（gate_task_contract → VERSION_MISMATCH）
   D2 当前活动版本（VERSION 文件）恢复为唯一可写契约（gate 通过）
   D3 任意未声明版本仍被拒（gate → VERSION_MISMATCH）
   D4 快照自身 sha256 不变（verify_snapshot）
@@ -210,10 +210,10 @@ def cmd_cutover_rollback(args) -> int:
 
 
 def add_cutover_rollback_subparsers(subparsers) -> None:
-    """注册 cutover-rollback 子命令（V5.2.3 B-18 T2）。"""
+    """注册 cutover-rollback 子命令（V5.2.4 B-18 T2）。"""
     p = subparsers.add_parser(
         "cutover-rollback",
-        help="V5.2.3 B-18 T2: restore base repo from snapshot + §4.3 rollback assertions (default dry-run zero-write)",
+        help="V5.2.4 B-18 T2: restore base repo from snapshot + §4.3 rollback assertions (default dry-run zero-write)",
     )
     p.add_argument("--snapshot", required=True, help="snapshot directory name under cutover-snapshots/ (or full path)")
     p.add_argument("--base-root", default=None, help="base repo root (default: parent of cli/ package)")

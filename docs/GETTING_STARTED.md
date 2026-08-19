@@ -142,22 +142,29 @@ python -m cli.main base resolve --workspace-root "<project-root>"
 
 ## 6. 开始一个研发任务
 
-开发流程默认入口：
+默认产品入口：
 
 ```text
-tp-workflow-orchestrator
+tp-spec-coding
 ```
 
-它类似开发组长，不是一个“全能开发 Agent”。它会根据 L0～L3 和现有事实找到内部专业 Skill。
+它只做低上下文 Domain routing、Status / Continue / Explain；软件研发意图交给：
+
+```text
+tp-software-lifecycle
+```
+
+软件生命周期再根据 L0～L3、风险和当前事实选择正式工程角色，不要求每个 Task 跑完所有角色。
 
 把下面提示词交给 AI：
 
 ```text
 请使用 TP-Spec-Coding 处理这个任务。
 先通过 TP_SPEC_BASE_ROOT 或 ~/.tp-spec/installation.yaml 定位 Base，
-读取 agents/tp-workflow-orchestrator/SKILL.md，
-再读取当前项目的 managed entry 和已有 .tp-spec Task/Runtime 事实。
-不要跳过已有历史，不要由 Orchestrator 代替专业角色记账。
+读取 entry/tp-spec-coding/SKILL.md，
+再读取当前项目 managed entry 和已有 .tp-spec Task/Runtime 事实。
+如果属于软件研发，让 tp-software-lifecycle 继续调度；
+不要跳过已有历史，也不要让入口 Agent 代替专业角色做需求、架构、开发、测试或 Review。
 ```
 
 如果已有正式 Task，可以先查看只读路由：
@@ -169,35 +176,36 @@ python -m cli.main workflow next \
   --json
 ```
 
-## 7. 四个对外 Agent 怎么选
+如果输入只是客户一句话或一份需求文档，Product Manager 可以先在 pre-task 阶段完成产品/需求规范化；达到 Requirement Ready 后才创建正式 Task。
 
-### 研发任务
+## 7. 当前软件工程角色
+
+`tp-software-lifecycle` 按需使用以下正式 Role：
 
 ```text
-tp-workflow-orchestrator
+tp-product-manager         产品/需求规划、分析、拆解与验收
+tp-software-architect      系统设计、技术选型、接口与架构
+tp-tech-lead               技术规划、规范、任务拆解与技术把关
+tp-security-engineer       安全设计、审计、扫描与验证
+tp-development-engineer    代码实现、调试、重构与性能
+tp-database-engineer       数据模型、SQL、DDL、迁移与数据库质量
+tp-test-engineer           单元、集成、接口、回归与验收测试
+tp-code-reviewer           独立 Diff / Code Review
+tp-integration-engineer    变更检查、集成、Git 与交付收敛
 ```
 
-让开发组长组织内部 7 个专业 Skill。
+Role 与 phase 正交，同一 phase 可以按风险调用多个 Role；L0/L1 的简单任务仍保持轻量，不会为了角色完整强制走全流程。
 
-### 安装、路径、项目搬迁、跨机器
+其他 Domain Agent：
 
 ```text
 tp-base-maintenance
-```
-
-### 长期业务/架构/文档知识
-
-```text
 tp-knowledge
-```
-
-### 读大型源码、维护代码认知地图
-
-```text
 tp-wiki
+tp-project-autonomy
 ```
 
-`tp-base-maintenance` / `tp-knowledge` / `tp-wiki` 是独立专业 Agent，不受开发流程“单入口”限制。
+它们与软件生命周期职责分离；未来其他领域也应拥有自己的 Domain Agent + Role/Skill Pool。
 
 ## 8. 新电脑怎么迁
 
@@ -230,7 +238,7 @@ tp-wiki
 5. 执行 `base installation-doctor`；
 6. 对每个业务项目执行 `base sync-project --workspace-root <project-root> --apply`；
 7. 执行 `base resolve` 核对 scope；
-8. 再让 `tp-workflow-orchestrator` 继续已有 Task。
+8. 再让 `tp-software-lifecycle` 继续已有 Task。
 
 如果项目从旧路径移动到了新路径，TP-Spec-Coding 可以安全重绑 Runtime locator；如果旧路径仍存在，或者发现同一 project id 的多个活跃 workspace，则会 BLOCKED，要求用户决定，防止绑定错项目。
 
@@ -254,7 +262,7 @@ TP-Spec-Coding 把“角色身份”和“Skill 文件路径”分开：
 
 ```text
 role id                 = 持久化身份
-skills/.../SKILL.md     = 当前实现位置
+skills/roles/.../SKILL.md 或 skills/capabilities/.../SKILL.md = 当前实现位置
 ```
 
 因此专业 Skill 移目录不会重写历史：
@@ -325,7 +333,7 @@ python -m cli.main base sync-project --workspace-root "<project-root>" --apply
 python -m cli.main workflow doctor --json
 ```
 
-Orchestrator 故障时可以按 `agents/role-catalog.yaml` 手工加载对应内部专业 Skill，但不要重新创建一套并列开发流程或第二状态机。
+Orchestrator 故障时可以按 `governance/role-catalog.yaml` 手工加载对应内部专业 Skill，但不要重新创建一套并列开发流程或第二状态机。
 
 ## 13. 兼容命名说明
 

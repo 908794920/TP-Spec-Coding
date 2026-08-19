@@ -16,8 +16,8 @@ def test_invalid_levels_fail_closed():
 def test_architecture_review_revise_routes_back_not_forward():
     with tempfile.TemporaryDirectory() as td:
         db=make_db(Path(td)/'a.db',risk='L3',flow='L3')
-        add_checkpoint(db,'TASK-V514','tp-requirement-analysis','requirement')
-        add_checkpoint(db,'TASK-V514','tp-architecture-design','architecture')
+        add_checkpoint(db,'TASK-V514','tp-product-manager','requirement')
+        add_checkpoint(db,'TASK-V514','tp-software-architect','architecture')
         add_review(db,'TASK-V514','REVISE')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='architecture' and 'ARCHITECTURE_REVIEW_REVISE' in r['reason_codes']
@@ -36,13 +36,13 @@ def test_orchestrator_is_not_runtime_actor():
 def test_needs_fix_rework_checkpoint_advances_to_reverification():
     with tempfile.TemporaryDirectory() as td:
         db=make_db(Path(td)/'a.db',risk='L1',flow='L1')
-        add_checkpoint(db,'TASK-V514','tp-requirement-analysis','requirement')
-        add_checkpoint(db,'TASK-V514','tp-architecture-design','architecture')
-        add_checkpoint(db,'TASK-V514','tp-development-engineering','development')
+        add_checkpoint(db,'TASK-V514','tp-product-manager','requirement')
+        add_checkpoint(db,'TASK-V514','tp-software-architect','architecture')
+        add_checkpoint(db,'TASK-V514','tp-development-engineer','development')
         add_verify(db,'TASK-V514','NEEDS_FIX')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='development'
-        add_checkpoint(db,'TASK-V514','tp-development-engineering','development','rework done')
+        add_checkpoint(db,'TASK-V514','tp-development-engineer','development','rework done')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='verification'
 
@@ -50,33 +50,39 @@ def test_needs_fix_rework_checkpoint_advances_to_reverification():
 def test_architecture_revise_new_checkpoint_invalidates_stale_downstream_work():
     with tempfile.TemporaryDirectory() as td:
         db=make_db(Path(td)/'a.db',risk='L3',flow='L3')
-        add_checkpoint(db,'TASK-V514','tp-requirement-analysis','requirement')
-        add_checkpoint(db,'TASK-V514','tp-architecture-design','architecture')
+        add_checkpoint(db,'TASK-V514','tp-product-manager','requirement')
+        add_checkpoint(db,'TASK-V514','tp-software-architect','architecture')
         add_review(db,'TASK-V514','PASS')
-        add_checkpoint(db,'TASK-V514','tp-development-engineering','development')
+        add_checkpoint(db,'TASK-V514','tp-development-engineer','development')
         add_review(db,'TASK-V514','REVISE')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='architecture'
-        add_checkpoint(db,'TASK-V514','tp-architecture-design','architecture','revision done')
+        add_checkpoint(db,'TASK-V514','tp-software-architect','architecture','revision done')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='architecture_review'
         add_review(db,'TASK-V514','PASS')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
-        assert r['next_stage']=='development', 'old development checkpoint must be stale after architecture revision'
-        assert r['confirmation_required'] is True
+        assert r['next_stage']=='planning', 'old planning/development work must be stale after architecture revision'
+        add_checkpoint(db,'TASK-V514','tp-tech-lead','planning','replan after revision')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='development' and r['confirmation_required'] is True
 
 
 def test_old_material_confirmation_is_stale_after_architecture_revision():
     with tempfile.TemporaryDirectory() as td:
         db=make_db(Path(td)/'a.db',risk='L3',flow='L3')
-        add_checkpoint(db,'TASK-V514','tp-requirement-analysis','requirement')
-        add_checkpoint(db,'TASK-V514','tp-architecture-design','architecture')
+        add_checkpoint(db,'TASK-V514','tp-product-manager','requirement')
+        add_checkpoint(db,'TASK-V514','tp-software-architect','architecture')
         add_review(db,'TASK-V514','PASS')
+        add_checkpoint(db,'TASK-V514','tp-tech-lead','planning')
         add_workflow_confirmation(db,'TASK-V514')
-        add_checkpoint(db,'TASK-V514','tp-development-engineering','development')
+        add_checkpoint(db,'TASK-V514','tp-development-engineer','development')
         add_review(db,'TASK-V514','REVISE')
-        add_checkpoint(db,'TASK-V514','tp-architecture-design','architecture','revision done')
+        add_checkpoint(db,'TASK-V514','tp-software-architect','architecture','revision done')
         add_review(db,'TASK-V514','PASS')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='planning'
+        add_checkpoint(db,'TASK-V514','tp-tech-lead','planning','replan after revision')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='development'
         assert r['confirmation_required'] is True

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding v5.2.3 public-release contract tests."""
+"""TP-Spec-Coding v5.2.4 public-release contract tests."""
 from __future__ import annotations
 
 import json
@@ -21,7 +21,7 @@ def read(rel: str) -> str:
 
 
 def test_public_brand_and_release_version():
-    assert ACTIVE == "5.2.3"
+    assert ACTIVE == "5.2.4"
     assert read("README.md").startswith("# TP-Spec-Coding\n")
     assert "TP-Spec-Coding" in read("governance/workflow.yaml")
 
@@ -78,35 +78,40 @@ def test_development_flow_has_one_external_lead_and_three_independent_agents():
         if p.is_file()
     }
     assert exposed == {
-        "tp-workflow-orchestrator",
+        "tp-software-lifecycle",
         "tp-project-autonomy",
         "tp-base-maintenance",
         "tp-knowledge",
         "tp-wiki",
     }
 
-    catalog = yaml.safe_load(read("agents/role-catalog.yaml"))
+    catalog = yaml.safe_load(read("governance/role-catalog.yaml"))
     role_paths = {row["workflow_role"]: row["skill_path"] for row in catalog["roles"]}
     internal = {
-        "tp-requirement-analysis",
-        "tp-product-design",
-        "tp-architecture-design",
-        "tp-architecture-review",
-        "tp-development-engineering",
-        "tp-verification-engineering",
-        "tp-delivery-convergence",
+        "tp-product-manager",
+        "tp-software-architect",
+        "tp-tech-lead",
+        "tp-security-engineer",
+        "tp-development-engineer",
+        "tp-database-engineer",
+        "tp-test-engineer",
+        "tp-code-reviewer",
+        "tp-integration-engineer",
     }
     for role in internal:
-        assert role_paths[role] == f"skills/{role}/SKILL.md"
-    for role in ("tp-project-autonomy", "tp-base-maintenance", "tp-knowledge", "tp-wiki"):
+        assert role_paths[role] == f"skills/roles/{role}/SKILL.md"
+    assert (BASE / "entry/tp-spec-coding/SKILL.md").is_file()
+    assert role_paths["tp-spec-coding"] == "entry/tp-spec-coding/SKILL.md"
+    for role in ("tp-software-lifecycle", "tp-project-autonomy", "tp-base-maintenance", "tp-knowledge", "tp-wiki"):
         assert role_paths[role] == f"agents/{role}/SKILL.md"
 
 
 def test_readme_explains_value_quickstart_agents_and_portability():
     text = read("README.md")
     for needle in (
-        "开发组长",
-        "tp-workflow-orchestrator",
+        "一人项目组",
+        "tp-spec-coding",
+        "tp-software-lifecycle",
         "tp-project-autonomy",
         "tp-base-maintenance",
         "tp-knowledge",
@@ -149,7 +154,7 @@ def test_active_governance_and_catalog_are_v520():
     assert yaml.safe_load(read("governance/workflow.yaml"))["version"] == ACTIVE
     assert yaml.safe_load(read("governance/ai-role.yaml"))["version"] == ACTIVE
     assert yaml.safe_load(read("governance/orchestration.yaml"))["version"] == ACTIVE
-    catalog = yaml.safe_load(read("agents/role-catalog.yaml"))
+    catalog = yaml.safe_load(read("governance/role-catalog.yaml"))
     assert catalog["catalog_version"] == ACTIVE
     assert catalog["base_version"] == ACTIVE
     compat = yaml.safe_load(read("governance/compat-matrix.yaml"))
@@ -169,11 +174,11 @@ def test_version_purity_scanner_rejects_previous_minor_after_v520_cutover():
     spec = importlib.util.spec_from_file_location("v520_purity", scanner_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    legacy_re = module._build_legacy_re("5.2.3")
+    legacy_re = module._build_legacy_re("5.2.4")
     previous = "5.1." + "4"
     match = legacy_re.search(f"active contract {previous} must not survive in live files")
     assert match is not None
-    assert module._is_legacy_dotted(match.group(0), "5.2.3")
+    assert module._is_legacy_dotted(match.group(0), "5.2.4")
 
 
 def test_public_repo_has_reproducible_dependencies_and_github_ci():
@@ -312,7 +317,7 @@ def test_release_manifest_gate_distinguishes_working_tree_from_git_release(tmp_p
     clean_release = run(sys.executable, "scripts/update_manifest.py", "--verify-release")
     assert clean_release.returncode == 0, clean_release.stderr
 
-    # Reproduce the v5.2.3 publication failure mode: the file is visible and
+    # Reproduce the v5.2.4 publication failure mode: the file is visible and
     # included by the development manifest, but it was never git-added.
     (repo / "release-surface.txt").write_text("untracked\n", encoding="utf-8")
     regenerated = run(sys.executable, "scripts/update_manifest.py")

@@ -24,7 +24,7 @@ from cli import main as climain
 from cli.evidence import validate_evidence_path
 from cli.event_policies import load_trusted_governance_event
 from cli.yaml_checks import check_acceptance_yaml
-from test_v511_commit_reliability import run
+from scripts.tests.runtime_testutil import run
 
 
 class TestPersonalModeSurface(unittest.TestCase):
@@ -61,10 +61,10 @@ class TestPersonalModeSurface(unittest.TestCase):
         self.assertNotEqual(rc, 0)
         self.assertIn("unrecognized arguments", err)
 
-    def test_commit_has_no_human_confirmation_flag(self):
-        rc, _, err = run(["commit", "--task", "T", "--task-dir", ".", "--actor", "tp-delivery-convergence", "--human-confirmation", "approved"])
+    def test_legacy_commit_command_is_not_in_current_cli(self):
+        rc, _, err = run(["commit", "--help"])
         self.assertNotEqual(rc, 0)
-        self.assertIn("unrecognized arguments", err)
+        self.assertIn("invalid choice", err)
 
     def test_disabled_task_transition_has_no_legacy_human_flags(self):
         rc, _, err = run([
@@ -82,19 +82,19 @@ class TestPersonalModeSurface(unittest.TestCase):
         self.assertNotIn("receipt_request", tables)
         conn.close()
 
-    def test_powershell_flush_mirror_allows_verification_rework(self):
-        text = (ROOT / "scripts" / "Invoke-TpSpecHandoffFlush.ps1").read_text(encoding="utf-8-sig")
-        self.assertIn("VERIFYING = @('DEVELOPING','BROWSER_VERIFYING','REVIEWING','CLOSING','DISCOVERY_REVIEW_REQUIRED','BLOCKED')", text)
+    def test_legacy_handoff_flush_is_migration_only(self):
+        self.assertFalse((ROOT / "scripts" / "Invoke-TpSpecHandoffFlush.ps1").exists())
+        self.assertTrue((ROOT / "scripts" / "migration" / "v5_2_3" / "Invoke-TpSpecHandoffFlush.ps1").is_file())
 
-    def test_active_powershell_uses_personal_deferred_schema(self):
-        text = (ROOT / "scripts" / "Test-TpSpecTask.ps1").read_text(encoding="utf-8")
-        self.assertIn("recorded_at", text)
+    def test_active_powershell_is_thin_cli_first_validator(self):
+        text = (ROOT / "scripts" / "Test-TpSpecTask.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("-m cli.main task validate", text)
+        self.assertNotIn("deferred_acceptance", text)
         self.assertNotIn("approved_by", text)
-        self.assertNotIn("approved_at", text)
-        self.assertNotIn("DEFERRED_APPROVER_INVALID", text)
+        self.assertNotIn("LEGACY_STATE", text)
 
     def test_role_catalog_completion_chain_has_no_human_gate(self):
-        data = yaml.safe_load((ROOT / "agents" / "role-catalog.yaml").read_text(encoding="utf-8"))
+        data = yaml.safe_load((ROOT / "governance" / "role-catalog.yaml").read_text(encoding="utf-8"))
         for chain in data["completion_chain"].values():
             self.assertNotIn("human_owner", chain)
             self.assertNotIn("HUMAN_APPROVAL", chain)
@@ -157,14 +157,14 @@ class TestTrustedEventSelection(unittest.TestCase):
         conn.execute("CREATE TABLE task_event (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, event_type TEXT, actor_role TEXT, summary TEXT, detail_json TEXT)")
         valid = {
             "transaction_id": "TX-VALID", "producer": "review_record", "schema_version": "5.1.3",
-            "task_id": "TASK-1", "actor_role": "tp-architecture-review", "created_at": "2026-08-05T00:00:00+08:00",
+            "task_id": "TASK-1", "actor_role": "tp-software-architect", "created_at": "2026-08-05T00:00:00+08:00",
             "decision": "PASS", "artifact": "architecture-review.md", "artifact_digest": "a" * 64,
             "subject_digest": "b" * 64, "evidence": ["evidence/proof.txt"],
         }
         invalid = dict(valid, transaction_id="TX-BAD", producer="event_add")
         for detail in (valid, invalid):
-            conn.execute("INSERT INTO task_event(task_id,event_type,actor_role,summary,detail_json) VALUES(?,?,?,?,?)", ("TASK-1", "REVIEW_COMPLETED", "tp-architecture-review", "PASS", json.dumps(detail)))
-        trusted = load_trusted_governance_event(conn, "TASK-1", event_type="REVIEW_COMPLETED", actor="tp-architecture-review", decision="PASS", review_kind=None)
+            conn.execute("INSERT INTO task_event(task_id,event_type,actor_role,summary,detail_json) VALUES(?,?,?,?,?)", ("TASK-1", "REVIEW_COMPLETED", "tp-software-architect", "PASS", json.dumps(detail)))
+        trusted = load_trusted_governance_event(conn, "TASK-1", event_type="REVIEW_COMPLETED", actor="tp-software-architect", decision="PASS", review_kind=None)
         self.assertIsNotNone(trusted)
         self.assertEqual("TX-VALID", trusted.detail["transaction_id"])
         conn.close()

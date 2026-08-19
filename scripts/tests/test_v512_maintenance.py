@@ -164,8 +164,8 @@ class TestV512Maintenance(unittest.TestCase):
         self.assertEqual(rc, 0, (out, err))
         intake = self.root / "intake"
         intake.mkdir()
-        src = intake / "requirement-knowledge.md"
-        source_text = (BASE / "templates" / active_version() / "requirement-knowledge.md").read_text(encoding="utf-8")
+        src = intake / "requirement.md"
+        source_text = (BASE / "templates" / active_version() / "requirement.md").read_text(encoding="utf-8")
         source_text += "\n| intake | 保留这条 intake 业务事实 | 影响正式需求理解 |\n"
         src.write_text(source_text, encoding="utf-8", newline="\n")
         source_hash = hashlib.sha256(src.read_bytes()).hexdigest()
@@ -177,11 +177,11 @@ class TestV512Maintenance(unittest.TestCase):
             "--db", str(self.db), "--from-intake", str(intake), "--task-dir", str(task_dir),
         ])
         self.assertEqual(rc2, 0, (out2, err2))
-        self.assertIn("intake_adopted=requirement-knowledge.md", out2)
+        self.assertIn("intake_adopted=requirement.md", out2)
         self.assertIn("intake_source_preserved=true", out2)
-        adopted = (task_dir / "requirement-knowledge.md").read_text(encoding="utf-8")
+        adopted = (task_dir / "requirement.md").read_text(encoding="utf-8")
         self.assertIn('task_id: "TASK-INTAKE-1"', adopted)
-        self.assertIn(f"version: {active_version()}", adopted)
+        self.assertIn(f'version: "{active_version()}"', adopted)
         self.assertIn("保留这条 intake 业务事实", adopted)
         self.assertIn(f'source_sha256: "sha256:{source_hash}"', adopted)
         self.assertIn("policy: copy_preserve_source", adopted)
@@ -189,15 +189,17 @@ class TestV512Maintenance(unittest.TestCase):
 
     def test_role_contracts_encode_pristine_and_pretask_boundaries(self):
         base_maintenance = (BASE / "agents" / "tp-base-maintenance" / "SKILL.md").read_text(encoding="utf-8")
-        requirement = (BASE / "skills" / "tp-requirement-analysis" / "SKILL.md").read_text(encoding="utf-8")
-        architecture = (BASE / "skills" / "tp-architecture-design" / "SKILL.md").read_text(encoding="utf-8")
+        requirement = (BASE / "skills" / "roles" / "tp-product-manager" / "SKILL.md").read_text(encoding="utf-8")
+        architecture = (BASE / "skills" / "roles" / "tp-software-architect" / "SKILL.md").read_text(encoding="utf-8")
+        lifecycle = (BASE / "agents" / "tp-software-lifecycle" / "SKILL.md").read_text(encoding="utf-8")
         runtime_api = (BASE / "governance" / "runtime-api.yaml").read_text(encoding="utf-8")
         self.assertIn("TP-Spec-Coding Installation + Project Binding", base_maintenance)
         self.assertIn("Workspace Inventory", base_maintenance)
         self.assertIn("PROJECT_BOOTSTRAP_UNSAFE", base_maintenance)
         self.assertIn("需求分析允许发生在正式 Task 创建之前", requirement)
-        self.assertIn("不得为了写 FACT/DECISION/HANDOFF 事件提前建 Task", requirement)
-        self.assertIn("--from-intake <DIR>", architecture)
+        self.assertIn("不得为了 FACT/DECISION/账本提前建 Task", requirement)
+        self.assertNotIn("--from-intake <DIR>", architecture)
+        self.assertIn("task create --from-intake <DIR>", lifecycle)
         self.assertIn("project_bootstrap:", runtime_api)
         self.assertIn("PROJECT_NOT_INITIALIZED:", runtime_api)
 

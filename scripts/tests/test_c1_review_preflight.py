@@ -140,8 +140,8 @@ class TestC1Preflight(unittest.TestCase):
         rc, out, err = run_preflight(self.task_dir, self.repo, self.base, self.head, findings_file=findings)
         self.assertEqual(rc, 0, err)
         self.assertIn("preflight: ok", out)
-        # 候选包原子写入 .execution/<TASK-ID>/tp-development-engineering/review/
-        review_dir = self.task_dir / ".execution" / "TASK-C1-TEST" / "tp-development-engineering" / "review"
+        # 候选包原子写入 .execution/<TASK-ID>/review/
+        review_dir = self.task_dir / ".execution" / "TASK-C1-TEST" / "review"
         packs = list(review_dir.glob("*.json"))
         self.assertEqual(len(packs), 1)
         manifest = json.loads(packs[0].read_text(encoding="utf-8"))
@@ -161,7 +161,7 @@ class TestC1Preflight(unittest.TestCase):
         self.assertNotEqual(rc, 0)
         self.assertIn(ANCHOR_HASH_MISMATCH, err)
         self.assertIn("1 finding(s) unverified", err)
-        review_dir = self.task_dir / ".execution" / "TASK-C1-TEST" / "tp-development-engineering" / "review"
+        review_dir = self.task_dir / ".execution" / "TASK-C1-TEST" / "review"
         packs = list(review_dir.glob("*.json"))
         self.assertEqual(len(packs), 1)
         manifest = json.loads(packs[0].read_text(encoding="utf-8"))
@@ -186,7 +186,7 @@ class TestC1Preflight(unittest.TestCase):
         rc, out, err = run_preflight(self.task_dir, self.repo, self.base, self.head, findings_file=findings)
         self.assertNotEqual(rc, 0)
         self.assertIn(ANCHOR_TEXT_NOT_FOUND, err)
-        review_dir = self.task_dir / ".execution" / "TASK-C1-TEST" / "tp-development-engineering" / "review"
+        review_dir = self.task_dir / ".execution" / "TASK-C1-TEST" / "review"
         manifest = json.loads(list(review_dir.glob("*.json"))[0].read_text(encoding="utf-8"))
         self.assertEqual(manifest["anchor_check"][0]["anchor_status"], "unverified")
 
@@ -195,16 +195,16 @@ class TestC1Preflight(unittest.TestCase):
         findings = write_findings(self.tmp, [GOOD_FINDING])
         rc1, out1, _ = run_preflight(self.task_dir, self.repo, self.base, self.head, findings_file=findings)
         self.assertEqual(rc1, 0)
-        packs1 = list((self.task_dir / ".execution" / "TASK-C1-TEST" / "tp-development-engineering" / "review").glob("*.json"))
+        packs1 = list((self.task_dir / ".execution" / "TASK-C1-TEST" / "review").glob("*.json"))
         content1 = packs1[0].read_bytes()
         # 清空候选区后重跑（同一输入）
         shutil.rmtree(self.task_dir / ".execution")
         rc2, out2, _ = run_preflight(self.task_dir, self.repo, self.base, self.head, findings_file=findings)
         self.assertEqual(rc2, 0)
-        packs2 = list((self.task_dir / ".execution" / "TASK-C1-TEST" / "tp-development-engineering" / "review").glob("*.json"))
+        packs2 = list((self.task_dir / ".execution" / "TASK-C1-TEST" / "review").glob("*.json"))
         self.assertEqual(content1, packs2[0].read_bytes())  # 逐字节一致
         self.assertEqual(out1, out2)
-        # 偏移修正值确定性输出（供 tp-verification-engineering 消费）
+        # 偏移修正值确定性输出（供 tp-test-engineer 消费）
         manifest = json.loads(packs2[0].read_text(encoding="utf-8"))
         self.assertIsNotNone(manifest["anchor_check"][0]["offset_correction"])
 

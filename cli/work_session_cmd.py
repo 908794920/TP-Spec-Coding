@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.2.3 work 命令组（M2）。
+"""TP-Spec-Coding V5.2.4 work 命令组（M2）。
 
 包含：
 - work start / end
@@ -20,6 +20,8 @@ import uuid
 from typing import Optional
 
 from . import db as dbmod
+
+DEFAULT_ROLE = "tp-software-lifecycle"
 
 
 # work end reason 受控集合（与 handoff.json/work-session 规范一致）
@@ -85,7 +87,7 @@ def cmd_work_start(args) -> int:
         if task is None:
             print(f"ERROR: task not found: {task_id}", file=sys.stderr)
             return 4
-        actor_role = args.role or task["owner_role"] or "tp-architecture-design"
+        actor_role = args.role or task["owner_role"] or DEFAULT_ROLE
         actor_agent = args.agent or task["owner_agent"] or ""
         open_session = _open_session_for_role(conn, task_id, actor_role)
         if open_session is not None:
@@ -135,7 +137,7 @@ def cmd_work_end(args) -> int:
         if task is None:
             print(f"ERROR: task not found: {task_id}", file=sys.stderr)
             return 4
-        actor_role = args.role or task["owner_role"] or "tp-architecture-design"
+        actor_role = args.role or task["owner_role"] or DEFAULT_ROLE
         actor_agent = args.agent or task["owner_agent"] or ""
         open_session = _open_session_for_role(conn, task_id, actor_role)
         if open_session is None:

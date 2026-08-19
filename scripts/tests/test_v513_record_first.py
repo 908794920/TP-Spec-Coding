@@ -90,12 +90,12 @@ class RecordFirstCase(unittest.TestCase):
     def test_checkpoint_auto_activates_and_phase_changes_without_handoff_noise(self):
         rc, out, err = self.call(
             "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-architecture-design", "--phase", "architecture", "--summary", "设计完成",
+            "--actor", "tp-software-architect", "--phase", "architecture", "--summary", "设计完成",
         )
         self.assertEqual(rc, 0, (out, err))
         rc, out, err = self.call(
             "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-development-engineering", "--phase", "development", "--summary", "开发完成",
+            "--actor", "tp-development-engineer", "--phase", "development", "--summary", "开发完成",
         )
         self.assertEqual(rc, 0, (out, err))
         task = self.task()
@@ -110,18 +110,18 @@ class RecordFirstCase(unittest.TestCase):
     def test_block_is_real_and_must_resume_before_complete(self):
         rc, out, err = self.call(
             "task", "block", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-development-engineering", "--phase", "development", "--reason", "等待用户提供测试账号",
+            "--actor", "tp-development-engineer", "--phase", "development", "--reason", "等待用户提供测试账号",
         )
         self.assertEqual(rc, 0, (out, err))
         rc, out, err = self.call(
             "task", "complete", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-development-engineering", "--summary", "完成",
+            "--actor", "tp-development-engineer", "--summary", "完成",
         )
         self.assertNotEqual(rc, 0)
         self.assertIn("explicit task blocker", err)
         rc, out, err = self.call(
             "task", "resume", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-development-engineering", "--phase", "development", "--summary", "账号已提供",
+            "--actor", "tp-development-engineer", "--phase", "development", "--summary", "账号已提供",
         )
         self.assertEqual(rc, 0, (out, err))
         self.assertEqual(self.task()["current_state"], "ACTIVE")
@@ -129,7 +129,7 @@ class RecordFirstCase(unittest.TestCase):
     def test_verification_pass_requires_real_evidence(self):
         rc, out, err = self.call(
             "task", "verify", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-verification-engineering", "--decision", "PASS", "--summary", "测试通过",
+            "--actor", "tp-test-engineer", "--decision", "PASS", "--summary", "测试通过",
         )
         self.assertNotEqual(rc, 0)
         evidence = self.task_dir / "evidence" / "test.txt"
@@ -137,7 +137,7 @@ class RecordFirstCase(unittest.TestCase):
         evidence.write_text("pytest: pass\n", encoding="utf-8")
         rc, out, err = self.call(
             "task", "verify", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-verification-engineering", "--decision", "PASS", "--summary", "测试通过",
+            "--actor", "tp-test-engineer", "--decision", "PASS", "--summary", "测试通过",
             "--evidence", "evidence/test.txt",
         )
         self.assertEqual(rc, 0, (out, err))
@@ -152,12 +152,12 @@ class RecordFirstCase(unittest.TestCase):
     def test_complete_is_truthful_even_without_verification(self):
         rc, out, err = self.call(
             "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-development-engineering", "--phase", "development", "--summary", "实现完成",
+            "--actor", "tp-development-engineer", "--phase", "development", "--summary", "实现完成",
         )
         self.assertEqual(rc, 0, (out, err))
         rc, out, err = self.call(
             "task", "complete", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-development-engineering", "--summary", "任务结束",
+            "--actor", "tp-development-engineer", "--summary", "任务结束",
         )
         self.assertEqual(rc, 0, (out, err))
         final = (self.task_dir / "generated" / "final-result.md").read_text(encoding="utf-8")
@@ -172,7 +172,7 @@ class RecordFirstCase(unittest.TestCase):
     def test_complete_after_pass_reports_pass(self):
         rc, out, err = self.call(
             "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-development-engineering", "--phase", "development", "--summary", "implemented",
+            "--actor", "tp-development-engineer", "--phase", "development", "--summary", "implemented",
         )
         self.assertEqual(rc, 0, (out, err))
         evidence = self.task_dir / "evidence" / "test.txt"
@@ -180,13 +180,13 @@ class RecordFirstCase(unittest.TestCase):
         evidence.write_text("pass\n", encoding="utf-8")
         rc, out, err = self.call(
             "task", "verify", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-verification-engineering", "--decision", "PASS", "--summary", "verified",
+            "--actor", "tp-test-engineer", "--decision", "PASS", "--summary", "verified",
             "--evidence", "evidence/test.txt",
         )
         self.assertEqual(rc, 0, (out, err))
         rc, out, err = self.call(
             "task", "complete", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-verification-engineering", "--summary", "done",
+            "--actor", "tp-test-engineer", "--summary", "done",
         )
         self.assertEqual(rc, 0, (out, err))
         self.assertIn("PASS", (self.task_dir / "generated" / "final-result.md").read_text(encoding="utf-8"))
@@ -194,7 +194,7 @@ class RecordFirstCase(unittest.TestCase):
     def test_record_first_validator_ignores_optional_artifact_absence(self):
         rc, out, err = self.call(
             "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-development-engineering", "--phase", "development", "--summary", "working",
+            "--actor", "tp-development-engineer", "--phase", "development", "--summary", "working",
         )
         self.assertEqual(rc, 0, (out, err))
         rc, out, err = self.call(
@@ -206,19 +206,19 @@ class RecordFirstCase(unittest.TestCase):
     def test_simple_verified_flow_has_small_event_budget(self):
         rc, out, err = self.call(
             "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-development-engineering", "--phase", "development", "--summary", "implemented",
+            "--actor", "tp-development-engineer", "--phase", "development", "--summary", "implemented",
         )
         self.assertEqual(rc, 0, (out, err))
         evidence = self.task_dir / "evidence" / "test.txt"; evidence.parent.mkdir(exist_ok=True); evidence.write_text("pass", encoding="utf-8")
         rc, out, err = self.call(
             "task", "verify", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-verification-engineering", "--decision", "PASS", "--summary", "verified",
+            "--actor", "tp-test-engineer", "--decision", "PASS", "--summary", "verified",
             "--evidence", "evidence/test.txt",
         )
         self.assertEqual(rc, 0, (out, err))
         rc, out, err = self.call(
             "task", "complete", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-verification-engineering", "--summary", "done",
+            "--actor", "tp-test-engineer", "--summary", "done",
         )
         self.assertEqual(rc, 0, (out, err))
         events = self.events()
@@ -240,7 +240,7 @@ class TestRecordFirstStaticContracts(unittest.TestCase):
     def test_optional_templates_have_no_stage_handoff(self):
         base = Path(__file__).parents[2] / "templates" / active_version()
         for name in (
-            "requirement-knowledge.md", "requirement-clarifications.md", "requirement-decisions.md",
+            "requirement.md", "requirement-clarifications.md", "requirement-decisions.md",
             "architecture-review.md", "implementation.md", "requirement-test-guide.md",
             "codex-review.md", "quality-and-knowledge.md",
         ):

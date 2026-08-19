@@ -311,7 +311,7 @@ class TestC4Provenance(unittest.TestCase):
                 encoding="utf-8",
             )
             args = argparse.Namespace(
-                task="TASK-B17-R9", task_dir=str(base), actor="tp-development-engineering",
+                task="TASK-B17-R9", task_dir=str(base), actor="tp-development-engineer",
                 action_type="DML", summary="r9", authorized_by="human_owner",
                 authorization_scope="r9", environment="dev", result="r9",
                 script=None, action_sha256="sha256:" + "b" * 64,

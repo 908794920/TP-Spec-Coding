@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-V5.2.3 P1 unified offline test entry (plan §5 B-02).
+V5.2.4 unified offline test entry.
 
 .DESCRIPTION
 PowerShell dispatcher for the TP-Spec-Coding local test chain. Fully offline:
@@ -11,8 +11,7 @@ containers or credentials.
     forbidden paths, network-primitive blacklist, Python byte-compile and
     test discovery. Deliberately contains NO YAML semantic checks; those
     join only after the P2 controlled loader lands (ruling P0-3).
--Mode Full   : active V5.2.3 release gate only.
--Mode LegacyV510 : frozen prior-contract archive compatibility diagnostics; failures do not make the active V5.2.3 gate red.
+-Mode Full   : active V5.2.4 release gate only. Historical compatibility is covered by migration tests, not an active runtime mode.
 -KeepWorkDir : by default the work directory created by THIS run (resolved
     and verified before removal) is cleaned; only this switch keeps it.
     Child scripts' own audit temp dirs are never touched.
@@ -27,7 +26,7 @@ python) fail loudly instead of being skipped.
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('Static', 'Full', 'LegacyV510')]
+    [ValidateSet('Static', 'Full')]
     [string]$Mode = 'Static',
     [switch]$KeepWorkDir,
     [string]$ReportPath = '',
@@ -118,7 +117,7 @@ if ($Mode -eq 'Full') {
 
 Invoke-Check 'static.forbidden.paths' {
     $tracked = @(& git -C $base ls-files)
-    # docs/ 已纳入 Git 管理（V5.2.3 发布完整性）；仅禁止运行时产物与本地状态
+    # docs/ 已纳入 Git 管理（V5.2.4 发布完整性）；仅禁止运行时产物与本地状态
     $forbiddenPatterns = @('__pycache__', '\.pyc$', '^db/registry\.local\.json$', '\.db$', '\.flush-journal', '\.local\.', '\.pytest_cache', '^tp-spec-base\.zip$', '^docs/planning/')
     $hits = @()
     foreach ($p in $forbiddenPatterns) {
@@ -166,16 +165,12 @@ Invoke-Check 'static.python.compile' {
 
 Invoke-Check 'static.tests.discovery' {
     $required = @(
-        'scripts\tests\Test-RoleCatalog.ps1',
-        'scripts\tests\Test-V510SingleContract.ps1',
-        'scripts\tests\Test-V510FileMode.ps1',
-        'scripts\tests\Test-V510DbGuard.ps1'
+        'scripts\tests\Test-RoleCatalog.ps1'
     )
     $missing = @($required | Where-Object { -not (Test-Path -LiteralPath (Join-Path $base $_)) })
     if ($missing.Count -gt 0) { throw ("regression scripts missing: " + ($missing -join '; ')) }
     $negatives = @(Get-ChildItem -LiteralPath (Join-Path $base 'scripts\ci') -Filter 'Test-NegativeCases.ps1' -ErrorAction SilentlyContinue)
-    $switchNeg = @(Get-ChildItem -LiteralPath (Join-Path $base 'scripts\ci') -Filter 'Test-V510SwitchNegatives.ps1' -ErrorAction SilentlyContinue)
-    "4 regression scripts + $($negatives.Count) negative suite(s) + $($switchNeg.Count) switch-negative suite(s) discovered"
+    "1 active regression script + $($negatives.Count) negative suite(s) discovered"
 }
 
 # --- P2: YAML semantic checks now join Static (P1/P2 dependency resolved,
@@ -192,7 +187,7 @@ Invoke-Check 'static.yaml.semantic_validate' {
         'governance/knowledge-rule.yaml|knowledge-rule',
         'governance/compat-matrix.yaml|compat-matrix',
         'governance/orchestration.yaml|orchestration',
-        'agents/role-catalog.yaml|role-catalog',
+        'governance/role-catalog.yaml|role-catalog',
         ((Join-Path 'templates' ((Get-Content -LiteralPath (Join-Path $base 'VERSION') -Raw).Trim())) + '/status.yaml|status-template')
     )
     $failed = @()
@@ -243,12 +238,9 @@ if ($Mode -eq 'Full') {
     }
 }
 
-# ==================== Full mode: dispatch existing suites ====================
+# ==================== Full mode: dispatch active suites ====================
 
 if ($Mode -eq 'Full') {
-    # Active V5.2.3 release gate.  Frozen V5.1.0 suites are intentionally not
-    # part of the default release result; run -Mode LegacyV510 for archive
-    # compatibility diagnostics.
     $suites = @(
         @{ Name = 'suite.role_catalog'; Path = 'scripts\tests\Test-RoleCatalog.ps1' }
     )
@@ -257,20 +249,9 @@ if ($Mode -eq 'Full') {
         $suites += @{ Name = 'suite.negative_cases'; Path = 'scripts\ci\Test-NegativeCases.ps1' }
     }
 }
-elseif ($Mode -eq 'LegacyV510') {
-    $suites = @(
-        @{ Name = 'legacy.single_contract'; Path = 'scripts\tests\Test-V510SingleContract.ps1' },
-        @{ Name = 'legacy.file_mode';       Path = 'scripts\tests\Test-V510FileMode.ps1' },
-        @{ Name = 'legacy.db_guard';        Path = 'scripts\tests\Test-V510DbGuard.ps1' }
-    )
-    $switchNegPath = Join-Path $base 'scripts\ci\Test-V510SwitchNegatives.ps1'
-    if (Test-Path -LiteralPath $switchNegPath) {
-        $suites += @{ Name = 'legacy.switch_negatives'; Path = 'scripts\ci\Test-V510SwitchNegatives.ps1' }
-    }
-}
 else { $suites = @() }
 
-if ($Mode -in @('Full','LegacyV510')) {
+if ($Mode -eq 'Full') {
     foreach ($s in $suites) {
         $full = Join-Path $base $s.Path
         $log = Join-Path $workDir ($s.Name + '.log')

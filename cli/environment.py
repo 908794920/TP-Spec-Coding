@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.2.3 installation/project binding resolver.
+"""TP-Spec-Coding V5.2.4 installation/project binding resolver.
 
 This module separates four authorities:
 
@@ -221,7 +221,7 @@ def resolve_base_root(
 
 
 def validate_base_root(path: Path) -> Dict[str, Any]:
-    required = ["VERSION", "cli/main.py", "governance/workflow.yaml", "agents/role-catalog.yaml"]
+    required = ["VERSION", "cli/main.py", "governance/workflow.yaml", "governance/role-catalog.yaml"]
     missing = [rel for rel in required if not (path / rel).is_file()]
     version = ""
     try:

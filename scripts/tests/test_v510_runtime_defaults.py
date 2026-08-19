@@ -18,7 +18,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent.parent  # tp-spec-base
 sys.path.insert(0, str(BASE))
 
-from cli import commit_cmd  # noqa: E402
+from cli import transaction_commit  # noqa: E402
 from cli import snapshot_cmd  # noqa: E402
 from cli import rollback_cmd  # noqa: E402
 from cli.config_loader import read_base_version  # noqa: E402
@@ -26,8 +26,8 @@ from cli.version import next_version  # noqa: E402
 
 
 class TestRuntimeDefaults(unittest.TestCase):
-    def test_commit_active_contract_matches_version(self):
-        self.assertEqual(commit_cmd.ACTIVE_CONTRACT, read_base_version(BASE))
+    def test_transaction_commit_active_contract_matches_version(self):
+        self.assertEqual(transaction_commit.ACTIVE_CONTRACT, read_base_version(BASE))
 
     def test_snapshot_target_is_next_version_not_legacy(self):
         # 快照目标 = 当前版本的下一个 minor（cutover 演练目标，动态计算不硬编码）
@@ -48,7 +48,7 @@ class TestRuntimeDefaults(unittest.TestCase):
         """核心运行时模块源码不得包含旧版本字面量（允许拼接与动态读取）。"""
         legacy = "5.0." + "6"
         modules = (
-            "cli/commit_cmd.py",
+            "cli/transaction_commit.py",
             "cli/project_cmd.py",
             "cli/projection_cmd.py",
             "cli/receipt_cmd.py",

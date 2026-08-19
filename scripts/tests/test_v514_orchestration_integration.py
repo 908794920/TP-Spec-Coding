@@ -2,7 +2,7 @@ import contextlib,io,json,tempfile
 from pathlib import Path
 from cli import db as dbmod
 from cli import main as climain, orchestration
-from scripts.tests.v514_orchestration_testutil import make_db,add_checkpoint,add_decision,add_review,add_verify,add_workflow_confirmation
+from scripts.tests.v514_orchestration_testutil import make_db,add_checkpoint,add_decision,add_review,add_code_review,add_verify,add_workflow_confirmation
 
 
 def run(argv):
@@ -33,14 +33,18 @@ def test_blocked_and_terminal_do_not_dispatch():
 def test_l3_pass_requires_structured_delivery_result_not_plain_checkpoint():
     with tempfile.TemporaryDirectory() as td:
         db=make_db(Path(td)/'a.db',risk='L3',flow='L3')
-        add_checkpoint(db,'TASK-V514','tp-requirement-analysis','requirement')
-        add_checkpoint(db,'TASK-V514','tp-architecture-design','architecture')
+        add_checkpoint(db,'TASK-V514','tp-product-manager','requirement')
+        add_checkpoint(db,'TASK-V514','tp-software-architect','architecture')
         add_review(db,'TASK-V514','PASS')
+        add_checkpoint(db,'TASK-V514','tp-tech-lead','planning')
         add_workflow_confirmation(db,'TASK-V514')
-        add_checkpoint(db,'TASK-V514','tp-development-engineering','development')
+        add_checkpoint(db,'TASK-V514','tp-development-engineer','development')
         add_verify(db,'TASK-V514','PASS')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
-        assert r['next_stage']=='delivery' and r['role_id']=='tp-delivery-convergence'
-        add_checkpoint(db,'TASK-V514','tp-delivery-convergence','delivery')
+        assert r['next_stage']=='review' and r['role_id']=='tp-code-reviewer'
+        add_code_review(db,'TASK-V514','PASS')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='delivery' and r['role_id']=='tp-integration-engineer'
+        add_checkpoint(db,'TASK-V514','tp-integration-engineer','delivery')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='delivery' and r['recommended_action']=='dispatch_role'

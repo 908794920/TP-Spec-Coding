@@ -1,5 +1,20 @@
 # Changelog
 
+## [5.2.4] Role-first Personal AI Software Engineering System — 2026-08-18
+
+- 将软件研发能力从 **Action-first** 正式迁移为 **Role-first**：需求分析、架构设计、开发、验证等旧 Action Role 归位为正式软件工程角色拥有的能力；旧 7 步的轻量流程经验继续通过 L0～L3 / lifecycle preset 保留。
+- 新增 `tp-spec-coding` 作为唯一默认产品入口，使用 signal-driven / low-context Domain routing；新增 `tp-software-lifecycle` 作为唯一软件工程 Domain Agent，不建立第二套 Workflow Runtime。
+- 物理目录同步收敛为产品层级：`entry/tp-spec-coding` 单独承载产品入口，`agents/` 只保留 Domain Agent，正式工程角色迁入 `skills/roles/`，共享能力迁入 `skills/capabilities/`，Autonomy 专项能力迁入 `skills/autonomy/`，`role-catalog.yaml` 归入 `governance/` 活动契约；不保留旧物理路径兼容层。
+- 建立 9 个 canonical Formal Role：`tp-product-manager`、`tp-software-architect`、`tp-tech-lead`、`tp-security-engineer`、`tp-development-engineer`、`tp-database-engineer`、`tp-test-engineer`、`tp-code-reviewer`、`tp-integration-engineer`。
+- 保持五态 `NEW/ACTIVE/BLOCKED/COMPLETED/CANCELLED`、phase-as-fact、Record-first、CLI-first、L0～L3、UltraPlan、UltraReview、Autonomy Execution Envelope、Wiki/Knowledge/Base 与恢复/迁移安全边界；未引入 Lifecycle/Gate/Role 第二状态机。
+- Requirement Ready 之前允许 Product Manager 在 pre-task 阶段规范化客户一句话/文档；已有成熟 Requirement 可直接进入 Task，简单 Bug/Code Task 仍允许 L0 快速路径。
+- 将 Test、Code Review、Security、Database、Integration 责任拆成正式角色；Architecture Review 继续由 Architect capability 承担，但正式 PASS 必须使用 isolated execution context 与 subject binding。
+- Orchestration 的 `mode` 从旧 Role ID 硬绑定迁移到 capability contract；`effects` 继续按 assignment 维持 `repo_mutation` 等 fail-closed 边界。
+- Code Review 增强确定性 Review Package / line locator 与 machine-readable `REVIEW_COMPLETED`；Delivery 与 Knowledge qualification 解耦，Task-scoped Knowledge convergence 归 `tp-knowledge`。
+- v5.2.3 旧 Role、legacy long-state transition/commit 逻辑仅保留于 migration/history；active Runtime 执行 repo-wide no-tail DEFAULT DENY。历史 Task/Event 原始 actor_role 不追溯改写。
+- 活动契约通过 `project upgrade-contract --to 5.2.4` + `task migration-plan` + `task migrate --to 5.2.4` 正式迁移；`templates/5.2.4` 为唯一当前模板契约。
+- 继续以治理增量开销 `<=5%` 为产品预算：Role/Sub-Skill 不因存在就强制执行，不为 Sub-Skill 调用建立独立账本，不因可推导非关键 metadata 缺失回退补账。
+
 ## V5.2.3 Autonomous Maintenance + Runtime Hardening — 2026-08-16
 
 - 按项目所有者明确要求，活动契约从 **5.2.2** 收敛到 **5.2.3**；该版本承载 Runtime Hardening 与长期项目自治维护，不因功能体量自动改名为 5.3.0。

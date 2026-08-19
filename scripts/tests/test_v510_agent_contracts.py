@@ -24,13 +24,13 @@ sys.path.insert(0, str(BASE))
 from cli.config_loader import load_config  # noqa: E402
 
 AGENTS = (
-    "tp-requirement-analysis",
-    "tp-architecture-design",
-    "tp-architecture-review",
-    "tp-product-design",
-    "tp-development-engineering",
-    "tp-verification-engineering",
-    "tp-delivery-convergence",
+    "tp-product-manager",
+    "tp-software-architect",
+    "tp-software-architect",
+    "tp-product-manager",
+    "tp-development-engineer",
+    "tp-test-engineer",
+    "tp-integration-engineer",
     "tp-base-maintenance",
     "tp-knowledge",
     "tp-wiki",
@@ -52,7 +52,7 @@ ACTIVE_VERSION = (BASE / "VERSION").read_text(encoding="utf-8").strip()
 
 def role_skill_path(role_id: str) -> Path:
     catalog = load_config(
-        "agents/role-catalog.yaml", schema_name="role-catalog", base_root=str(BASE)
+        "governance/role-catalog.yaml", schema_name="role-catalog", base_root=str(BASE)
     )
     by_role = {r["workflow_role"]: r for r in catalog["roles"]}
     return BASE / by_role[role_id]["skill_path"]
@@ -79,7 +79,7 @@ class TestAgentContracts(unittest.TestCase):
 
     def test_role_catalog_hashes_match(self):
         catalog = load_config(
-            "agents/role-catalog.yaml", schema_name="role-catalog", base_root=str(BASE)
+            "governance/role-catalog.yaml", schema_name="role-catalog", base_root=str(BASE)
         )
         by_role = {r["workflow_role"]: r for r in catalog["roles"]}
         for agent in AGENTS:
@@ -95,7 +95,7 @@ class TestAgentContracts(unittest.TestCase):
 
     def test_role_catalog_version_511(self):
         catalog = load_config(
-            "agents/role-catalog.yaml", schema_name="role-catalog", base_root=str(BASE)
+            "governance/role-catalog.yaml", schema_name="role-catalog", base_root=str(BASE)
         )
         self.assertEqual(catalog["catalog_version"], ACTIVE_VERSION)
         self.assertEqual(catalog["base_version"], ACTIVE_VERSION)

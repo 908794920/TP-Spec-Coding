@@ -30,49 +30,59 @@ def test_invalid_user_policy_fails_closed(tmp_path: Path):
     with pytest.raises(PreferenceError): resolve_confirmation_policy(None,p,'material')
 
 def test_boundary_confirmation_is_bound_to_source_fact_and_target():
-    binding=build_boundary_binding(task_id='TASK-1',source_stage='verification',source_role='tp-verification-engineering',source_event_id=42,source_event_digest='abc',target_stage='development',target_role='tp-development-engineering',execution_mode='DIRECT')
-    event={'task_id':'TASK-1','event_type':'WORKFLOW_CONFIRMATION','actor_role':'human_owner','created_at':'2026-08-14T00:00:00Z','workflow_version':'5.2.3','detail_json':json.dumps({'producer':'workflow_confirm','transaction_id':'tx1','schema_version':'5.2.3','task_id':'TASK-1','actor_role':'human_owner','created_at':'2026-08-14T00:00:00Z',**binding})}
+    binding=build_boundary_binding(task_id='TASK-1',source_stage='verification',source_role='tp-test-engineer',source_event_id=42,source_event_digest='abc',target_stage='development',target_role='tp-development-engineer',execution_mode='DIRECT')
+    event={'task_id':'TASK-1','event_type':'WORKFLOW_CONFIRMATION','actor_role':'human_owner','created_at':'2026-08-14T00:00:00Z','workflow_version':'5.2.4','detail_json':json.dumps({'producer':'workflow_confirm','transaction_id':'tx1','schema_version':'5.2.4','task_id':'TASK-1','actor_role':'human_owner','created_at':'2026-08-14T00:00:00Z',**binding})}
     assert workflow_confirmation_matches(event,binding)
     stale=dict(binding); stale['source_event_id']=43
     assert not workflow_confirmation_matches(event,stale)
 
 def test_ordinary_confirmation_cannot_satisfy_material_binding():
-    ordinary=build_boundary_binding(task_id='TASK-1',source_stage='architecture',source_role='tp-architecture-design',source_event_id=42,source_event_digest='sha256:arch',target_stage='development',target_role='tp-development-engineering',execution_mode='DIRECT',confirmation_kind='ordinary')
-    material=build_boundary_binding(task_id='TASK-1',source_stage='architecture',source_role='tp-architecture-design',source_event_id=42,source_event_digest='sha256:arch',target_stage='development',target_role='tp-development-engineering',execution_mode='DIRECT',confirmation_kind='material')
+    ordinary=build_boundary_binding(task_id='TASK-1',source_stage='architecture',source_role='tp-software-architect',source_event_id=42,source_event_digest='sha256:arch',target_stage='development',target_role='tp-development-engineer',execution_mode='DIRECT',confirmation_kind='ordinary')
+    material=build_boundary_binding(task_id='TASK-1',source_stage='architecture',source_role='tp-software-architect',source_event_id=42,source_event_digest='sha256:arch',target_stage='development',target_role='tp-development-engineer',execution_mode='DIRECT',confirmation_kind='material')
     ev=_trusted_event(50,'WORKFLOW_CONFIRMATION','human_owner','workflow_confirm',ordinary)
     assert workflow_confirmation_matches(ev,ordinary)
     assert not workflow_confirmation_matches(ev,material)
 
 def test_wake_prompt_is_short_navigation_pointer():
-    prompt=build_wake_prompt(task_id='TASK-1',workspace=r'E:\project\demo',source_stage='architecture',source_role='tp-architecture-design',target_stage='development',target_role='tp-development-engineering',execution_mode='DIRECT')
-    assert 'TASK-1' in prompt and 'workflow next' in prompt and 'tp-development-engineering' in prompt
+    prompt=build_wake_prompt(task_id='TASK-1',workspace=r'E:\project\demo',source_stage='architecture',source_role='tp-software-architect',target_stage='development',target_role='tp-development-engineer',execution_mode='DIRECT')
+    assert 'TASK-1' in prompt and 'workflow next' in prompt and 'tp-development-engineer' in prompt
     assert 'evidence' not in prompt.lower() and len(prompt)<360
 
-@pytest.mark.parametrize('disposition',['CREATED','UPDATED'])
-def test_created_updated_require_refs_receipts_evidence_and_source_refs(disposition):
-    detail={'knowledge_disposition':disposition,'knowledge_refs':['K-1'],'search_receipts':[SEARCH_RECEIPT],'lint_receipts':[LINT_RECEIPT],'index_receipts':[INDEX_RECEIPT],'evidence':['evidence/verify.log'],'source_refs':['src/app.py:10'],'reason':'reusable rule updated'}
+@pytest.mark.parametrize('status',['READY','BLOCKED'])
+def test_delivery_status_contract_is_integration_owned(status):
+    detail={
+        'delivery_status':status,
+        'reason':'Verified integration status is recorded with concrete evidence and current subject binding.',
+        'verification_event_id':77,
+        'verification_subject_digest':'sha256:subject',
+    }
+    if status == 'BLOCKED':
+        detail.update({
+            'blocker_kind':'INTEGRATION_CONFLICT',
+            'recovery_condition':'resolve the integration conflict and rerun delivery readiness',
+            'responsibility':'integration engineer resolves conflict or escalates to human_owner',
+        })
     assert validate_delivery_result(detail)==[]
-    for key in ('knowledge_refs','search_receipts','lint_receipts','index_receipts','evidence','source_refs'):
-        broken=dict(detail); broken[key]=[]; assert validate_delivery_result(broken),key
+    assert disposition_allows_pipeline_completion(detail) is (status == 'READY')
 
-def test_no_change_requires_targeted_search_and_concrete_reason():
-    good={'knowledge_disposition':'NO_CHANGE','search_receipts':[SEARCH_RECEIPT],'reason':'Targeted project+shared search found existing canonical already covers the verified rule; no durable delta.'}
-    assert validate_delivery_result(good)==[] and disposition_allows_pipeline_completion(good)
-    assert validate_delivery_result({**good,'search_receipts':[]})
-    assert validate_delivery_result({**good,'reason':'无需更新'})
 
-def test_deferred_requires_owner_acceptance_to_complete():
-    d={'knowledge_disposition':'DEFERRED','reason':'Knowledge resolver unavailable','recovery_condition':'resolver doctor passes','blocker_kind':'RESOLVER_UNAVAILABLE','responsibility':'restore Knowledge Resolver then rerun delivery'}
-    assert validate_delivery_result(d)==[]
-    assert not disposition_allows_pipeline_completion(d,deferred_accepted=False)
-    assert disposition_allows_pipeline_completion(d,deferred_accepted=True)
+def test_ready_delivery_requires_concrete_reason_and_verification_binding():
+    good={'delivery_status':'READY','reason':'Verified change is ready for integration and no delivery blocker remains.','verification_event_id':77,'verification_subject_digest':'sha256:subject'}
+    assert validate_delivery_result(good)==[]
+    assert validate_delivery_result({**good,'reason':'ok'})
+    assert validate_delivery_result({**good,'verification_event_id':0})
+    assert validate_delivery_result({**good,'verification_subject_digest':''})
 
-def test_blocked_never_completes():
-    b={'knowledge_disposition':'BLOCKED','reason':'canonical ownership conflict'}
-    assert validate_delivery_result(b)==[] and not disposition_allows_pipeline_completion(b)
+
+def test_blocked_delivery_requires_recovery_contract_and_never_completes():
+    blocked={'delivery_status':'BLOCKED','reason':'Integration conflict prevents safe delivery of the verified subject.','verification_event_id':77,'verification_subject_digest':'sha256:subject','blocker_kind':'INTEGRATION_CONFLICT','recovery_condition':'resolve conflict and rerun integration readiness','responsibility':'integration engineer or human_owner'}
+    assert validate_delivery_result(blocked)==[]
+    assert not disposition_allows_pipeline_completion(blocked)
+    assert validate_delivery_result({**blocked,'recovery_condition':''})
+
 
 def test_delivery_result_is_bound_to_latest_verification():
-    d={'knowledge_disposition':'NO_CHANGE','search_receipts':[SEARCH_RECEIPT],'reason':'Targeted search found no durable knowledge delta after verification.','verification_event_id':77,'verification_subject_digest':'sha256:subject'}
+    d={'delivery_status':'READY','reason':'Verified change is ready for integration and no delivery blocker remains.','verification_event_id':77,'verification_subject_digest':'sha256:subject'}
     assert delivery_result_matches_verification(d,77,'sha256:subject')
     assert not delivery_result_matches_verification(d,78,'sha256:subject')
     assert not delivery_result_matches_verification(d,77,'sha256:new')
@@ -81,27 +91,37 @@ from cli.workflow_records import build_confirmation_detail, build_delivery_detai
 
 
 def test_confirmation_detail_keeps_binding_and_trusted_identity_fields():
-    binding=build_boundary_binding(task_id='TASK-1',source_stage='requirement',source_role='tp-requirement-analysis',source_event_id=9,source_event_digest='sha256:event',target_stage='architecture',target_role='tp-architecture-design',execution_mode='DIRECT')
-    detail=build_confirmation_detail(task_id='TASK-1',binding=binding,transaction_id='tx-1',flush_id='CONFIRM-1',created_at='2026-08-14T00:00:00Z',schema_version='5.2.3')
+    binding=build_boundary_binding(task_id='TASK-1',source_stage='requirement',source_role='tp-product-manager',source_event_id=9,source_event_digest='sha256:event',target_stage='architecture',target_role='tp-software-architect',execution_mode='DIRECT')
+    detail=build_confirmation_detail(task_id='TASK-1',binding=binding,transaction_id='tx-1',flush_id='CONFIRM-1',created_at='2026-08-14T00:00:00Z',schema_version='5.2.4')
     assert detail['producer']=='workflow_confirm' and detail['actor_role']=='human_owner'
     assert detail['transaction_id']=='tx-1' and detail['task_id']=='TASK-1'
     assert all(detail[k]==v for k,v in binding.items())
 
 
-def test_delivery_detail_binds_verification_and_disposition_fields():
-    detail=build_delivery_detail(task_id='TASK-1',transaction_id='tx-2',flush_id='DELIVERY-1',created_at='2026-08-14T00:00:00Z',schema_version='5.2.3',verification_event_id=77,verification_subject_digest='sha256:subject',knowledge_disposition='NO_CHANGE',reason='Targeted project+shared search found no durable delta after verification.',search_receipts=[SEARCH_RECEIPT])
-    assert detail['producer']=='delivery_converge' and detail['actor_role']=='tp-delivery-convergence'
+def test_delivery_detail_binds_verification_and_readiness_fields():
+    detail=build_delivery_detail(
+        task_id='TASK-1', transaction_id='tx-2', flush_id='DELIVERY-1',
+        created_at='2026-08-14T00:00:00Z', schema_version='5.2.4',
+        verification_event_id=77, verification_subject_digest='sha256:subject',
+        delivery_status='READY', reason='Verified change is ready for integration and no delivery blocker remains.',
+        repo_snapshot={'before_head':'a','after_head':'b','merge_commit':'m'},
+        knowledge_handoff={'task_id':'TASK-1','verification_event_id':77},
+    )
+    assert detail['producer']=='delivery_converge' and detail['actor_role']=='tp-integration-engineer'
     assert detail['verification_event_id']==77 and detail['verification_subject_digest']=='sha256:subject'
-    assert detail['knowledge_disposition']=='NO_CHANGE' and detail['search_receipts']==[SEARCH_RECEIPT]
+    assert detail['delivery_status']=='READY'
+    assert detail['repo_snapshot']['before_head']=='a'
+    assert detail['knowledge_handoff']['task_id']=='TASK-1'
+    assert 'knowledge_disposition' not in detail
 
 from cli.workflow_controls import trusted_event_detail, find_matching_confirmation, event_digest
 from cli.delivery_contract import find_delivery_completion_event
 
 
 def _trusted_event(event_id, event_type, actor, producer, detail_extra=None):
-    detail={'transaction_id':f'tx-{event_id}','producer':producer,'schema_version':'5.2.3','task_id':'TASK-1','actor_role':actor,'created_at':'2026-08-14T00:00:00Z'}
+    detail={'transaction_id':f'tx-{event_id}','producer':producer,'schema_version':'5.2.4','task_id':'TASK-1','actor_role':actor,'created_at':'2026-08-14T00:00:00Z'}
     detail.update(detail_extra or {})
-    return {'id':event_id,'task_id':'TASK-1','event_type':event_type,'actor_role':actor,'to_stage':'','summary':'','detail_json':json.dumps(detail,ensure_ascii=False),'workflow_version':'5.2.3','created_at':'2026-08-14T00:00:00Z'}
+    return {'id':event_id,'task_id':'TASK-1','event_type':event_type,'actor_role':actor,'to_stage':'','summary':'','detail_json':json.dumps(detail,ensure_ascii=False),'workflow_version':'5.2.4','created_at':'2026-08-14T00:00:00Z'}
 
 
 def test_trusted_event_detail_requires_identity_chain():
@@ -112,7 +132,7 @@ def test_trusted_event_detail_requires_identity_chain():
 
 
 def test_matching_confirmation_ignores_stale_source_binding():
-    binding=build_boundary_binding(task_id='TASK-1',source_stage='requirement',source_role='tp-requirement-analysis',source_event_id=10,source_event_digest='sha256:old',target_stage='architecture',target_role='tp-architecture-design',execution_mode='DIRECT')
+    binding=build_boundary_binding(task_id='TASK-1',source_stage='requirement',source_role='tp-product-manager',source_event_id=10,source_event_digest='sha256:old',target_stage='architecture',target_role='tp-software-architect',execution_mode='DIRECT')
     ev=_trusted_event(11,'WORKFLOW_CONFIRMATION','human_owner','workflow_confirm',binding)
     assert find_matching_confirmation([ev],binding) is ev
     new_binding=dict(binding); new_binding['source_event_id']=12; new_binding['source_event_digest']='sha256:new'
@@ -120,44 +140,37 @@ def test_matching_confirmation_ignores_stale_source_binding():
 
 
 def test_plain_delivery_checkpoint_does_not_count_as_delivery_completion():
-    verify=_trusted_event(20,'VERIFICATION_COMPLETED','tp-verification-engineering','record-first',{'decision':'PASS','subject_digest':'sha256:s'})
-    checkpoint=_trusted_event(21,'FACT','tp-delivery-convergence','record-first',{'operation':'CHECKPOINT','phase':'delivery'})
+    verify=_trusted_event(20,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s'})
+    checkpoint=_trusted_event(21,'FACT','tp-integration-engineer','record-first',{'operation':'CHECKPOINT','phase':'delivery'})
     assert find_delivery_completion_event([verify,checkpoint],verification_event=verify,current_subject_digest='sha256:s') is None
 
 
-def test_valid_no_change_delivery_result_completes_and_new_verification_invalidates_it():
-    verify=_trusted_event(20,'VERIFICATION_COMPLETED','tp-verification-engineering','record-first',{'decision':'PASS','subject_digest':'sha256:s'})
-    detail={'verification_event_id':20,'verification_subject_digest':'sha256:s','knowledge_disposition':'NO_CHANGE','search_receipts':[SEARCH_RECEIPT],'reason':'Targeted project+shared search found no durable delta after verification.'}
-    delivery=_trusted_event(21,'DELIVERY_RESULT','tp-delivery-convergence','delivery_converge',detail)
+def test_ready_delivery_result_completes_and_new_verification_invalidates_it():
+    verify=_trusted_event(20,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s'})
+    detail={'verification_event_id':20,'verification_subject_digest':'sha256:s','delivery_status':'READY','reason':'Verified change is ready for integration and no blocker remains.'}
+    delivery=_trusted_event(21,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',detail)
     assert find_delivery_completion_event([verify,delivery],verification_event=verify,current_subject_digest='sha256:s') is delivery
-    verify2=_trusted_event(22,'VERIFICATION_COMPLETED','tp-verification-engineering','record-first',{'decision':'PASS','subject_digest':'sha256:s2'})
+    verify2=_trusted_event(22,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s2'})
     assert find_delivery_completion_event([verify,delivery,verify2],verification_event=verify2,current_subject_digest='sha256:s2') is None
 
 
-def test_blocked_delivery_overrides_older_good_result_for_same_verification():
-    verify=_trusted_event(20,'VERIFICATION_COMPLETED','tp-verification-engineering','record-first',{'decision':'PASS','subject_digest':'sha256:s'})
-    good=_trusted_event(21,'DELIVERY_RESULT','tp-delivery-convergence','delivery_converge',{'verification_event_id':20,'verification_subject_digest':'sha256:s','knowledge_disposition':'NO_CHANGE','search_receipts':[SEARCH_RECEIPT],'reason':'Targeted project+shared search found no durable delta after verification.'})
-    blocked=_trusted_event(22,'DELIVERY_RESULT','tp-delivery-convergence','delivery_converge',{'verification_event_id':20,'verification_subject_digest':'sha256:s','knowledge_disposition':'BLOCKED','reason':'Canonical ownership conflict blocks safe convergence.'})
-    assert find_delivery_completion_event([verify,good,blocked],verification_event=verify,current_subject_digest='sha256:s') is None
+def test_newer_blocked_delivery_overrides_older_ready_result_for_same_verification():
+    verify=_trusted_event(20,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s'})
+    ready=_trusted_event(21,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',{'verification_event_id':20,'verification_subject_digest':'sha256:s','delivery_status':'READY','reason':'Verified change is ready for integration and no blocker remains.'})
+    blocked=_trusted_event(22,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',{'verification_event_id':20,'verification_subject_digest':'sha256:s','delivery_status':'BLOCKED','reason':'Integration conflict prevents safe delivery of the verified subject.','blocker_kind':'INTEGRATION_CONFLICT','recovery_condition':'resolve the conflict and rerun readiness','responsibility':'integration engineer'})
+    assert find_delivery_completion_event([verify,ready,blocked],verification_event=verify,current_subject_digest='sha256:s') is None
 
 
-def test_deferred_delivery_completes_only_after_matching_human_acceptance():
-    verify=_trusted_event(20,'VERIFICATION_COMPLETED','tp-verification-engineering','record-first',{'decision':'PASS','subject_digest':'sha256:s'})
-    deferred=_trusted_event(21,'DELIVERY_RESULT','tp-delivery-convergence','delivery_converge',{'verification_event_id':20,'verification_subject_digest':'sha256:s','knowledge_disposition':'DEFERRED','reason':'Knowledge resolver infrastructure is unavailable for the required targeted search.','recovery_condition':'knowledge doctor passes','blocker_kind':'RESOLVER_UNAVAILABLE','responsibility':'restore Knowledge Resolver and rerun delivery'})
-    assert find_delivery_completion_event([verify,deferred],verification_event=verify,current_subject_digest='sha256:s') is None
-    accept=_trusted_event(22,'DELIVERY_DEFERRED_ACCEPTED','human_owner','delivery_deferred_accept',{'delivery_event_id':21,'delivery_event_digest':event_digest(deferred),'reason':'Accept temporary deferral until resolver is restored.'})
-    assert find_delivery_completion_event([verify,deferred,accept],verification_event=verify,current_subject_digest='sha256:s') is deferred
+def test_delivery_completion_rejects_removed_legacy_commit_producer():
+    verify=_trusted_event(30,'VERIFICATION_COMPLETED','tp-test-engineer','commit',{'decision':'PASS','subject_digest':'sha256:s'})
+    delivery=_trusted_event(31,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',{'verification_event_id':30,'verification_subject_digest':'sha256:s','delivery_status':'READY','reason':'Verified change is ready for integration and no blocker remains.'})
+    assert find_delivery_completion_event([verify,delivery],verification_event=verify,current_subject_digest='sha256:s') is None
 
 
-def test_delivery_completion_accepts_existing_trusted_commit_verification_producer():
-    verify=_trusted_event(30,'VERIFICATION_COMPLETED','tp-verification-engineering','commit',{'decision':'PASS','subject_digest':'sha256:s'})
-    delivery=_trusted_event(31,'DELIVERY_RESULT','tp-delivery-convergence','delivery_converge',{'verification_event_id':30,'verification_subject_digest':'sha256:s','knowledge_disposition':'NO_CHANGE','search_receipts':[SEARCH_RECEIPT],'reason':'Targeted project+shared search found no durable delta after verification.'})
+def test_knowledge_handoff_is_not_part_of_delivery_completion_decision():
+    verify=_trusted_event(40,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s'})
+    delivery=_trusted_event(41,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',{'verification_event_id':40,'verification_subject_digest':'sha256:s','delivery_status':'READY','reason':'Verified change is ready for integration and no blocker remains.','knowledge_handoff':{'task_id':'TASK-1','verified_facts':['durable fact']}})
     assert find_delivery_completion_event([verify,delivery],verification_event=verify,current_subject_digest='sha256:s') is delivery
-
-
-def test_project_memory_reference_cannot_substitute_for_canonical_knowledge_ref():
-    detail={'knowledge_disposition':'UPDATED','knowledge_refs':['.tp-spec/memory/PROJECT.md'],'search_receipts':[SEARCH_RECEIPT],'lint_receipts':[LINT_RECEIPT],'index_receipts':[INDEX_RECEIPT],'evidence':['evidence/verify.log'],'source_refs':['src/app.py:10'],'reason':'Reusable project rule updated in durable knowledge.'}
-    assert any('Project Memory' in e for e in validate_delivery_result(detail))
 
 from cli.delivery_contract import validate_receipt_payload
 
@@ -212,89 +225,23 @@ def test_canonical_binding_requires_task_evidence_locator_and_source_refs():
     assert any('source/code ref' in e for e in errors)
 
 
-def test_delivery_targeted_quality_does_not_call_full_vault_scanners():
+def test_task_scoped_knowledge_convergence_does_not_call_full_vault_scanners():
     import inspect
-    from cli import workflow_records
-    source = inspect.getsource(workflow_records._run_targeted_knowledge_quality)
-    assert 'collect_notes' not in source
-    assert 'lint_knowledge' not in source
-    assert 'update_projection' not in source
-    assert 'build_projection' not in source
+    from cli.knowledge import state as knowledge_state
+    source = inspect.getsource(knowledge_state.task_scoped_convergence)
+    for forbidden in ('collect_notes', 'lint_knowledge', 'update_projection', 'build_projection', 'projection.search'):
+        assert forbidden not in source
 
 
-def test_targeted_quality_updates_only_exact_canonical_index(tmp_path, monkeypatch):
-    import sqlite3, sys, types
-    from types import SimpleNamespace
-    from cli import workflow_records
-
-    root = tmp_path / 'knowledge'
-    rel = '10-projects/demo/30-features/DEMO-FEAT-001-rule.md'
-    path = root / rel
-    path.parent.mkdir(parents=True)
-    path.write_text('---\nid: DEMO-FEAT-001\ncanonical: true\n---\nbody\n', encoding='utf-8')
-    db = tmp_path / 'knowledge.db'
-    conn = sqlite3.connect(db)
-    conn.executescript('''
-        CREATE TABLE documents(id INTEGER PRIMARY KEY AUTOINCREMENT, rel_path TEXT UNIQUE, canonical_id TEXT, sha256 TEXT, scope TEXT);
-        CREATE TABLE chunks(id INTEGER PRIMARY KEY AUTOINCREMENT, doc_id INTEGER);
-        CREATE TABLE fts_chunks(rowid INTEGER PRIMARY KEY);
-        CREATE TABLE doc_links(doc_id INTEGER);
-        CREATE TABLE graph_nodes(canonical_id TEXT PRIMARY KEY, kind TEXT, title TEXT, project TEXT, status TEXT, layer TEXT, rel_path TEXT, source_refs TEXT, confidence REAL, last_verified TEXT);
-        CREATE TABLE graph_edges(id INTEGER PRIMARY KEY AUTOINCREMENT, edge_id TEXT UNIQUE, source_canonical_id TEXT, target_id TEXT, relation_type TEXT, evidence_source_ids TEXT, origin TEXT, reason TEXT DEFAULT '');
-        CREATE TABLE build_meta(key TEXT PRIMARY KEY, value TEXT);
-    ''')
-    conn.commit(); conn.close()
-
-    pkg = types.ModuleType('cli.knowledge'); pkg.__path__ = []
-    common = types.ModuleType('cli.knowledge.common')
-    common.load_source_registry = lambda cfg: {}
-    common.now_iso = lambda: '2026-08-14T00:00:00Z'
-    common.parse_frontmatter = lambda text: ({'id':'DEMO-FEAT-001','canonical':True,'kind':'feature','title':'Rule','project':'demo','status':'active','confidence':0.9,'last_verified':'2026-08-14','source_refs':[],'relations':[]}, 'body', None, 5)
-    common.read_note = lambda p, *, root, scope: {'frontmatter': {'id':'DEMO-FEAT-001','canonical':True,'kind':'feature','title':'Rule','project':'demo','status':'active','confidence':0.9,'last_verified':'2026-08-14','source_refs':[],'relations':[]}, 'id':'DEMO-FEAT-001','kind':'feature','title':'Rule','project':'demo','source_refs':[],'sha256':'abc123','scope':'canonical','rel_path':rel}
-    lint = types.ModuleType('cli.knowledge.lint'); lint._schema_errors = lambda fm: []
-    projection = types.ModuleType('cli.knowledge.projection')
-    projection._connect = lambda p: sqlite3.connect(p)
-    def _insert_doc(c, note, registry):
-        c.execute('INSERT INTO documents(rel_path,canonical_id,sha256,scope) VALUES(?,?,?,?)', (note['rel_path'], note['id'], note['sha256'], 'canonical'))
-    projection._insert_doc = _insert_doc
-    monkeypatch.setitem(sys.modules, 'cli.knowledge', pkg)
-    monkeypatch.setitem(sys.modules, 'cli.knowledge.common', common)
-    monkeypatch.setitem(sys.modules, 'cli.knowledge.lint', lint)
-    monkeypatch.setitem(sys.modules, 'cli.knowledge.projection', projection)
-
-    cfg = SimpleNamespace(
-        paths=SimpleNamespace(knowledge_physical_root=root, knowledge_projection_db=db),
-        knowledge_projection={'graph_mode':'optional'},
-    )
-    lint_receipts, index_receipts = workflow_records._run_targeted_knowledge_quality(cfg, [{'path':rel,'id':'DEMO-FEAT-001'}])
-    assert lint_receipts[0]['status'] == 'PASS'
-    assert index_receipts[0]['fresh'] is True
-    assert index_receipts[0]['scope'] == 'exact-canonical'
-    assert index_receipts[0]['global_projection_scan_performed'] is False
-    conn = sqlite3.connect(db)
-    try:
-        assert conn.execute('SELECT canonical_id,sha256 FROM documents WHERE rel_path=?', (rel,)).fetchone() == ('DEMO-FEAT-001','abc123')
-    finally:
-        conn.close()
+def test_task_scoped_knowledge_no_change_is_nonblocking_fast_path():
+    from cli.knowledge import state as knowledge_state
+    result=knowledge_state.task_scoped_convergence({'task_id':'TASK-1','verified_facts':[],'reusable_findings':[]})
+    assert result['status']=='NO_CHANGE'
+    assert result['blocks_delivery'] is False
 
 
-def test_targeted_search_forces_project_scope_and_disables_global_fallback(monkeypatch):
-    import sys, types
-    from types import SimpleNamespace
-    from cli import workflow_records
-
-    calls = []
-    pkg = types.ModuleType('cli.knowledge'); pkg.__path__ = []
-    projection = types.ModuleType('cli.knowledge.projection')
-    def search(cfg, query, *, scope, limit, record_telemetry):
-        calls.append((query, scope, limit, record_telemetry, cfg.knowledge_retrieval.get('global_fallback')))
-        return [{'id':'DEMO-FEAT-001','path':'10-projects/demo/30-features/DEMO-FEAT-001-rule.md','project':'demo','kind':'feature','layer':'canonical'}]
-    projection.search = search
-    monkeypatch.setitem(sys.modules, 'cli.knowledge', pkg)
-    monkeypatch.setitem(sys.modules, 'cli.knowledge.projection', projection)
-    cfg = SimpleNamespace(knowledge_retrieval={'global_fallback':True})
-    receipts = workflow_records._run_targeted_search(cfg, ['delivery rule'])
-    assert calls == [('delivery rule','project',5,True,False)]
-    assert cfg.knowledge_retrieval['global_fallback'] is True
-    assert receipts[0]['scope'] == 'project' and receipts[0]['count'] == 1
-    assert receipts[0]['results'][0]['id'] == 'DEMO-FEAT-001'
+def test_task_scoped_knowledge_reusable_fact_is_deferred_without_blocking_delivery():
+    from cli.knowledge import state as knowledge_state
+    result=knowledge_state.task_scoped_convergence({'task_id':'TASK-1','verified_facts':['reusable rule'],'reusable_findings':[]})
+    assert result['status']=='DEFERRED'
+    assert result['blocks_delivery'] is False

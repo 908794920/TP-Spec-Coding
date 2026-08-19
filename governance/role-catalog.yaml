@@ -1,0 +1,167 @@
+catalog_version: "5.2.4"
+base_version: "5.2.4"
+generated_utc: 20260818T122955Z
+generated_by: update_role_catalog.py deterministic metadata/hash refresh
+human_actor:
+  id: human_owner
+  note: Personal user; owns business choices and high-risk authorization, not routine bookkeeping.
+roles:
+- workflow_role: tp-spec-coding
+  display_name: tp-统一入口
+  type: control-role
+  skill_path: entry/tp-spec-coding/SKILL.md
+  domain: product
+  phases: [other]
+  capabilities: [domain.routing, status.compact, explain.route]
+  owns_states: []
+  content_sha256: BB5F2D1519E0233A1B399B324836B921CAFBD5698B6355445C867F140680C808
+- workflow_role: tp-software-lifecycle
+  display_name: tp-软件工程生命周期
+  type: control-role
+  skill_path: agents/tp-software-lifecycle/SKILL.md
+  domain: software
+  phases: [intake, requirement, product, discovery, architecture, planning, development, verification, review, delivery]
+  capabilities: [lifecycle.routing, role.resolution, workflow.coordination]
+  owns_states: [NEW]
+  content_sha256: 2948BBCE76254CFC94B55974AFDDFF13DF90E7C56306B6C97224979E18EF9D27
+- workflow_role: tp-project-autonomy
+  display_name: tp-项目自治维护
+  type: control-role
+  skill_path: agents/tp-project-autonomy/SKILL.md
+  domain: autonomy
+  phases: [other]
+  capabilities: [autonomy.discovery, autonomy.cycle, autonomy.review, autonomy.integration]
+  owns_states: []
+  content_sha256: 486DD3EAE7F08905AF4A30DA6A8599134DACEBE510453EA397ED331851C67391
+- workflow_role: tp-base-maintenance
+  display_name: tp-基座维护
+  type: human-owner-skill
+  skill_path: agents/tp-base-maintenance/SKILL.md
+  domain: base
+  phases: [other]
+  capabilities: [base.configure, base.migrate, base.doctor, base.repair]
+  owns_states: []
+  content_sha256: 5694D5C17E903769D90BF6BB3F9C3AACF42CACBDCE4A15BB8A9B96C18E0BD1E2
+- workflow_role: tp-knowledge
+  display_name: tp-knowledge
+  type: human-owner-skill
+  skill_path: agents/tp-knowledge/SKILL.md
+  domain: knowledge
+  phases: [other, delivery]
+  capabilities: [knowledge.search, knowledge.ingest, knowledge.converge, knowledge.audit]
+  owns_states: []
+  content_sha256: D5DFB7EA170F3733D1F092EE1F65ADC52D84CB95832732BAC0F171730A34E2C7
+- workflow_role: tp-wiki
+  display_name: tp-wiki
+  type: human-owner-skill
+  skill_path: agents/tp-wiki/SKILL.md
+  domain: wiki
+  phases: [other]
+  capabilities: [wiki.plan, wiki.update, wiki.audit, wiki.search]
+  owns_states: []
+  content_sha256: 79DC36D5B103508792D385204292533A30D9AF43C03D9305A06B6410DA908834
+- workflow_role: tp-product-manager
+  display_name: tp-产品经理
+  type: workflow-role
+  skill_path: skills/roles/tp-product-manager/SKILL.md
+  domain: software
+  phases: [intake, requirement, product]
+  capabilities: [product.planning, requirement.analysis, requirement.clarification, requirement.decomposition, scope.management, business_rules.analysis, acceptance.criteria, requirement.impact, product.design]
+  subskills:
+    - {id: requirement-clarification, path: skills/capabilities/requirement-clarification/SKILL.md, mode: conditional}
+    - {id: assumption-management, path: skills/capabilities/assumption-management/SKILL.md, mode: conditional}
+  owns_states: []
+  content_sha256: 352C91676A9C88C619E64369340DABB89BDB14BA97459A94D997DCAEB7F8ACDC
+- workflow_role: tp-software-architect
+  display_name: tp-软件架构师
+  type: workflow-role
+  skill_path: skills/roles/tp-software-architect/SKILL.md
+  domain: software
+  phases: [requirement, discovery, architecture, review]
+  capabilities: [system.analysis, architecture.design, technology.selection, module.design, interface.design, dependency.design, dataflow.design, compatibility.design, reliability.design, migration.architecture, architecture.review]
+  orchestration_capabilities: [auto_planning_host, architecture_review_host]
+  subskills:
+    - {id: delivery-planning, path: skills/capabilities/delivery-planning/SKILL.md, mode: conditional}
+  owns_states: []
+  content_sha256: 5EDA47F24AE975ACA05E84A219366BF22236B494CDF6AEBA23A4171268694474
+- workflow_role: tp-tech-lead
+  display_name: tp-技术主管
+  type: workflow-role
+  skill_path: skills/roles/tp-tech-lead/SKILL.md
+  domain: software
+  phases: [architecture, planning, review]
+  capabilities: [technical.planning, coding.standard, engineering.guideline, task.decomposition, dependency.planning, execution.planning, risk.assessment, work.parallelization, implementation.constraints, technical.conformance]
+  subskills:
+    - {id: delivery-planning, path: skills/capabilities/delivery-planning/SKILL.md, mode: conditional}
+    - {id: task-decomposition, path: skills/capabilities/task-decomposition/SKILL.md, mode: conditional}
+  owns_states: []
+  content_sha256: DD27F0DE37D56FDF97D0C25316BF1D1867DE8441C35FDF25A3A86F1EA45AC7AC
+- workflow_role: tp-security-engineer
+  display_name: tp-安全工程师
+  type: workflow-role
+  skill_path: skills/roles/tp-security-engineer/SKILL.md
+  domain: software
+  phases: [requirement, architecture, development, verification, review]
+  capabilities: [threat.analysis, security.design_review, authentication.review, authorization.review, data_security.review, input_validation.review, dependency.scan, secret.scan, static_security.scan, vulnerability.analysis, security.code_review, security.verification]
+  owns_states: []
+  content_sha256: EBAB4B14B7DD0B5EEF3854F69B9CB6C21DADC7BD9DCB60F8DABA8F0AA09C3F14
+- workflow_role: tp-development-engineer
+  display_name: tp-开发工程师
+  type: workflow-role
+  skill_path: skills/roles/tp-development-engineer/SKILL.md
+  domain: software
+  phases: [discovery, development]
+  capabilities: [implementation.general, implementation.frontend, implementation.backend, api.implementation, business_logic, error_handling, debugging, refactoring, performance, concurrency, developer.self_test]
+  subskills:
+    - {id: implementation-control, path: skills/capabilities/implementation-control/SKILL.md, mode: default}
+    - {id: systematic-debugging, path: skills/capabilities/systematic-debugging/SKILL.md, mode: conditional}
+  owns_states: []
+  content_sha256: E1C6F6698C25C56BEE0BA2C263DA3159212268CE69F4DB520C9EFD13C485FEA5
+- workflow_role: tp-database-engineer
+  display_name: tp-数据库工程师
+  type: workflow-role
+  skill_path: skills/roles/tp-database-engineer/SKILL.md
+  domain: software
+  phases: [requirement, architecture, development, verification, review]
+  capabilities: [data.modeling, schema.design, sql.engineering, query.analysis, index.design, migration.design, migration.implementation, transaction.analysis, data.consistency, rollback.design, historical_data.repair, database.performance]
+  owns_states: []
+  content_sha256: 53216062FA5B83A6C48D8410E3E5D2037A86CB4CD527AD4FF90E7FEF2B9DA060
+- workflow_role: tp-test-engineer
+  display_name: tp-测试工程师
+  type: workflow-role
+  skill_path: skills/roles/tp-test-engineer/SKILL.md
+  domain: software
+  phases: [verification]
+  capabilities: [test.analysis, test.strategy, unit.testing, integration.testing, api.testing, regression.testing, acceptance.testing, runtime.verification, browser_ui.verification, failure.reproduction, test_evidence.validation]
+  subskills:
+    - {id: testing-strategy, path: skills/capabilities/testing-strategy/SKILL.md, mode: conditional}
+  owns_states: []
+  content_sha256: F38E97E065718FC539F11C39BB282D30C46F95351F3B1D91A50071D61843F69F
+- workflow_role: tp-code-reviewer
+  display_name: tp-代码审查员
+  type: workflow-role
+  skill_path: skills/roles/tp-code-reviewer/SKILL.md
+  domain: software
+  phases: [verification, review]
+  capabilities: [diff.analysis, correctness.review, coding_standard.review, maintainability.review, architecture_conformance, error_handling.review, regression_risk.review, performance.review, technical_debt.detection, review.finding]
+  orchestration_capabilities: [auto_review_host]
+  subskills:
+    - {id: technical-review, path: skills/capabilities/technical-review/SKILL.md, mode: default}
+  owns_states: []
+  content_sha256: A5132F8C92BF83934AC4D5F33C5BC9F4A5B386316D968B91796E0A5839FC87AB
+- workflow_role: tp-integration-engineer
+  display_name: tp-集成交付工程师
+  type: workflow-role
+  skill_path: skills/roles/tp-integration-engineer/SKILL.md
+  domain: software
+  phases: [delivery]
+  capabilities: [change.inspection, integration.readiness, git_state.validation, conflict.analysis, git.integration, post_integration.verification, release.readiness, residual_risk.summary, task_delivery.result]
+  owns_states: []
+  content_sha256: E18ECE55780C1424FBA9B6B6B9E9F5337ED3402C08D0D624202B5E9D344DAF14
+state_owner_map:
+  NEW: tp-software-lifecycle
+  CANCELLED: human_owner
+completion_chain:
+  L0_L1: role-first lightweight delivery; verification/review are risk-driven and truthful
+  L2_L3: required test/review facts -> integration delivery -> orchestrator PIPELINE_COMPLETE -> task complete
+page_verification_modes: [human, test, review, architecture]

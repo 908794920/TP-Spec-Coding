@@ -14,7 +14,7 @@ def _seed_workspace(root: Path, *, risk: str = "L2", flow: str = "L2") -> tuple[
     task_dir = root / ".tp-spec" / "tasks" / task_id
     task_dir.mkdir(parents=True)
     (task_dir / "task.md").write_text(
-        "---\nartifact: task\ntask_id: TASK-RISK-FLOOR\nartifact_contract:\n  version: \"5.2.3\"\n---\n\n"
+        "---\nartifact: task\ntask_id: TASK-RISK-FLOOR\nartifact_contract:\n  version: \"5.2.4\"\n---\n\n"
         "目标：仅流程内相关人员可以查看原始身份证照片，非流程内人员不下发原图并显示无权限查看。\n",
         encoding="utf-8",
     )
@@ -32,7 +32,7 @@ def _seed_workspace(root: Path, *, risk: str = "L2", flow: str = "L2") -> tuple[
         )
         conn.execute(
             "INSERT INTO task(task_id,project_id,title,risk_level,flow_level,current_state,current_stage,owner_role,base_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            (task_id, "p-risk", "敏感信息可见性", risk, flow, "NEW", "intake", "tp-requirement-analysis", active_version(), now, now),
+            (task_id, "p-risk", "敏感信息可见性", risk, flow, "NEW", "intake", "tp-product-manager", active_version(), now, now),
         )
     conn.close()
     return str(db_path), task_dir
@@ -65,7 +65,7 @@ def test_architecture_checkpoint_persists_security_risk_escalation_under_profess
         result = record_first.checkpoint(
             task_id="TASK-RISK-FLOOR",
             task_dir=str(task_dir),
-            actor="tp-architecture-design",
+            actor="tp-software-architect",
             phase="architecture",
             summary="security design complete",
             db=db,
@@ -80,8 +80,8 @@ def test_architecture_checkpoint_persists_security_risk_escalation_under_profess
         finally:
             conn.close()
         assert task["risk_level"] == "L3"
-        assert task["owner_role"] == "tp-architecture-design"
-        assert fact["actor_role"] == "tp-architecture-design"
+        assert task["owner_role"] == "tp-software-architect"
+        assert fact["actor_role"] == "tp-software-architect"
         detail = json.loads(fact["detail_json"])
         assert detail["risk_escalation"]["from"] == "L2"
         assert detail["risk_escalation"]["to"] == "L3"

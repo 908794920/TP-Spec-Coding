@@ -20,16 +20,16 @@ def _make_db() -> tuple[Path, object]:
     with dbmod.transactional(conn):
         conn.execute(
             "INSERT INTO project(project_id,project_name,root_path,base_version,schema_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-            ("A", "A", str(root / "A"), "5.2.3", 1, now, now),
+            ("A", "A", str(root / "A"), "5.2.4", 1, now, now),
         )
         conn.execute(
             "INSERT INTO project(project_id,project_name,root_path,base_version,schema_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-            ("B", "B", str(root / "B"), "5.2.3", 1, now, now),
+            ("B", "B", str(root / "B"), "5.2.4", 1, now, now),
         )
         for task_id, project_id in (("TASK-A1", "A"), ("TASK-A2", "A"), ("TASK-B1", "B")):
             conn.execute(
                 "INSERT INTO task(task_id,project_id,title,risk_level,flow_level,current_state,current_stage,owner_role,base_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (task_id, project_id, task_id, "L1", "L1", "ACTIVE", "development", "tp-development-engineering", "5.2.3", now, now),
+                (task_id, project_id, task_id, "L1", "L1", "ACTIVE", "development", "tp-development-engineer", "5.2.4", now, now),
             )
     return path, conn
 
@@ -41,7 +41,7 @@ def _detail(producer: str, operation: str | None, usage: list[dict], **extra):
     return json.dumps(data, ensure_ascii=False)
 
 
-def _insert_event(conn, *, task_id="TASK-A1", event_type="FACT", detail="{}", actor="tp-development-engineering", created_at=None, to_stage="development"):
+def _insert_event(conn, *, task_id="TASK-A1", event_type="FACT", detail="{}", actor="tp-development-engineer", created_at=None, to_stage="development"):
     created_at = created_at or dbmod.now_iso()
     with dbmod.transactional(conn):
         cur = conn.execute(
@@ -117,12 +117,12 @@ def test_memory_skill_proxy_uses_event_id_window():
         {"event_id": 30, "task_id": "TASK-A2", **_usage("memory_skill", "memory_skill:A/no-pass", "adopted", "success")},
     ]
     events = [
-        {"id": 11, "task_id": "TASK-A1", "event_type": "VERIFICATION_COMPLETED", "actor_role": "tp-verification-engineering", "detail_json": json.dumps({"producer": "record-first", "operation": "VERIFY", "decision": "PASS"})},
-        {"id": 21, "task_id": "TASK-A2", "event_type": "VERIFICATION_COMPLETED", "actor_role": "tp-verification-engineering", "detail_json": json.dumps({"producer": "record-first", "operation": "VERIFY", "decision": "NEEDS_FIX"})},
-        {"id": 22, "task_id": "TASK-A2", "event_type": "REWORK", "actor_role": "tp-development-engineering", "detail_json": "{}"},
-        {"id": 23, "task_id": "TASK-A2", "event_type": "VERIFICATION_COMPLETED", "actor_role": "tp-verification-engineering", "detail_json": json.dumps({"producer": "record-first", "operation": "VERIFY", "decision": "PASS"})},
+        {"id": 11, "task_id": "TASK-A1", "event_type": "VERIFICATION_COMPLETED", "actor_role": "tp-test-engineer", "detail_json": json.dumps({"producer": "record-first", "operation": "VERIFY", "decision": "PASS"})},
+        {"id": 21, "task_id": "TASK-A2", "event_type": "VERIFICATION_COMPLETED", "actor_role": "tp-test-engineer", "detail_json": json.dumps({"producer": "record-first", "operation": "VERIFY", "decision": "NEEDS_FIX"})},
+        {"id": 22, "task_id": "TASK-A2", "event_type": "REWORK", "actor_role": "tp-development-engineer", "detail_json": "{}"},
+        {"id": 23, "task_id": "TASK-A2", "event_type": "VERIFICATION_COMPLETED", "actor_role": "tp-test-engineer", "detail_json": json.dumps({"producer": "record-first", "operation": "VERIFY", "decision": "PASS"})},
         # Legacy commit producer is intentionally not trusted for P0 proxy.
-        {"id": 31, "task_id": "TASK-A2", "event_type": "VERIFICATION_COMPLETED", "actor_role": "tp-verification-engineering", "detail_json": json.dumps({"producer": "commit", "operation": "VERIFY", "decision": "PASS"})},
+        {"id": 31, "task_id": "TASK-A2", "event_type": "VERIFICATION_COMPLETED", "actor_role": "tp-test-engineer", "detail_json": json.dumps({"producer": "commit", "operation": "VERIFY", "decision": "PASS"})},
     ]
     result = context_effectiveness.aggregate_context_usage(records, events)
     by_asset = {x["asset_id"]: x for x in result["assets"]}

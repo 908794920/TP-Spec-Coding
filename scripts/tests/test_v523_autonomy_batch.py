@@ -47,8 +47,8 @@ def approve(profile, task):
 
 def complete_l0(ws, task, td):
     db=ws["db_path"]
-    record_first.checkpoint(task_id=task,task_dir=str(td),actor="tp-development-engineering",phase="development",summary="done",db=db)
-    record_first.complete(task_id=task,task_dir=str(td),actor="tp-development-engineering",summary="complete",db=db)
+    record_first.checkpoint(task_id=task,task_dir=str(td),actor="tp-development-engineer",phase="development",summary="done",db=db)
+    record_first.complete(task_id=task,task_dir=str(td),actor="tp-development-engineer",summary="complete",db=db)
 
 
 def test_batch_groups_approved_tasks_and_commits_each_task_on_same_cumulative_staging_line():

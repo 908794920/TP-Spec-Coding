@@ -44,7 +44,7 @@ def test_memory_templates_are_progressive_and_small():
 
 
 def test_memory_capture_is_internal_thin_and_evidence_gated():
-    text = (BASE / "skills" / "tp-memory-capture" / "SKILL.md").read_text(encoding="utf-8")
+    text = (BASE / "skills" / "capabilities" / "tp-memory-capture" / "SKILL.md").read_text(encoding="utf-8")
     assert "内部薄能力" in text
     assert "不对用户暴露" in text
     assert "No Evidence, No Memory" in text
@@ -57,23 +57,18 @@ def test_memory_capture_is_internal_thin_and_evidence_gated():
     assert len(text.encode("utf-8")) < 5000
 
 
-def test_all_seven_workflow_roles_can_opportunistically_discover_memory_capture():
+def test_all_formal_workflow_roles_can_opportunistically_discover_memory_capture():
     roles = (
-        "tp-requirement-analysis",
-        "tp-product-design",
-        "tp-architecture-design",
-        "tp-architecture-review",
-        "tp-development-engineering",
-        "tp-verification-engineering",
-        "tp-delivery-convergence",
+        "tp-product-manager", "tp-software-architect", "tp-tech-lead",
+        "tp-security-engineer", "tp-development-engineer", "tp-database-engineer",
+        "tp-test-engineer", "tp-code-reviewer", "tp-integration-engineer",
     )
     for role in roles:
-        text = (BASE / "skills" / role / "SKILL.md").read_text(encoding="utf-8")
+        text = (BASE / "skills" / "roles" / role / "SKILL.md").read_text(encoding="utf-8")
         assert "tp-memory-capture" in text, role
-    delivery = (BASE / "skills" / "tp-delivery-convergence" / "SKILL.md").read_text(encoding="utf-8")
-    assert "未触碰 Memory：0 动作" in delivery
-    assert "只检查 touched fragment" in delivery
-    assert "禁止扫描整个 PROJECT、全部 Skills 或历史任务" in delivery
+        assert "未触碰 Memory：0 动作" in text, role
+        assert "只检查 touched fragment" in text, role
+        assert "不扫描整个 PROJECT、全部 Skills 或历史任务" in text, role
 
 
 def test_project_entry_makes_memory_opportunistic_not_critical_path():

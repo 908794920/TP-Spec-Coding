@@ -1,97 +1,93 @@
 # TP-Spec-Coding
 
-> **让 AI 按研发流程做事，而不是只靠一段聊天直接改代码。**
+> **一个入口，按正式软件工程角色组织 AI，把一个人的工程能力扩展成一支轻量 AI 项目组（面向一人项目组）。**
 
-TP-Spec-Coding 是一个**本地优先、可追溯、可迁移、可扩展**的 AI 研发工作流框架。你把研发任务交给 `tp-workflow-orchestrator`，它像“开发组长”一样判断任务复杂度，并按需组织需求分析、产品设计、架构设计、开发、验证和交付；真正的专业结论仍由对应专业 Skill 负责，过程事实写入本地 Runtime 账本。
+TP-Spec-Coding 是一个**本地优先、可追溯、可迁移、可扩展**的个人 AI 软件工程系统。用户默认只需要进入 `tp-spec-coding`；系统以低上下文成本识别意图，并把软件工作交给 `tp-software-lifecycle`，再根据 L0～L3、风险与当前事实按需选择正式工程角色。
 
-当前版本：**v5.2.3** · License：**MIT**
+当前版本：**v5.2.4** · License：**MIT**
 
 ## 为什么做这个项目
 
-直接让 AI 写代码很快，但项目一复杂，经常会遇到这些问题：
+直接让 AI 写代码很快，但当一个人同时承担产品、架构、技术规划、安全、开发、数据库、测试、代码 Review 和集成交付时，单纯“需求 → 代码”已经不够。TP-Spec-Coding 的目标不是让每个任务走更重流程，而是把这些正式职责组织成可按需调用的能力池，同时让简单任务继续保持轻量。
 
-- 需求、约束和决策散在聊天记录里，换会话以后容易丢；
-- 不同 AI 对同一任务的理解不一致，做完才发现方向错了；
-- 大任务不知道该先分析、先设计还是直接开发；
-- “测试通过”“已经处理”很难追溯是谁、何时、基于什么证据得出的；
-- 换 AI 工具、换电脑、移动项目目录后，要重新告诉 AI 一堆路径和背景；
-- 老项目每次都从源码重新读，Wiki 和长期知识没有形成真正可复用的资产。
+典型问题：
 
-TP-Spec-Coding 的目标不是增加更多流程，而是让 AI 在需要的时候按正确的专业分工工作，同时把关键事实留下来。它不替代 Codex、Claude Code、Qoder、OpenCode 等 AI 编程工具，而是给这些工具一套可以共同遵循的研发工作方式。
+- 客户只给一句话或一份文档，需要先变成可开发、可验收的 Requirement；
+- 产品/架构/技术决策散在不同 AI 会话里，Task 开始后很难继续复用；
+- 测试、Review、安全检查容易混成一个“大验证步骤”；
+- “测试通过”“已经集成”缺少稳定 subject 与真实 evidence；
+- 大任务需要深度规划，小任务又不能被完整流程拖慢；
+- Wiki、Knowledge、Project Memory 要长期积累，但不能反过来成为交付收费站。
 
-## 能带来什么
+## 产品模型
 
-| 直接和 AI 聊天开发 | 使用 TP-Spec-Coding |
+```text
+User
+  ↓
+tp-spec-coding                  # 唯一默认产品入口
+  ↓
+Domain Agent
+  ├─ tp-software-lifecycle      # 软件工程生命周期
+  ├─ tp-wiki                    # Code Wiki / Project Truth
+  ├─ tp-knowledge               # 长期 Knowledge
+  ├─ tp-base-maintenance        # 基座安装/迁移
+  └─ tp-project-autonomy        # 项目自治维护
+
+software intent
+  ↓
+Formal Engineering Role Pool
+  ├─ tp-product-manager
+  ├─ tp-software-architect
+  ├─ tp-tech-lead
+  ├─ tp-security-engineer
+  ├─ tp-development-engineer
+  ├─ tp-database-engineer
+  ├─ tp-test-engineer
+  ├─ tp-code-reviewer
+  └─ tp-integration-engineer
+```
+
+## 核心原则
+
+- **Role-first**：按“正式角色负责什么”组织能力，而不是让“需求分析/开发/验证”等动作冒充永久角色。
+- **能力完整、执行按需**：L0～L3 裁剪 phase，Role Resolver 裁剪角色，每个 Role 再 lazy-load 必要 Skill。
+- **Requirement Ready 后再建 Task**：pre-task 产品/需求工作合法；成熟需求可以快速进入 Task，明确 Bug 可直接 L0。
+- **Record-first / CLI-first**：AI 做真实工程工作；CLI/Runtime 自动记录少量必要事实，纯治理增量成本目标不超过 5%。
+- **五态不变**：`NEW / ACTIVE / BLOCKED / COMPLETED / CANCELLED`；phase 只是查询/审计事实，不是收费站。
+- **安全边界正交于角色**：`mode` / `effects` / Execution Envelope 不因角色化重构而削弱。
+
+## 正式软件工程角色
+
+| Role | 责任 |
 |---|---|
-| 每次都要重新解释上下文 | Task、Wiki、Knowledge 让已确认事实可以继续复用 |
-| AI 自己决定先做什么 | 开发组长根据 L0～L3 组织合适的专业角色 |
-| 做完才发现方向不对 | 高风险任务按需启用独立 UltraPlan / UltraReview |
-| “测试过了”很难追溯 | Runtime 记录专业角色、事件和真实验证证据 |
-| 换工具、换电脑重新配置 | 机器路径和项目事实分离，可重新绑定而不改历史账本 |
-| 一个 Agent 什么都干 | Agent 是专业入口，Skill 是可组合能力，可以继续扩展自己的专业 Agent |
+| Product Manager | 产品规划、原始需求理解、需求分析/拆解、范围、验收、必要产品设计 |
+| Software Architect | 系统设计、技术选型、接口/模块/兼容/可靠性、UltraPlan、隔离架构评审 |
+| Tech Lead | 技术规划、代码规范、任务拆解、依赖与实施约束 |
+| Security Engineer | 安全设计、审计、扫描、认证/授权、敏感数据与专项验证 |
+| Development Engineer | 前后端实现、调试、重构、性能/并发与开发自测 |
+| Database Engineer | 数据模型、SQL、DDL、Migration、索引、一致性与数据库性能 |
+| Test Engineer | Unit / Integration / API / Regression / Acceptance / Runtime 验证 |
+| Code Reviewer | 独立 Diff/Commit Review、规范、正确性、可维护性、回归与技术债 |
+| Integration Engineer | 变更检查、Git 集成、交付事实、集成后验证与 Delivery Result |
 
-## 核心优势
+旧版经过实践验证的轻量步骤经验没有丢失；它们被还原为 lifecycle preset 和这些正式角色内部的能力。普通任务不会固定执行全部 9 个角色。
 
-### 一个开发入口
+## Domain Agent
 
-开发流程只需要找：
+### `tp-software-lifecycle`
+唯一软件工程 Domain Agent。它负责 L0～L3、角色/能力路由、返工、深度模式和完成判断，但不替专业角色做专业结论。
 
-```text
-tp-workflow-orchestrator
-```
-
-它是“开发组长”，只负责：
-
-- 判断 L0～L3 任务复杂度；
-- 决定下一阶段应该找哪个专业角色；
-- 判断是否需要 UltraPlan / UltraReview；
-- 在真正需要用户选择或授权时请求确认；
-- 读取现有 Task 事实继续工作。
-
-它**不写业务代码、不替专业角色做结论、不抢专业角色的账**。
-
-### 专业角色仍然可追溯
-
-开发流程内部有 7 个专业 Skill：
-
-```text
-tp-requirement-analysis       需求分析
-tp-product-design             产品设计
-tp-architecture-design        架构设计 / UltraPlan
-tp-architecture-review        独立架构评审
-tp-development-engineering    开发实现
-tp-verification-engineering   验证 / UltraReview
-tp-delivery-convergence       交付与知识收敛
-```
-
-目录位置可以变化，但 role ID 是稳定身份。Runtime 中的 `owner_role` / `actor_role` 记录真正完成专业工作的角色，因此以后可以回答：**谁做了什么、为什么这么做、验证结果是什么。**
-
-### 另外 3 个独立专业 Agent
-
-它们不是开发流程里的“步骤”，而是可以直接调用的专业能力，也是 TP-Spec-Coding 可扩展 Agent 体系的示例。
-
-#### `tp-base-maintenance` — 基座维护工程师
-
+### `tp-base-maintenance`
 负责安装配置、项目接入、路径解析、Workspace Inventory、项目搬迁、跨机器迁移和健康检查。
 
-适合解决：
+### `tp-knowledge`
+负责长期可复用 Knowledge 与 task-scoped convergence。Integration 只提供 verified handoff；Knowledge 判断不再塞进交付角色。
 
-- Base / Wiki / Knowledge 放在哪里；
-- 项目换盘、换目录、换电脑以后如何重新绑定；
-- 如何让 AI 自己检查当前机器的配置，而不是硬编码绝对路径；
-- 多个项目如何统一维护。
+### `tp-wiki`
+负责从当前源码维护高信息密度、可引用、可增量更新的代码认知地图，Project Truth 最终回源码核验。
 
-#### `tp-knowledge` — 知识系统工程师
-
-负责长期可复用 Knowledge：外部文档、Task evidence、代码证据、业务规则、长期决策、检索和增量维护。
-
-它解决的是：**AI 做过一次以后，下一次能不能真正复用，而不是每次重新理解整个项目。**
-
-#### `tp-wiki` — 代码理解 Wiki 工程师
-
-负责把当前源码维护成高信息密度、可引用、可增量更新的代码认知地图，并要求关键结论最终回到源码核验。
-
-它解决的是：**大型或老项目不需要每次都从几千个文件重新开始读。**
+### `tp-project-autonomy`
+负责自治发现、Proposal/Batch/Cycle/Workspace 与集成入口；批准后的软件工作仍交 `tp-software-lifecycle`，不复制一套开发流程。
 
 ### Record-first：工作优先，账本旁路记录
 
@@ -139,7 +135,7 @@ NEW / ACTIVE / BLOCKED / COMPLETED / CANCELLED
 
 ## 长期项目自治维护
 
-`tp-project-autonomy` 是长期 Autonomous Maintenance 的薄入口：一次配置维护目标、L0～L3 上限、每 Cycle 新 Task 上限与隔离 Workspace 后，可由具备本地文件/Git/Python/Agent 能力的外部 Executor 周期性唤醒。自治开发只发生在独立 Git clone 中；普通 Task 仍由 `tp-workflow-orchestrator` 治理，Canonical 代码只有经过 Review + Integration Prepare/Verification + human_owner 明确 Apply 才会改变。
+`tp-project-autonomy` 是长期 Autonomous Maintenance 的薄入口：一次配置维护目标、L0～L3 上限、每 Cycle 新 Task 上限与隔离 Workspace 后，可由具备本地文件/Git/Python/Agent 能力的外部 Executor 周期性唤醒。自治开发只发生在独立 Git clone 中；普通软件 Task 仍由 `tp-software-lifecycle` 按 L0～L3 与正式 Role Pool 治理，Canonical 代码只有经过 Review + Integration Prepare/Verification + human_owner 明确 Apply 才会改变。
 
 详细外部自动化协议见 `automation/autonomy/`。
 
@@ -230,11 +226,12 @@ python -m cli.main base sync-project \
 ```text
 请使用 TP-Spec-Coding 处理这个研发任务。
 先定位当前机器的 TP-Spec-Coding Base，读取
-agents/tp-workflow-orchestrator/SKILL.md，
+entry/tp-spec-coding/SKILL.md，
+由统一入口把软件意图交给 tp-software-lifecycle；
 然后根据当前项目事实决定下一步，不要跳过已有 Task/Runtime 记录。
 ```
 
-如果已经存在 Task，Orchestrator 会优先读取只读路由：
+如果已经存在 Task，Software Lifecycle 会优先通过既有 Runtime 读取只读路由：
 
 ```bash
 python -m cli.main workflow next --task <TASK-ID> --db <DB-PATH> --json
@@ -289,38 +286,36 @@ base sync-project --apply
 
 项目移动路径时，Runtime `project.root_path` 只是当前机器 locator/cache；portable identity 仍以项目 binding / project id 为准。存在同 ID 多个工作区时会 fail-closed，不自动猜哪个是真的。
 
-## Agent、Skill、Runtime 是什么关系
+## Agent、Role、Skill、Runtime 是什么关系
 
 ```text
-Agent     = 用户可以直接找的专业入口
-Skill     = Agent 内部可组合的专业能力
-Runtime   = 记录真实发生了什么
+Agent     = 用户/领域入口
+Role      = 软件工程正式责任主体
+Skill     = Role/Agent 内部可组合、按需加载的能力
+Runtime   = 记录真实发生了什么，并提供恢复/迁移/安全边界
 ```
 
-当前公开 Agent：
+当前产品入口：
+
+```text
+entry/
+└─ tp-spec-coding          # 唯一默认产品入口
+```
+
+当前公开 Domain Agent：
 
 ```text
 agents/
-├─ tp-workflow-orchestrator   # 开发组长 / 研发流程入口
-├─ tp-base-maintenance        # 基座安装与迁移
-├─ tp-knowledge               # 长期知识
-└─ tp-wiki                    # 代码理解
+├─ tp-software-lifecycle   # 软件工程 Domain Agent
+├─ tp-base-maintenance
+├─ tp-knowledge
+├─ tp-wiki
+└─ tp-project-autonomy
 ```
 
-研发流程内部 Skill：
+软件领域的 active formal Role 由 `governance/role-catalog.yaml` 统一登记；Role Skill 位于 `skills/roles/`，共享能力位于 `skills/capabilities/`，自治专项能力位于 `skills/autonomy/`。旧 action-role 只存在于 previous active contract → 5.2.4 migration/history，不参与 active routing。
 
-```text
-skills/
-├─ tp-requirement-analysis
-├─ tp-product-design
-├─ tp-architecture-design
-├─ tp-architecture-review
-├─ tp-development-engineering
-├─ tp-verification-engineering
-└─ tp-delivery-convergence
-```
-
-你也可以按同一模式扩展自己的 Agent，例如需求文档、技术写作、数据分析、视频生成等；只要保持 Agent 与 Skill 的职责边界清晰即可。
+未来可以增加视频生成、数据分析等新的 Domain Agent；它们拥有自己的角色/Skill 体系，但复用底层 Runtime，而不把完全不同的生命周期塞进软件工程 Skill Pool。
 
 ## UltraPlan / UltraReview
 
@@ -387,16 +382,19 @@ python -m cli.main --help
 ## 仓库结构
 
 ```text
-agents/          对外专业 Agent 与 role catalog
-skills/          研发内部角色与可复用方法 Skill
-governance/      活动契约、风险、编排和内容系统规则
-cli/             确定性 Runtime / Base / Wiki / Knowledge CLI
-templates/       当前唯一活动 Task 契约模板
-project-entry/   注入业务项目的 managed entry 模板
-wiki/            Wiki 规则、schema、模板
-knowledge/       Knowledge 规则、schema、模板
-automation/      Wiki / Knowledge 可版本化维护协议
-scripts/         CI、manifest、portable 校验和 PowerShell 包装器
+entry/          唯一默认产品入口
+agents/         Domain Agent（软件生命周期 / Wiki / Knowledge / Base / Autonomy）
+skills/roles/   软件工程正式 Role Skill
+skills/capabilities/  Role 可按需加载的共享能力 Skill
+skills/autonomy/      Autonomy Domain 的专项 Skill
+governance/     活动契约、role catalog、风险、编排和内容系统规则
+cli/            确定性 Runtime / Base / Wiki / Knowledge CLI
+templates/      当前唯一活动 Task 契约模板
+project-entry/  注入业务项目的 managed entry 模板
+wiki/           Wiki 规则、schema、模板
+knowledge/      Knowledge 规则、schema、模板
+automation/     Wiki / Knowledge 可版本化维护协议
+scripts/        CI、manifest、portable 校验和 PowerShell 包装器
 ```
 
 ## 开发与验证

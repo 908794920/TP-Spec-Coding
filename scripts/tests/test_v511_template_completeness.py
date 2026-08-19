@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""V5.1.3 模板完整性测试：templates/5.1.3 为完整模板集且新增工件 front matter 可解析。
+"""模板完整性回归：当前单活动契约模板集和 canonical requirement 工件可解析。
 
 Pure stdlib unittest; offline. 验证（定向修复任务 §5/§6/§11.2/§11.3）：
-- templates/5.1.3 包含 13 个文件（8 个升级模板 + 5 个新工件）；
+- 当前 templates/<active> 包含 canonical requirement 和必要按需工件；
 - 5 个新工件均有可解析 YAML front matter；
 - front matter 包含 artifact / task_id / artifact_contract.version / owner / status / stage_handoff；
-- artifact_contract.version == 5.1.3；
+- artifact_contract.version == 当前活动版本；
 - requirement-test-guide 含 ac_coverage 与稳定测试 ID（T-00x）；
 - requirement-decisions 使用顶层 decisions 列表（非 fenced 多段 YAML 作为唯一机器事实）；
-- 5.1.3 是唯一活动模板目录（单活动契约）。
+- 当前版本是唯一活动模板目录（单活动契约）。
 
 Run:
     python scripts/tests/test_v511_template_completeness.py
@@ -36,7 +36,7 @@ REQUIRED_FILES = (
     "quality-and-knowledge.md",
     "status.yaml",
     "handoff.json",
-    "requirement-knowledge.md",
+    "requirement.md",
     "requirement-clarifications.md",
     "requirement-decisions.md",
     "architecture-review.md",
@@ -44,7 +44,7 @@ REQUIRED_FILES = (
 )
 
 NEW_ARTIFACTS = (
-    "requirement-knowledge.md",
+    "requirement.md",
     "requirement-clarifications.md",
     "requirement-decisions.md",
     "architecture-review.md",
@@ -76,7 +76,7 @@ class TestTemplateCompleteness(unittest.TestCase):
         dirs = {p.name for p in tpl.iterdir() if p.is_dir()}
         self.assertEqual(dirs, {ACTIVE_VERSION})
 
-    def test_thirteen_files_present(self):
+    def test_required_files_present(self):
         d = BASE / "templates" / ACTIVE_VERSION
         for name in REQUIRED_FILES:
             self.assertTrue((d / name).is_file(), name)
@@ -120,12 +120,12 @@ class TestTemplateCompleteness(unittest.TestCase):
             self.assertIn(d, text)
 
     def test_upgraded_templates_reference_v511_artifacts(self):
-        """V5.1.3 templates are optional business artifacts, not a cross-referenced form set."""
+        """Current templates are optional business artifacts, not a cross-referenced form set."""
         root = BASE / "templates" / ACTIVE_VERSION
         task = (root / "task.md").read_text(encoding="utf-8")
         self.assertIn("不承担阶段门禁", task)
         for name in (
-            "requirement-knowledge.md", "requirement-clarifications.md", "requirement-decisions.md",
+            "requirement.md", "requirement-clarifications.md", "requirement-decisions.md",
             "architecture-review.md", "requirement-test-guide.md", "implementation.md",
             "codex-review.md", "quality-and-knowledge.md",
         ):

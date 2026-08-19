@@ -240,7 +240,7 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
         }])
         rc, out, err = self.call(
             "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-development-engineering", "--phase", "development",
+            "--actor", "tp-development-engineer", "--phase", "development",
             "--summary", "implemented", "--context-usage-json", payload,
         )
         self.assertEqual(rc, 0, (out, err))
@@ -250,7 +250,7 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
     def test_invalid_checkpoint_context_usage_does_not_block_checkpoint(self):
         rc, out, err = self.call(
             "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-development-engineering", "--phase", "development",
+            "--actor", "tp-development-engineer", "--phase", "development",
             "--summary", "implemented", "--context-usage-json", "{broken",
         )
         self.assertEqual(rc, 0, (out, err))
@@ -289,7 +289,7 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
         self.assertEqual(detail["context_usage"][0]["source_type"], "memory_skill")
 
     def test_review_persists_context_usage_and_malformed_is_soft(self):
-        template = Path(__file__).resolve().parents[2] / "templates" / "5.2.3" / "architecture-review.md"
+        template = Path(__file__).resolve().parents[2] / "templates" / "5.2.4" / "architecture-review.md"
         shutil.copy2(template, self.task_dir / "architecture-review.md")
         payload = json.dumps([{
             "source_type": "wiki", "asset_id": "wiki:demo/backend/architecture.md",
@@ -298,7 +298,7 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
         }])
         rc, out, err = self.call(
             "review", "record", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-architecture-review", "--kind", "ARCHITECTURE", "--decision", "REVISE",
+            "--actor", "tp-software-architect", "--kind", "ARCHITECTURE", "--decision", "REVISE",
             "--summary", "needs revision", "--context-usage-json", payload,
         )
         self.assertEqual(rc, 0, (out, err))
@@ -306,25 +306,14 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
 
         rc, out, err = self.call(
             "review", "record", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--actor", "tp-architecture-review", "--kind", "ARCHITECTURE", "--decision", "REVISE",
+            "--actor", "tp-software-architect", "--kind", "ARCHITECTURE", "--decision", "REVISE",
             "--summary", "still revise", "--context-usage-json", "{broken",
         )
         self.assertEqual(rc, 0, (out, err))
         self.assertIn("WARN: context telemetry:", err)
         self.assertNotIn("context_usage", self.latest_detail("REVIEW_COMPLETED"))
 
-    def test_delivery_automatically_records_knowledge_usage_and_bad_context_is_soft(self):
-        # Seed a stable canonical so the targeted search has a deterministic hit.
-        note = self.knowledge_root / "10-projects" / "demo" / "30-features" / "DEMO-FEAT-001-Context.md"
-        note.parent.mkdir(parents=True, exist_ok=True)
-        note.write_text(
-            "---\nid: DEMO-FEAT-001\ntitle: Context Feature\nproject: demo\nkind: feature\n"
-            "status: active\ncanonical: true\nsource_refs: []\nconfidence: 0.9\n"
-            "last_verified: '2026-08-15'\nrelations: []\n---\n# Context Feature\nverified delivery behavior reusable rule\n",
-            encoding="utf-8",
-        )
-        rc, out, err = _run(["knowledge", "index", "build", "--workspace-root", str(self.project)])
-        self.assertEqual(rc, 0, (out, err))
+    def test_delivery_records_compact_handoff_and_bad_context_is_soft(self):
         ev = self.task_dir / "evidence" / "verify.txt"
         ev.parent.mkdir(exist_ok=True); ev.write_text("ok\n", encoding="utf-8")
         rc, out, err = self.call(
@@ -334,14 +323,16 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
         self.assertEqual(rc, 0, (out, err))
         rc, out, err = self.call(
             "task", "delivery-converge", "--task", self.task_id, "--task-dir", str(self.task_dir),
-            "--knowledge-disposition", "NO_CHANGE", "--knowledge-query", "verified delivery behavior reusable rule",
-            "--reason", "Targeted project search found no durable delta beyond the existing canonical fact.",
+            "--delivery-status", "READY",
+            "--reason", "Verified change is ready for integration and no delivery blocker remains.",
             "--context-usage-json", "{broken",
         )
         self.assertEqual(rc, 0, (out, err))
         self.assertIn("WARN: context telemetry:", err)
-        usage = self.latest_detail("DELIVERY_RESULT").get("context_usage") or []
-        self.assertTrue(any(x["asset_id"] == "knowledge:DEMO-FEAT-001" for x in usage), usage)
+        detail = self.latest_detail("DELIVERY_RESULT")
+        self.assertNotIn("context_usage", detail)
+        self.assertEqual(detail["delivery_status"], "READY")
+        self.assertEqual(detail["knowledge_handoff"]["task_id"], self.task_id)
 
 
 def test_shared_guidance_declares_best_effort_context_telemetry_without_skill_bloat():

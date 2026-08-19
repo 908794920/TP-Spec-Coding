@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.3 B-13/B-15 复用与成本披露分级告警文案（W1-W5）。
+"""V5.2.4 B-13/B-15 复用与成本披露分级告警文案（W1-W5）。
 
 设计依据：历史设计记录 B13-reuse-warning
 证据锚点：评审表 Q4（L323）、9.4 第 2 行（L334）、9.4 第 5 行（L337）；
@@ -98,8 +98,8 @@ def w4_warnings(reuse_rate: float | None, has_reuse_history: bool = True) -> lis
 
 
 # --- W5：B-13 复用告警（复用审查包不替代 VERIFYING） ---
-W5_CN = "[复用告警] 复用审查包不替代 VERIFYING 阶段；tp-verification-engineering 必须重新确认包有效并独立审查，不得仅引用旧结论。"
-W5_EN = "[REUSE-WARNING] Reusing a review package does not replace VERIFYING; tp-verification-engineering must re-validate the package and independently review; must not cite old conclusions only."
+W5_CN = "[复用告警] 复用审查包不替代 VERIFYING 阶段；tp-code-reviewer 必须重新确认包有效并独立审查，不得仅引用旧结论。"
+W5_EN = "[REUSE-WARNING] Reusing a review package does not replace VERIFYING; tp-code-reviewer must re-validate the package and independently review; must not cite old conclusions only."
 
 
 def w5_warning() -> str:

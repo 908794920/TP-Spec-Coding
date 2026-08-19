@@ -106,7 +106,7 @@ class TestKnowledgeContracts(KnowledgeCase):
         boot=(BASE/"automation/knowledge/SCHEDULER_BOOTSTRAP.md").read_text(encoding="utf-8")
         daily=(BASE/"automation/knowledge/daily-maintenance.md").read_text(encoding="utf-8")
         knowledge_rule=(BASE/"governance/knowledge-rule.yaml").read_text(encoding="utf-8")
-        delivery=(BASE/"skills/tp-delivery-convergence/SKILL.md").read_text(encoding="utf-8")
+        delivery=(BASE/"skills/roles/tp-integration-engineer/SKILL.md").read_text(encoding="utf-8")
         self.assertIn("TP-Spec-Coding Installation + Project Binding", base_skill)
         self.assertIn("Workspace Inventory", base_skill)
         self.assertIn("Project Scope", base_skill)
@@ -123,9 +123,10 @@ class TestKnowledgeContracts(KnowledgeCase):
         self.assertIn("tp-spec knowledge search", knowledge_rule)
         self.assertIn("tp-knowledge", knowledge_rule)
         self.assertNotIn("PRIVATE_VAULT_ROOT", knowledge_rule)
-        self.assertIn("Task 驱动的 Knowledge 内容收敛", delivery)
-        self.assertIn("不得自行调用 `tp-knowledge`", delivery)
-        self.assertIn("90-sources", delivery)
+        self.assertIn("compact `knowledge_handoff`", delivery)
+        self.assertIn("task-scoped convergence", delivery)
+        self.assertIn("Integration 不做 Knowledge qualification", delivery)
+        self.assertIn("task-scoped", knowledge)
 
     def test_lint_accepts_verifies_and_structured_code_evidence(self):
         self.canonical("10-projects/demo/30-features/DEMO-FEAT-001-Feature.md", cid="DEMO-FEAT-001", kind="feature", title="Feature", source_refs="[TASK-1]")

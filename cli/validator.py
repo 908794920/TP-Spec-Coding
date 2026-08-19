@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.3 phase-aware artifact validator.
+"""V5.2.4 phase-aware artifact validator.
 
 The validator intentionally separates *working* checks from *closing* checks.
 A role entering VERIFYING must not be required to have already produced the
@@ -8,7 +8,7 @@ verification result.  This module therefore exposes three validation modes:
 - ``working``: validate structure that must already exist in the current state;
   completion outcomes (PASS, human witness, codex-review) are not required.
 - ``handoff``: validate readiness for a concrete target state using the same
-  transition_service rules used by ``tp-spec commit`` (requires DB + task id).
+  legacy long-state handoff validation is retired from the active runtime.
 - ``closing``: strict fail-closed completion validation (legacy default).
 """
 from __future__ import annotations
@@ -68,7 +68,7 @@ def validate_artifacts(
     actor: str = "",
 ) -> Dict[str, Any]:
     """Run phase-aware artifact validation (read-only, zero side effects)."""
-    from . import transition_service as ts
+    from . import artifact_validation as ts
     from . import db as dbmod
 
     issues: List[ts.ValidationIssue] = []
@@ -77,24 +77,10 @@ def validate_artifacts(
     mode = (mode or "closing").lower()
 
     if mode == "handoff":
-        if not db_path or not task_id or not to_state or not actor:
-            raise ValueError("handoff mode requires --db, --task, --to-state and --actor")
-        conn = dbmod.connect(db_path)
-        try:
-            task = conn.execute("SELECT current_state FROM task WHERE task_id=?", (task_id,)).fetchone()
-            if task is None:
-                raise ValueError(f"task not found: {task_id}")
-            result = ts.validate_transition(
-                task_id=task_id,
-                task_dir=tdir,
-                from_state=task["current_state"] or "",
-                to_state=to_state,
-                actor=actor,
-                conn=conn,
-            )
-            issues.extend(result.issues)
-        finally:
-            conn.close()
+        raise ValueError(
+            "legacy long-state handoff validation is retired in v5.2.4; "
+            "use workflow next + record-first task operations"
+        )
     else:
         for section in active:
             if mode == "working":
@@ -134,7 +120,7 @@ def validate_artifacts(
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m cli.validator", description="V5.2.3 phase-aware artifact validator")
+    parser = argparse.ArgumentParser(prog="python -m cli.validator", description="V5.2.4 phase-aware artifact validator")
     parser.add_argument("--task-dir", required=True, help="task directory")
     parser.add_argument("--db", default=None, help="sqlite db path (required for --mode handoff)")
     parser.add_argument("--task", default=None, help="task id (required for --mode handoff)")

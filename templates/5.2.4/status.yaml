@@ -1,0 +1,20 @@
+task_id: "TASK-YYYYMMDD-XXX"
+task_name: ""
+created: "YYYY-MM-DD"
+base_version: "5.2.4"
+artifact_contract:
+  version: "5.2.4"
+current_state: "NEW"
+current_phase: "intake"
+current_owner: "tp-software-lifecycle"
+risk_level: "L1"
+flow_level: "L1"
+blockers: []
+findings: []
+scope_changes: []
+artifacts:
+  event_log: "events.jsonl"
+  continuation: "generated/continuation.md"
+  acceptance: "acceptance.md"
+  task_document: "task.md"
+  evidence: "evidence/"

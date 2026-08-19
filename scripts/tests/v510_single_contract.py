@@ -60,23 +60,23 @@ rc = run(["task","create","--id",task_id,"--project","p4proj","--title","p4 test
 check("task_create_rc0", rc == 0, str(rc))
 
 # 4. NEW -> DEVELOPING (architecture hands to dev)
-rc = run(["commit","--task",task_id,"--task-dir",task_dir,"--actor","tp-architecture-design","--to","DEVELOPING","--summary","risk L1 -> dev","--db",db_path])
+rc = run(["commit","--task",task_id,"--task-dir",task_dir,"--actor","tp-software-architect","--to","DEVELOPING","--summary","risk L1 -> dev","--db",db_path])
 check("commit_NEW_DEVELOPING_rc0", rc == 0, str(rc))
 
 # 5. DEVELOPING -> VERIFYING (dev done)
-rc = run(["commit","--task",task_id,"--task-dir",task_dir,"--actor","tp-development-engineering","--to","VERIFYING","--summary","impl done","--db",db_path])
+rc = run(["commit","--task",task_id,"--task-dir",task_dir,"--actor","tp-development-engineer","--to","VERIFYING","--summary","impl done","--db",db_path])
 check("commit_DEV_VERIFYING_rc0", rc == 0, str(rc))
 
 # 6. review-only PASS (verification)
-rc = run(["commit","--task",task_id,"--task-dir",task_dir,"--actor","tp-verification-engineering","--review-only","--decision","PASS","--summary","review pass","--evidence","evidence/ac01.md","--db",db_path])
+rc = run(["commit","--task",task_id,"--task-dir",task_dir,"--actor","tp-test-engineer","--review-only","--decision","PASS","--summary","review pass","--evidence","evidence/ac01.md","--db",db_path])
 check("commit_review_only_PASS_rc0", rc == 0, str(rc))
 
 # 7. VERIFYING -> CLOSING (delivery, human confirmation)
-rc = run(["commit","--task",task_id,"--task-dir",task_dir,"--actor","tp-delivery-convergence","--to","CLOSING","--summary","closing","--human-confirmation","approved","--db",db_path])
+rc = run(["commit","--task",task_id,"--task-dir",task_dir,"--actor","tp-integration-engineer","--to","CLOSING","--summary","closing","--human-confirmation","approved","--db",db_path])
 check("commit_VERIFYING_CLOSING_rc0", rc == 0, str(rc))
 
 # 8. CLOSING -> COMPLETED (delivery)
-rc = run(["commit","--task",task_id,"--task-dir",task_dir,"--actor","tp-delivery-convergence","--to","COMPLETED","--summary","completed","--db",db_path])
+rc = run(["commit","--task",task_id,"--task-dir",task_dir,"--actor","tp-integration-engineer","--to","COMPLETED","--summary","completed","--db",db_path])
 check("commit_CLOSING_COMPLETED_rc0", rc == 0, str(rc))
 
 # 9. validator must pass at COMPLETED
@@ -104,17 +104,17 @@ except SystemExit as e:
 
 # N2: direct VERIFYING->COMPLETED rejected (invalid transition, no direct edge)
 tdn2 = fresh("TASK-20260729-912")
-run(["commit","--task","TASK-20260729-912","--task-dir",tdn2,"--actor","tp-architecture-design","--to","DEVELOPING","--summary","x","--db",db_path])
-run(["commit","--task","TASK-20260729-912","--task-dir",tdn2,"--actor","tp-development-engineering","--to","VERIFYING","--summary","x","--db",db_path])
-rc = run(["commit","--task","TASK-20260729-912","--task-dir",tdn2,"--actor","tp-delivery-convergence","--to","COMPLETED","--summary","x","--db",db_path])
+run(["commit","--task","TASK-20260729-912","--task-dir",tdn2,"--actor","tp-software-architect","--to","DEVELOPING","--summary","x","--db",db_path])
+run(["commit","--task","TASK-20260729-912","--task-dir",tdn2,"--actor","tp-development-engineer","--to","VERIFYING","--summary","x","--db",db_path])
+rc = run(["commit","--task","TASK-20260729-912","--task-dir",tdn2,"--actor","tp-integration-engineer","--to","COMPLETED","--summary","x","--db",db_path])
 check("neg_verifying_to_completed_rejected", rc != 0, str(rc))
 
 # N3: non-delivery actor cannot enter CLOSING
 tdn3 = fresh("TASK-20260729-913")
-run(["commit","--task","TASK-20260729-913","--task-dir",tdn3,"--actor","tp-architecture-design","--to","DEVELOPING","--summary","x","--db",db_path])
-run(["commit","--task","TASK-20260729-913","--task-dir",tdn3,"--actor","tp-development-engineering","--to","VERIFYING","--summary","x","--db",db_path])
-run(["commit","--task","TASK-20260729-913","--task-dir",tdn3,"--actor","tp-verification-engineering","--review-only","--decision","PASS","--summary","r","--evidence","events.jsonl","--db",db_path])
-rc = run(["commit","--task","TASK-20260729-913","--task-dir",tdn3,"--actor","tp-development-engineering","--to","CLOSING","--summary","x","--human-confirmation","approved","--db",db_path])
+run(["commit","--task","TASK-20260729-913","--task-dir",tdn3,"--actor","tp-software-architect","--to","DEVELOPING","--summary","x","--db",db_path])
+run(["commit","--task","TASK-20260729-913","--task-dir",tdn3,"--actor","tp-development-engineer","--to","VERIFYING","--summary","x","--db",db_path])
+run(["commit","--task","TASK-20260729-913","--task-dir",tdn3,"--actor","tp-test-engineer","--review-only","--decision","PASS","--summary","r","--evidence","events.jsonl","--db",db_path])
+rc = run(["commit","--task","TASK-20260729-913","--task-dir",tdn3,"--actor","tp-development-engineer","--to","CLOSING","--summary","x","--human-confirmation","approved","--db",db_path])
 check("neg_nondelivery_closing_rejected", rc != 0, str(rc))
 
 print("\n=== SUMMARY ===")

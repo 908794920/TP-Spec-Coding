@@ -25,16 +25,16 @@ from cli import db as dbmod  # noqa: E402
 from cli import main as climain  # noqa: E402
 from cli.digest import compute_verification_subject_digest  # noqa: E402
 from cli.version import active_version  # noqa: E402
-from test_v511_commit_reliability import build_task, run  # noqa: E402
+from scripts.tests.runtime_testutil import build_task, run  # noqa: E402
 
 TASK_ID = "TASK-V512-INTEGRATED"
 
 
 def _advance_to_verifying(task_dir: str, db_path: str, task_id: str = TASK_ID) -> None:
     for actor, phase, summary in (
-        ("tp-requirement-analysis", "requirement", "requirement complete"),
-        ("tp-architecture-design", "architecture", "architecture complete"),
-        ("tp-development-engineering", "development", "implementation completed"),
+        ("tp-product-manager", "requirement", "requirement complete"),
+        ("tp-software-architect", "architecture", "architecture complete"),
+        ("tp-development-engineer", "development", "implementation completed"),
     ):
         rc, out, err = run([
             "task", "checkpoint", "--task", task_id, "--task-dir", task_dir, "--db", db_path,
@@ -57,7 +57,7 @@ def _set_human_pending(task_dir: str, *, ac: str = "AC-01") -> None:
 def _record_technical_pass(task_dir: str, db_path: str, task_id: str = TASK_ID) -> None:
     rc, out, err = run([
         "task", "verify", "--task", task_id, "--task-dir", task_dir, "--db", db_path,
-        "--actor", "tp-verification-engineering", "--decision", "PASS",
+        "--actor", "tp-test-engineer", "--decision", "PASS",
         "--summary", "technical verification passed", "--evidence", "evidence/test-result.txt",
     ])
     assert rc == 0, (out, err)
@@ -77,7 +77,7 @@ class TestVerificationAndOwnerAuthority(unittest.TestCase):
             _advance_to_verifying(task_dir, db_path, task_id)
             rc, out, err = run([
                 "task", "verify", "--task", task_id, "--task-dir", task_dir, "--db", db_path,
-                "--actor", "tp-verification-engineering", "--decision", decision,
+                "--actor", "tp-test-engineer", "--decision", decision,
                 "--summary", f"{decision} result",
             ])
             self.assertEqual(rc, 0, (out, err))
@@ -117,7 +117,7 @@ class TestVerificationAndOwnerAuthority(unittest.TestCase):
 
         rc, out, err = run([
             "task", "complete", "--task", TASK_ID, "--task-dir", task_dir, "--db", db_path,
-            "--actor", "tp-verification-engineering", "--summary", "work complete; manual test deferred",
+            "--actor", "tp-test-engineer", "--summary", "work complete; manual test deferred",
         ])
         self.assertEqual(rc, 0, (out, err))
         result = json.loads(out)
@@ -142,7 +142,7 @@ class TestVerificationAndOwnerAuthority(unittest.TestCase):
         self.assertNotIn("| PASS |", row)
         rc, out, err = run([
             "task", "complete", "--task", TASK_ID, "--task-dir", task_dir, "--db", db_path,
-            "--actor", "tp-verification-engineering", "--summary", "complete with owner waiver",
+            "--actor", "tp-test-engineer", "--summary", "complete with owner waiver",
         ])
         self.assertEqual(rc, 0, (out, err))
 
@@ -161,7 +161,7 @@ class TestVerificationAndOwnerAuthority(unittest.TestCase):
         p.write_text(s, encoding="utf-8", newline="\n")
         rc, out, err = run([
             "task", "complete", "--task", TASK_ID, "--task-dir", task_dir, "--db", db_path,
-            "--actor", "tp-verification-engineering", "--summary", "attempt forged waiver completion",
+            "--actor", "tp-test-engineer", "--summary", "attempt forged waiver completion",
         ])
         self.assertNotEqual(rc, 0)
         self.assertIn("INTEGRITY_ACCEPTANCE", err + out)
@@ -177,7 +177,7 @@ class TestVerificationAndOwnerAuthority(unittest.TestCase):
         p.write_text(s, encoding="utf-8", newline="\n")
         rc, out, err = run([
             "task", "complete", "--task", TASK_ID, "--task-dir", task_dir, "--db", db_path,
-            "--actor", "tp-verification-engineering", "--summary", "attempt unconfirmed human PASS",
+            "--actor", "tp-test-engineer", "--summary", "attempt unconfirmed human PASS",
         ])
         self.assertNotEqual(rc, 0)
         self.assertIn("human PASS requires confirmed human witness", err + out)
@@ -218,7 +218,7 @@ class TestContractUpgradeAndPlanning(unittest.TestCase):
             )
             conn.execute(
                 "INSERT INTO task(task_id,project_id,title,risk_level,flow_level,base_version,current_state,owner_role,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                ("TASK-UPGRADE-ONLY", "p512", "x", "L1", "L1", legacy, "NEW", "tp-architecture-design", now, now),
+                ("TASK-UPGRADE-ONLY", "p512", "x", "L1", "L1", legacy, "NEW", "tp-software-architect", now, now),
             )
         conn.close()
         out, err = io.StringIO(), io.StringIO()
@@ -297,54 +297,18 @@ class TestContractUpgradeAndPlanning(unittest.TestCase):
 
     def test_powershell_validator_uses_record_first_integrity_path(self):
         p = BASE / "scripts" / "Test-TpSpecTask.ps1"
-        raw = p.read_bytes()
-        self.assertTrue(raw.startswith(b"\xef\xbb\xbf"), "Windows PowerShell 5.1 public validator must be UTF-8 BOM")
-        text = raw.decode("utf-8-sig")
-        self.assertIn("Record-first fast path", text)
-        self.assertIn("task validate", text)
-        for state in ("NEW", "ACTIVE", "BLOCKED", "COMPLETED", "CANCELLED"):
-            self.assertIn(state, text)
-        # Projection refresh is Runtime-owned; the active Record-first path must not require it.
-        marker = "Record-first fast path"
-        fast = text[text.index(marker):]
-        legacy_at = fast.lower().find("# legacy")
-        fast = fast[:legacy_at] if legacy_at >= 0 else fast
-        self.assertNotIn("ARTIFACT_REFRESH", fast)
+        text = p.read_text(encoding="utf-8-sig")
+        self.assertIn("Thin read-only validator wrapper", text)
+        self.assertIn("-m cli.main task validate", text)
+        self.assertIn("single source of validation truth", text)
+        self.assertNotIn("$deferredRecords", text)
+        self.assertNotIn("ARTIFACT_REFRESH", text)
 
-    def test_powershell_acceptance_parser_accepts_pyyaml_two_space_children(self):
-        # acceptance-override uses yaml.safe_dump(), which emits list child fields
-        # with two-space indentation. The PowerShell validator must consume that
-        # canonical Runtime output instead of assuming four spaces.
-        sample = yaml.safe_dump({
-            "deferred_acceptance": [{
-                "ac": "AC-01",
-                "recorded_at": "2026-08-08T15:00:00+08:00",
-                "reason": "tester executes later",
-                "residual_risk": "manual path remains unverified",
-                "reverify_owner": "human_owner",
-                "trigger": "tester returns evidence",
-            }]
-        }, allow_unicode=True, sort_keys=False)
-        self.assertRegex(sample, r"(?m)^  recorded_at:")
-
-        item_pattern = re.compile(
-            r'(?m)^[ \t]*-[ \t]+ac:[ \t]*"?(?P<ac>AC-[^"\r\n]+?)"?[ \t]*$'
-            r'(?P<fields>(?:\r?\n[ \t]{2,}[a-z_]+:[^\r\n]*)*)'
-        )
-        field_pattern = re.compile(
-            r'(?m)^[ \t]{2,}(?P<key>[a-z_]+):[ \t]*"?(?P<value>[^"\r\n]*?)"?[ \t]*$'
-        )
-        body = sample.split("deferred_acceptance:\n", 1)[1]
-        item = item_pattern.search(body)
-        self.assertIsNotNone(item)
-        fields = {m.group("key"): m.group("value").strip() for m in field_pattern.finditer(item.group("fields"))}
-        for required in ("recorded_at", "residual_risk", "reverify_owner", "trigger"):
-            self.assertTrue(fields.get(required), required)
-
+    def test_powershell_validator_does_not_duplicate_acceptance_parser(self):
         ps = (BASE / "scripts" / "Test-TpSpecTask.ps1").read_text(encoding="utf-8-sig")
-        acceptance_section = ps[ps.index("$deferredRecords = @{}") : ps.index("# 人工页面验收声明") ]
-        self.assertNotIn(r"\s{4,}", acceptance_section)
-        self.assertGreaterEqual(acceptance_section.count(r"[ \t]{2,}"), 4)
+        self.assertIn("-m cli.main task validate", ps)
+        self.assertNotIn("$deferredRecords", ps)
+        self.assertNotIn("deferred_acceptance:", ps)
 
     def test_all_non_ascii_powershell_scripts_are_ps51_safe(self):
         for p in sorted((BASE / "scripts").rglob("*.ps1")):

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.3 deterministic, read-only workflow orchestration.
+"""V5.2.4 deterministic, read-only workflow orchestration.
 
 Workflow chooses *when* to invoke a role.  Skills choose *how* to do the work.
 The existing Task Runtime remains the only durable fact ledger.
@@ -60,7 +60,7 @@ def load_contract(base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
 
 def load_role_catalog(base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
     return config_loader.load_config(
-        "agents/role-catalog.yaml",
+        "governance/role-catalog.yaml",
         schema_name="role-catalog",
         base_root=base_root,
         strict_unknown_fields=True,
@@ -213,10 +213,11 @@ def validate_contract(base_root: Optional["str | Path"] = None) -> List[str]:
                 errors.append(f"{level}.{stage}: unknown phase {phase!r}")
             if mode not in {"DIRECT", "AUTO_PLANNING", "AUTO_REVIEW"}:
                 errors.append(f"{level}.{stage}: unknown mode {mode!r}")
-            if mode == "AUTO_PLANNING" and role != "tp-architecture-design":
-                errors.append(f"{level}.{stage}: AUTO_PLANNING must be owned by tp-architecture-design")
-            if mode == "AUTO_REVIEW" and role != "tp-verification-engineering":
-                errors.append(f"{level}.{stage}: AUTO_REVIEW must be owned by tp-verification-engineering")
+            orchestration_caps = set((roles.get(role) or {}).get("orchestration_capabilities") or [])
+            if mode == "AUTO_PLANNING" and "auto_planning_host" not in orchestration_caps:
+                errors.append(f"{level}.{stage}: AUTO_PLANNING role must declare auto_planning_host")
+            if mode == "AUTO_REVIEW" and "auto_review_host" not in orchestration_caps:
+                errors.append(f"{level}.{stage}: AUTO_REVIEW role must declare auto_review_host")
             if role == "tp-knowledge":
                 errors.append(f"{level}.{stage}: tp-knowledge is standalone and must never enter the development workflow")
 
@@ -234,16 +235,13 @@ def validate_contract(base_root: Optional["str | Path"] = None) -> List[str]:
                 errors.append(f"{role_id}: Skill version {fm.get('version')!r} != {version}")
             if _normalized_skill_sha(p) != str(item.get("content_sha256") or "").upper():
                 errors.append(f"{role_id}: content_sha256 mismatch")
-            skill_text = p.read_text(encoding="utf-8-sig")
-            if role_id == "tp-workflow-orchestrator":
-                if item.get("type") != "control-role" or item.get("owns_states"):
-                    errors.append("tp-workflow-orchestrator must be a stateless control-role")
-            elif role_id == "tp-architecture-design":
-                if "Deep Planning Capability" not in skill_text or "UltraPlan" not in skill_text:
-                    errors.append("tp-architecture-design no longer declares UltraPlan capability")
-            elif role_id == "tp-verification-engineering":
-                if "Deep Review Capability" not in skill_text or "UltraReview" not in skill_text:
-                    errors.append("tp-verification-engineering no longer declares UltraReview capability")
+            if role_id == "tp-software-lifecycle":
+                if item.get("type") != "control-role" or list(item.get("owns_states") or []) != ["NEW"]:
+                    errors.append("tp-software-lifecycle must be the NEW owner control-role")
+            if role_id == "tp-software-architect" and "auto_planning_host" not in set(item.get("orchestration_capabilities") or []):
+                errors.append("tp-software-architect must declare auto_planning_host")
+            if role_id == "tp-code-reviewer" and "auto_review_host" not in set(item.get("orchestration_capabilities") or []):
+                errors.append("tp-code-reviewer must declare auto_review_host")
         except Exception as exc:
             errors.append(f"{role_id}: {exc}")
     return errors
@@ -296,7 +294,7 @@ def _decision_signals(events: Iterable[Dict[str, Any]]) -> set[str]:
 
 def _latest_verification(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     for e in reversed(list(events)):
-        if e.get("event_type") != "VERIFICATION_COMPLETED" or e.get("actor_role") != "tp-verification-engineering":
+        if e.get("event_type") != "VERIFICATION_COMPLETED" or e.get("actor_role") != "tp-test-engineer":
             continue
         d = _parse_detail(e.get("detail_json"))
         decision = str(d.get("decision") or e.get("summary") or "").upper()
@@ -306,9 +304,23 @@ def _latest_verification(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str,
 
 def _latest_arch_review(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     for e in reversed(list(events)):
-        if e.get("event_type") != "REVIEW_COMPLETED" or e.get("actor_role") != "tp-architecture-review":
+        if e.get("event_type") != "REVIEW_COMPLETED" or e.get("actor_role") != "tp-software-architect":
             continue
         d = _parse_detail(e.get("detail_json"))
+        if str(d.get("review_kind") or "").upper() != "ARCHITECTURE":
+            continue
+        decision = str(d.get("decision") or e.get("summary") or "").upper()
+        return {"decision": decision, "detail": d, "event": e}
+    return None
+
+def _latest_code_review(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    for e in reversed(list(events)):
+        if e.get("event_type") != "REVIEW_COMPLETED" or e.get("actor_role") != "tp-code-reviewer":
+            continue
+        d = _parse_detail(e.get("detail_json"))
+        kind = str(d.get("review_kind") or "CODE").upper()
+        if kind not in {"CODE", "IMPLEMENTATION", "ULTRA_REVIEW"}:
+            continue
         decision = str(d.get("decision") or e.get("summary") or "").upper()
         return {"decision": decision, "detail": d, "event": e}
     return None
@@ -326,10 +338,11 @@ def _latest_checkpoint(events: Iterable[Dict[str, Any]], *, actor: str, phase: s
 
 def _stage_completion_event(stage: str, events: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     mapping = {
-        "requirement": ("tp-requirement-analysis", "requirement"),
-        "product": ("tp-product-design", "product"),
-        "architecture": ("tp-architecture-design", "architecture"),
-        "development": ("tp-development-engineering", "development"),
+        "requirement": ("tp-product-manager", "requirement"),
+        "product": ("tp-product-manager", "product"),
+        "architecture": ("tp-software-architect", "architecture"),
+        "planning": ("tp-tech-lead", "planning"),
+        "development": ("tp-development-engineer", "development"),
     }
     if stage in mapping:
         actor, phase = mapping[stage]
@@ -340,6 +353,9 @@ def _stage_completion_event(stage: str, events: List[Dict[str, Any]]) -> Optiona
     if stage == "verification":
         v = _latest_verification(events)
         return v["event"] if v and v["decision"] == "PASS" else None
+    if stage == "review":
+        r = _latest_code_review(events)
+        return r["event"] if r and r["decision"] == "PASS" else None
     return None
 
 def _stage_done(stage: str, events: List[Dict[str, Any]]) -> bool:
@@ -353,6 +369,8 @@ def _stage_has_activity(stage: str, events: List[Dict[str, Any]]) -> bool:
         return _latest_arch_review(events) is not None
     if stage == "verification":
         return _latest_verification(events) is not None
+    if stage == "review":
+        return _latest_code_review(events) is not None
     return False
 
 
@@ -374,6 +392,10 @@ def _stage_included(step: Dict[str, Any], level: str, task: Dict[str, Any], even
         return level == "L3"
     if trigger == "behavioral_change":
         return "workflow:behavioral-change" in signals
+    if trigger == "contextual":
+        return include in signals
+    if trigger == "deep_review":
+        return "workflow:deep-review" in signals
     return False
 
 
@@ -408,17 +430,22 @@ def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]]) -> D
     knowledge_signals: List[Dict[str, Any]] = []
     delivery_signals: List[str] = []
     verification_binding: Optional[Dict[str, Any]] = None
-    for stage, actor in (("requirement", "tp-requirement-analysis"),
-                         ("product", "tp-product-design"),
-                         ("architecture", "tp-architecture-design"),
-                         ("architecture_review", "tp-architecture-review"),
-                         ("development", "tp-development-engineering"),
-                         ("verification", "tp-verification-engineering")):
+    for stage, actor in (("requirement", "tp-product-manager"),
+                         ("product", "tp-product-manager"),
+                         ("architecture", "tp-software-architect"),
+                         ("architecture_review", "tp-software-architect"),
+                         ("planning", "tp-tech-lead"),
+                         ("development", "tp-development-engineer"),
+                         ("verification", "tp-test-engineer"),
+                         ("review", "tp-code-reviewer")):
         if stage == "verification":
             latest = _latest_verification(events)
             selected = latest["event"] if latest else None
         elif stage == "architecture_review":
             latest_review = _latest_arch_review(events)
+            selected = latest_review["event"] if latest_review else None
+        elif stage == "review":
+            latest_review = _latest_code_review(events)
             selected = latest_review["event"] if latest_review else None
         else:
             selected = _latest_checkpoint(events, actor=actor, phase=stage)
@@ -475,6 +502,45 @@ def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]]) -> D
         "subagents": "forbidden-by-default",
     }
 
+def _role_capabilities(catalog: Dict[str, Any], role_id: str) -> set[str]:
+    for item in catalog.get("roles") or []:
+        if str(item.get("workflow_role") or "") == role_id:
+            return {str(x) for x in (item.get("capabilities") or []) if str(x)}
+    return set()
+
+def _conditional_role_recommendations(contract: Dict[str, Any], catalog: Dict[str, Any], *, phase: str, signals: set[str], risk_signals: Iterable[str]) -> List[Dict[str, Any]]:
+    risk_ids = {str(x) for x in risk_signals}
+    role_map = {str(r.get("workflow_role")): r for r in catalog.get("roles") or [] if isinstance(r, dict)}
+    recommendations: List[Dict[str, Any]] = []
+    for rule in contract.get("conditional_roles") or []:
+        if not isinstance(rule, dict):
+            continue
+        role_id = str(rule.get("role") or "")
+        if phase not in {str(x) for x in (rule.get("phases") or [])}:
+            continue
+        trigger = str(rule.get("trigger") or "")
+        matched = False
+        reason = None
+        if trigger == "security_risk":
+            matched = "workflow:security-risk" in signals or bool(risk_ids & {"PERMISSION", "SENSITIVE_ACCESS_CONTROL", "SECURITY"})
+            reason = "SECURITY_RISK"
+        elif trigger == "database_risk":
+            matched = "workflow:database-risk" in signals or bool(risk_ids & {"DDL", "DML", "PRODUCTION_DATA", "TRANSACTION", "HISTORICAL_REPAIR"})
+            reason = "DATABASE_RISK"
+        elif trigger == "deep_review":
+            matched = "workflow:deep-review" in signals
+            reason = "DEEP_REVIEW"
+        if not matched or role_id not in role_map:
+            continue
+        recommendations.append({
+            "role_id": role_id,
+            "skill_path": str(role_map[role_id].get("skill_path") or ""),
+            "trigger": trigger,
+            "reason_code": reason,
+            "capabilities": sorted(_role_capabilities(catalog, role_id)),
+        })
+    return recommendations
+
 def _execution_mode(step: Dict[str, Any], level: str, signals: set[str]) -> str:
     mode = step.get("mode")
     if mode == "AUTO_PLANNING":
@@ -506,7 +572,9 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
                 wake_prompt: Optional[str] = None,
                 required_effects: Optional[Iterable[str]] = None,
                 allowed_effects: Optional[Iterable[str]] = None,
-                decision_reason: Optional[str] = None) -> Dict[str, Any]:
+                decision_reason: Optional[str] = None,
+                recommended_roles: Optional[List[Dict[str, Any]]] = None,
+                recommended_skills: Optional[Iterable[str]] = None) -> Dict[str, Any]:
     effects = sorted({str(x) for x in (required_effects or []) if str(x)})
     allowed = None if allowed_effects is None else sorted({str(x) for x in allowed_effects if str(x)})
     decision = _decision_for_action(action)
@@ -533,6 +601,8 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
         "recommended_action": action,
         "reason_codes": reason_codes or [],
         "risk_escalation_signals": list(task.get("_risk_escalation_signals") or []),
+        "recommended_roles": recommended_roles or [],
+        "recommended_skills": sorted({str(x) for x in (recommended_skills or []) if str(x)}),
     }
     if allowed is not None:
         data["allowed_effects"] = allowed
@@ -556,7 +626,8 @@ def _route_role_boundary(task: Dict[str, Any], level: str, events: List[Dict[str
                          context: Optional[Dict[str, Any]] = None,
                          human_confirmation_already_satisfied: bool = False,
                          required_effects: Optional[Iterable[str]] = None,
-                         allowed_effects: Optional[Iterable[str]] = None) -> Dict[str, Any]:
+                         allowed_effects: Optional[Iterable[str]] = None,
+                         recommended_roles: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     binding: Optional[Dict[str, Any]] = None
     wake_prompt: Optional[str] = None
     transition = bool(source_event and source_role and source_role != role_id)
@@ -581,7 +652,7 @@ def _route_role_boundary(task: Dict[str, Any], level: str, events: List[Dict[str
                 action="await_confirmation", context=context,
                 transition_from_role=source_role, confirmation_policy=policy,
                 confirmation_binding=binding, required_effects=required_effects,
-                allowed_effects=allowed_effects,
+                allowed_effects=allowed_effects, recommended_roles=recommended_roles,
             )
         wake_prompt = workflow_controls.build_wake_prompt(
             task_id=str(task.get("task_id") or ""),
@@ -599,6 +670,7 @@ def _route_role_boundary(task: Dict[str, Any], level: str, events: List[Dict[str
         context=context, transition_from_role=source_role,
         confirmation_policy=policy, wake_prompt=wake_prompt,
         required_effects=required_effects, allowed_effects=allowed_effects,
+        recommended_roles=recommended_roles,
     )
 
 
@@ -658,14 +730,14 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
     if review and review["decision"] in {"REVISE", "BLOCKED"}:
         architecture_after_review = _stage_completion_event("architecture", events)
         if not architecture_after_review or int(architecture_after_review.get("id") or 0) <= int(review["event"].get("id") or 0):
-            role = role_map["tp-architecture-design"]
+            role = role_map["tp-software-architect"]
             code = "ARCHITECTURE_REVIEW_REVISE" if review["decision"] == "REVISE" else "ARCHITECTURE_REVIEW_BLOCKED_REWORK"
             mode = "COMPARATIVE" if "workflow:multiple-feasible-routes" in signals else "DIRECT"
             return _route_role_boundary(
                 task, level, events, policy=policy, next_stage="architecture",
-                role_id="tp-architecture-design", skill_path=str(role["skill_path"]),
+                role_id="tp-software-architect", skill_path=str(role["skill_path"]),
                 execution_mode=mode, reason_codes=[code], source_event=review["event"],
-                source_stage="architecture_review", source_role="tp-architecture-review",
+                source_stage="architecture_review", source_role="tp-software-architect",
             )
 
     verification = _latest_verification(events)
@@ -684,9 +756,9 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
         target_completion = _stage_completion_event(target, events)
         if not target_completion or int(target_completion.get("id") or 0) <= int(verification["event"].get("id") or 0):
             stage_to_role = {
-                "requirement": "tp-requirement-analysis",
-                "architecture": "tp-architecture-design",
-                "development": "tp-development-engineering",
+                "requirement": "tp-product-manager",
+                "architecture": "tp-software-architect",
+                "development": "tp-development-engineer",
             }
             rid = stage_to_role[target]
             mode = "COMPARATIVE" if target == "architecture" and "workflow:multiple-feasible-routes" in signals else "DIRECT"
@@ -694,7 +766,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                 task, level, events, policy=policy, next_stage=target, role_id=rid,
                 skill_path=str(role_map[rid]["skill_path"]), execution_mode=mode,
                 reason_codes=[code], source_event=verification["event"],
-                source_stage="verification", source_role="tp-verification-engineering",
+                source_stage="verification", source_role="tp-test-engineer",
             )
 
     pipeline = (contract.get("pipelines") or {}).get(level) or []
@@ -718,6 +790,10 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             raise OrchestrationError(f"pipeline references unknown role: {rid}")
         mode = _execution_mode(step, level, signals)
         context = _delivery_fact_pack(task, events) if stage == "delivery" else None
+        recommended_roles = _conditional_role_recommendations(
+            contract, catalog, phase=str(step.get("phase") or stage), signals=signals,
+            risk_signals=task.get("_risk_escalation_signals") or [],
+        )
         step_effects = [str(x) for x in (step.get("effects") or [])]
         if allowed_set is not None:
             missing_effects = sorted(set(step_effects) - allowed_set)
@@ -729,6 +805,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                     context=context, transition_from_role=previous_role,
                     confirmation_policy=policy, required_effects=missing_effects,
                     allowed_effects=allowed_set, decision_reason="effect_not_allowed",
+                    recommended_roles=recommended_roles,
                 )
 
         # Material confirmations are independent of each-stage flow control and
@@ -759,6 +836,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                     context=context, transition_from_role=previous_role,
                     confirmation_policy=policy, confirmation_binding=material_binding,
                     required_effects=step_effects, allowed_effects=allowed_set,
+                    recommended_roles=recommended_roles,
                 )
             material_satisfied = True
 
@@ -769,6 +847,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             source_stage=previous_stage, source_role=previous_role, context=context,
             human_confirmation_already_satisfied=material_satisfied,
             required_effects=step_effects, allowed_effects=allowed_set,
+            recommended_roles=recommended_roles,
         )
 
     return _route_dict(task, level, next_stage="complete", role_id=None, skill_path=None,
