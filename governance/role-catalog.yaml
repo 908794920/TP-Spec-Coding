@@ -1,6 +1,6 @@
 catalog_version: "5.2.5"
 base_version: "5.2.5"
-generated_utc: 20260819T182142Z
+generated_utc: 20260820T050801Z
 generated_by: update_role_catalog.py deterministic metadata/hash refresh
 human_actor:
   id: human_owner
@@ -14,7 +14,7 @@ roles:
   phases: [other]
   capabilities: [domain.routing, status.compact, explain.route]
   owns_states: []
-  content_sha256: 26F8ADC33050B0BEBC421E21B7B109A95C9962BC6D6BB72E7184A5D28B0B516B
+  content_sha256: 3C3C0B8DCAAB933B43D5C6E4E830EB4C0C939F324BC4A3A7B5D96F6BE703FCB6
 - workflow_role: tp-software-lifecycle
   display_name: tp-软件工程生命周期
   type: control-role
@@ -50,7 +50,7 @@ roles:
   phases: [other, delivery]
   capabilities: [knowledge.search, knowledge.ingest, knowledge.converge, knowledge.audit]
   owns_states: []
-  content_sha256: 768314C3930337CDB4D4F6923D80ADA34EDF4547BB7781BC60623360BC78E899
+  content_sha256: EE114074D2E5038D317775EC50CBD539D2E8ABEE639122AB0AE9697A7E6A5FBD
 - workflow_role: tp-wiki
   display_name: tp-wiki
   type: human-owner-skill
@@ -71,7 +71,7 @@ roles:
     - {id: requirement-clarification, path: skills/capabilities/requirement-clarification/SKILL.md, mode: conditional}
     - {id: assumption-management, path: skills/capabilities/assumption-management/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 6F8354DDBBA8241CBD3CF4A77075991363791E3611A5096F66FCD0FDE75ECA50
+  content_sha256: 8FCA125374C65A99B904FFE04B2F2D3CBD9B4108B67B2E435CBDDE01A6572D03
 - workflow_role: tp-software-architect
   display_name: tp-软件架构师
   type: workflow-role

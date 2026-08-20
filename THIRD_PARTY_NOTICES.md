@@ -13,6 +13,16 @@ TP-Spec-Coding itself is distributed under the repository's MIT License. The v5.
 
 The TP-Spec-Coding implementation is a Python adaptation integrated with TP-Spec-Coding's own Review/Evidence contracts; the upstream repository is not bundled as a runtime dependency.
 
+## Microsoft MarkItDown
+
+- Project: `microsoft/markitdown`
+- Runtime package: `markitdown[pdf,docx,xlsx,xls,pptx]==0.1.7`
+- License: MIT
+- TP-Spec-Coding integration: local document normalization through MarkItDown's `convert_local` Python API.
+- Source handling: upstream source code is not copied or vendored into this repository; MarkItDown is installed as a runtime dependency.
+
+The TP-Spec-Coding boundary intentionally exposes only explicit local-file conversion. Remote retrieval remains a separate responsibility.
+
 ## Design References Not Vendored
 
 The following projects were used as architecture/design references only; their source code is not copied into TP-Spec-Coding:

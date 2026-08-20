@@ -4,6 +4,8 @@
 
 - 从 **5.2.4** 收敛到 **5.2.5** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.2.5`，不再保留 `templates/5.2.4`。
 - 继续维持 Role-first 产品形态：`tp-spec-coding` 唯一默认产品入口、`tp-software-lifecycle` 软件工程 Domain Agent 与 9 个 Formal Role 的活动契约不变。
+- `tp-spec-coding` 的用户可见 Skill 名称校准为 `tp-软件生命周期`；稳定 `id` / `role` / 物理路径与内部 `tp-software-lifecycle` Domain Agent 均不改名。
+- 直接接入 Microsoft MarkItDown 0.1.7 作为本地文件→Markdown 转换运行时：新增显式 `tp-spec document convert` 与 Knowledge batch `ingest convert`，成功转换只生成 machine-owned intake、不越权决定 canonical truth，源文件 hash 漂移 fail-closed，单文件转换失败进入 quarantine。
 
 ## [5.2.4] Role-first Personal AI Software Engineering System — 2026-08-18
 

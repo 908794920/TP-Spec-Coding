@@ -1,6 +1,6 @@
 ---
 id: tp-spec-coding
-name: tp-统一入口
+name: tp-软件生命周期
 version: 5.2.5
 status: active
 type: control-role

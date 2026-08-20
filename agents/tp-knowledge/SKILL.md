@@ -115,6 +115,15 @@ REGISTER → MANIFEST/HASH → DEDUP → CONVERT/QUARANTINE
 → AI READ/UPDATE/CREATE/MERGE → FINAL TRUTH SCAN → INDEX → VERIFY → AUDIT → FINALIZE
 ```
 
+默认本地文档转换直接使用 Base 固定的 Microsoft MarkItDown 运行时，不重复实现 PDF/Office 解析器：
+
+```text
+tp-spec knowledge ingest register --workspace-root <workspace> --project <id> --batch <name> --source-root <path>
+tp-spec knowledge ingest convert  --workspace-root <workspace> --batch <name>
+```
+
+`convert` 只对已登记、hash 未漂移的本地 `convert_candidate` 生成 machine-owned Markdown intake；成功后来源仍保持 `pending`，不会自动升级成 canonical truth。转换失败只隔离对应 source 为 `quarantined`，后续 disposition / canonicalization 仍由本 Domain 按证据处理。
+
 目标不是“每份 Source 都生成一篇 Knowledge”，而是 **Registered Source Accountability = 100%**。允许 disposition：
 
 `pending / canonicalized / merged / source_only / duplicate / superseded / quarantined / excluded`。

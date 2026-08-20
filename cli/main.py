@@ -23,6 +23,7 @@ if __package__ in (None, ""):
 
 from cli import project_cmd
 from cli import product_cmd
+from cli import document_cmd
 from cli import base_maintenance
 from cli import task_cmd
 from cli import work_session_cmd
@@ -86,6 +87,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # tp-spec-coding unified product entry: shallow Domain routing only.
     product_cmd.add_product_subparsers(subparsers)
+
+    # Local-only document normalization; retrieval and Knowledge disposition remain separate.
+    document_cmd.add_document_subparsers(subparsers)
 
     # V5.2.5 Base convergence：安装根、Workspace Inventory、项目绑定与 Junction 收敛。
     base_maintenance.add_base_subparsers(subparsers)

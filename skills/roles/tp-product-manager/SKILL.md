@@ -19,6 +19,8 @@ description: tp-产品经理：TP-Spec-Coding v5.2.5 正式软件工程角色，
 3. **Requirement Ready**：确认关键语义已经足够后直接交给 Software Lifecycle 建 Task，不重复做产品分析。
 4. **明确 Bug / Code Task**：允许直接进入轻量 Task，不把 Product Manager 变成固定收费站。
 
+本地需求材料若是 PDF、DOCX、XLS/XLSX、PPTX 等非 Markdown 文档，按需先使用 `tp-spec document convert --source <file> --output <file>.md` 做输入标准化，再读取转换后的 Markdown；转换能力直接由 Microsoft MarkItDown 提供。不要要求用户手工转格式，也不要因为转换就自动写入 Knowledge/canonical。
+
 ## 专业判断
 - 严格区分：客户原始描述 / 确认事实 / AI 假设 / 待确认决策 / 未知现状。假设不得静默升级为事实。
 - 优先通过项目事实、配置、代码坐标和 canonical Knowledge 定向核实；Knowledge 命中不能替代当前 Wiki/Source Code 事实。
