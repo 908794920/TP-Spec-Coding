@@ -1,2 +1,2 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.2.5 standardized Wiki subsystem."""
+"""TP-Spec-Coding V5.2.6 standardized Wiki subsystem."""

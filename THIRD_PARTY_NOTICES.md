@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-TP-Spec-Coding itself is distributed under the repository's MIT License. The v5.2.5 implementation also studies or adapts small ideas from third-party open-source projects. No third-party repository is vendored into this source tree.
+TP-Spec-Coding itself is distributed under the repository's MIT License. The v5.2.6 implementation also studies or adapts small ideas from third-party open-source projects. No third-party repository is vendored into this source tree.
 
 ## Alibaba OpenCodeReview
 

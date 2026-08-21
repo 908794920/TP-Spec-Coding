@@ -1,4 +1,4 @@
-version: "5.2.5"
+version: "5.2.6"
 entry_role: tp-software-lifecycle
 level_resolution:
   rule: MAX_RISK_FLOW

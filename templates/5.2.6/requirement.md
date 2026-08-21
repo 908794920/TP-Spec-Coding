@@ -2,7 +2,7 @@
 artifact: requirement
 task_id: "TASK-YYYYMMDD-XXX"
 artifact_contract:
-  version: "5.2.5"
+  version: "5.2.6"
 status: ready
 source_refs: []
 ---

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.5 phase-aware artifact validator.
+"""V5.2.6 phase-aware artifact validator.
 
 The validator intentionally separates *working* checks from *closing* checks.
 A role entering VERIFYING must not be required to have already produced the
@@ -78,7 +78,7 @@ def validate_artifacts(
 
     if mode == "handoff":
         raise ValueError(
-            "legacy long-state handoff validation is retired in v5.2.5; "
+            "legacy long-state handoff validation is retired in v5.2.6; "
             "use workflow next + record-first task operations"
         )
     else:
@@ -120,7 +120,7 @@ def validate_artifacts(
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m cli.validator", description="V5.2.5 phase-aware artifact validator")
+    parser = argparse.ArgumentParser(prog="python -m cli.validator", description="V5.2.6 phase-aware artifact validator")
     parser.add_argument("--task-dir", required=True, help="task directory")
     parser.add_argument("--db", default=None, help="sqlite db path (required for --mode handoff)")
     parser.add_argument("--task", default=None, help="task id (required for --mode handoff)")
