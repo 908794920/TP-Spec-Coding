@@ -13,10 +13,10 @@ def test_migration_role_map_preserves_current_and_human_identity():
 
 
 def test_active_contract_is_only_524():
-    assert (BASE / "VERSION").read_text(encoding="utf-8").strip() == "5.2.4"
+    assert (BASE / "VERSION").read_text(encoding="utf-8").strip() == "5.2.5"
     compat = yaml.safe_load((BASE / "governance/compat-matrix.yaml").read_text(encoding="utf-8"))
-    assert set(compat["contracts"]) == {"5.2.4"}
-    assert compat["contracts"]["5.2.4"]["base_version"] == "5.2.4"
+    assert set(compat["contracts"]) == {"5.2.5"}
+    assert compat["contracts"]["5.2.5"]["base_version"] == "5.2.5"
 
 
 def test_governed_role_first_contract_versions_are_524():
@@ -27,12 +27,12 @@ def test_governed_role_first_contract_versions_are_524():
         ("governance/role-catalog.yaml", "catalog_version"),
     ]:
         data = yaml.safe_load((BASE / rel).read_text(encoding="utf-8"))
-        assert str(data[field]) == "5.2.4", rel
+        assert str(data[field]) == "5.2.5", rel
 
 
 def test_only_active_template_contract_is_524():
     templates = BASE / "templates"
     version_dirs = sorted(p.name for p in templates.iterdir() if p.is_dir() and p.name[0].isdigit())
-    assert version_dirs == ["5.2.4"]
-    assert (templates / "5.2.4/requirement.md").is_file()
-    assert not (templates / "5.2.4/requirement-knowledge.md").exists()
+    assert version_dirs == ["5.2.5"]
+    assert (templates / "5.2.5/requirement.md").is_file()
+    assert not (templates / "5.2.5/requirement-knowledge.md").exists()

@@ -1,4 +1,4 @@
-version: "5.2.4"
+version: "5.2.5"
 team:
   name: "Personal AI Software Engineering System"
   description: "一人项目组的软件工程能力外骨骼；正式角色负责专业判断，Runtime 旁路留痕，用户体验保持简单。"
@@ -8,7 +8,7 @@ team:
     - "L0~L3 裁剪 phase，Role Resolver 裁剪角色，Role 自身按需加载 Skill/Sub-Skill。"
     - "角色首先完成真实软件工程工作；机器元数据、投影、事件和可信绑定由 Runtime/CLI 维护。"
     - "缺少推荐工件/可选 Skill 默认不阻塞；只有真实性、完整性、明确 blocker、高风险授权和关键用户决策才 BLOCK。"
-    - "历史 actor_role/owner_role 保留原始事实；active runtime 只存在 v5.2.4 canonical role model。"
+    - "历史 actor_role/owner_role 保留原始事实；active runtime 只存在 v5.2.5 canonical role model。"
 
 human_owner:
   name: "个人用户"

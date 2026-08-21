@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Neutral durable transaction/projection primitives for V5.2.4 Record-first Runtime.
+"""Neutral durable transaction/projection primitives for V5.2.5 Record-first Runtime.
 
 This module contains no legacy long-state workflow or Action-role policy.  Migration-only
 compatibility remains under :mod:`cli.migrations.v5_2_3`.
@@ -41,7 +41,7 @@ def _continuation_sources(task_dir: Path, state: str) -> List[Path]:
         names.extend(["implementation.md", "codex-review.md"])
     elif state == "VERIFYING":
         names.append("implementation.md")
-    # V5.2.4 §3.8/§10.2：新工件经集中注册表纳入 source digest（存在才纳入）
+    # V5.2.5 §3.8/§10.2：新工件经集中注册表纳入 source digest（存在才纳入）
     names.extend(projection_cmd.projection_source_names())
     return [task_dir / name for name in names if (task_dir / name).is_file()]
 
@@ -129,7 +129,7 @@ def _latest_projected_verification(task_dir: Path) -> str:
 def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str) -> str:
     """Render the readable current view from ledger facts.
 
-    V5.2.4 intentionally exposes state/phase/result facts, not handoff bureaucracy.
+    V5.2.5 intentionally exposes state/phase/result facts, not handoff bureaucracy.
     """
     state = str(task["current_state"] or "NEW")
     owner = str(task["owner_role"] or "unknown")
@@ -157,7 +157,7 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
         f"- 当前阶段：{phase}\n"
         f"- 最近执行角色：{owner}\n"
         f"- 最近记录：{summary}\n"
-        "\n> V5.2.4：phase 是查询事实，不是流程门禁；继续完成业务工作即可。\n"
+        "\n> V5.2.5：phase 是查询事实，不是流程门禁；继续完成业务工作即可。\n"
     )
     return _generated_view_text(task_dir, "continuation.md", body, sources, flush_id)
 
@@ -281,7 +281,7 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
                          db_state_before: str = "", target_state: str = "",
                          owner_before: str = "", owner_after: str = "",
                          flush_id: str = "") -> Dict[str, str]:
-    """一致性提交核心（V5.2.4 durable journal 版）：
+    """一致性提交核心（V5.2.5 durable journal 版）：
 
     1. BEGIN IMMEDIATE 获取 SQLite writer serialization；2. 读取 revision 并备份现有投影；
     3. 写 durable journal（PREPARED）；4. db_and_render(conn) 写 DB 并渲染投影；

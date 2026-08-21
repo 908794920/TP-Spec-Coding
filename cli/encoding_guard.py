@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.4 UTF-8 安全输入守卫（A-05 修复：真实中文 mojibake 识别）。
+"""V5.2.5 UTF-8 安全输入守卫（A-05 修复：真实中文 mojibake 识别）。
 
 纯 stdlib、离线。所有进入权威事件/handoff 的自由文本（summary/changes/
 risks/evidence/action/constraint/decision/authorization）
@@ -8,7 +8,7 @@ risks/evidence/action/constraint/decision/authorization）
 - UTF-8 round-trip：``text.encode("utf-8").decode("utf-8") == text``；
 - mojibake 特征检测：U+FFFD 替换符、UTF-8 被按 Latin-1/Windows-1252 误读的
   双字节序列（如 ``\u00c3`` 族、``â€`` 族）、连续 3+ 问号占位；
-- 可逆重解码检测（V5.2.4 修复）：尝试将文本按 latin1/cp1252 重新编码后再按
+- 可逆重解码检测（V5.2.5 修复）：尝试将文本按 latin1/cp1252 重新编码后再按
   UTF-8 解码，若产生明显 CJK 而原文本含高比例扩展 Latin 字符，判定为
   中文 UTF-8→Latin-1 误读（实际样本如 ``å¼€å§‹`` → ``开始``）；
   正常西欧文本（法语等）不会被拒绝。
@@ -16,7 +16,7 @@ risks/evidence/action/constraint/decision/authorization）
 命中高风险特征时抛 EncodingValidationError（CLI 输出 ENCODING_VALIDATION_FAILED），
 调用方必须保证数据库与投影零变化。
 
-设计依据：V5.2.4 AI-A 定向修复任务书 §7 与审查报告 §3.6。
+设计依据：V5.2.5 AI-A 定向修复任务书 §7 与审查报告 §3.6。
 """
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.4 基座阻塞错误语义（A-06）。
+"""V5.2.5 基座阻塞错误语义（A-06）。
 
 业务角色遇到本模块定义的错误码时不得继续业务工作：不得修改数据库、
 不得修改基座、不得删除事件、不得绕过检查；只能停止任务并交给基座修复方。
@@ -7,7 +7,7 @@
 AI-A 在 commit preflight / reconcile 中抛出并输出这些语义；
 manifest/validator 侧的错误码由 AI-C 的 C-06 门禁复用同一常量接入。
 
-设计依据：V5.2.4 AI-A 任务书 §九（BASELINE_BLOCKED）与 A-06。
+设计依据：V5.2.5 AI-A 任务书 §九（BASELINE_BLOCKED）与 A-06。
 """
 from __future__ import annotations
 

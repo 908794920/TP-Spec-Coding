@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Shared Content Systems configuration and path resolution.
 
-V5.2.4 keeps Wiki and Knowledge as first-class content systems while separating
+V5.2.5 keeps Wiki and Knowledge as first-class content systems while separating
 logical project mounts from physical storage.  This module is the single resolver
 used by both subsystems; ``cli.wiki.config`` remains a compatibility re-export.
 """

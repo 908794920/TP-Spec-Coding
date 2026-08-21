@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding governed-YAML schema registry (V5.2.4 C-01.4, decision D-07/T5).
+"""TP-Spec-Coding governed-YAML schema registry (V5.2.5 C-01.4, decision D-07/T5).
 
 Schemas are plain Python dicts co-versioned with the loader: no external
 schema files (the ``.schema.yaml`` approach was retired by human_owner
@@ -22,7 +22,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
     "workflow": {
         "file": "governance/workflow.yaml",
         "version_field": "version",
-        "supported_versions": ["5.2.4"],
+        "supported_versions": ["5.2.5"],
         "properties": {
             "version": {"type": str, "required": True},
             "workflow": {"type": dict, "required": True},
@@ -35,7 +35,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
     "ai-role": {
         "file": "governance/ai-role.yaml",
         "version_field": "version",
-        "supported_versions": ["5.2.4"],
+        "supported_versions": ["5.2.5"],
         "properties": {
             "version": {"type": str, "required": True},
             "team": {"type": dict, "required": True},
@@ -86,7 +86,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
     "orchestration": {
         "file": "governance/orchestration.yaml",
         "version_field": "version",
-        "supported_versions": ["5.2.4"],
+        "supported_versions": ["5.2.5"],
         "properties": {
             "version": {"type": str, "required": True},
             "entry_role": {"type": str, "required": True},
@@ -102,7 +102,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
     "role-catalog": {
         "file": "governance/role-catalog.yaml",
         "version_field": "catalog_version",
-        "supported_versions": ["5.2.4"],
+        "supported_versions": ["5.2.5"],
         "properties": {
             "catalog_version": {"type": str, "required": True},
             "base_version": {"type": str, "required": True},
@@ -116,9 +116,9 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
         },
     },
     "status-template": {
-        "file": "templates/5.2.4/status.yaml",
+        "file": "templates/5.2.5/status.yaml",
         "version_field": "artifact_contract.version",
-        "supported_versions": ["5.2.4"],
+        "supported_versions": ["5.2.5"],
         "properties": {
             "task_id": {"type": str, "required": True},
             "task_name": {"type": str, "required": False},

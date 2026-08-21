@@ -39,4 +39,4 @@ Before INDEX/VERIFY/L4, run `tp-spec knowledge scan` **after the final canonical
 - Multi-model/parallel ingestion must have deterministic progress ownership; SQLite projection writes are serialized.
 - Destructive source cleanup, ambiguous project assignment, merge/split uncertainty and evidence conflicts are fail-closed for unattended maintenance.
 
-Format-specific conversion (WPS/Word/PDF adapters, OCR, etc.) is an adapter concern. Base owns the manifest/disposition/progress contract, not a user-machine-specific office path.
+The default local conversion adapter is Microsoft MarkItDown, invoked through TP-Spec-Coding's narrow `convert_local` boundary. Base does not reimplement PDF/Office parsers and does not let document normalization silently become HTTP/URL retrieval. Registered-source hash drift blocks conversion before output/manifest mutation; per-source conversion failure enters `quarantined`. OCR/cloud-specific enhancement remains an optional adapter concern rather than a user-machine-specific office path requirement.

@@ -1,11 +1,11 @@
 ---
 id: tp-software-architect
 name: tp-软件架构师
-version: 5.2.4
+version: 5.2.5
 status: active
 type: workflow-role
 role: tp-software-architect
-description: tp-软件架构师：TP-Spec-Coding v5.2.4 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-软件架构师：TP-Spec-Coding v5.2.5 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-软件架构师

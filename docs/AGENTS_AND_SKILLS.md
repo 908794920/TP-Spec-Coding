@@ -1,4 +1,4 @@
-# TP-Spec-Coding Agent / Role / Skill 入口（v5.2.4）
+# TP-Spec-Coding Agent / Role / Skill 入口（v5.2.5）
 
 `governance/role-catalog.yaml` 是 active Domain Agent / Formal Role → Skill path 的单一权威。历史 previous-contract Action Role 只用于 migration/history，不能参与 active routing。
 

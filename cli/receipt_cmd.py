@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.4 高风险动作收据（execution receipt）命令。
+"""V5.2.5 高风险动作收据（execution receipt）命令。
 
 receipt 是动作发生时的不可变审计记录：
 - 固定落盘 `.tp-spec/tasks/<TASK-ID>/evidence/receipts/REC-<UTC>-<UUID>.json`；
@@ -7,14 +7,14 @@ receipt 是动作发生时的不可变审计记录：
 - 不改变 workflow 状态，不写 SQLite 账本，不要求重写阶段主工件；
 - 高风险动作收据用于范围变化、阻塞、DML/DDL、生产动作和外部调用；它不承担人员审批。
 
-V5.2.4 B-16（P1 补强，评审表 9.4 第 3 行 / Q2 / Q8）：
-- capability 块新增 provenance（trusted/untrusted/unknown）与 delegated_from（V5.2.4 恒 null）
+V5.2.5 B-16（P1 补强，评审表 9.4 第 3 行 / Q2 / Q8）：
+- capability 块新增 provenance（trusted/untrusted/unknown）与 delegated_from（V5.2.5 恒 null）
   及 classifier_version/classifier_sha256/classification_status；
 - 纯确定性判定器（R1 repo: 前缀 / R2 .json/.yaml/.yml / R3 .py/.go/.ts/.js /
   R4 fail-closed 默认 untrusted），判定器永不输出 unknown；
 - 分类失败 fail-closed 原子写 receipt 不丢审计；调用方只能提高风险不能降低。
 
-V5.2.4 9.5-1（P1 补强，评审表 9.5 第 1 行 / 升级计划 §3.1 L115-116）：
+V5.2.5 9.5-1（P1 补强，评审表 9.5 第 1 行 / 升级计划 §3.1 L115-116）：
 - capability 块新增 scan 字段（敏感路径扫描结果，与 B-16 provenance/sensitivity 双轴正交）；
 - 扫描命中时 escalate sensitivity 为 secret，扫描错误时 classification_status=error；
 - 扫描器异常 fail-closed 按最高敏感度处理，不静默放行（设计 §6：扫描器自身异常
@@ -55,7 +55,7 @@ _ACTION_TYPES = (
 _ALLOWED_ACTORS = ("tp-product-manager", "tp-software-architect", "tp-tech-lead", "tp-security-engineer", "tp-development-engineer", "tp-database-engineer", "tp-test-engineer", "tp-code-reviewer", "tp-integration-engineer", "human_owner")
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
-# --- V5.2.4 B-16：provenance 轻量判定规则（版本化 + 内容哈希双锚点） ---
+# --- V5.2.5 B-16：provenance 轻量判定规则（版本化 + 内容哈希双锚点） ---
 _CLASSIFIER_VERSION = "1.0.0"
 _TRUSTED_META_EXTS = (".json", ".yaml", ".yml")    # R2：结构化元数据扩展名
 _TRUSTED_CODE_EXTS = (".py", ".go", ".ts", ".js")  # R3：代码扩展名
@@ -73,7 +73,7 @@ _CLASSIFIER_SHA256 = "sha256:" + hashlib.sha256(_RULES_SOURCE.encode("utf-8")).h
 
 
 def classify_provenance(resource_ref: str | None) -> tuple[str, str]:
-    """V5.2.4 B-16 纯确定性判定器（R1-R4，fail-closed）。
+    """V5.2.5 B-16 纯确定性判定器（R1-R4，fail-closed）。
 
     返回 (provenance, classification_status)；判定器永不输出 unknown。
     """
@@ -96,7 +96,7 @@ def classify_provenance(resource_ref: str | None) -> tuple[str, str]:
 
 
 def _build_capability(resource_ref: str | None, declared_provenance: str | None, declared_sensitivity: str | None) -> dict:
-    """构造 receipt capability 块（V5.2.4 B-16）。
+    """构造 receipt capability 块（V5.2.5 B-16）。
 
     - 判定器确定性输出 trusted/untrusted；unknown 仅允许显式声明（B16 §4.3）；
     - 调用方只能提高风险，不能覆盖为更低风险（升级计划 §3.6 L224）：
@@ -120,7 +120,7 @@ def _build_capability(resource_ref: str | None, declared_provenance: str | None,
     provenance = declared_provenance if declared_provenance is not None else classified
     sensitivity = declared_sensitivity if declared_sensitivity is not None else "unknown"
 
-    # V5.2.4 9.5-1：敏感信息路径扫描（与 B-16 provenance/sensitivity 双轴正交）
+    # V5.2.5 9.5-1：敏感信息路径扫描（与 B-16 provenance/sensitivity 双轴正交）
     # F2 fail-closed 兜底（设计 §6）：扫描器自身异常（规则加载/hash/IO 中断）一律按
     # 命中处理，禁止异常穿透崩溃 receipt 写入；receipt 仍原子写入不丢审计。
     try:
@@ -150,11 +150,11 @@ def _build_capability(resource_ref: str | None, declared_provenance: str | None,
         "resource_scope": [],
         "provenance": provenance,
         "sensitivity": sensitivity,
-        "delegated_from": None,  # V5.2.4 恒 null（schema 预留，升级计划 L219）
+        "delegated_from": None,  # V5.2.5 恒 null（schema 预留，升级计划 L219）
         "classifier_version": _CLASSIFIER_VERSION,
         "classifier_sha256": _CLASSIFIER_SHA256,
         "classification_status": status,
-        # V5.2.4 9.5-1：敏感路径扫描结果（与 B-16 provenance/sensitivity 双轴正交，禁止合并）
+        # V5.2.5 9.5-1：敏感路径扫描结果（与 B-16 provenance/sensitivity 双轴正交，禁止合并）
         "scan": scan_result,
     }
 
@@ -188,7 +188,7 @@ def cmd_receipt(args) -> int:
         raise ValueError("status.yaml is missing task_id")
     if status_task_id != args.task:
         raise ValueError(f"--task '{args.task}' does not match status.yaml task_id '{status_task_id}'")
-    # V5.2.4 单一活动契约：旧契约非终态任务须先经官方 migrate/retire 处理；业务命令不直接在旧契约上追加收据。
+    # V5.2.5 单一活动契约：旧契约非终态任务须先经官方 migrate/retire 处理；业务命令不直接在旧契约上追加收据。
     contract_match = re.search(r"(?ms)^artifact_contract:\s*\n\s+version:\s*[\"']?([^\"'\n#]+)", status_text)
     contract_version = contract_match.group(1).strip() if contract_match else ""
     if contract_version != active_version():
@@ -220,7 +220,7 @@ def cmd_receipt(args) -> int:
         "result": args.result,
         "timestamp": dbmod.now_iso(),
         "evidence_hash": evidence_hash,
-        # V5.2.4 B-16：capability 块（纯增量，不删旧字段）
+        # V5.2.5 B-16：capability 块（纯增量，不删旧字段）
         "capability": _build_capability(args.resource_ref, args.provenance, args.sensitivity),
     }
     receipts_dir = task_dir / "evidence" / "receipts"
@@ -247,7 +247,7 @@ def add_receipt_subparsers(subparsers) -> None:
     p.add_argument("--script", help="Path to the action script; its SHA-256 is computed automatically")
     p.add_argument("--result", required=False, help="Result / impact range")
     p.add_argument("--evidence-hash", required=False, help="SHA-256 of the evidence payload")
-    # V5.2.4 B-16：capability 判定输入（纯增量）
+    # V5.2.5 B-16：capability 判定输入（纯增量）
     p.add_argument("--resource-ref", help="Structured resource reference for provenance classification (repo: prefix / file extension); absent defaults to untrusted (fail-closed)")
     p.add_argument("--provenance", choices=sorted(_PROVENANCE_VALUES), help="Explicit provenance declaration; unknown is explicit-declaration only (classifier never outputs it); cannot lower classifier risk")
     p.add_argument("--sensitivity", choices=sorted(_SENSITIVITY_VALUES), help="Data sensitivity; defaults to unknown (never pretend public)")

@@ -20,16 +20,16 @@ def _make_db() -> tuple[Path, object]:
     with dbmod.transactional(conn):
         conn.execute(
             "INSERT INTO project(project_id,project_name,root_path,base_version,schema_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-            ("A", "A", str(root / "A"), "5.2.4", 1, now, now),
+            ("A", "A", str(root / "A"), "5.2.5", 1, now, now),
         )
         conn.execute(
             "INSERT INTO project(project_id,project_name,root_path,base_version,schema_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-            ("B", "B", str(root / "B"), "5.2.4", 1, now, now),
+            ("B", "B", str(root / "B"), "5.2.5", 1, now, now),
         )
         for task_id, project_id in (("TASK-A1", "A"), ("TASK-A2", "A"), ("TASK-B1", "B")):
             conn.execute(
                 "INSERT INTO task(task_id,project_id,title,risk_level,flow_level,current_state,current_stage,owner_role,base_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (task_id, project_id, task_id, "L1", "L1", "ACTIVE", "development", "tp-development-engineer", "5.2.4", now, now),
+                (task_id, project_id, task_id, "L1", "L1", "ACTIVE", "development", "tp-development-engineer", "5.2.5", now, now),
             )
     return path, conn
 

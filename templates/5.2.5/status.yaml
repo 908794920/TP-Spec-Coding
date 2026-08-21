@@ -1,9 +1,9 @@
 task_id: "TASK-YYYYMMDD-XXX"
 task_name: ""
 created: "YYYY-MM-DD"
-base_version: "5.2.4"
+base_version: "5.2.5"
 artifact_contract:
-  version: "5.2.4"
+  version: "5.2.5"
 current_state: "NEW"
 current_phase: "intake"
 current_owner: "tp-software-lifecycle"

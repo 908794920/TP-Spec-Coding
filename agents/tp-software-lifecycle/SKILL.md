@@ -1,7 +1,7 @@
 ---
 id: tp-software-lifecycle
 name: tp-软件工程生命周期
-version: 5.2.4
+version: 5.2.5
 status: active
 type: control-role
 role: tp-software-lifecycle

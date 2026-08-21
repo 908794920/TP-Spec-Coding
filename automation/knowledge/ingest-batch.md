@@ -1,4 +1,4 @@
-# External Knowledge Ingest Batch Protocol — V5.2.4
+# External Knowledge Ingest Batch Protocol — V5.2.5
 
 This protocol is invoked explicitly for a named external-document/source batch. It is not part of every daily maintenance run.
 
@@ -24,6 +24,7 @@ REGISTER
 
 ```text
 tp-spec knowledge ingest register --workspace-root <workspace> --project <id> --batch <name> --source-root <path>
+tp-spec knowledge ingest convert  --workspace-root <workspace> --batch <name>
 tp-spec knowledge ingest status   --workspace-root <workspace> --batch <name>
 ```
 
@@ -35,7 +36,7 @@ Registration writes only machine-owned manifest/progress under the configured in
 - Hash/deduplicate before spending model tokens.
 - Search canonical before creating new knowledge.
 - Prefer update/merge over duplicate canonical creation.
-- Conversion adapters are environment-specific; failure becomes `quarantined`, not silent loss.
+- Default local conversion uses the pinned Microsoft MarkItDown runtime through `convert_local`; Base does not reimplement Office/PDF parsing. Failure becomes `quarantined`, not silent loss.
 - `pending` means not yet adjudicated; finalization requires every registered source to have a terminal disposition.
 - `source_only`, `duplicate`, `superseded`, `quarantined`, `excluded` are valid outcomes and do not lower source accountability.
 - Deleting originals, moving external archives, ambiguous merge/split, or conflicting evidence is forbidden in unattended mode.

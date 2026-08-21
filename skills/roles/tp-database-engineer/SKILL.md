@@ -1,11 +1,11 @@
 ---
 id: tp-database-engineer
 name: tp-数据库工程师
-version: 5.2.4
+version: 5.2.5
 status: active
 type: workflow-role
 role: tp-database-engineer
-description: tp-数据库工程师：TP-Spec-Coding v5.2.4 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-数据库工程师：TP-Spec-Coding v5.2.5 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-数据库工程师

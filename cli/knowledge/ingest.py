@@ -8,10 +8,15 @@ import fnmatch
 import hashlib
 import json
 
+from cli.document_conversion import convert_local_file, markitdown_runtime
 from .common import meta_paths, now_iso, read_json, read_jsonl, write_json, write_jsonl
 
 TERMINAL = {"canonicalized", "merged", "source_only", "duplicate", "superseded", "quarantined", "excluded"}
 VALID = TERMINAL | {"pending"}
+CONVERT_CANDIDATE_EXTENSIONS = {
+    ".md", ".txt", ".pdf", ".docx", ".xls", ".xlsx", ".pptx",
+    ".csv", ".json", ".yaml", ".yml", ".xml", ".html", ".htm",
+}
 
 
 def _ingest_root(cfg) -> Path:
@@ -71,8 +76,8 @@ def register_batch(cfg, *, project: str, batch: str, source_root: Path) -> Dict[
         elif allowed and suffix not in allowed: disposition="excluded"; reason="extension-not-enabled"
         elif sha in first_by_hash: disposition="duplicate"; reason=f"duplicate-of:{first_by_hash[sha]}"
         else: first_by_hash[sha]=rel
-        if suffix in {".md",".txt",".pdf",".doc",".docx"}: classification="convert_candidate"
-        elif suffix in {".xls",".xlsx",".ppt",".pptx"}: classification="register_summary"
+        if suffix in CONVERT_CANDIDATE_EXTENSIONS: classification="convert_candidate"
+        elif suffix in {".doc", ".ppt"}: classification="register_summary"
         else: classification="listed_only"
         rows.append({"source_id":source_id,"project":project,"batch":batch,"origin_path":rel,"sha256":sha,"size":p.stat().st_size,"mtime_ns":p.stat().st_mtime_ns,"classification":classification,"disposition":disposition,"canonical_ids":[],"reason":reason})
     paths["root"].mkdir(parents=True,exist_ok=True)
@@ -80,6 +85,143 @@ def register_batch(cfg, *, project: str, batch: str, source_root: Path) -> Dict[
     write_json(paths["meta"],{"schema":"tp-spec.knowledge-ingest-batch/v1","batch":batch,"project":project,"source_root":str(source_root),"registered_at":now_iso(),"source_count":len(rows),"finalized_at":None})
     _sync_global_registry(cfg,rows)
     return ingest_status(cfg,batch)
+
+
+def _safe_origin_path(source_root: Path, origin_path: str) -> Path:
+    rel = Path(origin_path)
+    if rel.is_absolute() or ".." in rel.parts:
+        raise ValueError(f"unsafe registered origin path: {origin_path}")
+    candidate = (source_root / rel).resolve(strict=False)
+    try:
+        candidate.relative_to(source_root)
+    except ValueError as exc:
+        raise ValueError(f"registered origin escapes source root: {origin_path}") from exc
+    return candidate
+
+
+def _conversion_path(cfg, paths: Dict[str, Path], origin_path: str) -> tuple[Path, str]:
+    rel = Path(origin_path)
+    output = paths["root"] / "converted" / Path(rel.as_posix() + ".md")
+    knowledge_root = cfg.paths.knowledge_physical_root.resolve(strict=False)
+    resolved = output.resolve(strict=False)
+    try:
+        display = resolved.relative_to(knowledge_root).as_posix()
+    except ValueError:
+        display = str(resolved)
+    return output, display
+
+
+def convert_batch(
+    cfg,
+    *,
+    batch: str,
+    source_id: Optional[str] = None,
+    origin_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Normalize pending registered files with MarkItDown without deciding Knowledge truth.
+
+    Successful conversion deliberately leaves ``disposition`` as ``pending``; conversion
+    creates machine-owned intake material only.  A per-source converter failure is an
+    accounted quarantine outcome, while source drift blocks the whole conversion preflight.
+    """
+    runtime = markitdown_runtime()
+    paths = batch_paths(cfg, batch)
+    meta = read_json(paths["meta"], {}) or {}
+    if not paths["manifest"].is_file() or not meta:
+        raise ValueError(f"batch not registered: {batch}")
+    if meta.get("finalized_at"):
+        raise ValueError(f"batch already finalized: {batch}")
+
+    source_root_raw = str(meta.get("source_root") or "").strip()
+    if not source_root_raw:
+        raise ValueError(f"batch source_root missing: {batch}")
+    source_root = Path(source_root_raw).resolve(strict=True)
+    if not source_root.is_dir():
+        raise ValueError(f"batch source root is not a directory: {source_root}")
+
+    rows = read_jsonl(paths["manifest"])
+    candidate_indexes: List[int] = []
+    skipped_indexes: List[int] = []
+    identifier_matches: List[int] = []
+    for index, row in enumerate(rows):
+        if source_id is not None and str(row.get("source_id") or "") != source_id:
+            continue
+        if origin_path is not None and str(row.get("origin_path") or "") != origin_path:
+            continue
+        if source_id is not None or origin_path is not None:
+            identifier_matches.append(index)
+        if str(row.get("disposition") or "") != "pending":
+            continue
+        if str(row.get("classification") or "") != "convert_candidate":
+            continue
+        if str(row.get("conversion_status") or "") == "converted":
+            skipped_indexes.append(index)
+            continue
+        candidate_indexes.append(index)
+
+    if source_id is not None or origin_path is not None:
+        if not identifier_matches:
+            needle = source_id or origin_path or ""
+            raise ValueError(f"source not found in batch: {needle}")
+        if source_id is not None and origin_path is None and len(identifier_matches) > 1:
+            raise ValueError("source_id appears multiple times; specify --origin-path")
+
+    # Validate every selected source before creating any output or changing any manifest row.
+    resolved_sources: Dict[int, Path] = {}
+    for index in candidate_indexes:
+        row = rows[index]
+        origin = str(row.get("origin_path") or "")
+        source = _safe_origin_path(source_root, origin)
+        if not source.is_file() or _sha256(source) != str(row.get("sha256") or ""):
+            raise ValueError(f"source changed since registration: {origin}")
+        resolved_sources[index] = source
+
+    converted = 0
+    quarantined = 0
+    results: List[Dict[str, Any]] = []
+    for index in candidate_indexes:
+        row = rows[index]
+        origin = str(row.get("origin_path") or "")
+        output, display_path = _conversion_path(cfg, paths, origin)
+        try:
+            conversion = convert_local_file(resolved_sources[index], output, overwrite=True)
+            converter = conversion.get("converter") if isinstance(conversion, dict) else None
+            if not isinstance(converter, dict):
+                converter = runtime
+            row["conversion_status"] = "converted"
+            row["conversion_path"] = display_path
+            row["conversion_sha256"] = str(conversion.get("output_sha256") or "")
+            row["converter"] = str(converter.get("name") or runtime.get("name") or "")
+            row["converter_version"] = str(converter.get("version") or runtime.get("version") or "")
+            row["converted_at"] = now_iso()
+            converted += 1
+            results.append({"source_id": row.get("source_id"), "origin_path": origin, "status": "converted", "conversion_path": display_path})
+        except Exception as exc:
+            row["disposition"] = "quarantined"
+            row["conversion_status"] = "failed"
+            row["converter"] = str(runtime.get("name") or "")
+            row["converter_version"] = str(runtime.get("version") or "")
+            row["reason"] = f"conversion-failed:{type(exc).__name__}:{exc}"
+            row["updated_at"] = now_iso()
+            quarantined += 1
+            results.append({"source_id": row.get("source_id"), "origin_path": origin, "status": "quarantined", "error": f"{type(exc).__name__}: {exc}"})
+
+    if candidate_indexes:
+        write_jsonl(paths["manifest"], rows)
+        _sync_global_registry(cfg, rows)
+
+    skipped = len(skipped_indexes)
+    return {
+        "schema": "tp-spec.knowledge-ingest-convert/v1",
+        "status": "PASS",
+        "batch": batch,
+        "selected": len(candidate_indexes),
+        "converted": converted,
+        "quarantined": quarantined,
+        "skipped": skipped,
+        "converter": runtime,
+        "results": results,
+    }
 
 
 def disposition(cfg, *, batch: str, source_id: str, disposition_name: str, canonical_ids: List[str], reason: str="", origin_path: Optional[str]=None) -> Dict[str, Any]:
