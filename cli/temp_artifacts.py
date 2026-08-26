@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.2.6 临时工件所有权与安全清理。"""
+"""TP-Spec-Coding V5.2.7 临时工件所有权与安全清理。"""
 from __future__ import annotations
 
 import json

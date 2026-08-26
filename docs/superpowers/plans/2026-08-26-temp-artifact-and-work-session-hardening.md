@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.10+, pathlib/tempfile/json/os/shutil/sqlite3, existing argparse CLI and unittest/pytest suite. No new third-party dependency, database table, background service, polling, or external network.
 
-**Spec:** User-approved scope in this conversation, grounded by `/mnt/data/4dccaf6f-d5fb-4edb-84a8-960933800e59.txt` and current Base source resolved as v5.2.6 from `/mnt/data/tp_src_check`.
+**Spec:** User-approved scope in this conversation, grounded by `/mnt/data/4dccaf6f-d5fb-4edb-84a8-960933800e59.txt` and current Base source resolved as v5.2.7 from `/mnt/data/tp_src_check`.
 
 ## Global Constraints
 
@@ -124,7 +124,7 @@
 - Test: existing suite plus `scripts/tests/test_v526_temp_artifacts.py`
 
 **Interfaces:**
-- No release-version bump; this remains v5.2.6 hardening on the supplied working-tree baseline.
+- No release-version bump; this remains v5.2.7 hardening on the supplied working-tree baseline.
 - Delivery is an incremental ZIP plus patch relative to the exact uploaded source state captured before this work.
 
 - [ ] Run targeted new tests and relevant Runtime/Record-first/maintenance/report regressions.
