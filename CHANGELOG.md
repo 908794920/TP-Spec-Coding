@@ -1,5 +1,16 @@
 # Changelog
 
+## [5.2.6] Open Release Line — 2026-08-21
+
+- 从 **5.2.5** 收敛到 **5.2.6** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.2.6`，不再保留 `templates/5.2.5`。
+- 继续维持 Role-first 产品形态：`tp-spec-coding` 唯一默认产品入口、`tp-software-lifecycle` 软件工程 Domain Agent 与 9 个 Formal Role 的活动契约不变。
+- 新增只读离线 HTML 信息卡片：`tp-spec card global/project/task` 从现有 Installation/Registry/Binding/Wiki/Knowledge/Runtime/Orchestration 事实生成一次性快照；正式 Runtime 步骤成功后 best-effort 刷新单一 Task 预览，不新增状态机、数据库、后台服务或网络依赖，卡片失败不改变原命令结果。
+- 稳定化卡片宿主展示：继续保留既有离线 HTML，同时覆盖当前工作区固定 `.tp-spec-preview/card/index.html` 作为 Web Artifact；导航与时间线统一使用 `button`/`hidden`，移除程序化滚动恢复并改为卡片内部滚动，降低嵌入宿主时的页面跳动；不引入 MCP Server、后台服务或第二套事实源。
+- 新增会话内 HTML 片段输出：三种显式卡片支持 `--inline-output`，正式 Runtime 白名单步骤支持单进程 `TP_SPEC_CARD_INLINE_OUTPUT`；Skill 在命令返回 `INLINE_VISUALIZATION` 后于同一次回复输出宿主引用，优先显示在会话中，并保留 Web Artifact/离线 HTML 两级降级；片段严格限制在 1 MB 内，超限时仅截断片段并显示提示。
+- 临时测试工件治理：`execution-temp` 迁移到系统 Temp 下按 `project/task/run` 隔离的 machine-owned 根，使用 `~/.tp-spec/temp-artifacts` JSON ownership manifest 记录 `ACTIVE/CLEANED/CLEANUP_PENDING`；`work end` 与 Task `complete/cancel` 做幂等清理，崩溃/重启后的已登记残留可通过只读 `temp orphan-check` 识别并显式重试清理，历史/未登记 `.tmp` 只报告不自动删除。
+- 临时工件安全边界：创建与清理均拒绝路径穿越、父级 symlink/Junction/reparse point 与所有权冲突，递归清理不跟随链接目标；用户原始输入、intake、正式 Task/evidence/Memory/Runtime 投影不纳入临时清理。并发 run 使用独立 run_id，`CLEANUP_PENDING` 仅为临时工件状态，不扩展五态 Task Runtime。
+- Work Session 耗时修正：`report stage-time` 改为按既有 `detail_json.session_id` 配对交错的 `WORK_SESSION_STARTED/ENDED`，按 `actor_role` 汇总可测 session 时长并显式报告 unmatched session；不再把事件间隔或 waiting end reason 伪装成工作/等待耗时，SQLite schema 与事件模型保持不变。
+
 ## [5.2.5] Open Release Line — 2026-08-20
 
 - 从 **5.2.4** 收敛到 **5.2.5** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.2.5`，不再保留 `templates/5.2.4`。

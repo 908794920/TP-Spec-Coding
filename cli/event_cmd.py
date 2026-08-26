@@ -197,7 +197,7 @@ def _map_event_to_task_event(evt: Dict[str, Any], task_id: str, workflow_version
 def cmd_event_sync(args) -> int:
     """回流 flush 追加的 events.jsonl 事件到 DB（M5-C，v3 §4 R2）。
 
-    V5.2.5 Hardening（任务书 §4.3）：默认禁止 event sync 推进权威状态。
+    V5.2.6 Hardening（任务书 §4.3）：默认禁止 event sync 推进权威状态。
     - 允许：导入非状态历史 FACT/DECISION（不更新 task.current_state/owner_role）；
     - 禁止：从可编辑文件（events.jsonl / handoff.json）同步 STATE、HANDOFF 指向的
       新状态、owner_role、completed_at、cancel 状态；
@@ -242,7 +242,7 @@ def cmd_event_sync(args) -> int:
     next_state = handoff_next.get("state") if isinstance(handoff_next, dict) else None
     next_owner = handoff_next.get("owner") if isinstance(handoff_next, dict) else None
 
-    # ---- V5.2.5 状态推进字段检测（§4.3 禁止清单）----
+    # ---- V5.2.6 状态推进字段检测（§4.3 禁止清单）----
     _STATE_MUTATION_KEYS = ("state", "to_state", "next", "intended_next", "owner", "owner_role", "completed_at", "cancel")
     state_mutation_found = False
     for evt in flush_events:
@@ -370,12 +370,12 @@ def cmd_event_sync(args) -> int:
                 conn.execute(
                     "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) "
                     "VALUES (?,?,?,?,?,?,?)",
-                    (task_id, "AUDIT", "human_owner", "admin recovery", detail, "5.2.5", now),
+                    (task_id, "AUDIT", "human_owner", "admin recovery", detail, "5.2.6", now),
                 )
                 conn.execute(
                     "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) "
                     "VALUES (?,?,?,?,?,?,?)",
-                    (task_id, "RECONCILIATION", "human_owner", "admin recovery", detail, "5.2.5", now),
+                    (task_id, "RECONCILIATION", "human_owner", "admin recovery", detail, "5.2.6", now),
                 )
         finally:
             conn.close()
@@ -435,7 +435,7 @@ def cmd_event_sync(args) -> int:
                         params,
                     )
                     inserted += 1
-        # V5.2.5：非状态 FACT 导入禁止 UPDATE task 表。
+        # V5.2.6：非状态 FACT 导入禁止 UPDATE task 表。
         # 权威状态只允许经 record-first task API / explicit --admin-recovery 修改。
         print(
             f"event sync: imported {len(new_flush_ids)} non-state flush group(s), "
@@ -481,8 +481,8 @@ def add_event_subparsers(event_parser) -> None:
     p_sync.add_argument("--task-dir", required=True, help="task directory (events.jsonl location)")
     p_sync.add_argument("--project", required=False, default=None, help="resolve db via registry by project_id")
     p_sync.add_argument("--db", required=False, default=None)
-    # V5.2.5：显式管理员恢复模式（只走当前五态 record-first runtime）
-    p_sync.add_argument("--admin-recovery", action="store_true", help="V5.2.5 personal mode: explicit managed recovery through current five-state runtime")
+    # V5.2.6：显式管理员恢复模式（只走当前五态 record-first runtime）
+    p_sync.add_argument("--admin-recovery", action="store_true", help="V5.2.6 personal mode: explicit managed recovery through current five-state runtime")
     p_sync.add_argument("--confirm-admin-recovery", default=None, help="Exact text ADMIN_RECOVERY; explicit confirmation only")
     p_sync.add_argument("--reason", default=None, help="Reason recorded in the admin recovery audit event")
     p_sync.add_argument("--actor", required=False, default=None, help="recovery actor (default human_owner; cancel is always human_owner)")

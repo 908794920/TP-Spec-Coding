@@ -262,7 +262,7 @@ class WorkflowDef:
 
         优先级：risk_level 的 completion_owner，回退 flow_level，再回退 None。
         与 workflow.yaml levels.<Lx>.flow[COMPLETED].completion_owner 对齐：
-          V5.2.5 各等级均为 tp-integration-engineer
+          V5.2.6 各等级均为 tp-integration-engineer
         """
         if risk_level and risk_level in self.levels:
             return self.levels[risk_level]

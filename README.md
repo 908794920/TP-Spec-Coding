@@ -4,7 +4,7 @@
 
 TP-Spec-Coding 是一个**本地优先、可追溯、可迁移、可扩展**的个人 AI 软件工程系统。用户默认只需要进入 `tp-spec-coding`；系统以低上下文成本识别意图，并把软件工作交给 `tp-software-lifecycle`，再根据 L0～L3、风险与当前事实按需选择正式工程角色。
 
-当前版本：**v5.2.5** · License：**MIT**
+当前版本：**v5.2.6** · License：**MIT**
 
 ## 为什么做这个项目
 
@@ -313,7 +313,7 @@ agents/
 └─ tp-project-autonomy
 ```
 
-软件领域的 active formal Role 由 `governance/role-catalog.yaml` 统一登记；Role Skill 位于 `skills/roles/`，共享能力位于 `skills/capabilities/`，自治专项能力位于 `skills/autonomy/`。旧 action-role 只存在于 previous active contract → 5.2.5 migration/history，不参与 active routing。
+软件领域的 active formal Role 由 `governance/role-catalog.yaml` 统一登记；Role Skill 位于 `skills/roles/`，共享能力位于 `skills/capabilities/`，自治专项能力位于 `skills/autonomy/`。旧 action-role 只存在于 previous active contract → 5.2.6 migration/history，不参与 active routing。
 
 未来可以增加视频生成、数据分析等新的 Domain Agent；它们拥有自己的角色/Skill 体系，但复用底层 Runtime，而不把完全不同的生命周期塞进软件工程 Skill Pool。
 

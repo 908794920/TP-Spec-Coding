@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.5 Record-first task operations.
+"""V5.2.6 Record-first task operations.
 
 The public workflow records business facts instead of forcing role-authored
 workflow bookkeeping. SQLite remains authoritative; readable projections are
@@ -372,7 +372,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
 def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
     """Validate only acceptance claims that would become false history if forged.
 
-    V5.2.5 deliberately does *not* require every AC to be complete.  PENDING is a
+    V5.2.6 deliberately does *not* require every AC to be complete.  PENDING is a
     valid factual outcome.  This check therefore ignores completeness/formality and
     protects only positive/owner-authority claims: PASS evidence, human witness, and
     DEFERRED_ACCEPTED/OWNER_WAIVED ledger authority.
@@ -427,6 +427,25 @@ def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
                 issues.append(f"{ac} OWNER_WAIVED lacks trusted human_owner decision")
     return issues
 
+def _cleanup_terminal_temp_artifacts(task) -> Dict[str, Any]:
+    """终态写入成功后做机器本地临时工件清理；失败只进入清理摘要。"""
+    from . import temp_artifacts
+    try:
+        return temp_artifacts.cleanup_task(
+            project_id=str(task["project_id"] or "") or None,
+            task_id=str(task["task_id"]),
+        )
+    except Exception as exc:
+        return {
+            "created": 0,
+            "active": 0,
+            "cleaned": 0,
+            "pending": 1,
+            "runs": [],
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
 def complete(*, task_id: str, task_dir: str, actor: Optional[str], summary: str,
              db: Optional[str] = None) -> Dict[str, Any]:
     tdir = _task_dir(task_dir)
@@ -478,8 +497,10 @@ def complete(*, task_id: str, task_dir: str, actor: Optional[str], summary: str,
 
         _write_with_projection(conn, tdir, task, operation="complete", target_state="COMPLETED",
                                owner_after=actor0, flush_id=flush_id, writer=writer, summary=summary)
+        temp_summary = _cleanup_terminal_temp_artifacts(task)
         return {"task_id": task_id, "state": "COMPLETED", "phase": phase0,
-                "verification": verification["decision"], "flush_id": flush_id, "summary": summary}
+                "verification": verification["decision"], "flush_id": flush_id, "summary": summary,
+                "temp_artifacts": temp_summary}
     finally:
         conn.close()
 
@@ -511,6 +532,8 @@ def cancel(*, task_id: str, task_dir: str, actor: str, reason: str,
 
         _write_with_projection(conn, tdir, task, operation="cancel", target_state="CANCELLED",
                                owner_after=actor, flush_id=flush_id, writer=writer, summary=reason)
-        return {"task_id": task_id, "state": "CANCELLED", "reason": reason, "flush_id": flush_id}
+        temp_summary = _cleanup_terminal_temp_artifacts(task)
+        return {"task_id": task_id, "state": "CANCELLED", "reason": reason, "flush_id": flush_id,
+                "temp_artifacts": temp_summary}
     finally:
         conn.close()

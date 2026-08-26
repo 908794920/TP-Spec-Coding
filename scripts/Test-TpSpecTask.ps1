@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Thin read-only validator wrapper for a TP-Spec-Coding v5.2.5 Task.
+Thin read-only validator wrapper for a TP-Spec-Coding v5.2.6 Task.
 
 .DESCRIPTION
 The Python Record-first runtime is the single source of validation truth. This

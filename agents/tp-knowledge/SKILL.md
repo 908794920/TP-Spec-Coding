@@ -1,7 +1,7 @@
 ---
 id: tp-knowledge
 name: tp-knowledge
-version: 5.2.5
+version: 5.2.6
 status: active
 type: human-owner-skill
 tool_agnostic: 本技能包不要求特定 IDE、账号、插件或用户目录绝对路径；从 TP-Spec-Coding/agents/tp-knowledge/SKILL.md 加载即可。

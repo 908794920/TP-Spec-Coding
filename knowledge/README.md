@@ -1,4 +1,4 @@
-# Knowledge Standardization — V5.2.5
+# Knowledge Standardization — V5.2.6
 
 Knowledge is the long-lived reusable context layer of TP-Spec-Coding. It stores **why a project behaves as it does, business rules, durable decisions, external-document knowledge, and reusable operating facts**. It is not a copy of Task history and it is not the current source-code authority.
 

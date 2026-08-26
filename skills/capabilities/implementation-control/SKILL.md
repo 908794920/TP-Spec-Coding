@@ -1,10 +1,10 @@
 ---
 name: implementation-control
-version: 5.2.5
+version: 5.2.6
 description: Use while implementing an TP-Spec-Coding task to control scope, evidence, database safety, and discovery escalation without making bookkeeping part of development.
 ---
 
-# 实现过程控制 — V5.2.5 Record-first
+# 实现过程控制 — V5.2.6 Record-first
 
 ## 目的
 让开发集中在真实代码与测试，同时防止范围膨胀、未授权数据操作和“实现者自我验收”。

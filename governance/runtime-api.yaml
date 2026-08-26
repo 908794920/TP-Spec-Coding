@@ -1,4 +1,4 @@
-version: 5.2.5
+version: 5.2.6
 mode: record-first
 principle: business work first; Runtime owns bookkeeping
 daily_api:
@@ -53,7 +53,7 @@ daily_api:
 project_api:
   project_bootstrap_check: tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only
   project_bootstrap: tp-spec project bootstrap --id <PROJECT> --root <ROOT>
-  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.2.5
+  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.2.6
 errors:
   PROJECT_BOOTSTRAP_AVAILABLE: read-only bootstrap check found a pristine project that may be initialized only after explicit human_owner action
   PROJECT_NOT_INITIALIZED: project ledger is not initialized; run project bootstrap/init first
@@ -79,7 +79,7 @@ optional_capabilities:
     are WARN
   work_sessions: available for timing evidence; never a workflow blocker
   acceptance_override: human_owner defer/waive without forging PASS
-  legacy_commit: compatibility/recovery surface; not the V5.2.5 daily role API
+  legacy_commit: compatibility/recovery surface; not the V5.2.6 daily role API
   context_effectiveness: >-
     Read-only report over Task-bound Context Usage receipts. It never gates workflow
     and never mutates Context assets.
@@ -101,3 +101,13 @@ rules:
     pretask_rule: No TaskId means no fabricated work-session event; pre-task timing
       may remain unrecorded
     workflow_effect: timing evidence never blocks task progression
+  temporary_artifacts:
+    storage: system_temp
+    ownership: machine-local JSON manifest keyed by project/task/run
+    statuses: [ACTIVE, CLEANED, CLEANUP_PENDING]
+    not_a_task_state: true
+    source_files: immutable; read or copy into owned temp only, never overwrite/move/delete originals
+    cleanup: work end cleans the matching registered run; task complete/cancel retries all registered task runs
+    crash_recovery: persistent ownership enables explicit interrupted-session close or temp cleanup retry after restart
+    orphan_check: report-only for unmanaged/history paths; never delete by name, wildcard, or appearance
+    link_safety: never follow symlink, Junction, or reparse-point targets during cleanup

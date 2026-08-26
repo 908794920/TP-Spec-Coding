@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.5 deterministic, read-only workflow orchestration.
+"""V5.2.6 deterministic, read-only workflow orchestration.
 
 Workflow chooses *when* to invoke a role.  Skills choose *how* to do the work.
 The existing Task Runtime remains the only durable fact ledger.
@@ -853,3 +853,98 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
     return _route_dict(task, level, next_stage="complete", role_id=None, skill_path=None,
                        reason_codes=["PIPELINE_COMPLETE"], action="task_complete",
                        confirmation_policy=policy)
+
+
+def resolve_progress(
+    task_id: str,
+    *,
+    db_path: Optional[str] = None,
+    base_root: Optional["str | Path"] = None,
+) -> Dict[str, Any]:
+    """Return display-oriented workflow progress from the same orchestration facts.
+
+    This is a read-only projection for presentation surfaces.  It deliberately
+    reuses the active pipeline inclusion/completion helpers and ``resolve_route``
+    rather than introducing a second workflow state machine.
+    """
+    root = _root(base_root)
+    contract = load_contract(root)
+    task, events = _load_task_facts(task_id, db_path)
+    route = resolve_route(task_id, db_path=db_path, base_root=root)
+    level = str(route.get("effective_level") or resolve_effective_level(task.get("risk_level"), task.get("flow_level")))
+    signals = _decision_signals(events)
+    pipeline = (contract.get("pipelines") or {}).get(level) or []
+    included = [step for step in pipeline if _stage_included(step, level, task, events, signals)]
+
+    project_root = str(task.get("project_root_path") or "").strip()
+    task_dir = Path(project_root) / ".tp-spec" / "tasks" / task_id if project_root else None
+    current_phase = str(task.get("current_stage") or "")
+    task_state = str(task.get("current_state") or "")
+    steps: List[Dict[str, Any]] = []
+    completed_steps: List[Dict[str, Any]] = []
+    current_step: Dict[str, Any] = {}
+
+    for step in included:
+        stage = str(step.get("stage") or "")
+        role = str(step.get("role") or "")
+        completion = _delivery_completion_event(events, task_dir) if stage == "delivery" else _stage_completion_event(stage, events)
+        if completion is not None:
+            status = "已完成"
+        elif task_state == "BLOCKED" and stage == current_phase:
+            status = "已阻塞"
+        elif stage == current_phase:
+            status = "进行中"
+        else:
+            status = "待执行"
+        item = {
+            "stage": stage,
+            "phase": str(step.get("phase") or stage),
+            "role": role,
+            "status": status,
+            "required": bool(step.get("required")),
+        }
+        steps.append(item)
+        if status == "已完成":
+            completed_steps.append(item)
+        elif not current_step and status in {"进行中", "已阻塞"}:
+            current_step = item
+
+    next_stage = str(route.get("next_stage") or "")
+    next_step: Dict[str, Any] = {}
+    if next_stage and next_stage != "complete":
+        pipeline_step = next((item for item in steps if item["stage"] == next_stage), None)
+        next_step = {
+            "stage": next_stage,
+            "role": str(route.get("role_id") or (pipeline_step or {}).get("role") or ""),
+            "action": str(route.get("recommended_action") or ""),
+            "confirmation_required": bool(route.get("confirmation_required")),
+            "confirmation_reason": str(route.get("confirmation_reason") or ""),
+            "reason_codes": list(route.get("reason_codes") or []),
+        }
+    elif next_stage == "complete":
+        next_step = {
+            "stage": "complete",
+            "role": "",
+            "action": str(route.get("recommended_action") or "task_complete"),
+            "confirmation_required": False,
+            "confirmation_reason": "",
+            "reason_codes": list(route.get("reason_codes") or []),
+        }
+
+    return {
+        "effective_level": level,
+        "completed_steps": completed_steps,
+        "current_step": current_step,
+        "next_step": next_step,
+        "steps": steps,
+        "reference_steps": [],
+        "route": {
+            "decision": str(route.get("decision") or ""),
+            "recommended_action": str(route.get("recommended_action") or ""),
+            "next_stage": str(route.get("next_stage") or ""),
+            "role_id": str(route.get("role_id") or ""),
+            "confirmation_required": bool(route.get("confirmation_required")),
+            "confirmation_reason": str(route.get("confirmation_reason") or ""),
+            "reason_codes": list(route.get("reason_codes") or []),
+        },
+    }

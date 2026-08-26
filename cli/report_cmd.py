@@ -115,10 +115,84 @@ def cmd_report_task_summary(args) -> int:
         conn.close()
 
 
+def _work_session_detail(row) -> Dict[str, Any]:
+    """解析 Work Session 事件 detail_json；无效内容按空对象处理。"""
+    raw = row["detail_json"] if "detail_json" in row.keys() else ""
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _pair_work_sessions(rows) -> Dict[str, Any]:
+    """按 session_id 配对并发/交错 Work Session；旧事件仅按角色做保守兼容。"""
+    open_by_id: Dict[str, Any] = {}
+    legacy_open_by_role: Dict[str, Any] = {}
+    pairs: List[Dict[str, Any]] = []
+    unmatched_starts: List[Any] = []
+    unmatched_ends: List[Any] = []
+
+    for row in rows:
+        detail = _work_session_detail(row)
+        sid = str(detail.get("session_id") or "")
+        role = str(row["actor_role"] or "")
+        if row["event_type"] == "WORK_SESSION_STARTED":
+            if sid:
+                previous = open_by_id.get(sid)
+                if previous is not None:
+                    unmatched_starts.append(previous)
+                open_by_id[sid] = row
+            else:
+                previous = legacy_open_by_role.get(role)
+                if previous is not None:
+                    unmatched_starts.append(previous)
+                legacy_open_by_role[role] = row
+            continue
+
+        start_row = None
+        if sid:
+            start_row = open_by_id.pop(sid, None)
+        elif role:
+            start_row = legacy_open_by_role.pop(role, None)
+        if start_row is None:
+            unmatched_ends.append(row)
+            continue
+
+        start_time = _parse_iso(start_row["created_at"])
+        end_time = _parse_iso(row["created_at"])
+        duration = None
+        if start_time is not None and end_time is not None:
+            seconds = (end_time - start_time).total_seconds()
+            if seconds >= 0:
+                duration = seconds
+        end_detail = _work_session_detail(row)
+        pairs.append({
+            "session_id": sid,
+            "role": str(start_row["actor_role"] or role or "(unknown)"),
+            "start": start_time,
+            "end": end_time,
+            "duration": duration,
+            "reason": str(end_detail.get("reason") or ""),
+            "start_event_id": start_row["id"],
+            "end_event_id": row["id"],
+        })
+
+    unmatched_starts.extend(open_by_id.values())
+    unmatched_starts.extend(legacy_open_by_role.values())
+    return {
+        "pairs": pairs,
+        "unmatched_starts": unmatched_starts,
+        "unmatched_ends": unmatched_ends,
+    }
+
+
 def cmd_report_stage_time(args) -> int:
     task_id = args.task
     db_path = dbmod.resolve_db_path(args.db, project_id=getattr(args, "project", None), task_id=task_id)
-    conn = dbmod.connect(db_path)
+    conn = dbmod.connect_readonly(db_path)
     try:
         task = conn.execute("SELECT * FROM task WHERE task_id = ?", (task_id,)).fetchone()
         if task is None:
@@ -135,7 +209,7 @@ def cmd_report_stage_time(args) -> int:
             return 0
         # 查询所有 WORK_SESSION_STARTED/ENDED 对
         sessions = conn.execute(
-            "SELECT id, event_type, created_at FROM task_event "
+            "SELECT id, event_type, actor_role, detail_json, created_at FROM task_event "
             "WHERE task_id = ? AND event_type IN ('WORK_SESSION_STARTED', 'WORK_SESSION_ENDED') "
             "ORDER BY id",
             (task_id,),
@@ -177,35 +251,21 @@ def cmd_report_stage_time(args) -> int:
                     return idx
             return None
 
-        # 计算 active_time 和 normal_wait_time：遍历 WORK_SESSION 对
-        open_session: Optional[Dict[str, Any]] = None
-        for sess in sessions:
-            t = _parse_iso(sess["created_at"])
-            if sess["event_type"] == "WORK_SESSION_STARTED":
-                open_session = {"start": t, "start_time": sess["created_at"]}
-            elif sess["event_type"] == "WORK_SESSION_ENDED" and open_session:
-                start_t = open_session["start"]
-                end_t = t
-                duration = (end_t - start_t).total_seconds() if start_t and end_t else 0.0
-                # 会话归属其开始时 task 所处状态
-                stage_idx = _find_stage(start_t) if start_t else None
-                if stage_idx is not None:
-                    stages[stage_idx]["active"] += duration
-                # 查询这条 WORK_SESSION_ENDED 的 reason
-                end_ev = conn.execute(
-                    "SELECT detail_json FROM task_event WHERE id = ?", (sess["id"],)
-                ).fetchone()
-                reason = ""
-                if end_ev and end_ev["detail_json"]:
-                    try:
-                        detail = json.loads(end_ev["detail_json"])
-                        reason = detail.get("reason", "")
-                    except json.JSONDecodeError:
-                        pass
-                if reason in ("waiting_human", "waiting_agent", "paused"):
-                    if stage_idx is not None:
-                        stages[stage_idx]["normal_wait"] += duration
-                open_session = None
+        # 只使用已配对 Work Session 计算真实执行时长；等待原因不等于等待区间。
+        session_report = _pair_work_sessions(sessions)
+        role_totals: Dict[str, Dict[str, float]] = {}
+        for pair in session_report["pairs"]:
+            start_t = pair["start"]
+            duration = pair["duration"]
+            if start_t is None or duration is None:
+                continue
+            stage_idx = _find_stage(start_t)
+            if stage_idx is not None:
+                stages[stage_idx]["active"] += duration
+            role = str(pair["role"] or "(unknown)")
+            bucket = role_totals.setdefault(role, {"sessions": 0.0, "seconds": 0.0})
+            bucket["sessions"] += 1
+            bucket["seconds"] += duration
 
         # 计算 blocked_time：current_state=BLOCKED 期间
         for idx, s in enumerate(stages):
@@ -236,6 +296,18 @@ def cmd_report_stage_time(args) -> int:
         print("  ".join("-" * w for w in widths))
         for r in rows:
             print(fmt_row(r))
+
+        print("\n=== Role Work Time (paired Work Sessions; measured only) ===")
+        if role_totals:
+            print(f"{'role':<32} {'sessions':>8} {'measured':>10}")
+            print(f"{'-' * 32} {'-' * 8} {'-' * 10}")
+            for role, values in sorted(role_totals.items()):
+                print(f"{role:<32} {int(values['sessions']):>8} {_fmt_duration(values['seconds']):>10}")
+        else:
+            print("  no paired role work sessions")
+        print(f"  unmatched starts: {len(session_report['unmatched_starts'])}")
+        print(f"  unmatched ends: {len(session_report['unmatched_ends'])}")
+        print("  note: waiting end reasons do not measure waiting duration; waiting time is not inferred")
         if rework_events:
             print(f"\n  rework events: {len(rework_events)}")
         return 0
@@ -548,7 +620,7 @@ def _fmt_value(v: float | None, fmt: str = _FMT_MONEY, na: str = "N/A") -> str:
 
 
 def cmd_report_cost_benefit(args) -> int:
-    """V5.2.5 B-15 成本披露报表（强制四列 + W1-W4 告警 + 净亏独立列）。
+    """V5.2.6 B-15 成本披露报表（强制四列 + W1-W4 告警 + 净亏独立列）。
 
     对齐升级计划 §3.5（L180-189）与 B-13 设计文档。
     仅披露不阻断：不改变 workflow 状态、不改变风险等级。
@@ -807,7 +879,7 @@ def add_report_subparsers(report_parser) -> None:
     p_cross.add_argument("--db", required=False, default=None)
     p_cross.set_defaults(func=cmd_report_cross)
 
-    # report context-effectiveness (V5.2.5 Context Effectiveness)
+    # report context-effectiveness (V5.2.6 Context Effectiveness)
     p_ctx = sub.add_parser(
         "context-effectiveness",
         help="Read-only Task-bound Context Effectiveness report",
@@ -818,8 +890,8 @@ def add_report_subparsers(report_parser) -> None:
     p_ctx.add_argument("--db", default=None)
     p_ctx.set_defaults(func=cmd_report_context_effectiveness)
 
-    # report cost-benefit（V5.2.5 B-15 成本披露报表）
-    p_cb = sub.add_parser("cost-benefit", help="Cost-benefit disclosure report (V5.2.5 B-15)")
+    # report cost-benefit（V5.2.6 B-15 成本披露报表）
+    p_cb = sub.add_parser("cost-benefit", help="Cost-benefit disclosure report (V5.2.6 B-15)")
     p_cb.add_argument("--task", required=True, help="task id")
     p_cb.add_argument("--output", required=True, help="persist report to JSON file path")
     # 四列强制字段

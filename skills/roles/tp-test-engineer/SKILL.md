@@ -1,11 +1,11 @@
 ---
 id: tp-test-engineer
 name: tp-测试工程师
-version: 5.2.5
+version: 5.2.6
 status: active
 type: workflow-role
 role: tp-test-engineer
-description: tp-测试工程师：TP-Spec-Coding v5.2.5 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-测试工程师：TP-Spec-Coding v5.2.6 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-测试工程师
@@ -33,6 +33,12 @@ description: tp-测试工程师：TP-Spec-Coding v5.2.5 正式软件工程角色
 - `NEEDS_FIX`：当前范围内可最小修复；修复后重跑受影响测试。
 - `FAIL`：较大实现问题或不满足 Requirement，需要正式返工。
 - LOCAL_REWORK 不得借机引入新需求、架构、scope、权限/数据语义；出现这些变化交相应正式 Role。
+
+## 临时测试工件
+- 新测试默认使用 TP-Spec 登记的**系统临时目录**；禁止在项目工作区创建 `.tmp` 测试夹具。需要临时夹具、ZIP 解压、图片渲染或中间结果时，先 `work start` 获取 session_id，再使用 `task artifact-path --kind execution-temp --task <TASK> --project <PROJECT> --role tp-test-engineer --run-id <SESSION-ID> --task-dir <DIR> --db <RUNTIME-DB> --ensure`。
+- 用户原始文件、intake、正式 Task 工件和 evidence 都不是临时工件。用户原始文件可以只读复制到已登记临时根用于隔离测试，但原件不得修改、覆盖、移动或删除。
+- 正常、失败、暂停或中断都必须用匹配角色执行 `work end`；已登记的当前 session 临时根随后幂等清理。清理失败记录为 `CLEANUP_PENDING` 并明确报告，不能静默忽略，也不能把它当成 Task 状态。
+- 只能清理由 TP-Spec ownership manifest 明确登记的路径。历史或 Agent 自行创建的工作区 `.tmp` 只能通过 `temp orphan-check` 报告，不得按目录名或通配符自动删除。
 
 ## Runtime
 结束一次可信测试通过 `task verify --decision PASS|FAIL|NEEDS_FIX` 写入，PASS 至少绑定一项真实 evidence。测试角色不自行 `task complete`，完成后返回 Software Lifecycle 继续 Review/Delivery 路由。

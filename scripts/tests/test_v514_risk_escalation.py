@@ -14,7 +14,7 @@ def _seed_workspace(root: Path, *, risk: str = "L2", flow: str = "L2") -> tuple[
     task_dir = root / ".tp-spec" / "tasks" / task_id
     task_dir.mkdir(parents=True)
     (task_dir / "task.md").write_text(
-        "---\nartifact: task\ntask_id: TASK-RISK-FLOOR\nartifact_contract:\n  version: \"5.2.5\"\n---\n\n"
+        "---\nartifact: task\ntask_id: TASK-RISK-FLOOR\nartifact_contract:\n  version: \"5.2.6\"\n---\n\n"
         "目标：仅流程内相关人员可以查看原始身份证照片，非流程内人员不下发原图并显示无权限查看。\n",
         encoding="utf-8",
     )

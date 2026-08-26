@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.2.5 work 命令组（M2）。
+"""TP-Spec-Coding V5.2.6 work 命令组（M2）。
 
 包含：
 - work start / end
@@ -179,6 +179,26 @@ def cmd_work_end(args) -> int:
             event_id = cur.lastrowid
         # reason=blocked 仅记录事件，不自动转 BLOCKED（状态流转必须显式 task transition）
         print(f"Work session ended: {event_id} (reason={args.reason})")
+
+        # Runtime END 已提交后再清理展示/测试临时工件；清理失败不得回滚真实 END 事实。
+        if session_id:
+            from . import temp_artifacts
+            try:
+                cleanup = temp_artifacts.cleanup_run_if_registered(
+                    project_id=str(task["project_id"] or ""),
+                    task_id=task_id,
+                    run_id=session_id,
+                )
+                if cleanup.get("status") == temp_artifacts.STATUS_CLEANUP_PENDING:
+                    print(
+                        f"TEMP_CLEANUP_PENDING: run_id={session_id}: {cleanup.get('error') or 'cleanup failed'}",
+                        file=sys.stderr,
+                    )
+            except Exception as exc:
+                print(
+                    f"TEMP_CLEANUP_PENDING: run_id={session_id}: {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                )
         return 0
     finally:
         conn.close()
