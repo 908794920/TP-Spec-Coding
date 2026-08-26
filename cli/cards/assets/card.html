@@ -1,0 +1,931 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'none'; img-src data:; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>TP-Spec 信息卡片</title>
+<style>
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --tp-bg: #080b10;
+  --tp-panel: #0d1117;
+  --tp-panel2: #111720;
+  --tp-panel3: #151c26;
+  --tp-hover: #19222e;
+  --tp-border: #26303b;
+  --tp-border-strong: #344252;
+  --tp-text: #eef3f8;
+  --tp-secondary: #aab6c4;
+  --tp-muted: #748191;
+  --tp-blue: #5b8ff9;
+  --tp-green: #38c976;
+  --tp-green-soft: rgba(56, 201, 118, .10);
+  --tp-yellow: #e7b348;
+  --tp-red: #ff6b6b;
+  --tp-gray: #748191;
+  --tp-radius: 12px;
+  --tp-shadow: 0 16px 40px rgba(0, 0, 0, .24);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--tp-bg);
+  color: var(--tp-text);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow: hidden;
+}
+.page { max-width: 1180px; height: 100%; margin: 0 auto; padding: 8px; display: flex; flex-direction: column; }
+.header { flex: 0 0 auto; display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; padding: 14px 18px; margin-bottom: 0; background: var(--tp-panel); border: 1px solid var(--tp-border); border-bottom: 0; border-radius: 16px 16px 0 0; box-shadow: var(--tp-shadow); }
+.title { font-size: 16px; font-weight: 760; letter-spacing: -.01em; margin: 0 0 4px; }
+.subtle { color: var(--tp-muted); font-size: 11px; }
+.notice { border: 0; background: transparent; padding: 0; border-radius: 0; color: var(--tp-secondary); font-size: 11px; }
+.grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; padding: 14px 18px 16px; background: var(--tp-panel); border: 1px solid var(--tp-border); border-top: 0; border-radius: 0 0 16px 16px; box-shadow: var(--tp-shadow); }
+.card { grid-column: span 12; background: var(--tp-panel2); border: 1px solid var(--tp-border); border-radius: var(--tp-radius); padding: 12px; min-width: 0; }
+.half { grid-column: span 6; }
+.metric { text-align: center; background: var(--tp-panel3); border: 1px solid var(--tp-border); border-radius: 8px; padding: 9px; }
+.metric strong { display: block; font-size: 20px; }
+.metrics-row { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.summary-grid { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; scroll-margin-top: 72px; }
+.summary-item { min-width: 0; background: var(--tp-panel3); border: 1px solid var(--tp-border); border-radius: 8px; padding: 9px 11px; }
+.summary-label { display: block; color: var(--tp-secondary); font-size: 10px; font-weight: 650; margin-bottom: 2px; }
+.summary-value { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-nav { grid-column: 1 / -1; position: sticky; top: 0; z-index: 10; display: flex; gap: 2px; overflow-x: auto; padding: 0; background: transparent; border: 0; border-bottom: 1px solid var(--tp-border); border-radius: 0; box-shadow: none; }
+.nav-link { appearance: none; flex: 0 0 auto; color: var(--tp-secondary); background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; padding: 7px 9px 6px; font: inherit; font-size: 11px; font-weight: 650; white-space: nowrap; cursor: pointer; }
+.nav-link:hover { color: var(--tp-text); background: var(--tp-hover); }
+.nav-link.active { color: var(--tp-text); background: var(--tp-green-soft); border-bottom-color: var(--tp-green); }
+.section-card { grid-column: 1 / -1; scroll-margin-top: 72px; }
+.overview > .card + .card { margin-top: 10px; }
+.project-overview > .card + .card { margin-top: 10px; }
+.project-overview > .summary-grid + .card { margin-top: 8px; }
+.project-overview > .summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+[hidden] { display: none !important; }
+.section-title { font-size: 15px; font-weight: 700; margin: 0 0 10px; }
+.kv { display: grid; grid-template-columns: minmax(112px, 150px) 1fr; gap: 7px 12px; }
+.key { color: var(--tp-secondary); }
+.value { min-width: 0; word-break: break-word; }
+.evidence-groups { display: grid; gap: 10px; }
+.evidence-group + .evidence-group { border-top: 1px solid var(--tp-border); padding-top: 10px; }
+.evidence-group-title { color: var(--tp-secondary); font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+.evidence-list { display: grid; }
+.evidence-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--tp-border); }
+.evidence-row:last-child { border-bottom: 0; }
+.evidence-info { min-width: 0; flex: 1; }
+.evidence-name { display: block; overflow-wrap: anywhere; }
+.evidence-path { color: var(--tp-muted); font-size: 11px; overflow-wrap: anywhere; }
+.evidence-row .copy { flex: 0 0 auto; margin-left: auto; }
+.badge { display: inline-flex; align-items: center; border: 1px solid var(--tp-border-strong); border-radius: 999px; padding: 2px 8px; font-size: 12px; }
+.ok { color: var(--tp-green); }
+.warn { color: var(--tp-yellow); }
+.bad { color: var(--tp-red); }
+.info { color: var(--tp-blue); }
+.muted { color: var(--tp-gray); }
+button, input, select { font: inherit; color: inherit; background: var(--tp-panel2); border: 1px solid var(--tp-border); border-radius: 8px; padding: 6px 9px; }
+button { cursor: pointer; }
+.copy { margin-left: 8px; padding: 2px 7px; font-size: 11px; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.toolbar input { min-width: 240px; }
+.table-wrap { overflow: auto; border: 1px solid var(--tp-border); border-radius: var(--tp-radius); }
+table { border-collapse: collapse; width: 100%; min-width: 680px; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--tp-border); vertical-align: top; }
+th { color: var(--tp-muted); font-weight: 600; background: var(--tp-panel2); }
+tr:last-child td { border-bottom: 0; }
+.compact-table-section { margin-top: 12px; }
+.compact-table-wrap { margin-top: 8px; }
+.compact-table { min-width: 760px; }
+.compact-table th, .compact-table td { padding: 7px 8px; vertical-align: middle; }
+.problem { padding: 8px 10px; border-left: 3px solid var(--tp-yellow); background: var(--tp-panel3); margin: 6px 0; border-radius: 6px; }
+.problem.error { border-left-color: var(--tp-red); }
+.project-row, .workspace-row, .autonomy-row { padding: 8px 10px; border: 1px solid var(--tp-border); background: var(--tp-panel3); margin: 6px 0; border-radius: 8px; }
+.project-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.subsection-title { font-size: 13px; font-weight: 700; margin: 14px 0 8px; padding-top: 12px; border-top: 1px solid var(--tp-border); }
+.empty { color: var(--tp-muted); padding: 12px; text-align: center; border: 1px dashed var(--tp-border); border-radius: var(--tp-radius); }
+.steps { display: flex; gap: 8px; flex-wrap: wrap; }
+.step { padding: 8px 10px; border: 1px solid var(--tp-border); border-radius: 8px; background: var(--tp-panel2); }
+.step.done { border-color: var(--tp-green); }
+.step.current { border-color: var(--tp-blue); }
+.step.blocked { border-color: var(--tp-yellow); }
+.timeline { display: grid; gap: 12px; margin-top: 10px; }
+.timeline-day + .timeline-day { border-top: 1px solid var(--tp-border); padding-top: 12px; }
+.timeline-day-title { color: var(--tp-secondary); font-size: 11px; font-weight: 700; margin: 0 0 7px; }
+.timeline-day-list { display: grid; gap: 8px; }
+.event { display: grid; grid-template-columns: 76px 16px minmax(0, 1fr); gap: 8px; min-width: 0; }
+.event-time { color: var(--tp-muted); font-size: 11px; padding-top: 9px; text-align: right; white-space: nowrap; }
+.event-marker { position: relative; display: flex; justify-content: center; min-height: 100%; }
+.event-marker::before { content: ''; width: 9px; height: 9px; margin-top: 11px; border-radius: 50%; background: var(--tp-blue); z-index: 1; }
+.event-marker::after { content: ''; position: absolute; top: 20px; bottom: -8px; width: 1px; background: var(--tp-border-strong); }
+.event:last-child .event-marker::after { display: none; }
+.event.ok .event-marker::before { background: var(--tp-green); }
+.event.warn .event-marker::before { background: var(--tp-yellow); }
+.event.bad .event-marker::before { background: var(--tp-red); }
+.event-body { min-width: 0; background: var(--tp-panel3); border: 1px solid var(--tp-border); border-radius: 8px; overflow: hidden; }
+.event-body.open { border-color: var(--tp-border-strong); }
+.event-toggle { display: block; width: 100%; border: 0; border-radius: 7px; padding: 8px 10px; background: transparent; text-align: left; }
+.event-toggle:hover { background: var(--tp-hover); }
+.event-toggle:focus-visible { outline: 2px solid var(--tp-blue); outline-offset: -2px; }
+.event-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.event-type { font-size: 12px; }
+.event-actor { color: var(--tp-muted); font-size: 11px; }
+.event-preview { display: -webkit-box; overflow: hidden; margin-top: 3px; color: var(--tp-text); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.event-body.open .event-preview { display: none; }
+.event-full { border-top: 1px solid var(--tp-border); padding: 8px 10px 10px; color: var(--tp-text); overflow-wrap: anywhere; white-space: pre-wrap; }
+.spacer { height: 10px; }
+@media (max-width: 760px) {
+  .page { padding: 12px; }
+  .header { display: block; }
+  .half { grid-column: span 12; }
+  .metrics-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .project-overview > .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .event { grid-template-columns: 58px 14px minmax(0, 1fr); }
+  .event-time { text-align: left; }
+  .toolbar input { min-width: 0; width: 100%; }
+}
+@media (max-width: 620px) {
+  .kv { grid-template-columns: 1fr; }
+  .metrics-row, .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .project-overview > .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 420px) {
+  .metrics-row, .summary-grid { grid-template-columns: 1fr; }
+  .project-overview > .summary-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <div>
+      <h1 id="title" class="title">TP-Spec 信息卡片</h1>
+      <div id="meta" class="subtle"></div>
+    </div>
+    <div class="notice">一次性快照 · 页面不会自动刷新 · 运行时仍是事实来源</div>
+  </div>
+  <main id="app" class="grid"></main>
+</div>
+<script id="card-data" type="application/json">__TP_SPEC_CARD_DATA__</script>
+<script>
+'use strict';
+
+const data = JSON.parse(document.getElementById('card-data').textContent || '{}');
+const app = document.getElementById('app');
+
+function node(tag, cls, text) {
+  const element = document.createElement(tag);
+  if (cls) element.className = cls;
+  if (text !== undefined && text !== null) element.textContent = String(text);
+  return element;
+}
+
+function append(parent, ...children) {
+  children.filter(Boolean).forEach((child) => parent.appendChild(child));
+  return parent;
+}
+
+function formatDateTime(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/);
+  return match ? `${match[1]} ${match[2]}` : raw;
+}
+
+function statusClass(value) {
+  const status = String(value || '').toUpperCase();
+  if (['HEALTHY', 'AVAILABLE', 'PASS', 'COMPLETED', 'READY'].includes(status)) return 'ok';
+  if (['DEGRADED', 'WARN', 'WARNING', 'BLOCKED', 'NEEDS_FIX', 'MISSING'].includes(status)) return 'warn';
+  if (['UNAVAILABLE', 'INVALID', 'UNREADABLE', 'FAIL', 'ERROR'].includes(status)) return 'bad';
+  if (['ACTIVE', 'NEW'].includes(status)) return 'info';
+  return 'muted';
+}
+
+function displayStatus(value) {
+  const key = String(value || '').toUpperCase();
+  const labels = {
+    HEALTHY: '正常', AVAILABLE: '可用', PASS: '通过', COMPLETED: '已完成', READY: '就绪',
+    DEGRADED: '降级', WARN: '警告', WARNING: '警告', BLOCKED: '已阻塞', NEEDS_FIX: '需要修复', MISSING: '缺失',
+    UNAVAILABLE: '不可用', INVALID: '无效', UNREADABLE: '不可读取', FAIL: '失败', ERROR: '错误',
+    ACTIVE: '进行中', NEW: '新建', CANCELLED: '已取消', NOT_RECORDED: '未记录', UNKNOWN: '未知', UNCONFIGURED: '未配置',
+  };
+  return labels[key] || (value === undefined || value === null || value === '' ? '未配置' : String(value));
+}
+
+function displayStage(value) {
+  const labels = {
+    requirement: '需求阶段', planning: '规划阶段', architecture: '架构阶段', design: '设计阶段',
+    development: '开发阶段', testing: '测试阶段', verification: '验证阶段', delivery: '交付阶段',
+  };
+  const key = String(value || '').toLowerCase();
+  return labels[key] || displayStatus(value);
+}
+
+function displayRole(value) {
+  const labels = {
+    'tp-product-manager': '产品经理',
+    'tp-software-architect': '软件架构师',
+    'tp-development-engineer': '开发工程师',
+    'tp-development-engineering': '开发工程团队',
+    'tp-test-engineer': '测试工程师',
+    'tp-code-reviewer': '代码审查员',
+    'tp-tech-lead': '技术负责人',
+    'tp-software-lifecycle': '软件生命周期',
+    human_owner: '项目负责人',
+    'tp-integration-engineer': '集成工程师',
+    'tp-delivery-manager': '交付经理',
+  };
+  return labels[String(value || '')] || (value || '未指定');
+}
+
+function displaySource(value) {
+  const labels = {
+    'project-binding': '项目绑定',
+    registry: '工程注册表',
+    unresolved: '未解析',
+  };
+  return labels[String(value || '')] || (value || '未记录');
+}
+
+function displayEvent(value) {
+  const labels = {
+    FACT: '事实记录', CHECKPOINT: '检查点', BLOCKER: '阻塞记录',
+    VERIFICATION_COMPLETED: '验证完成', REVIEW_COMPLETED: '复审完成',
+    WORK_SESSION_STARTED: '工作会话开始', WORKFLOW_CONFIRMATION: '工作流确认',
+    STATE: '状态变更', TASK_CREATED: '任务创建', TASK_STARTED: '任务开始',
+  };
+  return labels[String(value || '').toUpperCase()] || (value || '未记录');
+}
+
+function eventStatusClass(eventData) {
+  const type = String((eventData || {}).event_type || '').toUpperCase();
+  const summary = String((eventData || {}).summary || '').toUpperCase();
+  if (summary.includes('FAIL') || summary.includes('ERROR') || summary.includes('失败')) return 'bad';
+  if (type === 'BLOCKER' || summary.includes('BLOCKED') || summary.includes('阻塞')) return 'warn';
+  if (summary.includes('PASS') || summary.includes('通过') || type === 'REVIEW_COMPLETED') return 'ok';
+  return 'info';
+}
+
+function evidenceFileName(path) {
+  const normalized = String(path || '').replace(/\\/g, '/');
+  const parts = normalized.split('/');
+  return parts[parts.length - 1] || normalized || '未命名依据';
+}
+
+function evidenceDirectory(path) {
+  const normalized = String(path || '').replace(/\\/g, '/');
+  const index = normalized.lastIndexOf('/');
+  return index >= 0 ? normalized.slice(0, index) : '项目根目录';
+}
+
+function evidenceGroupLabel(value) {
+  const labels = {
+    FACT: '事实记录', REVIEW_COMPLETED: '复审完成', VERIFICATION_COMPLETED: '验证完成',
+    CHECKPOINT: '检查点', BLOCKER: '阻塞记录', TASK_CREATED: '任务创建', TASK_STARTED: '任务开始',
+  };
+  return labels[String(value || '').toUpperCase()] || '其他依据';
+}
+
+function badge(value) {
+  return node('span', `badge ${statusClass(value)}`, displayStatus(value));
+}
+
+async function copyText(text) {
+  const value = String(text || '');
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+  } catch (_error) {
+    // Local file previews may not have Clipboard API permission; use fallback.
+  }
+  const textarea = node('textarea');
+  textarea.value = value;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
+}
+
+function copyButton(value, label) {
+  const button = node('button', 'copy', '复制');
+  button.type = 'button';
+  button.dataset.action = 'copy';
+  if (label) button.setAttribute('aria-label', label);
+  button.addEventListener('click', () => copyText(value));
+  return button;
+}
+
+function valueWithCopy(value) {
+  const box = node('span', 'value');
+  append(box, node('span', '', value || '未配置'));
+  if (value) append(box, copyButton(value));
+  return box;
+}
+
+function card(title, cls = 'card') {
+  const section = node('section', cls);
+  append(section, node('h2', 'section-title', title));
+  return section;
+}
+
+function namedCard(id, title, cls = 'card') {
+  const section = card(title, cls);
+  section.id = id;
+  section.dataset.cardSection = id;
+  section.classList.add('section-card');
+  return section;
+}
+
+function activateCardSection(id, nav) {
+  app.querySelectorAll('[data-card-section]').forEach((section) => {
+    section.hidden = section.dataset.cardSection !== id;
+  });
+  nav.querySelectorAll('.nav-link').forEach((item) => {
+    const active = item.dataset.targetSection === id;
+    item.classList.toggle('active', active);
+    if (active) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
+  });
+}
+
+function cardNav(items) {
+  const nav = node('nav', 'card-nav');
+  nav.setAttribute('aria-label', '卡片导航');
+  (items || []).filter((item) => item && item[2] !== false).forEach(([id, label], index) => {
+    const link = node('button', `nav-link${index === 0 ? ' active' : ''}`, label);
+    link.type = 'button';
+    link.dataset.targetSection = id;
+    if (index === 0) link.setAttribute('aria-current', 'page');
+    link.addEventListener('click', () => activateCardSection(id, nav));
+    nav.appendChild(link);
+  });
+  return nav;
+}
+
+function summaryStrip(id, items) {
+  const strip = node('div', 'summary-grid');
+  if (id) {
+    strip.id = id;
+    strip.dataset.cardSection = id;
+  }
+  (items || []).forEach(([label, value, cls]) => {
+    const item = node('div', 'summary-item');
+    const text = value === undefined || value === null || value === '' ? '未配置' : value;
+    append(item, node('span', 'summary-label', label), node('strong', `summary-value ${cls || statusClass(text)}`, text));
+    strip.appendChild(item);
+  });
+  return strip;
+}
+
+function kv(container, rows) {
+  const grid = node('div', 'kv');
+  rows.forEach(([key, value, copy]) => {
+    append(
+      grid,
+      node('div', 'key', key),
+      copy ? valueWithCopy(value) : node('div', 'value', value === undefined || value === null || value === '' ? '未配置' : value),
+    );
+  });
+  append(container, grid);
+  return container;
+}
+
+function projectOverviewSection(project, binding, stats, problemRows) {
+  const section = namedCard('project-overview', '项目概览');
+  section.classList.add('project-overview');
+  append(
+    section,
+    summaryStrip('', [
+      ['运行时', displayStatus(project.runtime_status || 'unknown'), statusClass(project.runtime_status)],
+      ['任务总数', stats.total === undefined ? 0 : stats.total, 'info'],
+      ['在途', (stats.active || 0) + (stats.blocked || 0), 'warn'],
+      ['已完成', stats.completed === undefined ? 0 : stats.completed, 'ok'],
+    ]),
+  );
+  const identityCard = card('项目身份');
+  kv(identityCard, [
+    ['项目编号', project.project_id, true],
+    ['项目名称', project.name],
+    ['根目录', project.root_path, true],
+    ['身份来源', displaySource(project.identity_source)],
+    ['项目绑定', binding.exists ? '已配置' : '未配置'],
+    ['绑定路径', binding.path, true],
+    ['基础 / 契约', `${project.base_version || '未配置'} / ${project.contract_version || ''}`],
+    ['运行时数据库', project.runtime_db, true],
+  ]);
+  append(section, identityCard, problems(problemRows));
+  return section;
+}
+
+function problems(rows, id) {
+  if (!rows || !rows.length) return null;
+  const section = id ? namedCard(id, '异常与待处理') : card('异常与待处理');
+  rows.forEach((problem) => {
+    const row = node('div', `problem ${problem.severity === 'error' ? 'error' : ''}`);
+    append(row, badge(problem.severity || 'warning'), node('span', '', ` ${problem.message || problem.code || '未知问题'}`));
+    append(section, row);
+  });
+  return section;
+}
+
+function metrics(stats, id) {
+  const row = node('div', 'metrics-row');
+  if (id) {
+    row.id = id;
+    row.dataset.cardSection = id;
+  }
+  row.classList.add('section-card');
+  const keys = [
+    ['total', '总任务'],
+    ['active', '进行中'],
+    ['blocked', '已阻塞'],
+    ['completed', '已完成'],
+    ['cancelled', '已取消'],
+    ['verification_attention', '验证需关注'],
+  ];
+  keys.forEach(([key, label]) => {
+    const metric = node('div', 'metric');
+    append(metric, node('strong', '', stats && stats[key] !== undefined ? stats[key] : 0), node('span', 'subtle', label));
+    append(row, metric);
+  });
+  append(app, row);
+}
+
+function taskTable(title, rows, id) {
+  const section = namedCard(id || 'task-table', title);
+  if (!rows || !rows.length) {
+    append(section, node('div', 'empty', '暂无数据'));
+    return section;
+  }
+
+  const toolbar = node('div', 'toolbar');
+  const query = node('input');
+  query.type = 'search';
+  query.placeholder = '筛选任务编号 / 标题 / 负责人';
+  query.dataset.filter = 'text';
+  const state = node('select');
+  state.dataset.filter = 'state';
+  [['', '全部状态'], ['NEW', '新建'], ['ACTIVE', '进行中'], ['BLOCKED', '已阻塞'], ['COMPLETED', '已完成'], ['CANCELLED', '已取消']].forEach(([value, label]) => {
+    const option = node('option', '', label);
+    option.value = value;
+    state.appendChild(option);
+  });
+  append(toolbar, query, state);
+  append(section, toolbar);
+
+  const wrap = node('div', 'table-wrap');
+  const table = node('table');
+  const thead = node('thead');
+  const header = node('tr');
+  ['任务', '标题', '状态', '阶段', '负责人', '时间', '摘要'].forEach((text) => append(header, node('th', '', text)));
+  append(thead, header);
+  const tbody = node('tbody');
+  rows.forEach((rowData) => {
+    const row = node('tr');
+    row.dataset.state = rowData.state || '';
+    row.dataset.search = [rowData.task_id, rowData.title, rowData.owner, rowData.summary].join(' ').toLowerCase();
+    const id = node('td');
+    append(id, node('span', '', rowData.task_id || ''), copyButton(rowData.task_id || ''));
+    append(
+      row,
+      id,
+      node('td', '', rowData.title || ''),
+      append(node('td'), badge(rowData.state)),
+      node('td', '', displayStage(rowData.phase)),
+      node('td', '', displayRole(rowData.owner)),
+      node('td', '', formatDateTime(rowData.completed_at || rowData.updated_at)),
+      node('td', '', rowData.summary || ''),
+    );
+    tbody.appendChild(row);
+  });
+
+  function applyFilter() {
+    const text = query.value.trim().toLowerCase();
+    const selectedState = state.value;
+    Array.from(tbody.children).forEach((row) => {
+      row.hidden = Boolean(
+        (text && !row.dataset.search.includes(text)) ||
+        (selectedState && row.dataset.state !== selectedState)
+      );
+    });
+  }
+
+  query.addEventListener('input', applyFilter);
+  state.addEventListener('change', applyFilter);
+  append(table, thead, tbody);
+  append(wrap, table);
+  append(section, wrap);
+  return section;
+}
+
+function compactTable(title, columns, rows, emptyText) {
+  const items = rows || [];
+  const section = node('div', 'compact-table-section');
+  append(section, node('h3', 'subsection-title', `${title} (${items.length})`));
+  if (!items.length) {
+    append(section, node('div', 'empty', emptyText || '暂无数据'));
+    return section;
+  }
+
+  const wrap = node('div', 'table-wrap compact-table-wrap');
+  const table = node('table', 'compact-table');
+  const thead = node('thead');
+  const header = node('tr');
+  (columns || []).forEach((column) => append(header, node('th', '', column)));
+  append(thead, header);
+  const tbody = node('tbody');
+  items.forEach((cells) => {
+    const row = node('tr');
+    (cells || []).forEach((cell) => append(row, append(node('td'), cell)));
+    append(tbody, row);
+  });
+  append(table, thead, tbody);
+  append(wrap, table);
+  append(section, wrap);
+  return section;
+}
+
+function projectTable(title, rows) {
+  const items = rows || [];
+  return compactTable(title, ['工程编号', '名称', '运行状态', '根目录'], items.map((project) => {
+    const id = node('span');
+    append(id, node('strong', '', project.project_id || '未配置'));
+    if (project.project_id) append(id, copyButton(project.project_id));
+    return [
+      id,
+      node('span', '', project.name || '未命名工程'),
+      badge(project.runtime_status || 'unknown'),
+      valueWithCopy(project.root_path),
+    ];
+  }), '暂无已注册工程');
+}
+
+function workspaceTable(title, rows) {
+  const items = rows || [];
+  return compactTable(title, ['工作区', '路径', '状态'], items.map((workspace) => {
+    const enabled = workspace.enabled !== false;
+    return [
+      node('strong', '', workspace.id || '未命名工作区'),
+      valueWithCopy(workspace.root),
+      node('span', `badge ${enabled ? 'ok' : 'muted'}`, enabled ? '已启用' : '已停用'),
+    ];
+  }), '暂无工作区');
+}
+
+function autonomyCard(autonomy, id) {
+  const section = id ? namedCard(id, '自治维护') : card('自治维护');
+  const status = autonomy.status === 'available' ? 'available' : (autonomy.status === 'invalid' ? 'invalid' : 'unconfigured');
+  kv(section, [
+    ['配置状态', displayStatus(status)],
+    ['配置目录', autonomy.profiles_path, true],
+    ['配置档案数量', autonomy.profile_count === undefined ? 0 : autonomy.profile_count],
+  ]);
+
+  const policyLabels = {
+    material: '重要操作需确认',
+    each_stage: '每个阶段需确认',
+  };
+  kv(section, [['运行方式', '外部调度器 + 本地执行器']]);
+  append(section, compactTable('配置档案', ['配置档案', '状态', '规范工作区', '自治工作区', '确认策略', '难度上限', '单周期上限'], (autonomy.profiles || []).map((profile) => [
+    node('strong', '', profile.profile_id || '未命名配置'),
+    badge(profile.enabled ? 'available' : 'unavailable'),
+    valueWithCopy(profile.canonical_root),
+    valueWithCopy(profile.autonomous_root),
+    node('span', '', policyLabels[profile.confirmation_policy] || profile.confirmation_policy || '未配置'),
+    node('span', '', profile.difficulty_ceiling || '未配置'),
+    node('span', '', profile.max_new_tasks_per_cycle === undefined ? '未配置' : profile.max_new_tasks_per_cycle),
+  ]), '暂无自治维护配置'));
+  if (!autonomy.configured && autonomy.error) {
+    append(section, node('div', 'problem', ` ${autonomy.error}`));
+  }
+  return section;
+}
+
+function renderGlobal() {
+  const base = data.base || {};
+  const wiki = data.wiki || {};
+  const knowledge = data.knowledge || {};
+  const workspace = data.workspace || {};
+  const registry = data.registry || {};
+
+  append(
+    app,
+    cardNav([
+      ['global-overview', '概览'],
+      ['global-content', 'Wiki / 知识库'],
+      ['global-workspace', '工作区'],
+      ['global-registry', '工程注册'],
+      ['global-autonomy', '自治维护'],
+    ]),
+  );
+
+  const overview = node('section', 'overview section-card');
+  overview.id = 'global-overview';
+  overview.dataset.cardSection = 'global-overview';
+  append(
+    overview,
+    summaryStrip('', [
+      ['Wiki', displayStatus(wiki.status || 'unknown'), statusClass(wiki.status)],
+      ['知识库', displayStatus(knowledge.status || 'unknown'), statusClass(knowledge.status)],
+      ['工作区', workspace.count === undefined ? 0 : workspace.count, 'info'],
+      ['注册工程', registry.project_count === undefined ? 0 : registry.project_count, 'info'],
+      ['解析器', displayStatus((data.resolver || {}).status || 'unknown'), statusClass((data.resolver || {}).status)],
+    ]),
+  );
+
+  const baseCard = card('基础 / 契约');
+  kv(baseCard, [
+    ['当前版本', data.version],
+    ['基础版本', base.base_version],
+    ['基础位置', base.root, true],
+    ['配置状态', base.configured ? '已配置' : '未配置'],
+    ['基础状态', base.valid ? '正常' : '异常'],
+  ]);
+  append(overview, baseCard);
+  append(overview, problems(data.problems));
+  append(app, overview);
+
+  const contentCard = namedCard('global-content', 'Wiki / 知识库', 'card half');
+  kv(contentCard, [
+    ['Wiki', displayStatus(wiki.status)],
+    ['Wiki 路径', wiki.path, true],
+    ['知识库', displayStatus(knowledge.status)],
+    ['知识库路径', knowledge.path, true],
+  ]);
+  append(app, contentCard);
+
+  const resolverCard = namedCard('global-workspace', '工作区 / 解析器', 'card half');
+  kv(resolverCard, [
+    ['工作区清单', workspace.configured ? '已配置' : '未配置'],
+    ['工作区数量', workspace.count],
+    ['默认工作区', workspace.default_workspace || '未定义'],
+    ['解析器', displayStatus((data.resolver || {}).status || 'unknown')],
+  ]);
+  append(resolverCard, workspaceTable('工作区列表', workspace.workspaces));
+  append(app, resolverCard);
+
+  const registryCard = namedCard('global-registry', '工程注册', 'card half');
+  kv(registryCard, [
+    ['状态', displayStatus(registry.status)],
+    ['路径', registry.path, true],
+    ['工程数量', registry.project_count],
+  ]);
+  append(registryCard, projectTable('已注册工程', data.registered_projects || []));
+  append(app, registryCard);
+  append(app, autonomyCard(data.autonomy || {}, 'global-autonomy'));
+
+}
+
+function renderProject() {
+  const project = data.project || {};
+  const binding = project.binding || {};
+  const wiki = data.wiki || {};
+  const knowledge = data.knowledge || {};
+  const stats = data.task_statistics || {};
+
+  append(
+    app,
+    cardNav([
+      ['project-overview', '概览'],
+      ['project-content', 'Wiki / 知识库'],
+      ['project-stats', '任务统计'],
+      ['project-active', '在途任务'],
+      ['project-completed', '最近完成'],
+    ]),
+    projectOverviewSection(project, binding, stats, data.problems),
+  );
+
+  const contentCard = namedCard('project-content', 'Wiki / 知识库');
+  kv(contentCard, [
+    ['Wiki', displayStatus(wiki.status)],
+    ['Wiki 路径', wiki.path, true],
+    ['Wiki 注册', wiki.registry_exists ? '可用' : '不可用'],
+    ['Wiki 标识', (wiki.identity || {}).workspace_id || '未映射'],
+    ['知识库', displayStatus(knowledge.status)],
+    ['知识库路径', knowledge.path, true],
+    ['知识库注册', knowledge.registry_exists ? '可用' : '不可用'],
+    ['知识库项目', (knowledge.project_scope || {}).project_id || '未映射'],
+    ['共享范围', (knowledge.shared_scope || {}).count || 0],
+    ['投影状态', displayStatus((knowledge.projection || {}).status || 'unknown')],
+  ]);
+  append(app, contentCard);
+
+  metrics(stats, 'project-stats');
+  append(app, taskTable('在途任务', data.in_progress_tasks || [], 'project-active'), taskTable('最近完成', data.completed_tasks || [], 'project-completed'));
+}
+
+function renderSteps(workflow, id) {
+  const section = namedCard(id || 'workflow', '工作流进度');
+  const steps = workflow.steps || [];
+  if (steps.length) {
+    const box = node('div', 'steps');
+    steps.forEach((stepData) => {
+      const cls = stepData.status === '已完成' ? 'done' : stepData.status === '进行中' ? 'current' : stepData.status === '已阻塞' ? 'blocked' : '';
+      const step = node('div', `step ${cls}`);
+      append(step, node('strong', '', displayStage(stepData.stage)), node('div', 'subtle', `${displayStatus(stepData.status)}${stepData.role ? ` · ${displayRole(stepData.role)}` : ''}`));
+      append(box, step);
+    });
+    append(section, box);
+  } else {
+    append(section, node('div', 'empty', '工作流无法可靠解析，下面仅展示参考流程'));
+    if (workflow.reference_steps) append(section, node('div', 'subtle', (workflow.reference_steps || []).map(displayStage).join(' → ')));
+  }
+
+  const next = workflow.next_step || {};
+  if (next.stage) {
+    append(
+      section,
+      node('div', 'spacer'),
+      node('div', 'section-title', '下一步'),
+      node('div', '', `${displayStage(next.stage)}${next.role ? ` · ${displayRole(next.role)}` : ''}`),
+      node('div', 'subtle', `${next.action || ''}${next.confirmation_required ? ' · 需要确认' : ''}`),
+    );
+  }
+  return section;
+}
+
+function renderTask() {
+  const task = data.task || {};
+  const workflow = data.workflow || {};
+  const nextStep = workflow.next_step || {};
+
+  append(
+    app,
+    cardNav([
+      ['task-overview', '概览'],
+      ['task-facts', '任务事实'],
+      ['task-latest', '最近事实'],
+      ['task-workflow', '工作流'],
+      ['task-blockers', '当前阻塞', Boolean(data.blockers && data.blockers.length)],
+      ['task-evidence', '依据'],
+      ['task-timeline', '事件时间线'],
+      ['task-summary', '任务摘要', Boolean(data.summary)],
+    ]),
+  );
+
+  const taskOverview = node('section', 'overview section-card');
+  taskOverview.id = 'task-overview';
+  taskOverview.dataset.cardSection = 'task-overview';
+  append(
+    taskOverview,
+    summaryStrip('', [
+      ['状态', displayStatus(task.state || 'unknown'), statusClass(task.state)],
+      ['当前阶段', displayStage(task.phase || '未记录')],
+      ['风险', task.risk_level || '未记录'],
+      ['流程', task.flow_level || '未记录'],
+      ['下一步', displayStage(nextStep.stage || '未解析')],
+    ]),
+  );
+  append(taskOverview, problems(data.problems));
+  append(app, taskOverview);
+
+  const taskCard = namedCard('task-facts', '任务事实', 'card half');
+  kv(taskCard, [
+    ['任务编号', task.task_id, true],
+    ['标题', task.title],
+    ['状态', displayStatus(task.state)],
+    ['当前阶段', displayStage(task.phase)],
+    ['负责人', displayRole(task.owner)],
+    ['风险 / 流程', `${task.risk_level || '未记录'} / ${task.flow_level || '未记录'}`],
+    ['更新时间', formatDateTime(task.updated_at)],
+    ['运行时数据库', task.runtime_db, true],
+  ]);
+  append(app, taskCard);
+
+  const checkpoint = data.latest_checkpoint || {};
+  const verification = data.verification || {};
+  const factCard = namedCard('task-latest', '最近事实', 'card half');
+  kv(factCard, [
+    ['检查点', checkpoint.summary || '尚无'],
+    ['检查点时间', formatDateTime(checkpoint.created_at)],
+    ['验证', displayStatus(verification.status || 'NOT_RECORDED')],
+    ['验证摘要', verification.summary || ''],
+    ['依据数量', Array.isArray(data.evidence) ? data.evidence.length : 0],
+  ]);
+  append(app, factCard, renderSteps(workflow, 'task-workflow'));
+
+  if (data.blockers && data.blockers.length) {
+    const blockerCard = namedCard('task-blockers', '当前阻塞');
+    data.blockers.forEach((blocker) => {
+      const timestamp = formatDateTime(blocker.created_at);
+      append(blockerCard, node('div', 'problem', `${blocker.reason || ''}${timestamp ? ` · ${timestamp}` : ''}`));
+    });
+    append(app, blockerCard);
+  }
+
+  const evidenceCard = namedCard('task-evidence', `依据（${(data.evidence || []).length}）`);
+  if (data.evidence && data.evidence.length) {
+    const groups = new Map();
+    data.evidence.forEach((evidence) => {
+      const eventType = String(evidence.event_type || 'UNKNOWN').toUpperCase();
+      if (!groups.has(eventType)) groups.set(eventType, []);
+      groups.get(eventType).push(evidence);
+    });
+    const groupList = node('div', 'evidence-groups');
+    groups.forEach((items, eventType) => {
+      const group = node('div', 'evidence-group');
+      append(group, node('div', 'evidence-group-title', `${evidenceGroupLabel(eventType)} · ${items.length}`));
+      const list = node('div', 'evidence-list');
+      items.forEach((evidence) => {
+        const path = String(evidence.path || '');
+        const fileName = evidenceFileName(path);
+        const detail = [evidenceDirectory(path), formatDateTime(evidence.created_at)].filter(Boolean).join(' · ');
+        const info = node('div', 'evidence-info');
+        append(info, node('strong', 'evidence-name', fileName), node('div', 'evidence-path', detail));
+        const row = node('div', 'evidence-row');
+        append(row, info, copyButton(path, `复制 ${evidenceFileName(evidence.path)} 路径`));
+        append(list, row);
+      });
+      append(group, list);
+      append(groupList, group);
+    });
+    append(evidenceCard, groupList);
+  } else {
+    append(evidenceCard, node('div', 'empty', '暂无依据'));
+  }
+  append(app, evidenceCard);
+
+  const timelineCard = card(`事件时间线（${(data.timeline || []).length}）`);
+  timelineCard.id = 'task-timeline';
+  timelineCard.dataset.cardSection = 'task-timeline';
+  timelineCard.classList.add('section-card');
+  const timeline = node('div', 'timeline');
+  const timelineGroups = new Map();
+  (data.timeline || []).forEach((eventData, index) => {
+    const formatted = formatDateTime(eventData.created_at);
+    const date = formatted ? formatted.slice(0, 10) : '未记录';
+    if (!timelineGroups.has(date)) timelineGroups.set(date, []);
+    timelineGroups.get(date).push({eventData, index, formatted});
+  });
+  timelineGroups.forEach((entries, date) => {
+    const day = node('div', 'timeline-day');
+    append(day, node('div', 'timeline-day-title', date));
+    const dayList = node('div', 'timeline-day-list');
+    entries.forEach(({eventData, index, formatted}) => {
+      const event = node('div', `event ${eventStatusClass(eventData)}`);
+      const marker = node('div', 'event-marker');
+      marker.setAttribute('aria-hidden', 'true');
+      const eventBody = node('div', `event-body${index < 3 ? ' open' : ''}`);
+      const eventToggle = node('button', 'event-toggle');
+      eventToggle.type = 'button';
+      eventToggle.id = `task-timeline-toggle-${index}`;
+      eventToggle.setAttribute('aria-expanded', String(index < 3));
+      const head = node('div', 'event-head');
+      append(
+        head,
+        node('strong', 'event-type', displayEvent(eventData.event_type)),
+        node('span', 'event-actor', eventData.actor ? displayRole(eventData.actor) : '未指定'),
+      );
+      append(
+        eventToggle,
+        head,
+        node('div', 'event-preview', eventData.summary || '暂无摘要'),
+      );
+      const eventFull = node('div', 'event-full', eventData.summary || '暂无摘要');
+      eventFull.id = `task-timeline-event-${index}`;
+      eventFull.hidden = index >= 3;
+      eventFull.setAttribute('role', 'region');
+      eventFull.setAttribute('aria-labelledby', eventToggle.id);
+      eventToggle.setAttribute('aria-controls', eventFull.id);
+      eventToggle.addEventListener('click', () => {
+        const expanded = eventToggle.getAttribute('aria-expanded') !== 'true';
+        eventToggle.setAttribute('aria-expanded', String(expanded));
+        eventBody.classList.toggle('open', expanded);
+        eventFull.hidden = !expanded;
+      });
+      append(eventBody, eventToggle, eventFull);
+      append(
+        event,
+        node('div', 'event-time', formatted && formatted.includes(' ') ? formatted.slice(11) : (formatted || '未记录')),
+        marker,
+        eventBody,
+      );
+      append(dayList, event);
+    });
+    append(day, dayList);
+    append(timeline, day);
+  });
+  if (!(data.timeline || []).length) append(timeline, node('div', 'empty', '暂无事件'));
+  append(timelineCard, timeline);
+  append(app, timelineCard);
+
+  if (data.summary) append(app, append(namedCard('task-summary', '任务摘要'), node('div', '', data.summary)));
+}
+
+document.getElementById('title').textContent = data.title || 'TP-Spec 信息卡片';
+document.getElementById('meta').textContent = `状态：${data.health || 'unknown'} · 生成时间：${formatDateTime(data.generated_at) || '未知'}`;
+if (data.card_type === 'global_config') renderGlobal();
+else if (data.card_type === 'current_project') renderProject();
+else if (data.card_type === 'active_task') renderTask();
+else append(app, node('div', 'empty', '不支持的卡片类型'));
+
+const initialNav = app.querySelector('.card-nav');
+const initialTab = initialNav && initialNav.querySelector('.nav-link');
+if (initialNav && initialTab) activateCardSection(initialTab.dataset.targetSection, initialNav);
+</script>
+</body>
+</html>

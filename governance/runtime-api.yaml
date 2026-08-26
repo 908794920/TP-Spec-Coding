@@ -101,3 +101,13 @@ rules:
     pretask_rule: No TaskId means no fabricated work-session event; pre-task timing
       may remain unrecorded
     workflow_effect: timing evidence never blocks task progression
+  temporary_artifacts:
+    storage: system_temp
+    ownership: machine-local JSON manifest keyed by project/task/run
+    statuses: [ACTIVE, CLEANED, CLEANUP_PENDING]
+    not_a_task_state: true
+    source_files: immutable; read or copy into owned temp only, never overwrite/move/delete originals
+    cleanup: work end cleans the matching registered run; task complete/cancel retries all registered task runs
+    crash_recovery: persistent ownership enables explicit interrupted-session close or temp cleanup retry after restart
+    orphan_check: report-only for unmanaged/history paths; never delete by name, wildcard, or appearance
+    link_safety: never follow symlink, Junction, or reparse-point targets during cleanup

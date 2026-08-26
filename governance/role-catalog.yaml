@@ -1,6 +1,6 @@
 catalog_version: "5.2.6"
 base_version: "5.2.6"
-generated_utc: 20260821T043602Z
+generated_utc: 20260825T180303Z
 generated_by: update_role_catalog.py deterministic metadata/hash refresh
 human_actor:
   id: human_owner
@@ -14,7 +14,7 @@ roles:
   phases: [other]
   capabilities: [domain.routing, status.compact, explain.route]
   owns_states: []
-  content_sha256: 7CF8196E538EA164384FE5E37F01397CD5EB4403F29BBF98B485A1BC117EF4E3
+  content_sha256: CA69CC652D5292356A8554B6671A755E5BE24EC360263F27BD1159970571FD17
 - workflow_role: tp-software-lifecycle
   display_name: tp-软件工程生命周期
   type: control-role
@@ -23,7 +23,7 @@ roles:
   phases: [intake, requirement, product, discovery, architecture, planning, development, verification, review, delivery]
   capabilities: [lifecycle.routing, role.resolution, workflow.coordination]
   owns_states: [NEW]
-  content_sha256: D464A055079BDBC654CC4463590A9DB410D58F20760CD32E59BC10E93148E8A0
+  content_sha256: 26C35F45922FC7362A66CDB6F4C6511CF7E819C0355DC8A306874DFFFC8AD6E7
 - workflow_role: tp-project-autonomy
   display_name: tp-项目自治维护
   type: control-role
@@ -136,7 +136,7 @@ roles:
   subskills:
     - {id: testing-strategy, path: skills/capabilities/testing-strategy/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 711208392A96BC906C43A9704EE1AB253F1243E470438F4D75B1FB4AA828F237
+  content_sha256: E5CB7BF4C160EDD28D00FC2DEF8096B1D449797CEAEA33F0E455322C25220130
 - workflow_role: tp-code-reviewer
   display_name: tp-代码审查员
   type: workflow-role

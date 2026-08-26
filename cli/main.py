@@ -24,9 +24,12 @@ if __package__ in (None, ""):
 from cli import project_cmd
 from cli import product_cmd
 from cli import document_cmd
+from cli.cards import commands as card_commands
+from cli.cards import trigger as card_trigger
 from cli import base_maintenance
 from cli import task_cmd
 from cli import work_session_cmd
+from cli import temp_cmd
 from cli import rework_cmd
 from cli import workitem_cmd
 from cli import event_cmd
@@ -91,6 +94,9 @@ def build_parser() -> argparse.ArgumentParser:
     # Local-only document normalization; retrieval and Knowledge disposition remain separate.
     document_cmd.add_document_subparsers(subparsers)
 
+    # Read-only offline HTML previews; cards never become Runtime authority.
+    card_commands.add_card_subparsers(subparsers)
+
     # V5.2.6 Base convergence：安装根、Workspace Inventory、项目绑定与 Junction 收敛。
     base_maintenance.add_base_subparsers(subparsers)
 
@@ -109,6 +115,9 @@ def build_parser() -> argparse.ArgumentParser:
     # work 组（M2 实现）
     work_parser = subparsers.add_parser("work", help="Work session management")
     work_session_cmd.add_work_subparsers(work_parser)
+
+    # V5.2.6：机器本地临时工件所有权、清理与 orphan 只读检查。
+    temp_cmd.add_temp_subparsers(subparsers)
 
     # rework 组（M2 实现）
     rework_parser = subparsers.add_parser("rework", help="Rework management")
@@ -183,7 +192,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
     try:
         autonomy_context.guard_content_cli(args)
-        return int(func(args) or 0)
+        rc = int(func(args) or 0)
+        if rc == 0:
+            try:
+                card_trigger.refresh_after_success(args)
+            except Exception as card_exc:
+                # Preview generation is presentation-only and must never rewrite
+                # a successful Runtime command into failure.
+                print(f"CARD_RENDER_WARNING: {type(card_exc).__name__}: {card_exc}", file=sys.stderr)
+        return rc
     except SystemExit:
         raise
     except BaselineBlockedError as e:

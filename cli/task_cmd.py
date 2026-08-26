@@ -1491,24 +1491,84 @@ def cmd_task_migration_plan(args) -> int:
 
 
 def cmd_task_artifact_path(args) -> int:
-    """Return/create the canonical task-local destination for auxiliary artifacts."""
+    """返回辅助工件规范路径；execution-temp 使用机器本地受控临时根。"""
     task_dir = Path(args.task_dir).resolve()
     kind = args.kind
-    mapping = {
-        "verification-sql": task_dir / "evidence" / "sql",
-        "test-evidence": task_dir / "evidence",
-        "execution-temp": task_dir.parent.parent / ".execution" / task_dir.name / (args.role or "unknown"),
-    }
-    base = mapping[kind]
     name = (args.name or "").strip()
     if name:
         candidate = Path(name)
         if candidate.name != name or name in {".", ".."}:
             print("ERROR: --name must be a plain file name without path traversal", file=sys.stderr)
             return 2
-        target = base / name
-    else:
-        target = base
+
+    if kind == "execution-temp":
+        if not args.ensure:
+            print("ERROR: execution-temp requires --ensure so ownership is registered", file=sys.stderr)
+            return 2
+        task_id = str(args.task or "").strip()
+        role = str(args.role or "").strip()
+        if not task_id or not role:
+            print("ERROR: execution-temp requires --task and --role", file=sys.stderr)
+            return 2
+
+        # 项目身份只接受显式值、正式 binding 或 Runtime task 事实，不从目录名猜测。
+        candidates = []
+        explicit_project = str(args.project or "").strip()
+        if explicit_project:
+            candidates.append(("explicit", explicit_project))
+        workspace = None
+        if task_dir.parent.name == "tasks" and task_dir.parent.parent.name == ".tp-spec":
+            workspace = task_dir.parent.parent.parent
+            try:
+                binding = load_project_binding(workspace)
+            except EnvironmentConfigError as exc:
+                print(f"ERROR: project identity binding invalid: {exc}", file=sys.stderr)
+                return 2
+            if binding.exists and binding.project_id:
+                candidates.append(("binding", binding.project_id))
+        if args.db:
+            try:
+                conn = dbmod.connect_readonly(str(Path(args.db).resolve()))
+                try:
+                    row = conn.execute("SELECT project_id FROM task WHERE task_id=?", (task_id,)).fetchone()
+                finally:
+                    conn.close()
+            except Exception as exc:
+                print(f"ERROR: project identity Runtime read failed: {exc}", file=sys.stderr)
+                return 2
+            if row is None:
+                print(f"ERROR: task not found in Runtime: {task_id}", file=sys.stderr)
+                return 4
+            if row["project_id"]:
+                candidates.append(("runtime", str(row["project_id"])))
+        project_ids = {value for _, value in candidates if value}
+        if not project_ids:
+            print("ERROR: project identity is unavailable; provide --project or a valid binding/Runtime", file=sys.stderr)
+            return 2
+        if len(project_ids) != 1:
+            print(f"ERROR: project identity conflict: {candidates}", file=sys.stderr)
+            return 2
+        project_id = next(iter(project_ids))
+
+        from . import temp_artifacts
+        try:
+            record = temp_artifacts.create_run_root(
+                project_id=project_id,
+                task_id=task_id,
+                creator_role=role,
+                creator_agent=str(args.agent or ""),
+                run_id=str(args.run_id or "") or None,
+            )
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        base = Path(record["root_path"])
+        target = base / name if name else base
+        print(str(target))
+        return 0
+
+    base = task_dir / "evidence" / "sql" if kind == "verification-sql" else task_dir / "evidence"
+    target = base / name if name else base
     if args.ensure:
         (base if name else target).mkdir(parents=True, exist_ok=True)
     print(str(target))
@@ -1977,7 +2037,12 @@ def add_task_subparsers(task_parser) -> None:
     p_art.add_argument("--task-dir", required=True)
     p_art.add_argument("--kind", required=True, choices=["verification-sql", "test-evidence", "execution-temp"])
     p_art.add_argument("--name", required=False, default=None)
-    p_art.add_argument("--role", required=False, default=None, help="required/recommended for execution-temp")
+    p_art.add_argument("--task", required=False, default=None, help="required for execution-temp")
+    p_art.add_argument("--project", required=False, default=None, help="explicit project identity for execution-temp")
+    p_art.add_argument("--role", required=False, default=None, help="required for execution-temp")
+    p_art.add_argument("--agent", required=False, default=None, help="creator agent for execution-temp ownership")
+    p_art.add_argument("--run-id", required=False, default=None, help="work session id or explicit run id for execution-temp")
+    p_art.add_argument("--db", required=False, default=None, help="Runtime DB used only to verify execution-temp project identity")
     p_art.add_argument("--ensure", action="store_true")
     p_art.set_defaults(func=cmd_task_artifact_path)
 
