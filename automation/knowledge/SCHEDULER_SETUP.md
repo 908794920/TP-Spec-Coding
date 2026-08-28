@@ -6,7 +6,7 @@ Knowledge maintenance is scheduled by waking a **conversational model session**.
 
 Store only the contents/intent of `SCHEDULER_BOOTSTRAP.md` as the scheduled prompt. Do not copy `daily-maintenance.md`, SKILL rules, CLI steps, model names or absolute Knowledge paths into the scheduler configuration.
 
-The scheduled conversation should start with the **project workspace root** as context. From there it reads the user Installation and resolves the current physical Base Root, Knowledge System Root, and project-scoped Knowledge root. Project-side Junctions are not required.
+The scheduled conversation first reads the user Installation and resolves the physical Base Root, Knowledge System Root, Workspace Inventory, and Knowledge Project Registry, then processes each registered non-archived workspace/project independently. Project-side Junctions are not required.
 
 ## Required capabilities
 

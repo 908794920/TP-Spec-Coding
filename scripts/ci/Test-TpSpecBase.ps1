@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-V5.2.6 unified offline test entry.
+V5.2.7 unified offline test entry.
 
 .DESCRIPTION
 PowerShell dispatcher for the TP-Spec-Coding local test chain. Fully offline:
@@ -11,7 +11,7 @@ containers or credentials.
     forbidden paths, network-primitive blacklist, Python byte-compile and
     test discovery. Deliberately contains NO YAML semantic checks; those
     join only after the P2 controlled loader lands (ruling P0-3).
--Mode Full   : active V5.2.6 release gate only. Historical compatibility is covered by migration tests, not an active runtime mode.
+-Mode Full   : active V5.2.7 release gate only. Historical compatibility is covered by migration tests, not an active runtime mode.
 -KeepWorkDir : by default the work directory created by THIS run (resolved
     and verified before removal) is cleaned; only this switch keeps it.
     Child scripts' own audit temp dirs are never touched.
@@ -115,9 +115,21 @@ if ($Mode -eq 'Full') {
     }
 }
 
+
+if ($Mode -eq 'Full') {
+    Invoke-Check 'full.docs.navigation' {
+        $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        $out = & python (Join-Path $base 'scripts\check_document_navigation.py') 2>&1
+        $code = $LASTEXITCODE
+        $ErrorActionPreference = $prevEap
+        if ($code -ne 0) { throw ('document navigation failed: ' + (($out | Select-Object -First 8) -join ' | ')) }
+        ($out | Select-Object -Last 1)
+    }
+}
+
 Invoke-Check 'static.forbidden.paths' {
     $tracked = @(& git -C $base ls-files)
-    # docs/ 已纳入 Git 管理（V5.2.6 发布完整性）；仅禁止运行时产物与本地状态
+    # docs/ 已纳入 Git 管理（V5.2.7 发布完整性）；仅禁止运行时产物与本地状态
     $forbiddenPatterns = @('__pycache__', '\.pyc$', '^db/registry\.local\.json$', '\.db$', '\.flush-journal', '\.local\.', '\.pytest_cache', '^tp-spec-base\.zip$', '^docs/planning/')
     $hits = @()
     foreach ($p in $forbiddenPatterns) {
@@ -187,6 +199,7 @@ Invoke-Check 'static.yaml.semantic_validate' {
         'governance/knowledge-rule.yaml|knowledge-rule',
         'governance/compat-matrix.yaml|compat-matrix',
         'governance/orchestration.yaml|orchestration',
+        'governance/event-semantics.yaml|event-semantics',
         'governance/role-catalog.yaml|role-catalog',
         ((Join-Path 'templates' ((Get-Content -LiteralPath (Join-Path $base 'VERSION') -Raw).Trim())) + '/status.yaml|status-template')
     )
@@ -202,7 +215,7 @@ Invoke-Check 'static.yaml.semantic_validate' {
     Get-ChildItem -LiteralPath (Join-Path $base 'cli') -Recurse -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue |
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     if ($failed.Count -gt 0) { throw ("YAML semantic validation failed: " + ($failed -join '; ')) }
-    "8 governed files validated through controlled loader"
+    "9 governed files validated through controlled loader"
 }
 
 Invoke-Check 'static.unit.config_loader' {

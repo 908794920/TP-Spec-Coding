@@ -1,7 +1,7 @@
 ---
 id: tp-software-lifecycle
 name: tp-软件工程生命周期
-version: 5.2.6
+version: 5.2.7
 status: active
 type: control-role
 role: tp-software-lifecycle
@@ -35,15 +35,13 @@ Requirement Ready 后才创建正式 Task；存在 pre-task canonical requiremen
 `CLEANUP_PENDING` 只表示机器本地临时工件清理尚未完成，不是新的 Task State，不得改变 `NEW / ACTIVE / BLOCKED / COMPLETED / CANCELLED` 五态，也不得阻塞已经成功写入的 Runtime 事实。
 
 ## HTML 任务卡片刷新
-正式 Runtime 步骤成功并已产生持久化事实后，可刷新该 task_id 的一次性 HTML 任务快照。刷新白名单为：`task create / task checkpoint / task verify / task block / task resume / task delivery-converge / task complete`、`work start / work end`、`workflow confirm`。普通文件读取、代码搜索、测试、Shell 命令以及只读 `workflow next`/`task get` 不触发刷新。
+正式 Runtime 步骤成功并产生持久化事实后，可按既有白名单刷新该 task_id 的一次性 HTML 任务快照。刷新白名单保持：`task create / task checkpoint / task verify / task block / task resume / task delivery-converge / task complete`、`work start / work end`、`workflow confirm`。普通文件读取、代码搜索、测试、Shell 命令以及只读 `workflow next`/`task get` 不触发刷新。
 
-刷新必须使用当前命令提供的明确 task_id 和 Runtime/Resolver 正式事实；不得根据最近执行的任意命令猜测，也不得扫描任务后任意选择“最近任务”。每次白名单步骤成功后除覆盖该 Task 的既有离线 HTML 外，还覆盖当前工作区固定的 `.tp-spec-preview/card/index.html`，不生成 Artifact 历史版本。
+自动刷新仍由 Runtime hook 负责，使用明确 task_id 和正式 Runtime/Resolver 事实；不得根据最近执行的任意命令猜测 task_id，也不会扫描或猜测“最近任务”。若当前宿主已确认支持会话内 HTML fragment，可在**该单个子进程**设置 `TP_SPEC_CARD_INLINE_OUTPUT`；刷新输出的 `CARD_DISPLAY` 是统一展示结果契约，其中 `inline.status=generated` 只表示片段生成成功。 每次刷新仍覆盖当前工作区固定 `.tp-spec-preview/card/index.html` Web Artifact。
 
-宿主暴露会话内 HTML 可视化能力时，在执行该正式步骤的单个子进程中设置 `TP_SPEC_CARD_INLINE_OUTPUT` 为当前会话可视化目录下的唯一绝对路径；不得把这个宿主路径写入项目配置或 Runtime。命令输出 `INLINE_VISUALIZATION` 后，必须在同一次回复中输出对应的会话内可视化引用，让更新后的进行中任务卡片直接可见；命令结束后不得把该环境变量泄漏给无关命令。
+用户明确要求“显示卡片”时，按需加载 `tp-card-display`。该能力读取 `CARD_DISPLAY` 后，按真实宿主能力选择会话内 fragment、固定 Web Artifact 或离线 HTML；不自行生成第二份卡片数据，也不把通用可视化文本当作固定协议。
 
-宿主没有该能力或片段失败时，继续使用固定 Web Artifact 与离线 HTML 降级。HTML 卡片失败不得改变原命令成功结果；Web Artifact 或会话内片段失败同样不得改变原命令成功结果；卡片只是可删除、可重建的展示快照，不新增 public state，不写回 Runtime/Wiki/Knowledge。
-
-会话内片段超过宿主 1 MB 上限时允许只对片段做确定性截断并显示提示；离线 HTML、Web Artifact 与 Runtime 事实保持完整。
+HTML 卡片失败不得改变原命令成功结果；Artifact/fragment 失败同样不得改变原命令成功结果。卡片只是可删除、可重建的只读展示快照，不新增 public state，不写回 Runtime/Wiki/Knowledge。
 
 ## 深度模式与安全
 本 Domain Agent 只决定**何时进入深度模式**；UltraPlan/UltraReview 由正式专业角色主持；`mode` 与 `effects` 独立于 Role。任何 `repo_mutation` 都必须继续遵守 Execution Envelope / allowed_effects fail-closed 边界。

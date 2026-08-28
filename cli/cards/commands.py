@@ -3,11 +3,85 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional, Tuple
+import json
+import os
 import sys
 
 from .render import artifact_output_path, default_output_path, render_card, render_inline_card
 from .snapshot import build_global_snapshot, build_project_snapshot, build_task_snapshot
+
+
+def _error_summary(exc: Exception) -> str:
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _resolve_inline_output(inline_output_arg: Optional[str]) -> Optional[str]:
+    explicit = str(inline_output_arg or "").strip()
+    if explicit:
+        return explicit
+    environment = str(os.environ.get("TP_SPEC_CARD_INLINE_OUTPUT") or "").strip()
+    return environment or None
+
+
+def render_display_outputs(
+    snapshot: Dict[str, Any],
+    output: Path,
+    *,
+    artifact_root: Optional[str] = None,
+    inline_output_arg: Optional[str] = None,
+    emit_offline_path: bool = True,
+    emit_artifact_path: bool = True,
+    result_stream=None,
+    legacy_stream=None,
+) -> Tuple[Path, Dict[str, Any]]:
+    """Render all requested presentation artifacts and emit one stable result contract.
+
+    Runtime facts are never read or mutated here.  Each host-facing artifact is
+    best-effort after the canonical offline HTML succeeds.
+    """
+    stream = result_stream or sys.stdout
+    legacy = legacy_stream or stream
+    path = render_card(snapshot, output)
+    if emit_offline_path:
+        print(str(path), file=stream)
+
+    result: Dict[str, Any] = {
+        "schema": "tp-spec.card-display/v1",
+        "card_type": str(snapshot.get("card_type") or ""),
+        "offline_html": str(path),
+        "web_artifact": None,
+        "artifact": {"status": "failed", "error": None},
+        "inline": {"requested": False, "status": "not_requested", "path": None, "error": None},
+    }
+
+    try:
+        artifact = artifact_output_path(artifact_root)
+        if artifact != path:
+            artifact = render_card(snapshot, artifact)
+        result["web_artifact"] = str(artifact)
+        result["artifact"] = {"status": "generated", "error": None}
+        if emit_artifact_path:
+            print(f"WEB_ARTIFACT: {artifact}", file=stream)
+    except Exception as exc:
+        error = _error_summary(exc)
+        result["artifact"] = {"status": "failed", "error": error}
+        print(f"CARD_ARTIFACT_WARNING: {error}", file=sys.stderr)
+
+    inline_output = _resolve_inline_output(inline_output_arg)
+    if inline_output:
+        result["inline"]["requested"] = True
+        try:
+            inline = render_inline_card(snapshot, inline_output)
+            result["inline"].update({"status": "generated", "path": str(inline), "error": None})
+            print(f"INLINE_VISUALIZATION: {inline}", file=legacy)
+        except Exception as exc:
+            error = _error_summary(exc)
+            result["inline"].update({"status": "failed", "path": None, "error": error})
+            print(f"CARD_INLINE_WARNING: {error}", file=sys.stderr)
+
+    print("CARD_DISPLAY: " + json.dumps(result, ensure_ascii=False, separators=(",", ":")), file=stream)
+    return path, result
 
 
 def _emit(
@@ -19,27 +93,12 @@ def _emit(
     inline_output_arg: Optional[str] = None,
 ) -> int:
     output = Path(output_arg).expanduser().resolve(strict=False) if output_arg else default_output_path(snapshot["card_type"], identifier)
-    path = render_card(snapshot, output)
-    print(str(path))
-
-    try:
-        artifact = artifact_output_path(artifact_root)
-        if artifact != path:
-            artifact = render_card(snapshot, artifact)
-        print(f"WEB_ARTIFACT: {artifact}")
-    except Exception as exc:
-        # The fixed Web Artifact is a host-facing convenience. Offline preview
-        # remains the fallback and an artifact failure must not erase it.
-        print(f"CARD_ARTIFACT_WARNING: {type(exc).__name__}: {exc}", file=sys.stderr)
-
-    if inline_output_arg:
-        try:
-            inline = render_inline_card(snapshot, inline_output_arg)
-            print(f"INLINE_VISUALIZATION: {inline}")
-        except Exception as exc:
-            # Conversation rendering is host-facing and best-effort. Keep the
-            # independently generated offline and Web Artifact outputs intact.
-            print(f"CARD_INLINE_WARNING: {type(exc).__name__}: {exc}", file=sys.stderr)
+    render_display_outputs(
+        snapshot,
+        output,
+        artifact_root=artifact_root,
+        inline_output_arg=inline_output_arg,
+    )
     return 0
 
 

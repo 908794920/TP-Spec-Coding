@@ -1,4 +1,4 @@
-version: "5.2.6"
+version: "5.2.7"
 entry_role: tp-software-lifecycle
 level_resolution:
   rule: MAX_RISK_FLOW
@@ -32,6 +32,28 @@ signals:
   root_cause_prefix: "workflow:root-cause:"
   security_risk: "workflow:security-risk"
   database_risk: "workflow:database-risk"
+presentation:
+  stages:
+    requirement: {label: 需求, description: 澄清并确认需求与验收边界。}
+    product: {label: 产品设计, description: 按需补充产品方案与交互约束。}
+    architecture: {label: 架构设计, description: 形成可实施的软件架构与关键技术决策。}
+    architecture_review: {label: 架构复审, description: 在风险触发时独立复核架构结论。}
+    planning: {label: 实施规划, description: 拆分任务、依赖、顺序与实施约束。}
+    development: {label: 开发, description: 按已确认方案实施代码变更。}
+    verification: {label: 验证, description: 执行测试与运行验证并记录证据。}
+    review: {label: 代码复审, description: 对实现正确性、风险与一致性进行复核。}
+    delivery: {label: 交付集成, description: 收口集成、发布准备与残余风险。}
+    complete: {label: 完成, description: 正式任务已满足完成条件。}
+  actions:
+    dispatch_role: {label: 进入下一步骤, description: 调度对应正式角色继续执行。}
+    await_confirmation: {label: 等待确认, description: 当前边界需要 human_owner 明确确认后继续。}
+    await_effect_approval: {label: 等待执行授权, description: 下一步骤需要尚未允许的变更效果。}
+    task_complete: {label: 完成任务, description: 工作流已完成，等待正式 task complete 收口。}
+    none: {label: 无后续动作, description: 当前任务不需要继续调度。}
+    task_resume_after_resolution: {label: 解除阻塞后恢复, description: 先解决当前阻塞，再恢复任务。}
+  confirmations:
+    EACH_STAGE_POLICY: {label: 等待阶段确认, description: 用户配置要求角色/阶段边界逐次确认。}
+    MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION: {label: 等待架构实施确认, description: L2/L3 从架构进入实现前需要重要决策确认。}
 conditional_roles:
   - role: tp-database-engineer
     trigger: database_risk

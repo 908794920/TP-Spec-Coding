@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding v5.2.6 public-release contract tests."""
+"""TP-Spec-Coding v5.2.7 public-release contract tests."""
 from __future__ import annotations
 
 import json
@@ -21,7 +21,7 @@ def read(rel: str) -> str:
 
 
 def test_public_brand_and_release_version():
-    assert ACTIVE == "5.2.6"
+    assert ACTIVE == "5.2.7"
     assert read("README.md").startswith("# TP-Spec-Coding\n")
     assert "TP-Spec-Coding" in read("governance/workflow.yaml")
 
@@ -33,7 +33,14 @@ def test_open_source_surface_is_complete():
         "CONTRIBUTING.md",
         "SECURITY.md",
         "CODE_OF_CONDUCT.md",
+        "docs/README.md",
         "docs/GETTING_STARTED.md",
+        "docs/AGENTS_AND_SKILLS.md",
+        "docs/agents/tp-software-lifecycle.md",
+        "docs/agents/tp-base-maintenance.md",
+        "docs/agents/tp-knowledge.md",
+        "docs/agents/tp-wiki.md",
+        "docs/agents/tp-project-autonomy.md",
         ".github/PULL_REQUEST_TEMPLATE.md",
         ".github/ISSUE_TEMPLATE/bug_report.yml",
         ".github/ISSUE_TEMPLATE/feature_request.yml",
@@ -112,18 +119,21 @@ def test_readme_explains_value_quickstart_agents_and_portability():
         "一人项目组",
         "tp-spec-coding",
         "tp-software-lifecycle",
-        "tp-project-autonomy",
-        "tp-base-maintenance",
-        "tp-knowledge",
-        "tp-wiki",
-        "快速开始",
-        "跨机器",
+        "## 交给 AI 自动安装",
+        "不要猜测任何机器路径",
+        "先检查现有安装",
         "base configure",
         "base installation-doctor",
+        "project init",
+        "base sync-project --apply",
+        "base resolve",
+        "docs/README.md",
         "Record-first",
         "MIT",
     ):
         assert needle in text, needle
+    for retired in ("docs/cloud-ai-prompts/", "docs/superpowers/", "docs/history/"):
+        assert retired not in text
 
 
 def test_getting_started_supports_ai_assisted_clean_machine_setup():
@@ -174,11 +184,11 @@ def test_version_purity_scanner_rejects_previous_minor_after_v520_cutover():
     spec = importlib.util.spec_from_file_location("v520_purity", scanner_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    legacy_re = module._build_legacy_re("5.2.6")
+    legacy_re = module._build_legacy_re("5.2.7")
     previous = "5.1." + "4"
     match = legacy_re.search(f"active contract {previous} must not survive in live files")
     assert match is not None
-    assert module._is_legacy_dotted(match.group(0), "5.2.6")
+    assert module._is_legacy_dotted(match.group(0), "5.2.7")
 
 
 def test_public_repo_has_reproducible_dependencies_and_github_ci():
@@ -317,7 +327,7 @@ def test_release_manifest_gate_distinguishes_working_tree_from_git_release(tmp_p
     clean_release = run(sys.executable, "scripts/update_manifest.py", "--verify-release")
     assert clean_release.returncode == 0, clean_release.stderr
 
-    # Reproduce the v5.2.6 publication failure mode: the file is visible and
+    # Reproduce the v5.2.7 publication failure mode: the file is visible and
     # included by the development manifest, but it was never git-added.
     (repo / "release-surface.txt").write_text("untracked\n", encoding="utf-8")
     regenerated = run(sys.executable, "scripts/update_manifest.py")

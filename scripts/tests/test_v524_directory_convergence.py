@@ -80,8 +80,10 @@ def test_role_catalog_is_governance_contract_and_points_to_new_topology():
 def test_current_product_docs_use_converged_paths():
     current_docs = [
         BASE / "README.md",
+        BASE / "docs/README.md",
         BASE / "docs/GETTING_STARTED.md",
         BASE / "docs/AGENTS_AND_SKILLS.md",
+        *sorted((BASE / "docs/agents").glob("*.md")),
     ]
     for path in current_docs:
         text = path.read_text(encoding="utf-8")
@@ -90,16 +92,13 @@ def test_current_product_docs_use_converged_paths():
     assert "entry/tp-spec-coding/SKILL.md" in (BASE / "docs/AGENTS_AND_SKILLS.md").read_text(encoding="utf-8")
     assert "governance/role-catalog.yaml" in (BASE / "docs/AGENTS_AND_SKILLS.md").read_text(encoding="utf-8")
 
-def test_readme_explains_physical_layering_without_listing_entry_as_agent():
+def test_readme_points_to_document_map_instead_of_copying_catalog():
     text = (BASE / "README.md").read_text(encoding="utf-8")
-    assert "entry/          唯一默认产品入口" in text
-    assert "agents/         Domain Agent" in text
-    assert "skills/roles/   软件工程正式 Role Skill" in text
-    assert "skills/capabilities/" in text
-    assert "skills/autonomy/" in text
-    agent_block = text.split("当前公开 Domain Agent：", 1)[1].split("软件领域的 active formal Role", 1)[0]
-    assert "tp-spec-coding" not in agent_block
-    assert "tp-software-lifecycle" in agent_block
+    assert "docs/README.md" in text
+    assert "governance/role-catalog.yaml" in text
+    assert "完整 Role / Skill 列表" not in text
+    for retired in ("docs/cloud-ai-prompts/", "docs/superpowers/", "docs/history/"):
+        assert retired not in text
 
 def test_active_product_and_autonomy_surfaces_do_not_reintroduce_retired_workflow_agent():
     active = [

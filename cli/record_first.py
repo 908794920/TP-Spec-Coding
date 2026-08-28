@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.6 Record-first task operations.
+"""V5.2.7 Record-first task operations.
 
 The public workflow records business facts instead of forcing role-authored
 workflow bookkeeping. SQLite remains authoritative; readable projections are
@@ -15,6 +15,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from . import db as dbmod
 from . import projection_cmd
+from . import event_contract
 from .version import active_version
 
 PHASES = (
@@ -59,6 +60,16 @@ def _detail(operation: str, flush_id: str, **extra) -> str:
         "schema_version": active_version(),
     }
     data.update({k: v for k, v in extra.items() if v not in (None, [], "")})
+    return json.dumps(data, ensure_ascii=False)
+
+
+def _semantic_detail(event_type: str, operation: str, flush_id: str, result_status: str, **extra) -> str:
+    data = json.loads(_detail(operation, flush_id, **extra))
+    data = event_contract.add_event_semantics(
+        data, event_type=event_type, operation=operation, result_status=result_status,
+        producer="record-first", phase=extra.get("phase"),
+        milestone_id=extra.get("milestone_id"), reason_code=extra.get("reason_code"),
+    )
     return json.dumps(data, ensure_ascii=False)
 
 
@@ -169,7 +180,7 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
             dbconn.execute(
                 "INSERT INTO task_event (task_id,event_type,from_stage,to_stage,actor_role,summary,detail_json,evidence_path,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (task_id, "FACT", task["current_stage"], phase, actor, summary,
-                 _detail("CHECKPOINT", flush_id, transaction_id=transaction_id, phase=phase, evidence=ev, risk_escalation=risk_escalation, knowledge_signals=knowledge, delivery_signals=delivery, context_usage=usage),
+                 _semantic_detail("FACT", "CHECKPOINT", flush_id, "COMPLETED", transaction_id=transaction_id, phase=phase, evidence=ev, risk_escalation=risk_escalation, knowledge_signals=knowledge, delivery_signals=delivery, context_usage=usage),
                  ev[0] if ev else None, active_version(), now),
             )
             dbconn.execute(
@@ -207,7 +218,7 @@ def block(*, task_id: str, task_dir: str, actor: str, reason: str,
         now = dbmod.now_iso(); flush_id = f"BLOCK-{uuid.uuid4().hex}"
 
         def writer(dbconn, transaction_id=""):
-            detail = _detail("BLOCK", flush_id, transaction_id=transaction_id, phase=phase0, reason=reason)
+            detail = _semantic_detail("BLOCKER", "BLOCK", flush_id, "BLOCKED", transaction_id=transaction_id, phase=phase0, reason=reason, reason_code="BLOCKED")
             dbconn.execute(
                 "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?)",
                 (task_id, "BLOCKER", actor, reason, detail, active_version(), now),
@@ -339,7 +350,9 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                      _detail("ACTIVATE", flush_id, transaction_id=transaction_id, phase="verification"), active_version(), now),
                 )
             detail_obj = {
-                "operation": "VERIFY", "flush_id": flush_id, "transaction_id": transaction_id,
+                "schema": event_contract.EVENT_SCHEMA,
+                "operation": "VERIFY", "result_status": "COMPLETED",
+                "flush_id": flush_id, "transaction_id": transaction_id,
                 "producer": "record-first", "schema_version": active_version(),
                 "task_id": task_id, "actor_role": actor, "created_at": now,
                 "decision": decision0, "review_kind": "VERIFICATION",
@@ -372,7 +385,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
 def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
     """Validate only acceptance claims that would become false history if forged.
 
-    V5.2.6 deliberately does *not* require every AC to be complete.  PENDING is a
+    V5.2.7 deliberately does *not* require every AC to be complete.  PENDING is a
     valid factual outcome.  This check therefore ignores completeness/formality and
     protects only positive/owner-authority claims: PASS evidence, human witness, and
     DEFERRED_ACCEPTED/OWNER_WAIVED ledger authority.

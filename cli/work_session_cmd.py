@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.2.6 work 命令组（M2）。
+"""TP-Spec-Coding V5.2.7 work 命令组（M2）。
 
 包含：
 - work start / end
@@ -20,6 +20,7 @@ import uuid
 from typing import Optional
 
 from . import db as dbmod
+from . import event_contract
 
 DEFAULT_ROLE = "tp-software-lifecycle"
 
@@ -100,7 +101,7 @@ def cmd_work_start(args) -> int:
             )
             return 5
         session_id = f"WORK-{uuid.uuid4().hex}"
-        detail = {"session_id": session_id}
+        detail = event_contract.add_event_semantics({"session_id": session_id, "producer": "work_session"}, event_type="WORK_SESSION_STARTED", operation="START", result_status="STARTED", producer="work_session")
         now = dbmod.now_iso()
         with dbmod.transactional(conn):
             cur = conn.execute(
@@ -148,13 +149,24 @@ def cmd_work_end(args) -> int:
             return 5
         session_id, start_row = open_session
         # 旧账本可能没有 session_id；新 END 明确记录关联 start_event_id，避免伪造 ID。
-        detail = {
+        end_status = {
+            "blocked": "BLOCKED",
+            "cancelled": "CANCELLED",
+            "paused": "PENDING",
+            "waiting_human": "PENDING",
+            "waiting_agent": "PENDING",
+            "interrupted": "PENDING",
+            "completed": "COMPLETED",
+            "handed_off": "COMPLETED",
+        }[str(args.reason).lower()]
+        detail = event_contract.add_event_semantics({
             "session_id": session_id,
             "start_event_id": start_row["id"],
             "reason": args.reason,
             "wait_reason": args.wait_reason or "",
             "expected_next_actor": args.expected_next or "",
-        }
+            "producer": "work_session",
+        }, event_type="WORK_SESSION_ENDED", operation="END", result_status=end_status, producer="work_session")
         now = dbmod.now_iso()
         with dbmod.transactional(conn):
             cur = conn.execute(

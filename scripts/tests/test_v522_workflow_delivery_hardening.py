@@ -216,6 +216,22 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         material_events = [dict(x) for x in self.events(task_id) if x['event_type'] == 'WORKFLOW_CONFIRMATION']
         self.assertEqual(json.loads(material_events[-1]['detail_json'])['confirmation_kind'], 'material')
 
+    def test_json_workflow_confirm_keeps_stdout_machine_parseable_and_card_display_on_stderr(self):
+        task_id = 'TASK-V527-CARD-JSON'
+        task_dir = self.create_task(task_id, 'L1')
+        self.checkpoint(task_id, task_dir, 'tp-product-manager', 'requirement')
+
+        rc, out, err = self.call(
+            'workflow', 'confirm', '--task', task_id, '--task-dir', str(task_dir),
+            '--confirmation-policy', 'each_stage', '--json',
+        )
+
+        self.assertEqual(rc, 0, (out, err))
+        payload = json.loads(out)
+        self.assertEqual(payload['recommended_action'], 'dispatch_role')
+        self.assertNotIn('CARD_DISPLAY:', out)
+        self.assertIn('CARD_DISPLAY:', err)
+
     def test_each_stage_applies_to_verification_rework_review_and_delivery(self):
         task_id = 'TASK-V522-REWORK'
         task_dir = self.create_task(task_id, 'L1')
@@ -366,6 +382,124 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         route = orchestration.resolve_route(task_id, db_path=str(self.db))
         self.assertEqual(route['next_stage'], 'complete')
         self.assertEqual(route['recommended_action'], 'task_complete')
+
+    def test_record_first_checkpoint_and_verification_emit_structured_semantics(self):
+        task_id = 'TASK-V527-EVENT-SEMANTICS'
+        task_dir = self.create_task(task_id, 'L1')
+        self.checkpoint(task_id, task_dir, 'tp-product-manager', 'requirement', summary='contains 0FAIL but completed')
+        checkpoint = [dict(x) for x in self.events(task_id) if x['event_type'] == 'FACT'][-1]
+        detail = json.loads(checkpoint['detail_json'])
+        self.assertEqual(detail['schema'], 'tp-spec.event-semantics/v1')
+        self.assertEqual(detail['operation'], 'CHECKPOINT')
+        self.assertEqual(detail['result_status'], 'COMPLETED')
+        self.assertEqual(detail['producer'], 'record-first')
+
+        self.verify(task_id, task_dir, 'NEEDS_FIX')
+        verification = [dict(x) for x in self.events(task_id) if x['event_type'] == 'VERIFICATION_COMPLETED'][-1]
+        detail = json.loads(verification['detail_json'])
+        self.assertEqual(detail['schema'], 'tp-spec.event-semantics/v1')
+        self.assertEqual(detail['operation'], 'VERIFY')
+        self.assertEqual(detail['result_status'], 'COMPLETED')
+        self.assertEqual(detail['decision'], 'NEEDS_FIX')
+
+    def test_review_and_workflow_confirmation_emit_structured_semantics(self):
+        task_id = 'TASK-V527-REVIEW-SEMANTICS'
+        task_dir = self.create_task(task_id, 'L1')
+        self.checkpoint(task_id, task_dir, 'tp-product-manager', 'requirement')
+        self.checkpoint(task_id, task_dir, 'tp-software-architect', 'architecture')
+        self.checkpoint(task_id, task_dir, 'tp-development-engineer', 'development')
+        self.verify(task_id, task_dir, 'PASS')
+        self.code_review(task_id, task_dir, 'BLOCKED')
+        review = [dict(x) for x in self.events(task_id) if x['event_type'] == 'REVIEW_COMPLETED'][-1]
+        detail = json.loads(review['detail_json'])
+        self.assertEqual(detail['schema'], 'tp-spec.event-semantics/v1')
+        self.assertEqual(detail['operation'], 'REVIEW')
+        self.assertEqual(detail['result_status'], 'BLOCKED')
+        self.assertEqual(detail['decision'], 'BLOCKED')
+
+        confirm_id = 'TASK-V527-CONFIRM-SEMANTICS'
+        confirm_dir = self.create_task(confirm_id, 'L1')
+        rc, out, err = run(['workflow', 'preference', '--set', 'each_stage', '--json'])
+        self.assertEqual(rc, 0, (out, err))
+        self.checkpoint(confirm_id, confirm_dir, 'tp-product-manager', 'requirement')
+        self.confirm_each_stage(confirm_id, confirm_dir)
+        event = [dict(x) for x in self.events(confirm_id) if x['event_type'] == 'WORKFLOW_CONFIRMATION'][-1]
+        detail = json.loads(event['detail_json'])
+        self.assertEqual(detail['schema'], 'tp-spec.event-semantics/v1')
+        self.assertEqual(detail['operation'], 'WORKFLOW_CONFIRM')
+        self.assertEqual(detail['result_status'], 'COMPLETED')
+
+    def test_work_session_events_are_structured_without_ai_bookkeeping(self):
+        task_id = 'TASK-V527-WORK-SEMANTICS'
+        self.create_task(task_id, 'L1')
+        rc, out, err = self.call('work', 'start', '--task', task_id, '--role', 'tp-development-engineer', '--summary', 'start')
+        self.assertEqual(rc, 0, (out, err))
+        rc, out, err = self.call('work', 'end', '--task', task_id, '--role', 'tp-development-engineer', '--reason', 'completed', '--summary', 'end')
+        self.assertEqual(rc, 0, (out, err))
+        events = [dict(x) for x in self.events(task_id)]
+        started = [x for x in events if x['event_type'] == 'WORK_SESSION_STARTED'][-1]
+        ended = [x for x in events if x['event_type'] == 'WORK_SESSION_ENDED'][-1]
+        start_detail = json.loads(started['detail_json'])
+        end_detail = json.loads(ended['detail_json'])
+        self.assertEqual((start_detail['operation'], start_detail['result_status']), ('START', 'STARTED'))
+        self.assertEqual((end_detail['operation'], end_detail['result_status']), ('END', 'COMPLETED'))
+        self.assertEqual(start_detail['schema'], 'tp-spec.event-semantics/v1')
+        self.assertEqual(end_detail['schema'], 'tp-spec.event-semantics/v1')
+
+    def test_summary_only_verification_does_not_advance_workflow(self):
+        task_id = 'TASK-V527-SUMMARY-NOT-FACT'
+        task_dir = self.create_task(task_id, 'L1')
+        self.checkpoint(task_id, task_dir, 'tp-product-manager', 'requirement')
+        self.checkpoint(task_id, task_dir, 'tp-software-architect', 'architecture')
+        self.checkpoint(task_id, task_dir, 'tp-development-engineer', 'development')
+        conn = dbmod.connect(str(self.db))
+        try:
+            with dbmod.transactional(conn):
+                conn.execute(
+                    'INSERT INTO task_event(task_id,event_type,actor_role,summary,detail_json,created_at) VALUES(?,?,?,?,?,?)',
+                    (task_id, 'VERIFICATION_COMPLETED', 'tp-test-engineer', 'PASS 17PASS0FAIL', '{}', dbmod.now_iso()),
+                )
+        finally:
+            conn.close()
+        route = orchestration.resolve_route(task_id, db_path=str(self.db))
+        self.assertEqual(route['next_stage'], 'verification')
+
+    def test_untyped_checkpoint_does_not_complete_but_legacy_record_first_does(self):
+        task_id = 'TASK-V527-LEGACY-CHECKPOINT'
+        self.create_task(task_id, 'L1')
+        conn = dbmod.connect(str(self.db))
+        try:
+            with dbmod.transactional(conn):
+                conn.execute(
+                    'INSERT INTO task_event(task_id,event_type,actor_role,summary,detail_json,created_at) VALUES(?,?,?,?,?,?)',
+                    (task_id, 'FACT', 'tp-product-manager', 'requirement done', json.dumps({'operation':'CHECKPOINT','phase':'requirement'}), dbmod.now_iso()),
+                )
+        finally:
+            conn.close()
+        route = orchestration.resolve_route(task_id, db_path=str(self.db))
+        self.assertEqual(route['next_stage'], 'requirement')
+
+        conn = dbmod.connect(str(self.db))
+        try:
+            with dbmod.transactional(conn):
+                conn.execute('DELETE FROM task_event WHERE task_id=?', (task_id,))
+                conn.execute(
+                    'INSERT INTO task_event(task_id,event_type,actor_role,summary,detail_json,created_at) VALUES(?,?,?,?,?,?)',
+                    (task_id, 'FACT', 'tp-product-manager', 'requirement done', json.dumps({'operation':'CHECKPOINT','phase':'requirement','producer':'record-first'}), dbmod.now_iso()),
+                )
+        finally:
+            conn.close()
+        route = orchestration.resolve_route(task_id, db_path=str(self.db))
+        self.assertNotEqual(route['next_stage'], 'requirement')
+
+    def test_progress_never_uses_next_step_as_current_step(self):
+        task_id = 'TASK-V527-CURRENT-STEP'
+        self.create_task(task_id, 'L1')
+        progress = orchestration.resolve_progress(task_id, db_path=str(self.db))
+        self.assertEqual(progress['current_step'], {})
+        self.assertEqual(progress['current_step_source'], 'unresolved')
+        self.assertEqual(progress['next_step']['stage'], 'requirement')
+        self.assertEqual(progress['next_step_source'], 'workflow_contract')
 
 
 if __name__ == '__main__':

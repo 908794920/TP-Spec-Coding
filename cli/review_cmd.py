@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """架构评审正式执行链（Hardening P0-2/P0-6）。
 
-依据：《V5.2.6 执行AI统一修复与自验证任务》§7 与《V5.2.6 源码级发布审查报告》
+依据：《V5.2.7 执行AI统一修复与自验证任务》§7 与《V5.2.7 源码级发布审查报告》
 P0-2（无架构评审可 DEVELOPING）/P0-6（新增角色不能通过正式 CLI 执行）。
 
 提供 ``tp-spec review record``：
@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import db as dbmod
+from . import event_contract
 from . import event_policies
 from . import frontmatter
 from . import projection_cmd
@@ -358,6 +359,9 @@ def _cmd_code_review_record(args) -> int:
         artifact_digest = compute_text_artifact_digest(artifact_text)
 
         detail = {
+            "schema": event_contract.EVENT_SCHEMA,
+            "operation": "REVIEW",
+            "result_status": "BLOCKED" if str(args.decision).upper() == "BLOCKED" else "COMPLETED",
             "flush_id": flush_id,
             "review_kind": str(args.kind).upper(),
             "round": int(args.round or 1),
@@ -517,6 +521,9 @@ def cmd_review_record(args) -> int:
                     return 8
                 evidence_items.append(dict(ev_check.item))
         detail = {
+            "schema": event_contract.EVENT_SCHEMA,
+            "operation": "REVIEW",
+            "result_status": "BLOCKED" if str(args.decision).upper() == "BLOCKED" else "COMPLETED",
             "flush_id": flush_id,
             "review_kind": args.kind,
             "round": args.round,
@@ -581,7 +588,7 @@ def cmd_review_record(args) -> int:
 
 
 def add_review_subparsers(subparsers) -> None:
-    p = subparsers.add_parser("review", help="V5.2.6: formal architecture/code review commands")
+    p = subparsers.add_parser("review", help="V5.2.7: formal architecture/code review commands")
     sub = p.add_subparsers(dest="subcommand", required=True)
 
     pr = sub.add_parser("record", help="Record a formal ARCHITECTURE or CODE review decision")

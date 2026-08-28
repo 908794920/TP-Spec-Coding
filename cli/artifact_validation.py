@@ -364,10 +364,10 @@ def _check_knowledge(task_dir: Path, issues: List[ValidationIssue], require_comp
 
 
 def _arch_review_event_row(conn, task_id: str):
-    """最近一条架构评审 PASS 事件原始行（不受信校验，供差异诊断）。"""
+    """最近一条架构评审事件原始行（不受信校验，供差异诊断）。"""
     return conn.execute(
         "SELECT * FROM task_event WHERE task_id=? AND event_type='REVIEW_COMPLETED' "
-        "AND actor_role='tp-software-architect' AND summary='PASS' ORDER BY id DESC LIMIT 1",
+        "AND actor_role='tp-software-architect' ORDER BY id DESC LIMIT 1",
         (task_id,),
     ).fetchone()
 
@@ -716,7 +716,7 @@ def _check_codex_review_body(task_dir: Path, issues: List[ValidationIssue]) -> N
                     # Fourth Hardening（P0-3/P1-2）：PASS 不允许 evidence=none
                     issues.append(ValidationIssue(
                         code=CODE_REVIEW_EMPTY,
-                        message="codex-review PASS evidence 'none' is rejected in V5.2.6; requires a real local_file",
+                        message="codex-review PASS evidence 'none' is rejected in V5.2.7; requires a real local_file",
                         artifact="codex-review.md",
                         field="review.evidence",
                     ))

@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""V5.2.6 read-only HTML information card regression tests."""
+"""V5.2.7 read-only HTML information card regression tests."""
 from __future__ import annotations
 
 import contextlib
 import io
 import json
+import re
 from argparse import Namespace
 from pathlib import Path
 
@@ -100,11 +101,11 @@ def _runtime_fixture(
             )
             conn.execute(
                 "INSERT INTO task_event(task_id,event_type,from_stage,to_stage,actor_role,summary,detail_json,workflow_version,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                ("TASK-ACTIVE", "FACT", "requirement", "requirement", "tp-product-manager", "Requirement confirmed", json.dumps({"operation": "CHECKPOINT", "phase": "requirement"}), active_version(), now),
+                ("TASK-ACTIVE", "FACT", "requirement", "requirement", "tp-product-manager", "Requirement confirmed", json.dumps({"schema":"tp-spec.event-semantics/v1","operation":"CHECKPOINT","phase":"requirement","result_status":"COMPLETED","producer":"record-first"}), active_version(), now),
             )
             conn.execute(
                 "INSERT INTO task_event(task_id,event_type,from_stage,to_stage,actor_role,summary,detail_json,workflow_version,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                ("TASK-ACTIVE", "FACT", "architecture", "architecture", "tp-software-architect", "Architecture complete", json.dumps({"operation": "CHECKPOINT", "phase": "architecture"}), active_version(), now),
+                ("TASK-ACTIVE", "FACT", "architecture", "architecture", "tp-software-architect", "Architecture complete", json.dumps({"schema":"tp-spec.event-semantics/v1","operation":"CHECKPOINT","phase":"architecture","result_status":"COMPLETED","producer":"record-first"}), active_version(), now),
             )
         conn.execute(
             "INSERT INTO task(task_id,project_id,title,risk_level,flow_level,current_state,current_stage,owner_role,base_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -247,7 +248,12 @@ def test_global_snapshot_reads_fixture_without_secrets(tmp_path, monkeypatch):
     assert snap["base"]["root"] == str(BASE.resolve())
     assert snap["workspace"]["count"] == 1
     assert snap["workspace"]["workspaces"] == [
-        {"id": "demo-workspace", "root": str(fx["workspace"]), "enabled": True}
+        {
+            "id": "demo-workspace",
+            "root": str(fx["workspace"]),
+            "enabled": None,
+            "enabled_declared": False,
+        }
     ]
     assert snap["autonomy"]["configured"] is True
     assert snap["autonomy"]["profile_count"] == 2
@@ -255,6 +261,7 @@ def test_global_snapshot_reads_fixture_without_secrets(tmp_path, monkeypatch):
     assert snap["autonomy"]["profiles"][0] == {
         "profile_id": "demo-autonomy",
         "enabled": True,
+        "enabled_declared": True,
         "canonical_root": str(BASE),
         "autonomous_root": str(tmp_path / "autonomy-workspace"),
         "confirmation_policy": "material",
@@ -288,6 +295,65 @@ def test_project_snapshot_uses_binding_or_registry_exact_root_and_runtime_counts
     assert snap["knowledge"]["project_scope"]["project_id"] == fx["project_id"]
 
 
+def test_project_snapshot_excludes_retired_active_tasks(tmp_path, monkeypatch):
+    fx = _runtime_fixture(tmp_path, monkeypatch)
+    now = dbmod.now_iso()
+    conn = dbmod.connect(str(fx["db_path"]))
+    with dbmod.transactional(conn):
+        conn.execute(
+            "INSERT INTO task(task_id,project_id,title,risk_level,flow_level,current_state,current_stage,owner_role,base_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "TASK-RETIRED",
+                fx["project_id"],
+                "Retired historical task",
+                "L1",
+                "L1",
+                "ACTIVE",
+                "development",
+                "tp-development-engineer",
+                active_version(),
+                now,
+                now,
+            ),
+        )
+        detail = {
+            "transaction_id": "RETIRE-TEST",
+            "producer": "task_retire",
+            "schema_version": active_version(),
+            "task_id": "TASK-RETIRED",
+            "actor_role": "human_owner",
+            "created_at": now,
+            "reason": "历史任务已收口",
+            "superseded_by": "",
+            "last_state": "ACTIVE",
+            "base_version": active_version(),
+        }
+        conn.execute(
+            "INSERT INTO task_event(task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) VALUES(?,?,?,?,?,?,?)",
+            (
+                "TASK-RETIRED",
+                "TASK_RETIRED",
+                "human_owner",
+                "retired historical task",
+                json.dumps(detail, ensure_ascii=False),
+                active_version(),
+                now,
+            ),
+        )
+    conn.close()
+
+    from cli.cards.snapshot import build_project_snapshot
+
+    snap = build_project_snapshot(fx["workspace"])
+
+    assert snap["task_statistics"]["active"] == 1
+    assert "TASK-RETIRED" not in {row["task_id"] for row in snap["in_progress_tasks"]}
+    archived = {row["task_id"]: row for row in snap["archived_tasks"]}
+    assert {"TASK-DONE", "TASK-RETIRED"} <= set(archived)
+    assert archived["TASK-RETIRED"]["state"] == "ACTIVE"
+    assert archived["TASK-RETIRED"]["retired"] is True
+
+
 def test_task_snapshot_uses_runtime_events_and_workflow_route(tmp_path, monkeypatch):
     fx = _runtime_fixture(tmp_path, monkeypatch)
     from cli.cards.snapshot import build_task_snapshot
@@ -318,7 +384,9 @@ def test_task_snapshot_splits_semicolon_delimited_evidence_paths(tmp_path, monke
 
     snap = build_task_snapshot("TASK-ACTIVE", db_path=fx["db_path"])
 
-    assert [item["path"] for item in snap["evidence"]] == ["docs/a.md", "docs/b.md", "docs/c.md"]
+    assert [item["raw_path"] for item in snap["evidence"]] == ["docs/a.md", "docs/b.md", "docs/c.md"]
+    assert all(item["anchor"] == "unknown" for item in snap["evidence"])
+    assert all(item["verification"] == "legacy_unverified" for item in snap["evidence"])
     assert len(snap["evidence"]) == 3
 
 
@@ -441,7 +509,7 @@ def test_renderer_formats_iso_timestamps_for_human_display(tmp_path):
     assert "formatDateTime(eventData.created_at)" in text
 
 
-def test_renderer_presents_evidence_as_grouped_file_rows(tmp_path):
+def test_renderer_presents_evidence_as_traceable_file_rows(tmp_path):
     from cli.cards.render import render_card
 
     output = tmp_path / "task-evidence.html"
@@ -449,11 +517,13 @@ def test_renderer_presents_evidence_as_grouped_file_rows(tmp_path):
     text = output.read_text(encoding="utf-8")
 
     assert "function evidenceFileName(path)" in text
-    assert "function evidenceDirectory(path)" in text
+    assert "function evidenceDirectory(path)" not in text
     assert "function evidenceGroupLabel(value)" in text
     assert "依据（${(data.evidence || []).length}）" in text
-    assert "复制 ${evidenceFileName(evidence.path)} 路径" in text
-    assert ".evidence-row" in text
+    assert "evidence.copy_path" in text
+    assert "evidence.scope_label" in text
+    assert ".evidence-table" in text
+    assert ".evidence-detail-table" in text
 
 
 def test_renderer_presents_timeline_as_localized_grouped_events(tmp_path):
@@ -465,8 +535,26 @@ def test_renderer_presents_timeline_as_localized_grouped_events(tmp_path):
 
     assert "REVIEW_COMPLETED: '复审完成'" in text
     assert "WORK_SESSION_STARTED: '工作会话开始'" in text
+    assert "WORK_SESSION_ENDED: '工作会话结束'" in text
     assert "WORKFLOW_CONFIRMATION: '工作流确认'" in text
     assert "STATE: '状态变更'" in text
+    assert "function displayEventSummary(eventData)" in text
+    assert "function eventDecisionToken(eventData)" in text
+    assert "function displayEventReason(eventData)" in text
+    assert "function displayEventHeading(eventData)" in text
+    assert "displayEventHeading(eventData)" in text
+    assert "displayEventReason(eventData)" in text
+    assert "普通事务" in text
+    assert "需要修复" in text
+    assert "存在阻塞" in text
+    assert "const label = presentation.event_label || displayEvent((eventData || {}).event_type)" in text
+    assert "return decision ? `${label}（${decision}）` : label;" not in text
+    assert "PASS: '通过'" in text
+    assert "REVISE: '需修改'" in text
+    assert "NEEDS_FIX: '需要修复'" in text
+    assert "const signal = `${summary} ${decision}`" not in text
+    assert "signal.includes('FAIL')" not in text
+    assert "return presentation.status_class || 'info';" in text
     assert "function eventStatusClass(eventData)" in text
     assert "timeline-day" in text
     assert "event-marker" in text
@@ -474,6 +562,26 @@ def test_renderer_presents_timeline_as_localized_grouped_events(tmp_path):
     assert "event-preview" in text
     assert "event-toggle" in text
     assert "eventBody.classList.toggle('open', expanded)" in text
+
+
+def test_task_snapshot_preserves_event_decision_for_timeline_projection(tmp_path, monkeypatch):
+    fx = _runtime_fixture(tmp_path, monkeypatch)
+    conn = dbmod.connect(str(fx["db_path"]))
+    with dbmod.transactional(conn):
+        conn.execute(
+            "INSERT INTO task_event(task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) VALUES(?,?,?,?,?,?,?)",
+            ("TASK-ACTIVE", "REVIEW_COMPLETED", "tp-software-architect", "REVISE", json.dumps({"decision": "REVISE"}), active_version(), dbmod.now_iso()),
+        )
+    conn.close()
+
+    from cli.cards.snapshot import build_task_snapshot
+
+    snapshot = build_task_snapshot("TASK-ACTIVE", db_path=fx["db_path"])
+    event = next(item for item in snapshot["timeline"] if item["event_type"] == "REVIEW_COMPLETED")
+    assert event["decision"] == "REVISE"
+    assert event["presentation"]["event_label"] == "复审完成"
+    assert event["presentation"]["reason_label"] == "需修改"
+    assert event["presentation"]["status_class"] == "bad"
 
 
 def test_renderer_keeps_timeline_interactions_from_triggering_default_scroll(tmp_path):
@@ -609,9 +717,10 @@ def test_global_overview_contains_base_problems_and_workspace_list(tmp_path):
     assert "function workspaceTable" in text
     assert "workspaceTable('工作区列表'" in text
     assert ".overview > .card + .card" in text
+    assert ".global-config-card .overview > .summary-grid + .card { margin-top: 10px; }" in text
     assert "compactTable('配置档案'" in text
     assert "['global-autonomy', '自治维护']" in text
-    assert "append(app, autonomyCard(data.autonomy || {}, 'global-autonomy'));" in text
+    assert "append(contentScroll, autonomyCard(data.autonomy || {}, 'global-autonomy'));" in text
     assert "append(overview, autonomyCard" not in text
     assert "demo-autonomy" in text
 
@@ -1140,8 +1249,18 @@ def test_inline_renderer_emits_three_host_safe_card_fragments(tmp_path):
         assert "<body" not in fragment.lower()
         assert "attachShadow({mode: 'open'})" in fragment
         assert "height: 100%" not in fragment
-        assert "overflow-y: auto" not in fragment
-        assert "position: sticky" not in fragment
+        assert re.search(r"\.grid \{[^}]*overflow-y:\s*auto", fragment) is None
+        if snapshot["card_type"] == "active_task":
+            assert "task-progress-card" in fragment
+            assert "task-progress-scroll" in fragment
+            assert ".task-progress-card { overflow: hidden; }" in fragment
+            assert ".task-progress-scroll { min-height: 0; overflow-y: auto;" in fragment
+            assert ".task-progress-card .card-nav { position: static; }" in fragment
+        else:
+            assert "position: sticky" not in fragment
+            assert "card-content-scroll" in fragment
+            assert ".global-config-card, .current-project-card { overflow: hidden; }" in fragment
+            assert ".card-content-scroll { min-height: 0; overflow-y: auto;" in fragment
         assert "document.body.appendChild" not in fragment
         assert snapshot["title"] in fragment
         assert len(fragment.encode("utf-8")) < 1_000_000
@@ -1152,6 +1271,82 @@ def test_inline_renderer_emits_three_host_safe_card_fragments(tmp_path):
         assert f"document.getElementById('tp-spec-card-{root}')" in fragment
 
     assert len(roots) == 3
+
+
+def test_all_card_types_share_typography_tokens(tmp_path):
+    from cli.cards.render import render_inline_card
+
+    common = {
+        "generated_at": "2026-08-25T20:24:07+08:00",
+        "health": "healthy",
+    }
+    snapshots = {
+        "global_config": {
+            **common,
+            "card_type": "global_config",
+            "title": "TP-Spec 全局配置",
+            "version": active_version(),
+            "base": {}, "wiki": {}, "knowledge": {}, "workspace": {}, "resolver": {},
+            "registry": {}, "registered_projects": [], "problems": [],
+        },
+        "current_project": {
+            **common,
+            "card_type": "current_project",
+            "title": "当前项目概况",
+            "project": {"project_id": "demo-project", "name": "Demo Project"},
+            "wiki": {}, "knowledge": {}, "registry": {}, "task_statistics": {},
+            "in_progress_tasks": [], "completed_tasks": [], "summary": "", "problems": [],
+        },
+        "active_task": {
+            **common,
+            "card_type": "active_task",
+            "title": "当前任务进度",
+            "task": {"task_id": "TASK-TYPOGRAPHY"},
+            "workflow": {}, "latest_checkpoint": {}, "blockers": [], "verification": {},
+            "evidence": [], "timeline": [], "summary": "", "problems": [],
+        },
+    }
+    required = (
+        "--tp-font-sans",
+        "--tp-font-mono",
+        "--tp-font-size-body",
+        "--tp-font-size-micro",
+        "--tp-font-size-label",
+        "--tp-font-size-section",
+        "--tp-font-size-title",
+        "--tp-font-size-metric",
+        "--tp-font-weight-regular",
+        "--tp-font-weight-medium",
+        "--tp-font-weight-semibold",
+        "--tp-font-weight-bold",
+        "--tp-leading-body",
+        "--tp-leading-tight",
+        "--tp-leading-compact",
+    )
+
+    for card_type, snapshot in snapshots.items():
+        output = tmp_path / f"{card_type}-typography.html"
+        render_inline_card(snapshot, output)
+        fragment = output.read_text(encoding="utf-8")
+        for token in required:
+            assert token in fragment, f"{card_type} missing typography token {token}"
+        assert "font-family: var(--tp-font-sans)" in fragment
+        assert "font-family: var(--tp-font-mono)" in fragment
+        assert "font-size: var(--tp-font-size-body)" in fragment
+        assert "line-height: var(--tp-leading-body)" in fragment
+        assert re.search(r"table \{[^}]*font-size: var\(--tp-font-size-label\)", fragment)
+        assert "th, td { text-align: left; padding: 7px 8px;" in fragment
+        assert "line-height: var(--tp-leading-compact)" in fragment
+        assert ".compact-table th, .compact-table td { padding: 6px 7px;" in fragment
+        assert ".task-list-table { min-width: 1200px; table-layout: fixed; }" in fragment
+        assert ".task-list-table th:nth-child(1) { width: 12%; }" in fragment
+        assert ".task-list-table th:nth-child(2) { width: 20%; }" in fragment
+        assert ".task-list-table th:nth-child(7) { width: 25%; }" in fragment
+        assert ".autonomy-table { min-width: 1100px; }" in fragment
+        assert ".task-list-table { font-size: var(--tp-font-size-body); line-height: var(--tp-leading-body); }" not in fragment
+        assert ".autonomy-table { font-size: var(--tp-font-size-body); line-height: var(--tp-leading-body); }" not in fragment
+        for legacy_weight in ("font-weight: 650", "font-weight: 760", "font-weight: 800"):
+            assert legacy_weight not in fragment
 
 
 def test_inline_renderer_truncates_oversized_snapshot_with_visible_notice(tmp_path):
@@ -1192,21 +1387,24 @@ def test_all_explicit_card_commands_can_emit_inline_fragments(tmp_path, monkeypa
         (
             ["card", "global"],
             "global",
+            "global_config",
             "TP-Spec 全局配置",
         ),
         (
             ["card", "project", "--root", str(fx["workspace"])],
             "project",
+            "current_project",
             fx["project_id"],
         ),
         (
             ["card", "task", "--task", "TASK-ACTIVE", "--db", str(fx["db_path"])],
             "task",
+            "active_task",
             "TASK-ACTIVE",
         ),
     ]
 
-    for argv, name, expected in commands:
+    for argv, name, card_type, expected in commands:
         offline = tmp_path / f"{name}-offline.html"
         inline = tmp_path / f"{name}-inline.html"
         rc, out, err = _run([
@@ -1220,6 +1418,13 @@ def test_all_explicit_card_commands_can_emit_inline_fragments(tmp_path, monkeypa
         assert offline.is_file()
         assert inline.is_file()
         assert f"INLINE_VISUALIZATION: {inline.resolve()}" in out
+        payload = _card_display_payload(out)
+        assert payload["schema"] == "tp-spec.card-display/v1"
+        assert payload["card_type"] == card_type
+        assert payload["offline_html"] == str(offline.resolve())
+        assert payload["web_artifact"] == str((artifact_root / ".tp-spec-preview" / "card" / "index.html").resolve())
+        assert payload["inline"]["status"] == "generated"
+        assert payload["inline"]["path"] == str(inline.resolve())
         fragment = inline.read_text(encoding="utf-8")
         assert expected in fragment
         assert "<!doctype" not in fragment.lower()
@@ -1261,6 +1466,8 @@ def test_formal_runtime_step_can_emit_inline_task_fragment(tmp_path, monkeypatch
     assert rc == 0, (out, err)
     assert inline.is_file(), err
     assert f"INLINE_VISUALIZATION: {inline.resolve()}" in out
+    assert "CARD_DISPLAY:" not in out
+    assert "CARD_DISPLAY:" in err
     fragment = inline.read_text(encoding="utf-8")
     assert "TASK-INLINE" in fragment
     assert "<!doctype" not in fragment.lower()
@@ -1316,13 +1523,461 @@ def test_formal_refresh_forwards_explicit_base_root_to_task_snapshot(tmp_path, m
     assert f"任务 Contract {active_version()} 与当前 Base {alternate_version} 不一致" in rendered
 
 
-def test_card_skills_require_same_turn_inline_reference_with_fallbacks():
+def test_card_skills_use_governed_display_contract_with_host_capability_fallbacks():
     entry = (BASE / "entry" / "tp-spec-coding" / "SKILL.md").read_text(encoding="utf-8")
     lifecycle = (BASE / "agents" / "tp-software-lifecycle" / "SKILL.md").read_text(encoding="utf-8")
 
-    assert "--inline-output" in entry
-    assert "visualize" in entry
-    assert "同一次回复" in entry
+    assert "tp-card-display" in entry
+    assert "CARD_DISPLAY" in entry
+    assert "visualize" not in entry
+    assert "宿主" in entry and "Web Artifact" in entry and "离线 HTML" in entry
+    assert "tp-card-display" in lifecycle
+    assert "CARD_DISPLAY" in lifecycle
     assert "TP_SPEC_CARD_INLINE_OUTPUT" in lifecycle
-    assert "INLINE_VISUALIZATION" in lifecycle
     assert "会话内" in lifecycle
+
+
+def test_global_snapshot_and_renderer_include_skill_topology_with_name_and_id(tmp_path, monkeypatch):
+    _install_fixture(tmp_path, monkeypatch)
+    from cli.cards.snapshot import build_global_snapshot
+    from cli.cards.render import render_card, sanitize_snapshot
+
+    snap = build_global_snapshot()
+
+    topology = snap["skill_topology"]
+    assert topology["status"] == "available"
+    assert topology["root_id"] == "tp-spec-coding"
+    assert topology["nodes"]["tp-product-manager"]["name"] == "tp-产品经理"
+    assert topology["nodes"]["requirement-clarification"]["name"] == "需求澄清"
+    assert "skill_topology" in sanitize_snapshot(snap)
+
+    output = tmp_path / "global-topology.html"
+    render_card(snap, output)
+    text = output.read_text(encoding="utf-8")
+    assert "global-skills" in text
+    assert "能力拓扑" in text
+    assert "Agent / Role / Skill" not in text
+    assert "tp-product-manager" in text
+    assert "tp-产品经理" in text
+    assert "requirement-clarification" in text
+    assert "需求澄清" in text
+
+
+def test_global_snapshot_uses_chinese_skill_topology_problem_label(tmp_path, monkeypatch):
+    _install_fixture(tmp_path, monkeypatch)
+    from cli.cards import snapshot as card_snapshot
+
+    def broken_topology(_base_root):
+        raise ValueError("catalog mismatch")
+
+    monkeypatch.setattr(card_snapshot.orchestration, "load_role_topology", broken_topology)
+    snapshot = card_snapshot.build_global_snapshot()
+
+    problem = next(item for item in snapshot["problems"] if item["code"] == "SKILL_TOPOLOGY_INVALID")
+    assert problem["message"] == "能力拓扑图谱不可读：catalog mismatch"
+
+
+def _card_display_payload(output: str) -> dict:
+    line = next(line for line in output.splitlines() if line.startswith("CARD_DISPLAY: "))
+    return json.loads(line.split("CARD_DISPLAY: ", 1)[1])
+
+
+def test_explicit_card_uses_env_inline_output_when_argument_is_absent(tmp_path, monkeypatch):
+    fx = _runtime_fixture(tmp_path, monkeypatch)
+    offline = tmp_path / "task-offline.html"
+    artifact_root = tmp_path / "artifact-root"
+    inline = tmp_path / "conversation" / "task-inline.html"
+    monkeypatch.setenv("TP_SPEC_CARD_INLINE_OUTPUT", str(inline))
+
+    rc, out, err = _run([
+        "card", "task", "--task", "TASK-ACTIVE", "--db", str(fx["db_path"]),
+        "--output", str(offline), "--artifact-root", str(artifact_root),
+    ])
+
+    assert rc == 0, (out, err)
+    assert inline.is_file()
+    payload = _card_display_payload(out)
+    assert payload["schema"] == "tp-spec.card-display/v1"
+    assert payload["card_type"] == "active_task"
+    assert payload["offline_html"] == str(offline.resolve())
+    assert payload["inline"] == {
+        "requested": True,
+        "status": "generated",
+        "path": str(inline.resolve()),
+        "error": None,
+    }
+
+
+def test_explicit_inline_argument_overrides_environment_default(tmp_path, monkeypatch):
+    fx = _runtime_fixture(tmp_path, monkeypatch)
+    env_inline = tmp_path / "conversation" / "env-inline.html"
+    arg_inline = tmp_path / "conversation" / "arg-inline.html"
+    monkeypatch.setenv("TP_SPEC_CARD_INLINE_OUTPUT", str(env_inline))
+
+    rc, out, err = _run([
+        "card", "task", "--task", "TASK-ACTIVE", "--db", str(fx["db_path"]),
+        "--inline-output", str(arg_inline),
+    ])
+
+    assert rc == 0, (out, err)
+    assert arg_inline.is_file()
+    assert not env_inline.exists()
+    payload = _card_display_payload(out)
+    assert payload["inline"]["path"] == str(arg_inline.resolve())
+
+
+def test_card_display_result_reports_generated_artifact_and_fragment(tmp_path, monkeypatch):
+    fx = _runtime_fixture(tmp_path, monkeypatch)
+    artifact_root = tmp_path / "artifact-root"
+    inline = tmp_path / "inline.html"
+    offline = tmp_path / "global.html"
+
+    rc, out, err = _run([
+        "card", "global", "--output", str(offline),
+        "--artifact-root", str(artifact_root), "--inline-output", str(inline),
+    ])
+
+    assert rc == 0, (out, err)
+    payload = _card_display_payload(out)
+    assert payload == {
+        "schema": "tp-spec.card-display/v1",
+        "card_type": "global_config",
+        "offline_html": str(offline.resolve()),
+        "web_artifact": str((artifact_root / ".tp-spec-preview" / "card" / "index.html").resolve()),
+        "artifact": {"status": "generated", "error": None},
+        "inline": {"requested": True, "status": "generated", "path": str(inline.resolve()), "error": None},
+    }
+
+
+def test_card_display_degrades_without_changing_runtime_or_offline_success(tmp_path, monkeypatch):
+    _runtime_fixture(tmp_path, monkeypatch)
+    offline = tmp_path / "global.html"
+    blocked_root = tmp_path / "blocked-root"
+    blocked_root.write_text("not a directory", encoding="utf-8")
+    blocked_inline = tmp_path / "blocked-inline"
+    blocked_inline.write_text("not a directory", encoding="utf-8")
+
+    rc, out, err = _run([
+        "card", "global", "--output", str(offline),
+        "--artifact-root", str(blocked_root),
+        "--inline-output", str(blocked_inline / "inline.html"),
+    ])
+
+    assert rc == 0, (out, err)
+    assert offline.is_file()
+    payload = _card_display_payload(out)
+    assert payload["artifact"]["status"] == "failed"
+    assert payload["web_artifact"] is None
+    assert payload["artifact"]["error"]
+    assert payload["inline"]["status"] == "failed"
+    assert payload["inline"]["path"] is None
+    assert payload["inline"]["error"]
+    assert "CARD_ARTIFACT_WARNING" in err
+    assert "CARD_INLINE_WARNING" in err
+
+
+def test_workflow_presentation_contract_covers_pipeline_stages_actions_and_confirmations():
+    from cli import orchestration
+
+    contract = orchestration.load_contract(BASE)
+    presentation = contract["presentation"]
+    stage_ids = {
+        str(step["stage"])
+        for pipeline in (contract.get("pipelines") or {}).values()
+        for step in pipeline
+    }
+    stage_ids.add("complete")
+
+    assert stage_ids <= set(presentation["stages"])
+    assert presentation["stages"]["architecture_review"]["label"] == "架构复审"
+    assert presentation["stages"]["review"]["label"] == "代码复审"
+    assert presentation["stages"]["complete"]["label"] == "完成"
+    for action in ("dispatch_role", "await_confirmation", "await_effect_approval", "task_complete", "none", "task_resume_after_resolution"):
+        assert presentation["actions"][action]["label"].strip()
+    assert presentation["actions"]["await_confirmation"]["label"] == "等待确认"
+    assert presentation["confirmations"]["EACH_STAGE_POLICY"]["label"].strip()
+    assert presentation["confirmations"]["MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION"]["label"].strip()
+
+
+def test_task_snapshot_projects_governed_workflow_display_fields_without_changing_machine_ids(tmp_path, monkeypatch):
+    fx = _runtime_fixture(tmp_path, monkeypatch)
+    rc, out, err = _run(["workflow", "preference", "--set", "each_stage", "--json"])
+    assert rc == 0, (out, err)
+
+    from cli.cards.snapshot import build_task_snapshot
+
+    snap = build_task_snapshot("TASK-ACTIVE", db_path=fx["db_path"])
+    workflow = snap["workflow"]
+    next_step = workflow["next_step"]
+
+    assert next_step["stage"] == "development"
+    assert next_step["action"] == "await_confirmation"
+    assert next_step["confirmation_reason"] == "EACH_STAGE_POLICY"
+    assert next_step["stage_display"]["label"] == "开发"
+    assert next_step["role_display"]["label"] == "tp-开发工程师"
+    assert next_step["action_display"]["label"] == "等待确认"
+    assert next_step["confirmation_display"]["label"] == "等待阶段确认"
+    for step in workflow["steps"]:
+        assert step["stage_display"]["label"]
+        assert step["role_display"]["label"]
+        assert step["stage"] in {"requirement", "architecture", "development", "verification"}
+
+
+def test_task_card_workflow_renderer_uses_projected_labels_and_accessible_technical_details():
+    text = (BASE / "cli" / "cards" / "assets" / "card.html").read_text(encoding="utf-8")
+
+    assert "当前步骤" in text
+    assert "stage_display" in text
+    assert "action_display" in text
+    assert "confirmation_display" in text
+    assert "workflow-tech-toggle" in text
+    assert "aria-expanded" in text
+    assert "aria-controls" in text
+    assert "按条件启用" in text
+    assert "displayStage(next.stage)" not in text
+    assert "`${next.action || ''}" not in text
+
+
+def test_task_card_prefers_structured_evidence_items_with_task_anchor(tmp_path, monkeypatch):
+    import hashlib
+
+    fx = _runtime_fixture(tmp_path, monkeypatch)
+    task_dir = fx["workspace"] / ".tp-spec" / "tasks" / "TASK-ACTIVE"
+    evidence_file = task_dir / "evidence" / "proof.txt"
+    _write(evidence_file, "proof\n")
+    digest = hashlib.sha256(evidence_file.read_bytes()).hexdigest()
+    detail = {
+        "evidence_items": [{"type": "local_file", "path": "evidence/proof.txt", "sha256": digest}],
+        "evidence": ["evidence/proof.txt"],
+    }
+    conn = dbmod.connect(str(fx["db_path"]))
+    with dbmod.transactional(conn):
+        conn.execute(
+            "INSERT INTO task_event(task_id,event_type,actor_role,summary,detail_json,evidence_path,workflow_version,created_at) VALUES(?,?,?,?,?,?,?,?)",
+            ("TASK-ACTIVE", "VERIFICATION_COMPLETED", "tp-test-engineer", "proof linked", json.dumps(detail), "evidence/proof.txt", active_version(), dbmod.now_iso()),
+        )
+    conn.close()
+
+    from cli.cards.snapshot import build_task_snapshot
+
+    snap = build_task_snapshot("TASK-ACTIVE", db_path=fx["db_path"])
+    item = next(row for row in snap["evidence"] if row["raw_path"] == "evidence/proof.txt")
+    assert item["anchor"] == "task"
+    assert item["display_name"] == "proof.txt"
+    assert item["display_path"] == ".tp-spec/tasks/TASK-ACTIVE/evidence/proof.txt"
+    assert item["copy_path"] == item["display_path"]
+    assert item["verification"] == "structured"
+    assert item["current_exists"] is True
+    assert item["sha256"] == digest
+    assert item["occurrence_count"] == 1
+    assert [source["field"] for source in item["sources"]] == ["detail.evidence_items"]
+
+
+def test_legacy_bare_evidence_path_is_retained_but_not_claimed_as_project_root(tmp_path, monkeypatch):
+    fx = _runtime_fixture(tmp_path, monkeypatch)
+    conn = dbmod.connect(str(fx["db_path"]))
+    with dbmod.transactional(conn):
+        conn.execute(
+            "INSERT INTO task_event(task_id,event_type,actor_role,summary,evidence_path,workflow_version,created_at) VALUES(?,?,?,?,?,?,?)",
+            ("TASK-ACTIVE", "FACT", "tp-development-engineer", "legacy note", "task.md", active_version(), dbmod.now_iso()),
+        )
+    conn.close()
+
+    from cli.cards.snapshot import build_task_snapshot
+
+    snap = build_task_snapshot("TASK-ACTIVE", db_path=fx["db_path"])
+    item = next(row for row in snap["evidence"] if row["raw_path"] == "task.md")
+    assert item["anchor"] == "unknown"
+    assert item["display_path"] == "task.md"
+    assert item["copy_path"] == "task.md"
+    assert item["verification"] == "legacy_unverified"
+    assert item["scope_label"] == "未验证"
+
+
+def test_evidence_deduplication_uses_anchor_and_normalized_path(tmp_path, monkeypatch):
+    fx = _runtime_fixture(tmp_path, monkeypatch)
+    now = dbmod.now_iso()
+    conn = dbmod.connect(str(fx["db_path"]))
+    with dbmod.transactional(conn):
+        conn.execute(
+            "INSERT INTO task_event(task_id,event_type,actor_role,summary,evidence_path,workflow_version,created_at) VALUES(?,?,?,?,?,?,?)",
+            ("TASK-ACTIVE", "FACT", "tp-development-engineer", "legacy one", "docs/../docs/a.md", active_version(), now),
+        )
+        conn.execute(
+            "INSERT INTO task_event(task_id,event_type,actor_role,summary,evidence_path,workflow_version,created_at) VALUES(?,?,?,?,?,?,?)",
+            ("TASK-ACTIVE", "FACT", "tp-development-engineer", "legacy two", "docs/a.md", active_version(), now),
+        )
+        conn.execute(
+            "INSERT INTO task_event(task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) VALUES(?,?,?,?,?,?,?)",
+            ("TASK-ACTIVE", "FACT", "tp-development-engineer", "structured", json.dumps({"evidence_items": [{"type": "local_file", "path": "docs/a.md", "sha256": "a" * 64}]}), active_version(), now),
+        )
+    conn.close()
+
+    from cli.cards.snapshot import build_task_snapshot
+
+    snap = build_task_snapshot("TASK-ACTIVE", db_path=fx["db_path"])
+    matches = [row for row in snap["evidence"] if row["normalized_path"] == "docs/a.md"]
+    assert {(row["anchor"], row["occurrence_count"]) for row in matches} == {("unknown", 2), ("task", 1)}
+
+
+def test_evidence_projection_marks_traversal_and_absolute_paths_unsafe(tmp_path, monkeypatch):
+    fx = _runtime_fixture(tmp_path, monkeypatch)
+    conn = dbmod.connect(str(fx["db_path"]))
+    with dbmod.transactional(conn):
+        conn.execute(
+            "INSERT INTO task_event(task_id,event_type,actor_role,summary,evidence_path,workflow_version,created_at) VALUES(?,?,?,?,?,?,?)",
+            ("TASK-ACTIVE", "FACT", "tp-development-engineer", "unsafe paths", "../secret.txt;/tmp/outside.txt;C:\\secret.txt", active_version(), dbmod.now_iso()),
+        )
+    conn.close()
+
+    from cli.cards.snapshot import build_task_snapshot
+
+    snap = build_task_snapshot("TASK-ACTIVE", db_path=fx["db_path"])
+    unsafe = [row for row in snap["evidence"] if row["verification"] == "unsafe"]
+    assert {row["raw_path"] for row in unsafe} >= {"../secret.txt", "/tmp/outside.txt", "C:\\secret.txt"}
+    assert all(row["anchor"] == "unsafe" for row in unsafe)
+    assert all(row["scope_label"] == "不安全路径" for row in unsafe)
+
+
+def test_evidence_renderer_shows_scope_reason_and_copy_path():
+    text = (BASE / "cli" / "cards" / "assets" / "card.html").read_text(encoding="utf-8")
+
+    assert "scope_label" in text
+    assert "copy_path" in text
+    assert "raw_path" in text
+    assert "原始路径" in text
+    assert "结构化来源 · 当前文件状态未验证" in text
+    assert "evidence-table" in text
+    assert "evidence-detail-button" in text
+    assert "evidence-detail-table" in text
+    assert "evidence-detail-body" in text
+    assert "依据 / 规范路径" in text
+    assert "table-layout: fixed" in text
+    assert ".evidence-table-wrap" in text
+    assert "overflow: hidden" in text
+    assert "evidence-table-identity" in text
+    assert "detailRow.hidden = true" in text
+    assert "aria-expanded" in text
+    assert "evidence-parent-form" not in text
+    assert "作用域" in text
+    assert "规范路径" in text
+    assert "当前状态" in text
+    assert "关联次数" in text
+    assert "操作" in text
+    assert "来源事件" in text
+    assert "来源字段" in text
+    assert "发生时间" in text
+    assert "来源摘要" in text
+    assert "事件 ID" in text
+    assert "项目根目录" not in text
+
+
+def test_task_progress_card_is_bounded_and_scrollable():
+    text = (BASE / "cli" / "cards" / "assets" / "card.html").read_text(encoding="utf-8")
+
+    assert "task-progress-card" in text
+    assert "max-height: 600px" in text
+    assert "overflow: hidden" in text
+    assert "task-progress-scroll" in text
+    assert "grid-template-rows: auto minmax(0, 1fr)" in text
+    assert "scrollbar-gutter: stable" in text
+    assert "app.classList.add('task-progress-card')" in text
+
+
+def test_project_task_tables_use_search_only_and_archive_retired_tasks():
+    text = (BASE / "cli" / "cards" / "assets" / "card.html").read_text(encoding="utf-8")
+
+    assert "query.dataset.filter = 'text'" in text
+    assert "const state = node('select')" not in text
+    assert "全部状态" not in text
+    assert "['project-completed', '任务归档']" in text
+    assert "taskTable('任务归档', data.archived_tasks || data.completed_tasks || [], 'project-completed')" in text
+    assert "const displayState = rowData.retired ? 'RETIRED' : rowData.state" in text
+    assert "RETIRED: '已退休'" in text
+
+
+def test_project_task_statistics_use_semantic_colors():
+    text = (BASE / "cli" / "cards" / "assets" / "card.html").read_text(encoding="utf-8")
+
+    assert "['total', '总任务', 'info']" in text
+    assert "['active', '进行中', 'info']" in text
+    assert "['blocked', '已阻塞', 'warn']" in text
+    assert "['completed', '已完成', 'ok']" in text
+    assert "['cancelled', '已取消', 'bad']" in text
+    assert "['verification_attention', '验证需关注', 'warn']" in text
+    assert "node('strong', color || 'muted'" in text
+
+
+def test_global_and_project_cards_are_bounded_and_scrollable():
+    text = (BASE / "cli" / "cards" / "assets" / "card.html").read_text(encoding="utf-8")
+
+    assert ".global-config-card, .current-project-card { max-height: 600px; overflow: hidden; grid-template-rows: auto minmax(0, 1fr);" in text
+    assert ".global-config-card > .card-nav, .current-project-card > .card-nav { position: static; }" in text
+    assert ".card-content-scroll { grid-column: 1 / -1; min-height: 0; overflow-y: auto;" in text
+    assert "app.classList.add('global-config-card')" in text
+    assert "app.classList.add('current-project-card')" in text
+    assert "const contentScroll = node('div', 'card-content-scroll')" in text
+    assert "metrics(stats, 'project-stats', contentScroll)" in text
+
+
+def test_inline_task_progress_restores_scroll_after_host_grid_reset(tmp_path):
+    from cli.cards.render import render_inline_card
+
+    output = tmp_path / "task-scroll.html"
+    render_inline_card(
+        {
+            "card_type": "active_task",
+            "title": "当前任务进度",
+            "generated_at": "now",
+            "health": "healthy",
+            "task": {"task_id": "TASK-SCROLL"},
+            "workflow": {},
+            "latest_checkpoint": {},
+            "blockers": [],
+            "verification": {},
+            "evidence": [],
+            "timeline": [{"event_type": "FACT", "created_at": "now", "summary": "event"}],
+            "summary": "",
+            "problems": [],
+        },
+        output,
+    )
+
+    fragment = output.read_text(encoding="utf-8")
+    assert ".grid { overflow: visible; }" in fragment
+    assert ".task-progress-card { overflow: hidden; }" in fragment
+    assert fragment.index(".grid { overflow: visible; }") < fragment.index(".task-progress-card { overflow: hidden; }")
+    assert ".card-nav { position: static; }" in fragment
+    assert ".task-progress-card .card-nav { position: static; }" in fragment
+    assert ".task-progress-scroll { min-height: 0; overflow-y: auto;" in fragment
+    assert fragment.index(".task-progress-card .card-nav { position: static; }") < fragment.index(".task-progress-scroll { min-height: 0;")
+
+
+def test_structured_evidence_keeps_task_anchor_when_workspace_root_is_unavailable():
+    from cli.cards.evidence_view import build_evidence_view
+
+    rows = build_evidence_view(
+        [
+            {
+                "id": 1,
+                "event_type": "FACT",
+                "created_at": "2026-08-26T00:00:00Z",
+                "summary": "structured evidence",
+                "detail_json": json.dumps(
+                    {
+                        "evidence_items": [
+                            {"type": "local_file", "path": "evidence/proof.txt", "sha256": "a" * 64}
+                        ]
+                    }
+                ),
+            }
+        ],
+        task_id="TASK-NO-ROOT",
+        project_root=None,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["anchor"] == "task"
+    assert rows[0]["verification"] == "structured"
+    assert rows[0]["display_path"] == ".tp-spec/tasks/TASK-NO-ROOT/evidence/proof.txt"
+    assert rows[0]["current_exists"] is None

@@ -1,5 +1,18 @@
 # Changelog
 
+## [5.2.7] Open Release Line — 2026-08-26
+
+- 任务事件展示与工作流判断改为结构化事实：`summary` 仅用于人类阅读，正式 CLI 自动记录 Event Semantics，并保留可信旧契约的确定性兼容。
+- 文档入口统一到根 README 与 `docs/README.md`；Domain Agent 导航按 Role Catalog 校验/生成，当前发布面不再承载临时实施计划和迁移过程材料。
+
+- 从 **5.2.6** 收敛到 **5.2.7** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.2.7`，不再保留 `templates/5.2.6`。
+- 继续维持 Role-first 产品形态：`tp-spec-coding` 唯一默认产品入口、`tp-software-lifecycle` 软件工程 Domain Agent 与 9 个 Formal Role 的活动契约不变。
+- Role Catalog 新增生成型 `topology` 投影：把 Product Entry → Domain Agent → Formal Role → Capability Skill 关系固化为可校验 `nodes + edges`，节点统一提供稳定 `id` 与显示 `name`；运行时支持按 id/name 直接查询，Global Config 卡片新增 Agent / Role / Skill 关系展示。图谱由既有 catalog/subskills/Skill metadata 生成，不新增第二事实源、数据库、MCP Server 或后台服务。
+- 卡片展示契约收敛为 `tp-spec.card-display/v1`：显式 `card global/project/task` 与 Runtime 自动刷新共享 `CARD_DISPLAY` 结果语义，显式 `--inline-output` 优先于单进程 `TP_SPEC_CARD_INLINE_OUTPUT`；Artifact/fragment 失败继续 best-effort 降级且不改变已成功 Runtime 命令，`--json` Runtime stdout 保持纯机器 JSON。
+- 新增只读能力 Skill `tp-card-display`：只在用户明确请求显示卡片时消费官方卡片结果，并按宿主真实能力选择会话内 fragment、固定 Web Artifact 或离线 HTML；不再把通用 `visualize` 当作固定卡片协议，也不宣称“fragment 已生成”等同于“宿主已渲染”。
+- 工作流卡片新增治理展示投影：`governance/orchestration.yaml` 统一维护 stage/action/confirmation 的用户显示标签，Role 名称继续复用 Role Catalog；任务卡片改为“当前步骤摘要 + 响应式时间线”，raw id 仅保留在可访问的技术详情中，机器路由字段保持不变。
+- 任务卡片“依据”升级为只读 Evidence View：优先使用结构化 `evidence_items`，legacy 裸路径保持未验证而不再猜测“项目根目录”，绝对/越界/根逃逸路径显式标为不安全；按 `(anchor, normalized_path)` 聚合来源，并展示原始路径、可复制路径、关联事件与当前可验证状态，不修改历史 event 或正式 Evidence PASS 语义。
+
 ## [5.2.6] Open Release Line — 2026-08-21
 
 - 从 **5.2.5** 收敛到 **5.2.6** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.2.6`，不再保留 `templates/5.2.5`。

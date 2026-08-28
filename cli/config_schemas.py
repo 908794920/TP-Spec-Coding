@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding governed-YAML schema registry (V5.2.6 C-01.4, decision D-07/T5).
+"""TP-Spec-Coding governed-YAML schema registry (V5.2.7 C-01.4, decision D-07/T5).
 
 Schemas are plain Python dicts co-versioned with the loader: no external
 schema files (the ``.schema.yaml`` approach was retired by human_owner
@@ -22,7 +22,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
     "workflow": {
         "file": "governance/workflow.yaml",
         "version_field": "version",
-        "supported_versions": ["5.2.6"],
+        "supported_versions": ["5.2.7"],
         "properties": {
             "version": {"type": str, "required": True},
             "workflow": {"type": dict, "required": True},
@@ -35,7 +35,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
     "ai-role": {
         "file": "governance/ai-role.yaml",
         "version_field": "version",
-        "supported_versions": ["5.2.6"],
+        "supported_versions": ["5.2.7"],
         "properties": {
             "version": {"type": str, "required": True},
             "team": {"type": dict, "required": True},
@@ -86,7 +86,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
     "orchestration": {
         "file": "governance/orchestration.yaml",
         "version_field": "version",
-        "supported_versions": ["5.2.6"],
+        "supported_versions": ["5.2.7"],
         "properties": {
             "version": {"type": str, "required": True},
             "entry_role": {"type": str, "required": True},
@@ -95,14 +95,26 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
             "runtime": {"type": dict, "required": True},
             "execution": {"type": dict, "required": True},
             "signals": {"type": dict, "required": True},
+            "presentation": {"type": dict, "required": True},
             "conditional_roles": {"type": list, "required": False},
             "pipelines": {"type": dict, "required": True},
+        },
+    },
+    "event-semantics": {
+        "file": "governance/event-semantics.yaml",
+        "version_field": "schema",
+        "supported_versions": ["tp-spec.event-semantics-contract/v1"],
+        "properties": {
+            "schema": {"type": str, "required": True},
+            "event_schema": {"type": str, "required": True},
+            "controlled": {"type": dict, "required": True},
+            "event_families": {"type": dict, "required": True},
         },
     },
     "role-catalog": {
         "file": "governance/role-catalog.yaml",
         "version_field": "catalog_version",
-        "supported_versions": ["5.2.6"],
+        "supported_versions": ["5.2.7"],
         "properties": {
             "catalog_version": {"type": str, "required": True},
             "base_version": {"type": str, "required": True},
@@ -110,15 +122,16 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
             "generated_by": {"type": str, "required": False},
             "human_actor": {"type": dict, "required": False},
             "roles": {"type": list, "required": True},
+            "topology": {"type": dict, "required": True},
             "state_owner_map": {"type": dict, "required": True},
             "completion_chain": {"type": dict, "required": False},
             "page_verification_modes": {"type": list, "required": False},
         },
     },
     "status-template": {
-        "file": "templates/5.2.6/status.yaml",
+        "file": "templates/5.2.7/status.yaml",
         "version_field": "artifact_contract.version",
-        "supported_versions": ["5.2.6"],
+        "supported_versions": ["5.2.7"],
         "properties": {
             "task_id": {"type": str, "required": True},
             "task_name": {"type": str, "required": False},
@@ -154,6 +167,7 @@ GOVERNANCE_FILES: Dict[str, str] = {
     "risk-rule": "governance/risk-rule.yaml",
     "knowledge-rule": "governance/knowledge-rule.yaml",
     "role-catalog": "governance/role-catalog.yaml",
+    "event-semantics": "governance/event-semantics.yaml",
     "orchestration": "governance/orchestration.yaml",
 }
 

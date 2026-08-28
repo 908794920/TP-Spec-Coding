@@ -8,7 +8,7 @@
   低于当前基座版本的 token（前一修补版本、5.0.x、4.x 及历史编码标识符），
   否则 FAILED；
 - 历史位置精确 allowlist（_ALLOWED_HISTORY_PREFIXES / _ALLOWED_HISTORY_GLOBS）：
-  docs/ 报告、reports/、历史回归测试（Test-V510*/test_v510_*/v510_single_contract.py）
+  reports/、显式 migration 源码、历史回归测试（Test-V510*/test_v510_*/v510_single_contract.py）
   允许保留对旧版本的精确引用（不视为污染），避免改写历史证据；活动 `skills/` 必须跟随当前契约扫描；
 - CHANGELOG.md 只放行版本导航标题行（## vX.Y.Z）；
 - 未来版本（例如更高版本演练目标）与独立命名空间版本（治理/工具 schema 的
@@ -44,7 +44,6 @@ def _ensure_utf8_stdio() -> None:
 # 历史回归测试、旧版目录），保留原样以维持审计链；不参与活动契约纯度判定。
 # 前缀匹配（相对 BASE 的 posix 路径前缀）。
 _ALLOWED_HISTORY_PREFIXES = (
-    "docs/history/", # 显式历史/迁移证据
     "reports/",       # 历史质量报告
     "cli/migrations/",
     "scripts/migration/",

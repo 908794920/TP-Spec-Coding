@@ -1,0 +1,56 @@
+schema: tp-spec.event-semantics-contract/v1
+event_schema: tp-spec.event-semantics/v1
+
+controlled:
+  result_status:
+    - RECORDED
+    - STARTED
+    - COMPLETED
+    - PENDING
+    - BLOCKED
+    - CANCELLED
+    - NOT_RECORDED
+  decision:
+    - PASS
+    - REVISE
+    - NEEDS_FIX
+    - FAIL
+    - ERROR
+    - BLOCKED
+    - NOT_RECORDED
+  operations:
+    - CHECKPOINT
+    - VERIFY
+    - REVIEW
+    - START
+    - END
+    - WORKFLOW_CONFIRM
+    - DELIVERY_CONVERGE
+    - STATE
+    - BLOCK
+    - RECORD
+
+event_families:
+  FACT:
+    checkpoint_required: [operation, phase, result_status]
+  VERIFICATION_COMPLETED:
+    required: [operation, decision, result_status]
+    operation: VERIFY
+  REVIEW_COMPLETED:
+    required: [operation, review_kind, decision, result_status]
+    operation: REVIEW
+  WORK_SESSION_STARTED:
+    required: [operation, result_status]
+    operation: START
+  WORK_SESSION_ENDED:
+    required: [operation, result_status]
+    operation: END
+  BLOCKER:
+    required: [operation, result_status]
+    operation: BLOCK
+  WORKFLOW_CONFIRMATION:
+    required: [operation, result_status]
+    operation: WORKFLOW_CONFIRM
+  DELIVERY_RESULT:
+    required: [operation, result_status]
+    operation: DELIVERY_CONVERGE
