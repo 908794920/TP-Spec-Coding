@@ -16,8 +16,12 @@ import yaml
 
 from cli import autonomy_profile
 from cli import db as dbmod
+from cli import event_presentation
+from cli import event_contract
+from cli import event_policies
 from cli import environment
 from cli import orchestration
+from cli.cards.evidence_view import build_evidence_view
 from cli.content_systems import load_content_systems
 from cli.knowledge import common as knowledge_common
 from cli.path_identity import canonical_path, same_path
@@ -106,7 +110,8 @@ def _workspace_view(entry: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": str(entry.get("id") or ""),
         "root": str(entry.get("root") or ""),
-        "enabled": bool(entry.get("enabled", True)),
+        "enabled": bool(entry.get("enabled")) if "enabled" in entry else None,
+        "enabled_declared": "enabled" in entry,
     }
 
 
@@ -118,12 +123,13 @@ def _autonomy_profile_view(profile: Dict[str, Any]) -> Dict[str, Any]:
     workflow = profile.get("workflow") or {}
     return {
         "profile_id": str(profile.get("profile_id") or ""),
-        "enabled": bool(profile.get("enabled", False)),
+        "enabled": bool(profile.get("enabled")) if "enabled" in profile else None,
+        "enabled_declared": "enabled" in profile,
         "canonical_root": str(canonical.get("workspace_root") or ""),
         "autonomous_root": str(autonomous.get("workspace_root") or ""),
         "confirmation_policy": str(workflow.get("confirmation_policy") or ""),
         "difficulty_ceiling": str(policy.get("difficulty_ceiling") or ""),
-        "max_new_tasks_per_cycle": int(discovery.get("max_new_tasks_per_cycle") or 0),
+        "max_new_tasks_per_cycle": int(discovery.get("max_new_tasks_per_cycle")) if discovery.get("max_new_tasks_per_cycle") is not None else None,
     }
 
 
@@ -144,6 +150,34 @@ def _read_autonomy_profiles(user_root: Path) -> Tuple[List[Dict[str, Any]], Path
     except Exception as exc:
         return [], profiles_root, str(exc)
     return sorted(profiles, key=lambda profile: str(profile.get("profile_id") or "")), profiles_root, None
+
+
+def _read_skill_topology(base_root: Path) -> Tuple[Dict[str, Any], Optional[str]]:
+    try:
+        topology = orchestration.load_role_topology(base_root)
+        nodes = topology.get("nodes") or {}
+        edges = topology.get("edges") or []
+        return {
+            "status": "available",
+            "schema": str(topology.get("schema") or ""),
+            "root_id": str(topology.get("root_id") or ""),
+            "nodes": nodes,
+            "edges": edges,
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+            "error": "",
+        }, None
+    except Exception as exc:
+        return {
+            "status": "unavailable",
+            "schema": "",
+            "root_id": "",
+            "nodes": {},
+            "edges": [],
+            "node_count": 0,
+            "edge_count": 0,
+            "error": str(exc),
+        }, str(exc)
 
 
 def build_global_snapshot(
@@ -212,6 +246,10 @@ def build_global_snapshot(
     if autonomy_error:
         problems.append(_problem("AUTONOMY_PROFILE_INVALID", f"自治维护配置不可读：{autonomy_error}"))
 
+    skill_topology, topology_error = _read_skill_topology(base_root)
+    if topology_error:
+        problems.append(_problem("SKILL_TOPOLOGY_INVALID", f"能力拓扑图谱不可读：{topology_error}"))
+
     return {
         "card_type": "global_config",
         "title": "TP-Spec 全局配置",
@@ -221,6 +259,7 @@ def build_global_snapshot(
         "user_root": str(user_root),
         "base": {
             "configured": base_configured,
+            "source": "installation_config" if base_configured else "environment_resolution",
             "contract_version": version,
             "base_version": base_version,
             "root": str(base_root),
@@ -268,9 +307,11 @@ def build_global_snapshot(
             "profiles_path": str(autonomy_root),
             "profile_count": len(autonomy_profiles),
             "profiles": [_autonomy_profile_view(profile) for profile in autonomy_profiles],
-            "execution_mode": "external_scheduler_local_executor",
+            "execution_mode": "",
+            "execution_mode_declared": False,
             "error": autonomy_error or "",
         },
+        "skill_topology": skill_topology,
         "problems": problems,
     }
 
@@ -366,21 +407,28 @@ def _verification_attention(conn: sqlite3.Connection, task_ids: Iterable[str]) -
     latest: Dict[str, str] = {}
     for row in rows:
         detail = _parse_detail(row["detail_json"])
-        latest[str(row["task_id"])] = str(detail.get("decision") or row["summary"] or "").upper()
+        latest[str(row["task_id"])] = event_contract.normalize_event_semantics("VERIFICATION_COMPLETED", detail)["decision"]
     return sum(1 for decision in latest.values() if decision in {"FAIL", "NEEDS_FIX"})
 
 
-def _task_list_row(row: sqlite3.Row, latest: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+def _task_list_row(
+    row: sqlite3.Row,
+    latest: Dict[str, Dict[str, Any]],
+    *,
+    retired: bool = False,
+) -> Dict[str, Any]:
     event = latest.get(str(row["task_id"])) or {}
     return {
         "task_id": str(row["task_id"] or ""),
         "title": str(row["title"] or ""),
         "state": str(row["current_state"] or ""),
+        "retired": retired,
         "phase": str(row["current_stage"] or ""),
         "owner": str(row["owner_role"] or ""),
         "updated_at": str(row["updated_at"] or ""),
         "completed_at": str(row["completed_at"] or ""),
-        "summary": str(event.get("summary") or row["title"] or ""),
+        "summary": str(event.get("summary") or ""),
+        "summary_source": "latest_event" if str(event.get("summary") or "").strip() else "not_recorded",
     }
 
 
@@ -472,7 +520,7 @@ def build_project_snapshot(
 
     stats = {"total": 0, "new": 0, "active": 0, "blocked": 0, "completed": 0, "cancelled": 0, "verification_attention": 0}
     in_progress: List[Dict[str, Any]] = []
-    completed: List[Dict[str, Any]] = []
+    archived: List[Dict[str, Any]] = []
     db_path = _registered_db_path(entry or {}) if entry else None
     if db_path:
         project["runtime_db"] = str(db_path)
@@ -489,16 +537,37 @@ def build_project_snapshot(
                         (project_id,),
                     ).fetchall()
                     ids = [str(row["task_id"]) for row in rows]
+                    retired_ids = {
+                        task_id for task_id in ids
+                        if event_policies.is_task_retired(conn, task_id)
+                    }
                     latest = _latest_event_summaries(conn, ids)
                     stats["total"] = len(rows)
                     for row in rows:
+                        if str(row["task_id"]) in retired_ids:
+                            continue
                         state = str(row["current_state"] or "").upper()
                         key = state.lower()
                         if key in stats:
                             stats[key] += 1
-                    stats["verification_attention"] = _verification_attention(conn, ids)
-                    in_progress = [_task_list_row(row, latest) for row in rows if str(row["current_state"] or "") in {"NEW", "ACTIVE", "BLOCKED"}][:10]
-                    completed = [_task_list_row(row, latest) for row in rows if str(row["current_state"] or "") == "COMPLETED"][:10]
+                    current_ids = [task_id for task_id in ids if task_id not in retired_ids]
+                    stats["verification_attention"] = _verification_attention(conn, current_ids)
+                    in_progress = [
+                        _task_list_row(row, latest)
+                        for row in rows
+                        if str(row["task_id"]) not in retired_ids
+                        and str(row["current_state"] or "") in {"NEW", "ACTIVE", "BLOCKED"}
+                    ][:10]
+                    archived = [
+                        _task_list_row(
+                            row,
+                            latest,
+                            retired=str(row["task_id"]) in retired_ids,
+                        )
+                        for row in rows
+                        if str(row["current_state"] or "") == "COMPLETED"
+                        or str(row["task_id"]) in retired_ids
+                    ]
                     prow = conn.execute("SELECT project_name,base_version FROM project WHERE project_id=?", (project_id,)).fetchone()
                     if prow is not None:
                         project["name"] = str(prow["project_name"] or project["name"])
@@ -529,7 +598,7 @@ def build_project_snapshot(
         "registry": {"path": str(reg_path), "exists": reg_path.is_file(), "status": "invalid" if reg_error else ("available" if reg_path.is_file() else "unconfigured")},
         "task_statistics": stats,
         "in_progress_tasks": in_progress,
-        "completed_tasks": completed,
+        "archived_tasks": archived,
         "summary": summary,
         "problems": problems,
     }
@@ -583,17 +652,28 @@ def _resolve_task_db_readonly(task_id: str, *, db_path: "str | Path | None" = No
 
 def _event_view(row: Dict[str, Any]) -> Dict[str, Any]:
     detail = _parse_detail(row.get("detail_json"))
+    event_type = str(row.get("event_type") or "")
+    semantics = event_contract.normalize_event_semantics(event_type, detail)
+    summary = str(row.get("summary") or "")
     return {
         "id": int(row.get("id") or 0),
-        "event_type": str(row.get("event_type") or ""),
+        "source_event_id": int(row.get("id") or 0),
+        "event_type": event_type,
         "from_state": str(row.get("from_state") or ""),
         "to_state": str(row.get("to_state") or ""),
         "from_stage": str(row.get("from_stage") or ""),
         "to_stage": str(row.get("to_stage") or ""),
         "actor": str(row.get("actor_role") or ""),
-        "summary": str(row.get("summary") or ""),
+        "summary": summary,
         "created_at": str(row.get("created_at") or ""),
-        "operation": str(detail.get("operation") or ""),
+        "operation": semantics["operation"],
+        "decision": semantics["decision"],
+        "result_status": semantics["result_status"],
+        "milestone_id": semantics["milestone_id"],
+        "source_kind": semantics["source_kind"],
+        "presentation": event_presentation.resolve_event_presentation(
+            event_type, semantics["decision"], semantics["result_status"]
+        ),
     }
 
 
@@ -678,8 +758,6 @@ def build_task_snapshot(
 
     latest_checkpoint: Dict[str, Any] = {}
     verification: Dict[str, Any] = {"status": "NOT_RECORDED", "summary": "", "created_at": ""}
-    evidence: List[Dict[str, Any]] = []
-    evidence_seen: set[str] = set()
     current_blocker: Dict[str, Any] = {}
     for event in event_rows:
         detail = _parse_detail(event.get("detail_json"))
@@ -691,8 +769,11 @@ def build_task_snapshot(
                 "created_at": str(event.get("created_at") or ""),
             }
         if event.get("event_type") == "VERIFICATION_COMPLETED" and str(event.get("actor_role") or "") == "tp-test-engineer":
+            semantics = event_contract.normalize_event_semantics("VERIFICATION_COMPLETED", detail)
             verification = {
-                "status": str(detail.get("decision") or event.get("summary") or "NOT_RECORDED").upper(),
+                "status": semantics["decision"] or "NOT_RECORDED",
+                "result_status": semantics["result_status"],
+                "source_kind": semantics["source_kind"],
                 "summary": str(event.get("summary") or ""),
                 "created_at": str(event.get("created_at") or ""),
             }
@@ -702,24 +783,12 @@ def build_task_snapshot(
                 "actor": str(event.get("actor_role") or ""),
                 "created_at": str(event.get("created_at") or ""),
             }
-        raw_paths: List[str] = []
-        if event.get("evidence_path"):
-            raw_paths.extend(part.strip() for part in str(event.get("evidence_path")).split(";") if part.strip())
-        values = detail.get("evidence")
-        if isinstance(values, list):
-            for value in values:
-                raw_paths.extend(part.strip() for part in str(value).split(";") if part.strip())
-        for path in raw_paths:
-            if path in evidence_seen:
-                continue
-            evidence_seen.add(path)
-            evidence.append({
-                "path": path,
-                "event_type": str(event.get("event_type") or ""),
-                "created_at": str(event.get("created_at") or ""),
-                "summary": str(event.get("summary") or ""),
-            })
 
+    evidence = build_evidence_view(
+        event_rows,
+        task_id=task_id0,
+        project_root=str(task_row.get("project_root_path") or ""),
+    )
     blockers = [current_blocker] if str(task_row.get("current_state") or "") == "BLOCKED" and current_blocker else []
     try:
         workflow = orchestration.resolve_progress(task_id0, db_path=str(resolved_db), base_root=base_root)
@@ -732,7 +801,8 @@ def build_task_snapshot(
         problems.append(_problem("WORKFLOW_UNRESOLVED", f"工作流无法可靠解析：{exc}"))
 
     timeline = [_event_view(event) for event in reversed(event_rows[-50:])]
-    summary = str((event_rows[-1].get("summary") if event_rows else "") or task_row.get("title") or "")
+    summary = ""
+    summary_source = "not_recorded"
     task = {
         "task_id": task_id0,
         "title": str(task_row.get("title") or ""),
@@ -764,5 +834,6 @@ def build_task_snapshot(
         "evidence": evidence,
         "timeline": timeline,
         "summary": summary,
+        "summary_source": summary_source,
         "problems": problems,
     }

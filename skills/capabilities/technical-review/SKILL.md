@@ -1,5 +1,6 @@
 ---
 name: technical-review
+display_name: 独立技术审查
 version: 5.2.7
 description: Use for independent implementation review. Check real code/diff, traceability, engineering risks, and evidence without letting the implementer self-approve or requiring workflow bookkeeping.
 ---

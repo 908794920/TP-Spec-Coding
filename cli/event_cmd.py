@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from . import db as dbmod
 from . import event_policies
+from . import event_contract
 
 
 # Final Hardening（Task 1）：事件类型由 cli/event_policies 单一来源推导，
@@ -99,9 +100,10 @@ def cmd_event_add(args) -> int:
         # STATE 类型建议用 task transition，但允许 event add 补录历史
         # event_type 存储时用 args.type（已在 EventTypes 内）
         # detail_json 记录 state/next（若提供）
-        detail = None
-        if args.state or args.next:
-            detail = {"state": args.state or "", "next": args.next or ""}
+        detail = {"state": args.state or "", "next": args.next or "", "producer": "event_add"}
+        detail = event_contract.add_event_semantics(
+            detail, event_type=args.type, operation="RECORD", result_status="RECORDED", producer="event_add"
+        )
         now = dbmod.now_iso()
         with dbmod.transactional(conn):
             cur = conn.execute(
@@ -117,7 +119,7 @@ def cmd_event_add(args) -> int:
                     args.state,
                     args.actor,
                     args.note,
-                    json.dumps(detail, ensure_ascii=False) if detail else None,
+                    json.dumps(detail, ensure_ascii=False),
                     args.evidence,
                     now,
                 ),

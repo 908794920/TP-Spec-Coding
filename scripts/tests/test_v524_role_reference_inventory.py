@@ -26,16 +26,8 @@ def test_scan_finds_active_and_legacy_callers(tmp_path):
     assert by_path["migrations/role_map.py"].classification == "MIGRATION_ONLY"
 
 
-def test_baseline_inventory_preserves_known_v523_hotspots_and_legacy_dependencies():
-    inventory = json.loads((BASE / "docs/history/v5.2.7-migration/V523_ROLE_REFERENCE_INVENTORY.json").read_text(encoding="utf-8"))
-    paths = {row["path"] for row in inventory["references"]}
-    assert "cli/commit_cmd.py" in paths
-    assert "cli/receipt_cmd.py" in paths
-
-    legacy_text = (BASE / "docs/history/v5.2.7-migration/V523_LEGACY_CALL_GRAPH.md").read_text(encoding="utf-8")
-    assert "cli/config_loader.py" in legacy_text
-    assert "cli/workflow_loader.py" in legacy_text
-
+def test_removed_role_inventory_is_not_shipped():
+    assert not any(p.is_file() or p.is_symlink() for p in (BASE / "docs/history").rglob("*")) if (BASE / "docs/history").exists() else True
 
 def test_report_is_deterministic_and_json_serializable(tmp_path):
     from scripts.migration.v5_2_3.role_reference_inventory import scan_role_references, report_payload

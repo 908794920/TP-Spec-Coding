@@ -8,7 +8,7 @@
 <style>
 :root {
   color-scheme: dark;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--tp-font-sans);
   --tp-bg: #080b10;
   --tp-panel: #0d1117;
   --tp-panel2: #111720;
@@ -27,6 +27,22 @@
   --tp-gray: #748191;
   --tp-radius: 12px;
   --tp-shadow: 0 16px 40px rgba(0, 0, 0, .24);
+  --tp-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --tp-font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --tp-font-size-micro: 10px;
+  --tp-font-size-aux: 11px;
+  --tp-font-size-label: 12px;
+  --tp-font-size-body: 13px;
+  --tp-font-size-section: 15px;
+  --tp-font-size-title: 17px;
+  --tp-font-size-metric: 20px;
+  --tp-font-weight-regular: 400;
+  --tp-font-weight-medium: 500;
+  --tp-font-weight-semibold: 600;
+  --tp-font-weight-bold: 700;
+  --tp-leading-body: 1.5;
+  --tp-leading-compact: 1.45;
+  --tp-leading-tight: 1.3;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -34,50 +50,81 @@ body {
   margin: 0;
   background: var(--tp-bg);
   color: var(--tp-text);
-  font-size: 14px;
-  line-height: 1.55;
+  font-family: var(--tp-font-sans);
+  font-size: var(--tp-font-size-body);
+  line-height: var(--tp-leading-body);
   overflow: hidden;
 }
-.page { max-width: 1180px; height: 100%; margin: 0 auto; padding: 8px; display: flex; flex-direction: column; }
+.page { max-width: 1180px; height: 100%; margin: 0 auto; padding: 8px; display: flex; flex-direction: column; line-height: var(--tp-leading-body); }
 .header { flex: 0 0 auto; display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; padding: 14px 18px; margin-bottom: 0; background: var(--tp-panel); border: 1px solid var(--tp-border); border-bottom: 0; border-radius: 16px 16px 0 0; box-shadow: var(--tp-shadow); }
-.title { font-size: 16px; font-weight: 760; letter-spacing: -.01em; margin: 0 0 4px; }
-.subtle { color: var(--tp-muted); font-size: 11px; }
-.notice { border: 0; background: transparent; padding: 0; border-radius: 0; color: var(--tp-secondary); font-size: 11px; }
+.title { font-size: var(--tp-font-size-title); font-weight: var(--tp-font-weight-bold); line-height: var(--tp-leading-tight); letter-spacing: -.01em; margin: 0 0 4px; }
+.subtle { color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); }
+.notice { border: 0; background: transparent; padding: 0; border-radius: 0; color: var(--tp-secondary); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); }
 .grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; padding: 14px 18px 16px; background: var(--tp-panel); border: 1px solid var(--tp-border); border-top: 0; border-radius: 0 0 16px 16px; box-shadow: var(--tp-shadow); }
+.task-progress-card { max-height: 600px; overflow: hidden; grid-template-rows: auto minmax(0, 1fr); align-content: initial; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.task-progress-card > .card-nav { position: static; }
+.task-progress-scroll { grid-column: 1 / -1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; align-content: start; scrollbar-gutter: stable; }
+.global-config-card, .current-project-card { max-height: 600px; overflow: hidden; grid-template-rows: auto minmax(0, 1fr); align-content: initial; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.global-config-card > .card-nav, .current-project-card > .card-nav { position: static; }
+.card-content-scroll { grid-column: 1 / -1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; align-content: start; scrollbar-gutter: stable; }
 .card { grid-column: span 12; background: var(--tp-panel2); border: 1px solid var(--tp-border); border-radius: var(--tp-radius); padding: 12px; min-width: 0; }
 .half { grid-column: span 6; }
 .metric { text-align: center; background: var(--tp-panel3); border: 1px solid var(--tp-border); border-radius: 8px; padding: 9px; }
-.metric strong { display: block; font-size: 20px; }
+.metric strong { display: block; font-size: var(--tp-font-size-metric); font-weight: var(--tp-font-weight-bold); line-height: var(--tp-leading-tight); }
 .metrics-row { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
 .summary-grid { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; scroll-margin-top: 72px; }
 .summary-item { min-width: 0; background: var(--tp-panel3); border: 1px solid var(--tp-border); border-radius: 8px; padding: 9px 11px; }
-.summary-label { display: block; color: var(--tp-secondary); font-size: 10px; font-weight: 650; margin-bottom: 2px; }
+.summary-label { display: block; color: var(--tp-secondary); font-size: var(--tp-font-size-aux); font-weight: var(--tp-font-weight-semibold); line-height: var(--tp-leading-compact); margin-bottom: 2px; }
 .summary-value { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-nav { grid-column: 1 / -1; position: sticky; top: 0; z-index: 10; display: flex; gap: 2px; overflow-x: auto; padding: 0; background: transparent; border: 0; border-bottom: 1px solid var(--tp-border); border-radius: 0; box-shadow: none; }
-.nav-link { appearance: none; flex: 0 0 auto; color: var(--tp-secondary); background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; padding: 7px 9px 6px; font: inherit; font-size: 11px; font-weight: 650; white-space: nowrap; cursor: pointer; }
+.nav-link { appearance: none; flex: 0 0 auto; color: var(--tp-secondary); background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; padding: 7px 9px 6px; font: inherit; font-size: var(--tp-font-size-label); font-weight: var(--tp-font-weight-semibold); line-height: var(--tp-leading-compact); white-space: nowrap; cursor: pointer; }
 .nav-link:hover { color: var(--tp-text); background: var(--tp-hover); }
 .nav-link.active { color: var(--tp-text); background: var(--tp-green-soft); border-bottom-color: var(--tp-green); }
 .section-card { grid-column: 1 / -1; scroll-margin-top: 72px; }
 .overview > .card + .card { margin-top: 10px; }
+.global-config-card .overview > .summary-grid + .card { margin-top: 10px; }
 .project-overview > .card + .card { margin-top: 10px; }
 .project-overview > .summary-grid + .card { margin-top: 8px; }
 .project-overview > .summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 [hidden] { display: none !important; }
-.section-title { font-size: 15px; font-weight: 700; margin: 0 0 10px; }
+.section-title { font-size: var(--tp-font-size-section); font-weight: var(--tp-font-weight-bold); line-height: var(--tp-leading-tight); margin: 0 0 10px; }
 .kv { display: grid; grid-template-columns: minmax(112px, 150px) 1fr; gap: 7px 12px; }
 .key { color: var(--tp-secondary); }
 .value { min-width: 0; word-break: break-word; }
 .evidence-groups { display: grid; gap: 10px; }
 .evidence-group + .evidence-group { border-top: 1px solid var(--tp-border); padding-top: 10px; }
-.evidence-group-title { color: var(--tp-secondary); font-size: 12px; font-weight: 700; margin-bottom: 4px; }
-.evidence-list { display: grid; }
-.evidence-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--tp-border); }
-.evidence-row:last-child { border-bottom: 0; }
-.evidence-info { min-width: 0; flex: 1; }
-.evidence-name { display: block; overflow-wrap: anywhere; }
-.evidence-path { color: var(--tp-muted); font-size: 11px; overflow-wrap: anywhere; }
-.evidence-row .copy { flex: 0 0 auto; margin-left: auto; }
-.badge { display: inline-flex; align-items: center; border: 1px solid var(--tp-border-strong); border-radius: 999px; padding: 2px 8px; font-size: 12px; }
+.evidence-group-title { color: var(--tp-secondary); font-size: var(--tp-font-size-label); font-weight: var(--tp-font-weight-semibold); line-height: var(--tp-leading-compact); margin-bottom: 4px; }
+.evidence-table-wrap { margin-top: 8px; overflow: hidden; }
+.evidence-table { width: 100%; min-width: 0; table-layout: fixed; }
+.evidence-table th, .evidence-table td { padding: 7px 8px; vertical-align: middle; overflow-wrap: anywhere; word-break: break-word; }
+.evidence-table th { white-space: normal; }
+.evidence-table th:nth-child(1) { width: 34%; }
+.evidence-table th:nth-child(2) { width: 13%; }
+.evidence-table th:nth-child(3) { width: 28%; }
+.evidence-table th:nth-child(4) { width: 12%; }
+.evidence-table th:nth-child(5) { width: 13%; }
+.evidence-table-identity { min-width: 0; }
+.evidence-table-name { color: var(--tp-text); font-weight: var(--tp-font-weight-semibold); line-height: var(--tp-leading-compact); overflow-wrap: anywhere; }
+.evidence-table-path { margin-top: 3px; color: var(--tp-text); font-family: var(--tp-font-mono); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); overflow-wrap: anywhere; }
+.evidence-table-subpath { margin-top: 3px; color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); overflow-wrap: anywhere; }
+.evidence-table-identity .copy { margin-top: 4px; margin-left: 0; }
+.evidence-table-status { color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); overflow-wrap: anywhere; }
+.evidence-detail-button { min-width: 54px; padding: 4px 8px; font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); white-space: nowrap; }
+.evidence-detail-button:disabled { cursor: not-allowed; opacity: .55; }
+.evidence-detail-button[aria-expanded="true"] { color: var(--tp-blue); border-color: var(--tp-blue); }
+.evidence-detail-row > td { padding: 0; background: var(--tp-panel2); }
+.evidence-detail-body { padding: 9px 12px 10px 28px; border-top: 1px solid var(--tp-border); }
+.evidence-detail-caption { margin-bottom: 6px; color: var(--tp-secondary); font-size: var(--tp-font-size-aux); font-weight: var(--tp-font-weight-semibold); line-height: var(--tp-leading-compact); }
+.evidence-detail-table { width: 100%; min-width: 0; table-layout: fixed; margin: 0; }
+.evidence-detail-table th, .evidence-detail-table td { padding: 6px 7px; font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); }
+.evidence-detail-table th:nth-child(1) { width: 16%; }
+.evidence-detail-table th:nth-child(2) { width: 18%; }
+.evidence-detail-table th:nth-child(3) { width: 16%; }
+.evidence-detail-table th:nth-child(4) { width: 39%; }
+.evidence-detail-table th:nth-child(5) { width: 11%; }
+.evidence-detail-table td { overflow-wrap: anywhere; }
+.evidence-detail-empty { color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); }
+.badge { display: inline-flex; align-items: center; border: 1px solid var(--tp-border-strong); border-radius: 999px; padding: 2px 8px; font-size: var(--tp-font-size-label); line-height: var(--tp-leading-compact); }
 .ok { color: var(--tp-green); }
 .warn { color: var(--tp-yellow); }
 .bad { color: var(--tp-red); }
@@ -85,35 +132,62 @@ body {
 .muted { color: var(--tp-gray); }
 button, input, select { font: inherit; color: inherit; background: var(--tp-panel2); border: 1px solid var(--tp-border); border-radius: 8px; padding: 6px 9px; }
 button { cursor: pointer; }
-.copy { margin-left: 8px; padding: 2px 7px; font-size: 11px; }
+.copy { margin-left: 8px; padding: 2px 7px; font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .toolbar input { min-width: 240px; }
 .table-wrap { overflow: auto; border: 1px solid var(--tp-border); border-radius: var(--tp-radius); }
-table { border-collapse: collapse; width: 100%; min-width: 680px; }
-th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--tp-border); vertical-align: top; }
-th { color: var(--tp-muted); font-weight: 600; background: var(--tp-panel2); }
+table { border-collapse: collapse; width: 100%; min-width: 680px; font-size: var(--tp-font-size-label); line-height: var(--tp-leading-compact); }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--tp-border); vertical-align: top; line-height: var(--tp-leading-compact); }
+th { color: var(--tp-muted); font-weight: var(--tp-font-weight-semibold); background: var(--tp-panel2); }
 tr:last-child td { border-bottom: 0; }
 .compact-table-section { margin-top: 12px; }
 .compact-table-wrap { margin-top: 8px; }
 .compact-table { min-width: 760px; }
-.compact-table th, .compact-table td { padding: 7px 8px; vertical-align: middle; }
+.compact-table th, .compact-table td { padding: 6px 7px; vertical-align: middle; }
+.task-list-table { min-width: 1200px; table-layout: fixed; }
+.task-list-table th, .task-list-table td { overflow-wrap: anywhere; word-break: break-word; }
+.task-list-table th:nth-child(1) { width: 12%; }
+.task-list-table th:nth-child(2) { width: 20%; }
+.task-list-table th:nth-child(3) { width: 8%; }
+.task-list-table th:nth-child(4) { width: 8%; }
+.task-list-table th:nth-child(5) { width: 14%; }
+.task-list-table th:nth-child(6) { width: 13%; }
+.task-list-table th:nth-child(7) { width: 25%; }
+.autonomy-table { min-width: 1100px; }
 .problem { padding: 8px 10px; border-left: 3px solid var(--tp-yellow); background: var(--tp-panel3); margin: 6px 0; border-radius: 6px; }
 .problem.error { border-left-color: var(--tp-red); }
 .project-row, .workspace-row, .autonomy-row { padding: 8px 10px; border: 1px solid var(--tp-border); background: var(--tp-panel3); margin: 6px 0; border-radius: 8px; }
 .project-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
-.subsection-title { font-size: 13px; font-weight: 700; margin: 14px 0 8px; padding-top: 12px; border-top: 1px solid var(--tp-border); }
+.subsection-title { font-size: var(--tp-font-size-body); font-weight: var(--tp-font-weight-semibold); line-height: var(--tp-leading-compact); margin: 14px 0 8px; padding-top: 12px; border-top: 1px solid var(--tp-border); }
 .empty { color: var(--tp-muted); padding: 12px; text-align: center; border: 1px dashed var(--tp-border); border-radius: var(--tp-radius); }
-.steps { display: flex; gap: 8px; flex-wrap: wrap; }
-.step { padding: 8px 10px; border: 1px solid var(--tp-border); border-radius: 8px; background: var(--tp-panel2); }
-.step.done { border-color: var(--tp-green); }
-.step.current { border-color: var(--tp-blue); }
-.step.blocked { border-color: var(--tp-yellow); }
+.workflow-current-summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px; margin-bottom: 14px; border: 1px solid var(--tp-border-strong); border-radius: 10px; background: var(--tp-panel2); }
+.workflow-step-count { color: var(--tp-secondary); font-size: var(--tp-font-size-label); font-weight: var(--tp-font-weight-semibold); line-height: var(--tp-leading-compact); white-space: nowrap; }
+.workflow-current-main { min-width: 0; }
+.workflow-current-title { font-size: var(--tp-font-size-section); font-weight: var(--tp-font-weight-bold); line-height: var(--tp-leading-tight); overflow-wrap: anywhere; }
+.workflow-current-meta { margin-top: 3px; color: var(--tp-muted); font-size: var(--tp-font-size-label); line-height: var(--tp-leading-compact); overflow-wrap: anywhere; }
+.workflow-timeline { display: flex; align-items: stretch; gap: 0; overflow-x: auto; padding: 2px 1px 6px; }
+.workflow-step { position: relative; flex: 1 0 150px; min-width: 0; padding: 10px 12px; border: 1px solid var(--tp-border); border-radius: 9px; background: var(--tp-panel2); }
+.workflow-step + .workflow-step { margin-left: 18px; }
+.workflow-step + .workflow-step::before { content: ''; position: absolute; left: -19px; top: 24px; width: 18px; height: 1px; background: var(--tp-border-strong); }
+.workflow-step.done { opacity: .76; }
+.workflow-step.done, .workflow-step.current { border-color: var(--tp-green); }
+.workflow-step.current { opacity: 1; box-shadow: inset 0 0 0 1px var(--tp-green); }
+.workflow-step.blocked { border-color: var(--tp-yellow); box-shadow: inset 0 0 0 1px var(--tp-yellow); }
+.workflow-step-title { font-size: var(--tp-font-size-body); font-weight: var(--tp-font-weight-semibold); line-height: var(--tp-leading-compact); overflow-wrap: anywhere; }
+.workflow-step-meta, .workflow-step-status { margin-top: 4px; color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); overflow-wrap: anywhere; }
+.workflow-step-status { color: var(--tp-secondary); font-weight: var(--tp-font-weight-semibold); }
+.workflow-optional { display: inline-flex; margin-top: 7px; padding: 2px 6px; border: 1px solid var(--tp-border); border-radius: 999px; color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); }
+.workflow-next { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--tp-border); }
+.workflow-tech { margin-top: 12px; }
+.workflow-tech-toggle { border: 1px solid var(--tp-border); background: var(--tp-panel3); color: var(--tp-text); border-radius: 7px; padding: 6px 9px; font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); cursor: pointer; }
+.workflow-tech-toggle:focus-visible { outline: 2px solid var(--tp-blue); outline-offset: 2px; }
+.workflow-tech-panel { margin-top: 8px; padding: 9px 10px; border: 1px solid var(--tp-border); border-radius: 8px; background: var(--tp-panel3); color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); overflow-wrap: anywhere; white-space: pre-wrap; }
 .timeline { display: grid; gap: 12px; margin-top: 10px; }
 .timeline-day + .timeline-day { border-top: 1px solid var(--tp-border); padding-top: 12px; }
-.timeline-day-title { color: var(--tp-secondary); font-size: 11px; font-weight: 700; margin: 0 0 7px; }
+.timeline-day-title { color: var(--tp-secondary); font-size: var(--tp-font-size-aux); font-weight: var(--tp-font-weight-semibold); line-height: var(--tp-leading-compact); margin: 0 0 7px; }
 .timeline-day-list { display: grid; gap: 8px; }
 .event { display: grid; grid-template-columns: 76px 16px minmax(0, 1fr); gap: 8px; min-width: 0; }
-.event-time { color: var(--tp-muted); font-size: 11px; padding-top: 9px; text-align: right; white-space: nowrap; }
+.event-time { color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); padding-top: 9px; text-align: right; white-space: nowrap; }
 .event-marker { position: relative; display: flex; justify-content: center; min-height: 100%; }
 .event-marker::before { content: ''; width: 9px; height: 9px; margin-top: 11px; border-radius: 50%; background: var(--tp-blue); z-index: 1; }
 .event-marker::after { content: ''; position: absolute; top: 20px; bottom: -8px; width: 1px; background: var(--tp-border-strong); }
@@ -127,8 +201,8 @@ tr:last-child td { border-bottom: 0; }
 .event-toggle:hover { background: var(--tp-hover); }
 .event-toggle:focus-visible { outline: 2px solid var(--tp-blue); outline-offset: -2px; }
 .event-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.event-type { font-size: 12px; }
-.event-actor { color: var(--tp-muted); font-size: 11px; }
+.event-type { font-size: var(--tp-font-size-label); font-weight: var(--tp-font-weight-semibold); line-height: var(--tp-leading-compact); }
+.event-actor { color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); }
 .event-preview { display: -webkit-box; overflow: hidden; margin-top: 3px; color: var(--tp-text); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .event-body.open .event-preview { display: none; }
 .event-full { border-top: 1px solid var(--tp-border); padding: 8px 10px 10px; color: var(--tp-text); overflow-wrap: anywhere; white-space: pre-wrap; }
@@ -152,7 +226,31 @@ tr:last-child td { border-bottom: 0; }
 @media (max-width: 420px) {
   .metrics-row, .summary-grid { grid-template-columns: 1fr; }
   .project-overview > .summary-grid { grid-template-columns: 1fr; }
+  .workflow-current-summary { grid-template-columns: 1fr; }
+  .workflow-timeline { display: grid; overflow-x: visible; gap: 18px; }
+  .workflow-step { min-width: 0; width: 100%; }
+  .workflow-step + .workflow-step { margin-left: 0; }
+  .workflow-step + .workflow-step::before { left: 20px; top: -19px; width: 1px; height: 18px; }
 }
+
+.topology-root, .topology-agent, .topology-role {
+  border: 1px solid var(--tp-border);
+  border-radius: 10px;
+  background: var(--tp-panel2);
+}
+.topology-root { padding: 12px; margin-bottom: 12px; }
+.topology-agent-list { display: grid; gap: 12px; }
+.topology-agent { padding: 12px; }
+.topology-role-list { display: grid; gap: 8px; margin-top: 10px; padding-left: 14px; border-left: 2px solid var(--tp-border); }
+.topology-role { padding: 10px; background: var(--tp-panel3); }
+.topology-identity { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
+.topology-name { min-width: 0; overflow-wrap: anywhere; }
+.topology-id { color: var(--tp-secondary); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); overflow-wrap: anywhere; }
+.topology-skill-list { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+.topology-skill { display: inline-flex; flex-direction: column; gap: 2px; min-width: 150px; max-width: 100%; padding: 7px 9px; border: 1px solid var(--tp-border); border-radius: 8px; background: var(--tp-panel); }
+.topology-skill .topology-name { font-size: var(--tp-font-size-body); font-weight: var(--tp-font-weight-semibold); line-height: var(--tp-leading-compact); }
+.topology-skill .topology-id { font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); }
+.topology-relation { margin-top: 6px; font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); color: var(--tp-muted); }
 </style>
 </head>
 <body>
@@ -207,7 +305,7 @@ function displayStatus(value) {
     HEALTHY: '正常', AVAILABLE: '可用', PASS: '通过', COMPLETED: '已完成', READY: '就绪',
     DEGRADED: '降级', WARN: '警告', WARNING: '警告', BLOCKED: '已阻塞', NEEDS_FIX: '需要修复', MISSING: '缺失',
     UNAVAILABLE: '不可用', INVALID: '无效', UNREADABLE: '不可读取', FAIL: '失败', ERROR: '错误',
-    ACTIVE: '进行中', NEW: '新建', CANCELLED: '已取消', NOT_RECORDED: '未记录', UNKNOWN: '未知', UNCONFIGURED: '未配置',
+    ACTIVE: '进行中', NEW: '新建', CANCELLED: '已取消', RETIRED: '已退休', NOT_RECORDED: '未记录', UNKNOWN: '未知', UNCONFIGURED: '未配置',
   };
   return labels[key] || (value === undefined || value === null || value === '' ? '未配置' : String(value));
 }
@@ -251,19 +349,53 @@ function displayEvent(value) {
   const labels = {
     FACT: '事实记录', CHECKPOINT: '检查点', BLOCKER: '阻塞记录',
     VERIFICATION_COMPLETED: '验证完成', REVIEW_COMPLETED: '复审完成',
-    WORK_SESSION_STARTED: '工作会话开始', WORKFLOW_CONFIRMATION: '工作流确认',
+    WORK_SESSION_STARTED: '工作会话开始', WORK_SESSION_ENDED: '工作会话结束', WORKFLOW_CONFIRMATION: '工作流确认',
     STATE: '状态变更', TASK_CREATED: '任务创建', TASK_STARTED: '任务开始',
   };
   return labels[String(value || '').toUpperCase()] || (value || '未记录');
 }
 
+function displayEventSummary(eventData) {
+  const raw = String((eventData || {}).summary || '').trim();
+  const decision = String((eventData || {}).decision || '').trim().toUpperCase();
+  const labels = {
+    PASS: '通过', REVISE: '需修改', NEEDS_FIX: '需要修复', FAIL: '失败',
+    ERROR: '错误', PENDING: '待处理', NOT_RECORDED: '未记录',
+  };
+  const key = raw.toUpperCase();
+  return labels[key] || (labels[decision] && !raw ? labels[decision] : raw) || '暂无摘要';
+}
+
+function eventDecisionToken(eventData) {
+  return String((eventData || {}).decision || '').trim().toUpperCase();
+}
+
+function displayEventReason(eventData) {
+  const presentation = (eventData || {}).presentation || {};
+  if (presentation.reason_label) return presentation.reason_label;
+  const token = eventDecisionToken(eventData);
+  const labels = {
+    PASS: '通过', REVISE: '需修改', NEEDS_FIX: '需要修复', FAIL: '失败',
+    ERROR: '错误', BLOCKED: '存在阻塞', NOT_RECORDED: '状态未声明',
+  };
+  if (token) return labels[token] || token;
+  const result = String((eventData || {}).result_status || '').trim().toUpperCase();
+  const resultLabels = {
+    COMPLETED: '已完成', PENDING: '待处理', BLOCKED: '存在阻塞', STARTED: '普通事务',
+    RECORDED: '普通事务', CANCELLED: '已取消', NOT_RECORDED: '状态未声明',
+  };
+  return resultLabels[result] || '状态未声明';
+}
+
+function displayEventHeading(eventData) {
+  const presentation = (eventData || {}).presentation || {};
+  const label = presentation.event_label || displayEvent((eventData || {}).event_type);
+  return `${label}（${displayEventReason(eventData)}）`;
+}
+
 function eventStatusClass(eventData) {
-  const type = String((eventData || {}).event_type || '').toUpperCase();
-  const summary = String((eventData || {}).summary || '').toUpperCase();
-  if (summary.includes('FAIL') || summary.includes('ERROR') || summary.includes('失败')) return 'bad';
-  if (type === 'BLOCKER' || summary.includes('BLOCKED') || summary.includes('阻塞')) return 'warn';
-  if (summary.includes('PASS') || summary.includes('通过') || type === 'REVIEW_COMPLETED') return 'ok';
-  return 'info';
+  const presentation = (eventData || {}).presentation || {};
+  return presentation.status_class || 'info';
 }
 
 function evidenceFileName(path) {
@@ -272,16 +404,12 @@ function evidenceFileName(path) {
   return parts[parts.length - 1] || normalized || '未命名依据';
 }
 
-function evidenceDirectory(path) {
-  const normalized = String(path || '').replace(/\\/g, '/');
-  const index = normalized.lastIndexOf('/');
-  return index >= 0 ? normalized.slice(0, index) : '项目根目录';
-}
-
 function evidenceGroupLabel(value) {
   const labels = {
     FACT: '事实记录', REVIEW_COMPLETED: '复审完成', VERIFICATION_COMPLETED: '验证完成',
     CHECKPOINT: '检查点', BLOCKER: '阻塞记录', TASK_CREATED: '任务创建', TASK_STARTED: '任务开始',
+    WORK_SESSION_STARTED: '工作会话开始', WORK_SESSION_ENDED: '工作会话结束',
+    WORKFLOW_CONFIRMATION: '工作流确认', STATE: '状态变更',
   };
   return labels[String(value || '').toUpperCase()] || '其他依据';
 }
@@ -432,7 +560,7 @@ function problems(rows, id) {
   return section;
 }
 
-function metrics(stats, id) {
+function metrics(stats, id, target = app) {
   const row = node('div', 'metrics-row');
   if (id) {
     row.id = id;
@@ -440,19 +568,19 @@ function metrics(stats, id) {
   }
   row.classList.add('section-card');
   const keys = [
-    ['total', '总任务'],
-    ['active', '进行中'],
-    ['blocked', '已阻塞'],
-    ['completed', '已完成'],
-    ['cancelled', '已取消'],
-    ['verification_attention', '验证需关注'],
+    ['total', '总任务', 'info'],
+    ['active', '进行中', 'info'],
+    ['blocked', '已阻塞', 'warn'],
+    ['completed', '已完成', 'ok'],
+    ['cancelled', '已取消', 'bad'],
+    ['verification_attention', '验证需关注', 'warn'],
   ];
-  keys.forEach(([key, label]) => {
+  keys.forEach(([key, label, color]) => {
     const metric = node('div', 'metric');
-    append(metric, node('strong', '', stats && stats[key] !== undefined ? stats[key] : 0), node('span', 'subtle', label));
+    append(metric, node('strong', color || 'muted', stats && stats[key] !== undefined ? stats[key] : 0), node('span', 'subtle', label));
     append(row, metric);
   });
-  append(app, row);
+  append(target, row);
 }
 
 function taskTable(title, rows, id) {
@@ -467,18 +595,11 @@ function taskTable(title, rows, id) {
   query.type = 'search';
   query.placeholder = '筛选任务编号 / 标题 / 负责人';
   query.dataset.filter = 'text';
-  const state = node('select');
-  state.dataset.filter = 'state';
-  [['', '全部状态'], ['NEW', '新建'], ['ACTIVE', '进行中'], ['BLOCKED', '已阻塞'], ['COMPLETED', '已完成'], ['CANCELLED', '已取消']].forEach(([value, label]) => {
-    const option = node('option', '', label);
-    option.value = value;
-    state.appendChild(option);
-  });
-  append(toolbar, query, state);
+  append(toolbar, query);
   append(section, toolbar);
 
   const wrap = node('div', 'table-wrap');
-  const table = node('table');
+  const table = node('table', 'task-list-table');
   const thead = node('thead');
   const header = node('tr');
   ['任务', '标题', '状态', '阶段', '负责人', '时间', '摘要'].forEach((text) => append(header, node('th', '', text)));
@@ -486,7 +607,8 @@ function taskTable(title, rows, id) {
   const tbody = node('tbody');
   rows.forEach((rowData) => {
     const row = node('tr');
-    row.dataset.state = rowData.state || '';
+    const displayState = rowData.retired ? 'RETIRED' : rowData.state;
+    row.dataset.state = displayState || '';
     row.dataset.search = [rowData.task_id, rowData.title, rowData.owner, rowData.summary].join(' ').toLowerCase();
     const id = node('td');
     append(id, node('span', '', rowData.task_id || ''), copyButton(rowData.task_id || ''));
@@ -494,7 +616,7 @@ function taskTable(title, rows, id) {
       row,
       id,
       node('td', '', rowData.title || ''),
-      append(node('td'), badge(rowData.state)),
+      append(node('td'), badge(displayState)),
       node('td', '', displayStage(rowData.phase)),
       node('td', '', displayRole(rowData.owner)),
       node('td', '', formatDateTime(rowData.completed_at || rowData.updated_at)),
@@ -505,24 +627,19 @@ function taskTable(title, rows, id) {
 
   function applyFilter() {
     const text = query.value.trim().toLowerCase();
-    const selectedState = state.value;
     Array.from(tbody.children).forEach((row) => {
-      row.hidden = Boolean(
-        (text && !row.dataset.search.includes(text)) ||
-        (selectedState && row.dataset.state !== selectedState)
-      );
+      row.hidden = Boolean(text && !row.dataset.search.includes(text));
     });
   }
 
   query.addEventListener('input', applyFilter);
-  state.addEventListener('change', applyFilter);
   append(table, thead, tbody);
   append(wrap, table);
   append(section, wrap);
   return section;
 }
 
-function compactTable(title, columns, rows, emptyText) {
+function compactTable(title, columns, rows, emptyText, tableClass = 'compact-table') {
   const items = rows || [];
   const section = node('div', 'compact-table-section');
   append(section, node('h3', 'subsection-title', `${title} (${items.length})`));
@@ -532,7 +649,7 @@ function compactTable(title, columns, rows, emptyText) {
   }
 
   const wrap = node('div', 'table-wrap compact-table-wrap');
-  const table = node('table', 'compact-table');
+  const table = node('table', tableClass);
   const thead = node('thead');
   const header = node('tr');
   (columns || []).forEach((column) => append(header, node('th', '', column)));
@@ -567,11 +684,14 @@ function projectTable(title, rows) {
 function workspaceTable(title, rows) {
   const items = rows || [];
   return compactTable(title, ['工作区', '路径', '状态'], items.map((workspace) => {
-    const enabled = workspace.enabled !== false;
+    const declared = workspace.enabled_declared === true;
+    const enabled = workspace.enabled === true;
+    const label = declared ? (enabled ? '已启用' : '已停用') : '未声明';
+    const cls = declared ? (enabled ? 'ok' : 'muted') : 'info';
     return [
       node('strong', '', workspace.id || '未命名工作区'),
       valueWithCopy(workspace.root),
-      node('span', `badge ${enabled ? 'ok' : 'muted'}`, enabled ? '已启用' : '已停用'),
+      node('span', `badge ${cls}`, label),
     ];
   }), '暂无工作区');
 }
@@ -589,29 +709,109 @@ function autonomyCard(autonomy, id) {
     material: '重要操作需确认',
     each_stage: '每个阶段需确认',
   };
-  kv(section, [['运行方式', '外部调度器 + 本地执行器']]);
+  kv(section, [['运行方式', autonomy.execution_mode_declared ? (autonomy.execution_mode || '未声明') : '未声明']]);
   append(section, compactTable('配置档案', ['配置档案', '状态', '规范工作区', '自治工作区', '确认策略', '难度上限', '单周期上限'], (autonomy.profiles || []).map((profile) => [
     node('strong', '', profile.profile_id || '未命名配置'),
-    badge(profile.enabled ? 'available' : 'unavailable'),
+    node('span', `badge ${profile.enabled_declared ? (profile.enabled ? 'ok' : 'muted') : 'info'}`, profile.enabled_declared ? (profile.enabled ? '已启用' : '已停用') : '未声明'),
     valueWithCopy(profile.canonical_root),
     valueWithCopy(profile.autonomous_root),
-    node('span', '', policyLabels[profile.confirmation_policy] || profile.confirmation_policy || '未配置'),
-    node('span', '', profile.difficulty_ceiling || '未配置'),
-    node('span', '', profile.max_new_tasks_per_cycle === undefined ? '未配置' : profile.max_new_tasks_per_cycle),
-  ]), '暂无自治维护配置'));
+    node('span', '', policyLabels[profile.confirmation_policy] || profile.confirmation_policy || '未声明'),
+    node('span', '', profile.difficulty_ceiling || '未声明'),
+    node('span', '', profile.max_new_tasks_per_cycle == null ? '未声明' : profile.max_new_tasks_per_cycle),
+  ]), '暂无自治维护配置', 'compact-table autonomy-table'));
   if (!autonomy.configured && autonomy.error) {
     append(section, node('div', 'problem', ` ${autonomy.error}`));
   }
   return section;
 }
 
+function topologyIdentity(nodeData) {
+  const identity = node('div', 'topology-identity');
+  const name = String((nodeData || {}).name || (nodeData || {}).id || '未命名');
+  const id = String((nodeData || {}).id || '未配置');
+  append(identity, node('strong', 'topology-name', name), node('code', 'topology-id', id));
+  return identity;
+}
+
+function topologySkill(nodeData, edgeData) {
+  const skill = node('div', 'topology-skill');
+  append(skill, topologyIdentity(nodeData));
+  const mode = String((edgeData || {}).mode || '');
+  if (mode) append(skill, node('div', 'topology-relation', mode === 'default' ? '默认能力' : '按需能力'));
+  return skill;
+}
+
+function skillTopologyCard(topology, id) {
+  const section = namedCard(id || 'global-skills', '能力拓扑');
+  const nodes = topology.nodes || {};
+  const edges = Array.isArray(topology.edges) ? topology.edges : [];
+  kv(section, [
+    ['状态', displayStatus(topology.status || 'unavailable')],
+    ['节点', topology.node_count === undefined ? Object.keys(nodes).length : topology.node_count],
+    ['关系', topology.edge_count === undefined ? edges.length : topology.edge_count],
+  ]);
+
+  if (topology.status !== 'available' || !topology.root_id || !nodes[topology.root_id]) {
+    append(section, node('div', 'empty', topology.error || '技能关系图谱不可用'));
+    return section;
+  }
+
+  const outgoing = (source, relation) => edges.filter((edge) => edge.from === source && (!relation || edge.relation === relation));
+  const rootBox = node('div', 'topology-root');
+  append(rootBox, node('div', 'subtle', '产品入口'), topologyIdentity(nodes[topology.root_id]));
+  append(section, rootBox);
+
+  const agentList = node('div', 'topology-agent-list');
+  outgoing(topology.root_id, 'routes-to').forEach((agentEdge) => {
+    const agentData = nodes[agentEdge.to];
+    if (!agentData) return;
+    const agentBox = node('div', 'topology-agent');
+    append(agentBox, node('div', 'subtle', 'Domain Agent'), topologyIdentity(agentData));
+
+    const directSkills = outgoing(agentData.id, 'uses-skill');
+    if (directSkills.length) {
+      const directList = node('div', 'topology-skill-list');
+      directSkills.forEach((edge) => {
+        if (nodes[edge.to]) append(directList, topologySkill(nodes[edge.to], edge));
+      });
+      append(agentBox, directList);
+    }
+
+    const roleEdges = outgoing(agentData.id, 'owns-role');
+    if (roleEdges.length) {
+      const roleList = node('div', 'topology-role-list');
+      roleEdges.forEach((roleEdge) => {
+        const roleData = nodes[roleEdge.to];
+        if (!roleData) return;
+        const roleBox = node('div', 'topology-role');
+        append(roleBox, node('div', 'subtle', 'Formal Role'), topologyIdentity(roleData));
+        const skillEdges = outgoing(roleData.id, 'uses-skill');
+        if (skillEdges.length) {
+          const skillList = node('div', 'topology-skill-list');
+          skillEdges.forEach((edge) => {
+            if (nodes[edge.to]) append(skillList, topologySkill(nodes[edge.to], edge));
+          });
+          append(roleBox, skillList);
+        }
+        append(roleList, roleBox);
+      });
+      append(agentBox, roleList);
+    }
+    append(agentList, agentBox);
+  });
+  append(section, agentList);
+  return section;
+}
+
 function renderGlobal() {
+  app.classList.add('global-config-card');
   const base = data.base || {};
   const wiki = data.wiki || {};
   const knowledge = data.knowledge || {};
   const workspace = data.workspace || {};
   const registry = data.registry || {};
 
+  const contentScroll = node('div', 'card-content-scroll');
   append(
     app,
     cardNav([
@@ -619,8 +819,10 @@ function renderGlobal() {
       ['global-content', 'Wiki / 知识库'],
       ['global-workspace', '工作区'],
       ['global-registry', '工程注册'],
+      ['global-skills', '能力拓扑'],
       ['global-autonomy', '自治维护'],
     ]),
+    contentScroll,
   );
 
   const overview = node('section', 'overview section-card');
@@ -647,7 +849,7 @@ function renderGlobal() {
   ]);
   append(overview, baseCard);
   append(overview, problems(data.problems));
-  append(app, overview);
+  append(contentScroll, overview);
 
   const contentCard = namedCard('global-content', 'Wiki / 知识库', 'card half');
   kv(contentCard, [
@@ -656,7 +858,7 @@ function renderGlobal() {
     ['知识库', displayStatus(knowledge.status)],
     ['知识库路径', knowledge.path, true],
   ]);
-  append(app, contentCard);
+  append(contentScroll, contentCard);
 
   const resolverCard = namedCard('global-workspace', '工作区 / 解析器', 'card half');
   kv(resolverCard, [
@@ -666,7 +868,7 @@ function renderGlobal() {
     ['解析器', displayStatus((data.resolver || {}).status || 'unknown')],
   ]);
   append(resolverCard, workspaceTable('工作区列表', workspace.workspaces));
-  append(app, resolverCard);
+  append(contentScroll, resolverCard);
 
   const registryCard = namedCard('global-registry', '工程注册', 'card half');
   kv(registryCard, [
@@ -675,18 +877,21 @@ function renderGlobal() {
     ['工程数量', registry.project_count],
   ]);
   append(registryCard, projectTable('已注册工程', data.registered_projects || []));
-  append(app, registryCard);
-  append(app, autonomyCard(data.autonomy || {}, 'global-autonomy'));
+  append(contentScroll, registryCard);
+  append(contentScroll, skillTopologyCard(data.skill_topology || {}, 'global-skills'));
+  append(contentScroll, autonomyCard(data.autonomy || {}, 'global-autonomy'));
 
 }
 
 function renderProject() {
+  app.classList.add('current-project-card');
   const project = data.project || {};
   const binding = project.binding || {};
   const wiki = data.wiki || {};
   const knowledge = data.knowledge || {};
   const stats = data.task_statistics || {};
 
+  const contentScroll = node('div', 'card-content-scroll');
   append(
     app,
     cardNav([
@@ -694,10 +899,11 @@ function renderProject() {
       ['project-content', 'Wiki / 知识库'],
       ['project-stats', '任务统计'],
       ['project-active', '在途任务'],
-      ['project-completed', '最近完成'],
+      ['project-completed', '任务归档'],
     ]),
-    projectOverviewSection(project, binding, stats, data.problems),
+    contentScroll,
   );
+  append(contentScroll, projectOverviewSection(project, binding, stats, data.problems));
 
   const contentCard = namedCard('project-content', 'Wiki / 知识库');
   kv(contentCard, [
@@ -712,59 +918,142 @@ function renderProject() {
     ['共享范围', (knowledge.shared_scope || {}).count || 0],
     ['投影状态', displayStatus((knowledge.projection || {}).status || 'unknown')],
   ]);
-  append(app, contentCard);
+  append(contentScroll, contentCard);
 
-  metrics(stats, 'project-stats');
-  append(app, taskTable('在途任务', data.in_progress_tasks || [], 'project-active'), taskTable('最近完成', data.completed_tasks || [], 'project-completed'));
+  metrics(stats, 'project-stats', contentScroll);
+  append(contentScroll, taskTable('在途任务', data.in_progress_tasks || [], 'project-active'), taskTable('任务归档', data.archived_tasks || data.completed_tasks || [], 'project-completed'));
+}
+
+function projectedLabel(display, emptyText) {
+  const label = String((display || {}).label || '').trim();
+  return label || emptyText || '未配置展示名称';
+}
+
+function workflowStageLabel(workflow, stage) {
+  const raw = String(stage || '');
+  if (!raw) return '未记录';
+  const steps = Array.isArray((workflow || {}).steps) ? workflow.steps : [];
+  const match = steps.find((item) => String(item.stage || '') === raw);
+  if (match) return projectedLabel(match.stage_display);
+  const next = (workflow || {}).next_step || {};
+  if (String(next.stage || '') === raw) return projectedLabel(next.stage_display);
+  return '未配置展示名称';
 }
 
 function renderSteps(workflow, id) {
   const section = namedCard(id || 'workflow', '工作流进度');
-  const steps = workflow.steps || [];
+  const steps = Array.isArray(workflow.steps) ? workflow.steps : [];
+  const next = workflow.next_step || {};
+  const current = workflow.current_step && workflow.current_step.stage ? workflow.current_step : {};
+  const currentStage = String(current.stage || '');
+  const currentIndex = steps.findIndex((item) => String(item.stage || '') === currentStage);
+
+  if (currentStage) {
+    const summary = node('div', 'workflow-current-summary');
+    const stepNumber = currentIndex >= 0 ? currentIndex + 1 : Math.min(steps.length + 1, Math.max(1, steps.length));
+    const main = node('div', 'workflow-current-main');
+    append(
+      main,
+      node('div', 'workflow-current-title', projectedLabel(current.stage_display)),
+      node('div', 'workflow-current-meta', [
+        projectedLabel(current.role_display, '未指定负责人'),
+        current.status ? displayStatus(current.status) : projectedLabel(next.action_display, '待处理'),
+      ].filter(Boolean).join(' · ')),
+    );
+    const stateText = next.confirmation_required && String(next.stage || '') === currentStage
+      ? projectedLabel(next.confirmation_display, '需要确认')
+      : (current.status ? displayStatus(current.status) : projectedLabel(next.action_display, '待处理'));
+    append(summary, node('div', 'workflow-step-count', `第 ${stepNumber} / ${Math.max(steps.length, 1)} 步`), main, badge(stateText));
+    append(section, node('div', 'section-title', '当前步骤'), summary);
+  } else {
+    append(section, node('div', 'section-title', '当前步骤'), node('div', 'empty', '当前步骤未解析'));
+  }
+
   if (steps.length) {
-    const box = node('div', 'steps');
+    const box = node('div', 'workflow-timeline');
     steps.forEach((stepData) => {
-      const cls = stepData.status === '已完成' ? 'done' : stepData.status === '进行中' ? 'current' : stepData.status === '已阻塞' ? 'blocked' : '';
-      const step = node('div', `step ${cls}`);
-      append(step, node('strong', '', displayStage(stepData.stage)), node('div', 'subtle', `${displayStatus(stepData.status)}${stepData.role ? ` · ${displayRole(stepData.role)}` : ''}`));
+      const cls = stepData.status === '已完成' ? 'done' : stepData.status === '进行中' ? 'current' : stepData.status === '已阻塞' ? 'blocked' : 'pending';
+      const step = node('div', `workflow-step ${cls}`);
+      append(
+        step,
+        node('div', 'workflow-step-title', projectedLabel(stepData.stage_display)),
+        node('div', 'workflow-step-status', displayStatus(stepData.status)),
+        node('div', 'workflow-step-meta', projectedLabel(stepData.role_display, '未指定负责人')),
+      );
+      if (!stepData.required) append(step, node('span', 'workflow-optional', '按条件启用'));
       append(box, step);
     });
     append(section, box);
   } else {
     append(section, node('div', 'empty', '工作流无法可靠解析，下面仅展示参考流程'));
-    if (workflow.reference_steps) append(section, node('div', 'subtle', (workflow.reference_steps || []).map(displayStage).join(' → ')));
+    if (workflow.reference_steps) append(section, node('div', 'subtle', (workflow.reference_steps || []).join(' → ')));
   }
 
-  const next = workflow.next_step || {};
   if (next.stage) {
+    const nextBox = node('div', 'workflow-next');
     append(
-      section,
-      node('div', 'spacer'),
+      nextBox,
       node('div', 'section-title', '下一步'),
-      node('div', '', `${displayStage(next.stage)}${next.role ? ` · ${displayRole(next.role)}` : ''}`),
-      node('div', 'subtle', `${next.action || ''}${next.confirmation_required ? ' · 需要确认' : ''}`),
+      node('div', '', `${projectedLabel(next.stage_display)}${next.role ? ` · ${projectedLabel(next.role_display, '未指定负责人')}` : ''}`),
+      node('div', 'subtle', [
+        projectedLabel(next.action_display, '未配置展示名称'),
+        next.confirmation_required ? projectedLabel(next.confirmation_display, '需要确认') : '',
+      ].filter(Boolean).join(' · ')),
     );
+    append(section, nextBox);
   }
+
+  const tech = node('div', 'workflow-tech');
+  const techId = `workflow-tech-detail-${id || 'workflow'}`;
+  const toggle = node('button', 'workflow-tech-toggle', '技术详情');
+  toggle.type = 'button';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-controls', techId);
+  const panel = node('div', 'workflow-tech-panel');
+  panel.id = techId;
+  panel.hidden = true;
+  const currentRaw = workflow.current_step || {};
+  panel.textContent = [
+    `current.stage=${currentRaw.stage || ''}`,
+    `current.role=${currentRaw.role || ''}`,
+    `current.source=${workflow.current_step_source || ''}`,
+    `next.stage=${next.stage || ''}`,
+    `next.role=${next.role || ''}`,
+    `next.action=${next.action || ''}`,
+    `next.confirmation_reason=${next.confirmation_reason || ''}`,
+    `next.source=${workflow.next_step_source || ''}`,
+  ].join('\n');
+  toggle.addEventListener('click', () => {
+    const expanded = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    panel.hidden = expanded;
+  });
+  append(tech, toggle, panel);
+  append(section, tech);
   return section;
 }
 
 function renderTask() {
+  app.classList.add('task-progress-card');
   const task = data.task || {};
   const workflow = data.workflow || {};
   const nextStep = workflow.next_step || {};
 
+  const taskNav = cardNav([
+    ['task-overview', '概览'],
+    ['task-facts', '任务事实'],
+    ['task-latest', '最近事实'],
+    ['task-workflow', '工作流'],
+    ['task-blockers', '当前阻塞', Boolean(data.blockers && data.blockers.length)],
+    ['task-evidence', '依据'],
+    ['task-timeline', '事件时间线'],
+    ['task-summary', '任务摘要'],
+  ]);
+  const taskContent = node('div', 'task-progress-scroll');
   append(
     app,
-    cardNav([
-      ['task-overview', '概览'],
-      ['task-facts', '任务事实'],
-      ['task-latest', '最近事实'],
-      ['task-workflow', '工作流'],
-      ['task-blockers', '当前阻塞', Boolean(data.blockers && data.blockers.length)],
-      ['task-evidence', '依据'],
-      ['task-timeline', '事件时间线'],
-      ['task-summary', '任务摘要', Boolean(data.summary)],
-    ]),
+    taskNav,
+    taskContent,
   );
 
   const taskOverview = node('section', 'overview section-card');
@@ -774,27 +1063,27 @@ function renderTask() {
     taskOverview,
     summaryStrip('', [
       ['状态', displayStatus(task.state || 'unknown'), statusClass(task.state)],
-      ['当前阶段', displayStage(task.phase || '未记录')],
+      ['当前阶段', workflowStageLabel(workflow, task.phase)],
       ['风险', task.risk_level || '未记录'],
       ['流程', task.flow_level || '未记录'],
-      ['下一步', displayStage(nextStep.stage || '未解析')],
+      ['下一步', nextStep.stage ? projectedLabel(nextStep.stage_display) : '未解析'],
     ]),
   );
   append(taskOverview, problems(data.problems));
-  append(app, taskOverview);
+  append(taskContent, taskOverview);
 
   const taskCard = namedCard('task-facts', '任务事实', 'card half');
   kv(taskCard, [
     ['任务编号', task.task_id, true],
     ['标题', task.title],
     ['状态', displayStatus(task.state)],
-    ['当前阶段', displayStage(task.phase)],
-    ['负责人', displayRole(task.owner)],
+    ['当前阶段', workflowStageLabel(workflow, task.phase)],
+    ['负责人', projectedLabel(((workflow.current_step || {}).role === task.owner ? (workflow.current_step || {}).role_display : ((nextStep || {}).role === task.owner ? nextStep.role_display : null)), displayRole(task.owner))],
     ['风险 / 流程', `${task.risk_level || '未记录'} / ${task.flow_level || '未记录'}`],
     ['更新时间', formatDateTime(task.updated_at)],
     ['运行时数据库', task.runtime_db, true],
   ]);
-  append(app, taskCard);
+  append(taskContent, taskCard);
 
   const checkpoint = data.latest_checkpoint || {};
   const verification = data.verification || {};
@@ -806,7 +1095,7 @@ function renderTask() {
     ['验证摘要', verification.summary || ''],
     ['依据数量', Array.isArray(data.evidence) ? data.evidence.length : 0],
   ]);
-  append(app, factCard, renderSteps(workflow, 'task-workflow'));
+  append(taskContent, factCard, renderSteps(workflow, 'task-workflow'));
 
   if (data.blockers && data.blockers.length) {
     const blockerCard = namedCard('task-blockers', '当前阻塞');
@@ -814,40 +1103,98 @@ function renderTask() {
       const timestamp = formatDateTime(blocker.created_at);
       append(blockerCard, node('div', 'problem', `${blocker.reason || ''}${timestamp ? ` · ${timestamp}` : ''}`));
     });
-    append(app, blockerCard);
+    append(taskContent, blockerCard);
   }
 
   const evidenceCard = namedCard('task-evidence', `依据（${(data.evidence || []).length}）`);
   if (data.evidence && data.evidence.length) {
-    const groups = new Map();
+    const wrap = node('div', 'table-wrap evidence-table-wrap');
+    const table = node('table', 'evidence-table');
+    const thead = node('thead');
+    const header = node('tr');
+    ['依据 / 规范路径', '作用域', '当前状态', '关联次数', '操作'].forEach((label) => append(header, node('th', '', label)));
+    append(thead, header);
+    const tbody = node('tbody');
     data.evidence.forEach((evidence) => {
-      const eventType = String(evidence.event_type || 'UNKNOWN').toUpperCase();
-      if (!groups.has(eventType)) groups.set(eventType, []);
-      groups.get(eventType).push(evidence);
-    });
-    const groupList = node('div', 'evidence-groups');
-    groups.forEach((items, eventType) => {
-      const group = node('div', 'evidence-group');
-      append(group, node('div', 'evidence-group-title', `${evidenceGroupLabel(eventType)} · ${items.length}`));
-      const list = node('div', 'evidence-list');
-      items.forEach((evidence) => {
-        const path = String(evidence.path || '');
-        const fileName = evidenceFileName(path);
-        const detail = [evidenceDirectory(path), formatDateTime(evidence.created_at)].filter(Boolean).join(' · ');
-        const info = node('div', 'evidence-info');
-        append(info, node('strong', 'evidence-name', fileName), node('div', 'evidence-path', detail));
-        const row = node('div', 'evidence-row');
-        append(row, info, copyButton(path, `复制 ${evidenceFileName(evidence.path)} 路径`));
-        append(list, row);
+      const row = node('tr');
+
+      const sources = Array.isArray(evidence.sources) ? evidence.sources : [];
+      const count = Number(evidence.occurrence_count || sources.length || 1);
+
+      let verificationText = '来源未声明，路径未验证';
+      if (evidence.verification === 'unsafe') verificationText = '路径不安全，不按项目内文件解释';
+      else if (evidence.verification === 'structured' && evidence.current_exists === true) verificationText = '结构化来源 · 当前文件存在';
+      else if (evidence.verification === 'structured' && evidence.current_exists === false) verificationText = '结构化来源 · 当前文件已不存在或不可见';
+      else if (evidence.verification === 'structured') verificationText = '结构化来源 · 当前文件状态未验证';
+
+      const identityCell = node('td', 'evidence-table-identity');
+      append(identityCell, node('div', 'evidence-table-name', evidence.display_name || evidenceFileName(evidence.raw_path || evidence.display_path)));
+      append(identityCell, node('div', 'evidence-table-path', `规范路径：${evidence.display_path || evidence.raw_path || '未声明路径'}`));
+      if (evidence.raw_path) append(identityCell, node('div', 'evidence-table-subpath', `原始路径：${evidence.raw_path}`));
+      append(identityCell, copyButton(evidence.copy_path || evidence.raw_path || '', `复制 ${evidence.display_name || '依据'} 路径`));
+      const statusCell = node('td');
+      append(statusCell, node('div', `evidence-table-status ${evidence.verification === 'unsafe' ? 'warn' : ''}`, verificationText));
+      const detailId = `evidence-detail-${data.task && data.task.task_id ? data.task.task_id : 'task'}-${tbody.children.length}`;
+      const detailButton = node('button', 'evidence-detail-button', `详情（${sources.length}）`);
+      detailButton.type = 'button';
+      detailButton.setAttribute('aria-expanded', 'false');
+      detailButton.setAttribute('aria-controls', detailId);
+      detailButton.disabled = sources.length === 0;
+      append(row,
+        identityCell,
+        node('td', '', evidence.scope_label || '未验证'),
+        statusCell,
+        node('td', '', `${count} 次`),
+        append(node('td'), detailButton),
+      );
+
+      const detailRow = node('tr', 'evidence-detail-row');
+      detailRow.id = detailId;
+      detailRow.hidden = true;
+      const detailCell = node('td');
+      detailCell.colSpan = 5;
+      const detailBody = node('div', 'evidence-detail-body');
+      append(detailBody, node('div', 'evidence-detail-caption', `关联来源（${sources.length}）`));
+      if (sources.length) {
+        const detailTable = node('table', 'evidence-detail-table');
+        const detailHead = node('thead');
+        const detailHeader = node('tr');
+        ['来源事件', '来源字段', '发生时间', '来源摘要', '事件 ID'].forEach((label) => append(detailHeader, node('th', '', label)));
+        append(detailHead, detailHeader);
+        const detailBodyRows = node('tbody');
+        sources.forEach((source) => {
+          const detailRecord = node('tr');
+          append(detailRecord,
+            node('td', '', evidenceGroupLabel(source.event_type)),
+            node('td', '', source.field || '来源字段未声明'),
+            node('td', '', formatDateTime(source.created_at) || '未记录'),
+            node('td', '', source.summary || '未记录'),
+            node('td', '', source.event_id === undefined || source.event_id === null || source.event_id === '' ? '未记录' : source.event_id),
+          );
+          append(detailBodyRows, detailRecord);
+        });
+        append(detailTable, detailHead, detailBodyRows);
+        append(detailBody, detailTable);
+      } else {
+        append(detailBody, node('div', 'evidence-detail-empty', '暂无关联来源'));
+      }
+
+      append(detailCell, detailBody);
+      append(detailRow, detailCell);
+      detailButton.addEventListener('click', () => {
+        const expanded = detailButton.getAttribute('aria-expanded') === 'true';
+        detailButton.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        detailRow.hidden = expanded;
       });
-      append(group, list);
-      append(groupList, group);
+      append(tbody, row, detailRow);
     });
-    append(evidenceCard, groupList);
+    append(table, thead, tbody);
+    append(wrap, table);
+    append(evidenceCard, wrap);
   } else {
     append(evidenceCard, node('div', 'empty', '暂无依据'));
   }
-  append(app, evidenceCard);
+  append(taskContent, evidenceCard);
 
   const timelineCard = card(`事件时间线（${(data.timeline || []).length}）`);
   timelineCard.id = 'task-timeline';
@@ -877,15 +1224,15 @@ function renderTask() {
       const head = node('div', 'event-head');
       append(
         head,
-        node('strong', 'event-type', displayEvent(eventData.event_type)),
+        node('strong', 'event-type', displayEventHeading(eventData)),
         node('span', 'event-actor', eventData.actor ? displayRole(eventData.actor) : '未指定'),
       );
       append(
         eventToggle,
         head,
-        node('div', 'event-preview', eventData.summary || '暂无摘要'),
+        node('div', 'event-preview', displayEventSummary(eventData)),
       );
-      const eventFull = node('div', 'event-full', eventData.summary || '暂无摘要');
+      const eventFull = node('div', 'event-full', displayEventSummary(eventData));
       eventFull.id = `task-timeline-event-${index}`;
       eventFull.hidden = index >= 3;
       eventFull.setAttribute('role', 'region');
@@ -911,9 +1258,9 @@ function renderTask() {
   });
   if (!(data.timeline || []).length) append(timeline, node('div', 'empty', '暂无事件'));
   append(timelineCard, timeline);
-  append(app, timelineCard);
+  append(taskContent, timelineCard);
 
-  if (data.summary) append(app, append(namedCard('task-summary', '任务摘要'), node('div', '', data.summary)));
+  append(taskContent, append(namedCard('task-summary', '任务摘要'), node('div', '', data.summary || '未记录')));
 }
 
 document.getElementById('title').textContent = data.title || 'TP-Spec 信息卡片';

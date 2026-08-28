@@ -33,7 +33,14 @@ def test_open_source_surface_is_complete():
         "CONTRIBUTING.md",
         "SECURITY.md",
         "CODE_OF_CONDUCT.md",
+        "docs/README.md",
         "docs/GETTING_STARTED.md",
+        "docs/AGENTS_AND_SKILLS.md",
+        "docs/agents/tp-software-lifecycle.md",
+        "docs/agents/tp-base-maintenance.md",
+        "docs/agents/tp-knowledge.md",
+        "docs/agents/tp-wiki.md",
+        "docs/agents/tp-project-autonomy.md",
         ".github/PULL_REQUEST_TEMPLATE.md",
         ".github/ISSUE_TEMPLATE/bug_report.yml",
         ".github/ISSUE_TEMPLATE/feature_request.yml",
@@ -112,18 +119,21 @@ def test_readme_explains_value_quickstart_agents_and_portability():
         "一人项目组",
         "tp-spec-coding",
         "tp-software-lifecycle",
-        "tp-project-autonomy",
-        "tp-base-maintenance",
-        "tp-knowledge",
-        "tp-wiki",
-        "快速开始",
-        "跨机器",
+        "## 交给 AI 自动安装",
+        "不要猜测任何机器路径",
+        "先检查现有安装",
         "base configure",
         "base installation-doctor",
+        "project init",
+        "base sync-project --apply",
+        "base resolve",
+        "docs/README.md",
         "Record-first",
         "MIT",
     ):
         assert needle in text, needle
+    for retired in ("docs/cloud-ai-prompts/", "docs/superpowers/", "docs/history/"):
+        assert retired not in text
 
 
 def test_getting_started_supports_ai_assisted_clean_machine_setup():

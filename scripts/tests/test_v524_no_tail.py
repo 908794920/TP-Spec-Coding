@@ -14,7 +14,6 @@ def test_no_tail_allows_only_explicit_history_and_migration_paths(tmp_path):
     refs = [
         RoleReference("CHANGELOG.md", 1, old, old, "DOC_HISTORY"),
         RoleReference("cli/migrations/v5_2_3/role_map.py", 1, old, old, "MIGRATION_ONLY"),
-        RoleReference("docs/history/v5.2.7-migration/x.md", 1, old, old, "DOC_HISTORY"),
         RoleReference("scripts/tests/fixtures/history/v5_1_0/x.py", 1, old, old, "FIXTURE"),
         RoleReference("scripts/tests/migration/test_role_map.py", 1, old, old, "TEST"),
         RoleReference("cli/runtime.py", 1, old, old, "ACTIVE_CLI"),
@@ -22,6 +21,8 @@ def test_no_tail_allows_only_explicit_history_and_migration_paths(tmp_path):
 
     bad = no_tail_violations(refs)
     assert [(r.path, r.old_role_id) for r in bad] == [("cli/runtime.py", old)]
+    from scripts.migration.v5_2_3 import role_reference_inventory as inventory
+    assert "docs/history/" not in inventory._DEFAULT_ALLOW_PREFIXES
 
 
 def test_current_repository_has_no_active_v523_role_tail():

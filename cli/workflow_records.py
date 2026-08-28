@@ -7,12 +7,15 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
 from .delivery_contract import validate_delivery_result
+from . import event_contract
 
 
 def build_confirmation_detail(*, task_id: str, binding: Dict[str, Any], transaction_id: str,
                               flush_id: str, created_at: str, schema_version: str) -> Dict[str, Any]:
     return {
+        'schema': event_contract.EVENT_SCHEMA,
         'operation': 'WORKFLOW_CONFIRM',
+        'result_status': 'COMPLETED',
         'flush_id': flush_id,
         'transaction_id': transaction_id,
         'producer': 'workflow_confirm',
@@ -37,8 +40,11 @@ def build_delivery_detail(*, task_id: str, transaction_id: str, flush_id: str,
                           recovery_condition: Optional[str] = None,
                           blocker_kind: Optional[str] = None,
                           responsibility: Optional[str] = None) -> Dict[str, Any]:
+    delivery_status0 = str(delivery_status or '').upper()
     detail: Dict[str, Any] = {
+        'schema': event_contract.EVENT_SCHEMA,
         'operation': 'DELIVERY_CONVERGE',
+        'result_status': 'BLOCKED' if delivery_status0 == 'BLOCKED' else 'COMPLETED',
         'flush_id': flush_id,
         'transaction_id': transaction_id,
         'producer': 'delivery_converge',
@@ -48,7 +54,7 @@ def build_delivery_detail(*, task_id: str, transaction_id: str, flush_id: str,
         'created_at': created_at,
         'verification_event_id': int(verification_event_id),
         'verification_subject_digest': str(verification_subject_digest),
-        'delivery_status': str(delivery_status or '').upper(),
+        'delivery_status': delivery_status0,
         'reason': str(reason or '').strip(),
     }
     for key, values in {

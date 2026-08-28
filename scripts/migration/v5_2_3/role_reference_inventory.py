@@ -49,7 +49,7 @@ def _is_text_candidate(path: Path) -> bool:
 
 def classify_reference(path: str) -> str:
     p = path.replace("\\", "/")
-    if p == "CHANGELOG.md" or p.startswith("docs/history/"):
+    if p == "CHANGELOG.md":
         return "DOC_HISTORY"
     if p.startswith("cli/migrations/") or p.startswith("migrations/") or p.startswith("scripts/migration/"):
         return "MIGRATION_ONLY"
@@ -188,7 +188,6 @@ _DEFAULT_ALLOW_PREFIXES = (
     "scripts/tests/migration/",
     "scripts/tests/fixtures/history/",
     "tests/fixtures/history/",
-    "docs/history/",
 )
 
 
@@ -205,6 +204,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=str(Path(__file__).resolve().parents[3]))
     ap.add_argument("--write-report", action="store_true")
+    ap.add_argument("--output-dir", help="Explicit destination for generated migration reports; must not be inside docs/.")
     ap.add_argument("--no-tail", action="store_true")
     args = ap.parse_args()
     root = Path(args.root).resolve()
@@ -212,7 +212,16 @@ def main() -> int:
     legacy_rows = scan_legacy_dependencies(root)
     payload = report_payload(root, refs)
     if args.write_report:
-        out_dir = root / "docs" / "history" / "v5.2.4-migration"
+        if not args.output_dir:
+            ap.error("--write-report requires --output-dir; migration reports are not shipped under docs/")
+        out_dir = Path(args.output_dir).expanduser().resolve()
+        docs_root = (root / "docs").resolve()
+        try:
+            out_dir.relative_to(docs_root)
+        except ValueError:
+            pass
+        else:
+            ap.error("--output-dir must be outside docs/; process reports are not part of the public document surface")
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "V523_ROLE_REFERENCE_INVENTORY.json").write_text(
             json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"

@@ -364,10 +364,10 @@ def _check_knowledge(task_dir: Path, issues: List[ValidationIssue], require_comp
 
 
 def _arch_review_event_row(conn, task_id: str):
-    """最近一条架构评审 PASS 事件原始行（不受信校验，供差异诊断）。"""
+    """最近一条架构评审事件原始行（不受信校验，供差异诊断）。"""
     return conn.execute(
         "SELECT * FROM task_event WHERE task_id=? AND event_type='REVIEW_COMPLETED' "
-        "AND actor_role='tp-software-architect' AND summary='PASS' ORDER BY id DESC LIMIT 1",
+        "AND actor_role='tp-software-architect' ORDER BY id DESC LIMIT 1",
         (task_id,),
     ).fetchone()
 

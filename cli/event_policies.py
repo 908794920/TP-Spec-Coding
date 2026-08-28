@@ -260,7 +260,7 @@ def load_trusted_governance_event(
         if actor is not None and (row["actor_role"] or "") != actor:
             continue
         if decision is not None:
-            ev_decision = detail.get("decision") or row["summary"] or ""
+            ev_decision = detail.get("decision") or ""
             if str(ev_decision).upper() != str(decision).upper():
                 continue
         if review_kind is not None:

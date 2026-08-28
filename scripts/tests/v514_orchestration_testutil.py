@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from cli import db as dbmod
 from cli.version import active_version
+from cli.event_contract import EVENT_SCHEMA, add_event_semantics
 
 
 def make_db(path: Path, *, task_id='TASK-V514', risk='L1', flow='L1', state='NEW', phase='intake') -> str:
@@ -19,7 +20,11 @@ def make_db(path: Path, *, task_id='TASK-V514', risk='L1', flow='L1', state='NEW
 
 
 def add_checkpoint(db: str, task: str, actor: str, phase: str, summary='done'):
-    conn=dbmod.connect(db); now=dbmod.now_iso(); detail=json.dumps({'operation':'CHECKPOINT','phase':phase,'schema_version':active_version()})
+    conn=dbmod.connect(db); now=dbmod.now_iso(); detail=json.dumps(add_event_semantics(
+        {'schema_version': active_version()},
+        event_type='FACT', operation='CHECKPOINT', result_status='COMPLETED',
+        producer='record-first', phase=phase,
+    ))
     with dbmod.transactional(conn):
         conn.execute('INSERT INTO task_event(task_id,event_type,to_stage,actor_role,summary,detail_json,created_at) VALUES(?,?,?,?,?,?,?)',(task,'FACT',phase,actor,summary,detail,now))
         conn.execute("UPDATE task SET current_state='ACTIVE',current_stage=?,owner_role=?,updated_at=? WHERE task_id=?",(phase,actor,now,task))
@@ -28,8 +33,13 @@ def add_checkpoint(db: str, task: str, actor: str, phase: str, summary='done'):
 
 def add_decision(db: str, task: str, summary: str):
     conn=dbmod.connect(db); now=dbmod.now_iso()
+    detail = add_event_semantics(
+        {'signal': summary, 'schema_version': active_version()},
+        event_type='DECISION', operation='RECORD', result_status='RECORDED',
+        producer='test-fixture',
+    )
     with dbmod.transactional(conn):
-        conn.execute('INSERT INTO task_event(task_id,event_type,actor_role,summary,created_at) VALUES(?,?,?,?,?)',(task,'DECISION','human_owner',summary,now))
+        conn.execute('INSERT INTO task_event(task_id,event_type,actor_role,summary,detail_json,created_at) VALUES(?,?,?,?,?,?)',(task,'DECISION','human_owner',summary,json.dumps(detail),now))
     conn.close()
 
 
@@ -55,14 +65,24 @@ def add_workflow_confirmation(db: str, task: str, confirmation_policy=None):
 
 
 def add_review(db: str, task: str, decision='PASS'):
-    conn=dbmod.connect(db); now=dbmod.now_iso(); detail=json.dumps({'decision':decision,'review_kind':'ARCHITECTURE','schema_version':active_version()})
+    conn=dbmod.connect(db); now=dbmod.now_iso(); detail=json.dumps(add_event_semantics(
+        {'review_kind':'ARCHITECTURE','schema_version':active_version()},
+        event_type='REVIEW_COMPLETED', operation='REVIEW',
+        result_status='BLOCKED' if decision == 'BLOCKED' else 'COMPLETED',
+        decision=decision, producer='test-fixture',
+    ))
     with dbmod.transactional(conn):
         conn.execute('INSERT INTO task_event(task_id,event_type,actor_role,summary,detail_json,created_at) VALUES(?,?,?,?,?,?)',(task,'REVIEW_COMPLETED','tp-software-architect',decision,detail,now))
     conn.close()
 
 
 def add_verify(db: str, task: str, decision='PASS'):
-    conn=dbmod.connect(db); now=dbmod.now_iso(); detail=json.dumps({'decision':decision,'review_kind':'VERIFICATION','schema_version':active_version()})
+    conn=dbmod.connect(db); now=dbmod.now_iso(); detail=json.dumps(add_event_semantics(
+        {'review_kind':'VERIFICATION','schema_version':active_version()},
+        event_type='VERIFICATION_COMPLETED', operation='VERIFY',
+        result_status='BLOCKED' if decision == 'BLOCKED' else 'COMPLETED',
+        decision=decision, producer='test-fixture',
+    ))
     with dbmod.transactional(conn):
         conn.execute('INSERT INTO task_event(task_id,event_type,to_stage,actor_role,summary,detail_json,created_at) VALUES(?,?,?,?,?,?,?)',(task,'VERIFICATION_COMPLETED','verification','tp-test-engineer',decision,detail,now))
         conn.execute("UPDATE task SET current_state='ACTIVE',current_stage='verification',owner_role='tp-test-engineer',updated_at=? WHERE task_id=?",(now,task))
@@ -70,7 +90,12 @@ def add_verify(db: str, task: str, decision='PASS'):
 
 
 def add_code_review(db: str, task: str, decision='PASS'):
-    conn=dbmod.connect(db); now=dbmod.now_iso(); detail=json.dumps({'decision':decision,'review_kind':'CODE','schema_version':active_version()})
+    conn=dbmod.connect(db); now=dbmod.now_iso(); detail=json.dumps(add_event_semantics(
+        {'review_kind':'CODE','schema_version':active_version()},
+        event_type='REVIEW_COMPLETED', operation='REVIEW',
+        result_status='BLOCKED' if decision == 'BLOCKED' else 'COMPLETED',
+        decision=decision, producer='test-fixture',
+    ))
     with dbmod.transactional(conn):
         conn.execute('INSERT INTO task_event(task_id,event_type,to_stage,actor_role,summary,detail_json,created_at) VALUES(?,?,?,?,?,?,?)',(task,'REVIEW_COMPLETED','review','tp-code-reviewer',decision,detail,now))
         conn.execute("UPDATE task SET current_state='ACTIVE',current_stage='review',owner_role='tp-code-reviewer',updated_at=? WHERE task_id=?",(now,task))

@@ -19,6 +19,7 @@ from . import db as dbmod
 from . import delivery_contract
 from . import environment
 from . import risk_signals
+from . import event_contract
 from . import workflow_controls
 from .version import active_version
 
@@ -66,6 +67,78 @@ def load_role_catalog(base_root: Optional["str | Path"] = None) -> Dict[str, Any
         strict_unknown_fields=True,
         use_cache=False,
     )
+
+
+def load_role_topology(base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
+    """Return the persisted generated Agent/Role/Skill topology projection.
+
+    Runtime consumers read the catalog projection directly; they do not rescan
+    Skill files or rebuild relationships on demand.
+    """
+    topology = load_role_catalog(base_root).get("topology")
+    if not isinstance(topology, dict):
+        raise OrchestrationError("role catalog topology is missing or invalid")
+    nodes = topology.get("nodes")
+    edges = topology.get("edges")
+    if not isinstance(nodes, dict) or not isinstance(edges, list):
+        raise OrchestrationError("role catalog topology nodes/edges are invalid")
+    return topology
+
+
+def get_role_topology_node(node_id: str, *, base_root: Optional["str | Path"] = None) -> Optional[Dict[str, Any]]:
+    topology = load_role_topology(base_root)
+    node = (topology.get("nodes") or {}).get(str(node_id or ""))
+    return dict(node) if isinstance(node, dict) else None
+
+
+def search_role_topology(query: str, *, base_root: Optional["str | Path"] = None, kind: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Search topology nodes by stable id or display name.
+
+    Exact id/name matches win; otherwise a case-insensitive substring match is
+    used. The search only reads the generated catalog projection.
+    """
+    needle = str(query or "").strip().casefold()
+    if not needle:
+        return []
+    nodes = load_role_topology(base_root).get("nodes") or {}
+    rows = [
+        dict(node) for node in nodes.values()
+        if isinstance(node, dict) and (kind is None or str(node.get("kind") or "") == kind)
+    ]
+
+    def exact(row: Dict[str, Any]) -> bool:
+        return needle in {str(row.get("id") or "").casefold(), str(row.get("name") or "").casefold()}
+
+    exact_rows = [row for row in rows if exact(row)]
+    if exact_rows:
+        return exact_rows
+    return [
+        row for row in rows
+        if needle in str(row.get("id") or "").casefold()
+        or needle in str(row.get("name") or "").casefold()
+    ]
+
+
+def _display_entry(mapping: Any, key: str) -> Dict[str, Any]:
+    if not key:
+        return {"label": "", "description": "", "configured": True}
+    item = mapping.get(key) if isinstance(mapping, dict) else None
+    if isinstance(item, dict) and str(item.get("label") or "").strip():
+        return {
+            "label": str(item.get("label") or "").strip(),
+            "description": str(item.get("description") or "").strip(),
+            "configured": True,
+        }
+    return {"label": "未配置展示名称", "description": "", "configured": False}
+
+
+def _role_display(role_map: Dict[str, Dict[str, Any]], role_id: str) -> Dict[str, Any]:
+    if not role_id:
+        return {"label": "", "description": "", "configured": True}
+    role = role_map.get(role_id)
+    if isinstance(role, dict) and str(role.get("display_name") or "").strip():
+        return {"label": str(role.get("display_name") or "").strip(), "description": "", "configured": True}
+    return {"label": "未配置展示名称", "description": "", "configured": False}
 
 
 def _root(base_root: Optional["str | Path"] = None) -> Path:
@@ -278,13 +351,26 @@ def _load_task_facts(task_id: str, db_path: Optional[str] = None) -> Tuple[Dict[
 
 
 def _decision_signal_ids(events: Iterable[Dict[str, Any]]) -> Dict[str, int]:
+    """Return explicit machine workflow signals only.
+
+    Historical DECISION summaries remain readable audit text but never drive
+    routing. New producers must write ``detail_json.signal`` or ``signals``.
+    """
     result: Dict[str, int] = {}
     for e in events:
         if str(e.get("event_type") or "").upper() != "DECISION" or str(e.get("actor_role") or "") != "human_owner":
             continue
-        summary = str(e.get("summary") or "").strip()
-        if summary:
-            result[summary] = max(result.get(summary, 0), int(e.get("id") or 0))
+        detail = _parse_detail(e.get("detail_json"))
+        values = []
+        signal = str(detail.get("signal") or "").strip()
+        if signal:
+            values.append(signal)
+        for raw in detail.get("signals") or []:
+            value = str(raw or "").strip()
+            if value:
+                values.append(value)
+        for value in values:
+            result[value] = max(result.get(value, 0), int(e.get("id") or 0))
     return result
 
 
@@ -297,7 +383,7 @@ def _latest_verification(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str,
         if e.get("event_type") != "VERIFICATION_COMPLETED" or e.get("actor_role") != "tp-test-engineer":
             continue
         d = _parse_detail(e.get("detail_json"))
-        decision = str(d.get("decision") or e.get("summary") or "").upper()
+        decision = event_contract.normalize_event_semantics(str(e.get("event_type") or ""), d)["decision"]
         return {"decision": decision, "detail": d, "event": e}
     return None
 
@@ -309,7 +395,7 @@ def _latest_arch_review(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, 
         d = _parse_detail(e.get("detail_json"))
         if str(d.get("review_kind") or "").upper() != "ARCHITECTURE":
             continue
-        decision = str(d.get("decision") or e.get("summary") or "").upper()
+        decision = event_contract.normalize_event_semantics(str(e.get("event_type") or ""), d)["decision"]
         return {"decision": decision, "detail": d, "event": e}
     return None
 
@@ -321,18 +407,25 @@ def _latest_code_review(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, 
         kind = str(d.get("review_kind") or "CODE").upper()
         if kind not in {"CODE", "IMPLEMENTATION", "ULTRA_REVIEW"}:
             continue
-        decision = str(d.get("decision") or e.get("summary") or "").upper()
+        decision = event_contract.normalize_event_semantics(str(e.get("event_type") or ""), d)["decision"]
         return {"decision": decision, "detail": d, "event": e}
     return None
 
 
-def _latest_checkpoint(events: Iterable[Dict[str, Any]], *, actor: str, phase: str) -> Optional[Dict[str, Any]]:
+def _latest_checkpoint_activity(events: Iterable[Dict[str, Any]], *, actor: str, phase: str) -> Optional[Dict[str, Any]]:
     for e in reversed(list(events)):
         if e.get("event_type") != "FACT" or e.get("actor_role") != actor:
             continue
         d = _parse_detail(e.get("detail_json"))
-        if d.get("operation") == "CHECKPOINT" and str(d.get("phase") or e.get("to_stage") or "") == phase:
-            return e
+        if str(d.get("operation") or "").upper() == "CHECKPOINT" and str(d.get("phase") or e.get("to_stage") or "") == phase:
+            return {"event": e, "detail": d, "semantics": event_contract.normalize_event_semantics("FACT", d)}
+    return None
+
+
+def _latest_checkpoint(events: Iterable[Dict[str, Any]], *, actor: str, phase: str) -> Optional[Dict[str, Any]]:
+    activity = _latest_checkpoint_activity(events, actor=actor, phase=phase)
+    if activity and activity["semantics"]["result_status"] == "COMPLETED":
+        return activity["event"]
     return None
 
 
@@ -365,6 +458,16 @@ def _stage_done(stage: str, events: List[Dict[str, Any]]) -> bool:
 def _stage_has_activity(stage: str, events: List[Dict[str, Any]]) -> bool:
     if _stage_done(stage, events):
         return True
+    mapping = {
+        "requirement": ("tp-product-manager", "requirement"),
+        "product": ("tp-product-manager", "product"),
+        "architecture": ("tp-software-architect", "architecture"),
+        "planning": ("tp-tech-lead", "planning"),
+        "development": ("tp-development-engineer", "development"),
+    }
+    if stage in mapping:
+        actor, phase = mapping[stage]
+        return _latest_checkpoint_activity(events, actor=actor, phase=phase) is not None
     if stage == "architecture_review":
         return _latest_arch_review(events) is not None
     if stage == "verification":
@@ -479,7 +582,7 @@ def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]]) -> D
             verification_binding = {
                 "event_id": int(selected.get("id") or 0),
                 "subject_digest": str(detail.get("subject_digest") or ""),
-                "decision": str(detail.get("decision") or selected.get("summary") or "").upper(),
+                "decision": event_contract.normalize_event_semantics("VERIFICATION_COMPLETED", detail)["decision"],
             }
     return {
         "mode": "FAST_PATH",
@@ -869,6 +972,16 @@ def resolve_progress(
     """
     root = _root(base_root)
     contract = load_contract(root)
+    catalog = load_role_catalog(root)
+    presentation = contract.get("presentation") or {}
+    stage_presentation = presentation.get("stages") or {}
+    action_presentation = presentation.get("actions") or {}
+    confirmation_presentation = presentation.get("confirmations") or {}
+    role_map = {
+        str(item.get("workflow_role") or ""): item
+        for item in (catalog.get("roles") or [])
+        if isinstance(item, dict) and item.get("workflow_role")
+    }
     task, events = _load_task_facts(task_id, db_path)
     route = resolve_route(task_id, db_path=db_path, base_root=root)
     level = str(route.get("effective_level") or resolve_effective_level(task.get("risk_level"), task.get("flow_level")))
@@ -888,20 +1001,44 @@ def resolve_progress(
         stage = str(step.get("stage") or "")
         role = str(step.get("role") or "")
         completion = _delivery_completion_event(events, task_dir) if stage == "delivery" else _stage_completion_event(stage, events)
+        completion_source = ""
+        completion_event_id = 0
+        undeclared_completion = False
         if completion is not None:
             status = "已完成"
-        elif task_state == "BLOCKED" and stage == current_phase:
-            status = "已阻塞"
-        elif stage == current_phase:
-            status = "进行中"
+            completion_source = "runtime_event"
+            completion_event_id = int(completion.get("id") or 0)
         else:
-            status = "待执行"
+            checkpoint_map = {
+                "requirement": ("tp-product-manager", "requirement"),
+                "product": ("tp-product-manager", "product"),
+                "architecture": ("tp-software-architect", "architecture"),
+                "planning": ("tp-tech-lead", "planning"),
+                "development": ("tp-development-engineer", "development"),
+            }
+            if stage in checkpoint_map:
+                actor0, phase0 = checkpoint_map[stage]
+                activity = _latest_checkpoint_activity(events, actor=actor0, phase=phase0)
+                if activity and activity["semantics"]["result_status"] == "NOT_RECORDED":
+                    undeclared_completion = True
+            if undeclared_completion:
+                status = "完成状态未声明"
+            elif task_state == "BLOCKED" and stage == current_phase:
+                status = "已阻塞"
+            elif stage == current_phase:
+                status = "进行中"
+            else:
+                status = "待执行"
         item = {
             "stage": stage,
+            "stage_display": _display_entry(stage_presentation, stage),
             "phase": str(step.get("phase") or stage),
             "role": role,
+            "role_display": _role_display(role_map, role),
             "status": status,
             "required": bool(step.get("required")),
+            "completion_event_id": completion_event_id,
+            "completion_source": completion_source,
         }
         steps.append(item)
         if status == "已完成":
@@ -913,21 +1050,33 @@ def resolve_progress(
     next_step: Dict[str, Any] = {}
     if next_stage and next_stage != "complete":
         pipeline_step = next((item for item in steps if item["stage"] == next_stage), None)
+        next_role = str(route.get("role_id") or (pipeline_step or {}).get("role") or "")
+        next_action = str(route.get("recommended_action") or "")
+        confirmation_reason = str(route.get("confirmation_reason") or "")
         next_step = {
             "stage": next_stage,
-            "role": str(route.get("role_id") or (pipeline_step or {}).get("role") or ""),
-            "action": str(route.get("recommended_action") or ""),
+            "stage_display": _display_entry(stage_presentation, next_stage),
+            "role": next_role,
+            "role_display": _role_display(role_map, next_role),
+            "action": next_action,
+            "action_display": _display_entry(action_presentation, next_action),
             "confirmation_required": bool(route.get("confirmation_required")),
-            "confirmation_reason": str(route.get("confirmation_reason") or ""),
+            "confirmation_reason": confirmation_reason,
+            "confirmation_display": _display_entry(confirmation_presentation, confirmation_reason),
             "reason_codes": list(route.get("reason_codes") or []),
         }
     elif next_stage == "complete":
+        complete_action = str(route.get("recommended_action") or "task_complete")
         next_step = {
             "stage": "complete",
+            "stage_display": _display_entry(stage_presentation, "complete"),
             "role": "",
-            "action": str(route.get("recommended_action") or "task_complete"),
+            "role_display": _role_display(role_map, ""),
+            "action": complete_action,
+            "action_display": _display_entry(action_presentation, complete_action),
             "confirmation_required": False,
             "confirmation_reason": "",
+            "confirmation_display": _display_entry(confirmation_presentation, ""),
             "reason_codes": list(route.get("reason_codes") or []),
         }
 
@@ -935,7 +1084,9 @@ def resolve_progress(
         "effective_level": level,
         "completed_steps": completed_steps,
         "current_step": current_step,
+        "current_step_source": "task.current_stage" if current_step else "unresolved",
         "next_step": next_step,
+        "next_step_source": "workflow_contract" if next_step else "none",
         "steps": steps,
         "reference_steps": [],
         "route": {

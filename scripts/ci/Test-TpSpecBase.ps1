@@ -115,6 +115,18 @@ if ($Mode -eq 'Full') {
     }
 }
 
+
+if ($Mode -eq 'Full') {
+    Invoke-Check 'full.docs.navigation' {
+        $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        $out = & python (Join-Path $base 'scripts\check_document_navigation.py') 2>&1
+        $code = $LASTEXITCODE
+        $ErrorActionPreference = $prevEap
+        if ($code -ne 0) { throw ('document navigation failed: ' + (($out | Select-Object -First 8) -join ' | ')) }
+        ($out | Select-Object -Last 1)
+    }
+}
+
 Invoke-Check 'static.forbidden.paths' {
     $tracked = @(& git -C $base ls-files)
     # docs/ 已纳入 Git 管理（V5.2.7 发布完整性）；仅禁止运行时产物与本地状态
@@ -187,6 +199,7 @@ Invoke-Check 'static.yaml.semantic_validate' {
         'governance/knowledge-rule.yaml|knowledge-rule',
         'governance/compat-matrix.yaml|compat-matrix',
         'governance/orchestration.yaml|orchestration',
+        'governance/event-semantics.yaml|event-semantics',
         'governance/role-catalog.yaml|role-catalog',
         ((Join-Path 'templates' ((Get-Content -LiteralPath (Join-Path $base 'VERSION') -Raw).Trim())) + '/status.yaml|status-template')
     )
@@ -202,7 +215,7 @@ Invoke-Check 'static.yaml.semantic_validate' {
     Get-ChildItem -LiteralPath (Join-Path $base 'cli') -Recurse -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue |
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     if ($failed.Count -gt 0) { throw ("YAML semantic validation failed: " + ($failed -join '; ')) }
-    "8 governed files validated through controlled loader"
+    "9 governed files validated through controlled loader"
 }
 
 Invoke-Check 'static.unit.config_loader' {

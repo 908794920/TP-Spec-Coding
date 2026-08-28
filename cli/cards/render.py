@@ -21,8 +21,8 @@ _INLINE_TRUNCATION_NOTICE = {
 }
 _SENSITIVE_KEY = re.compile(r"(?:password|passwd|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|credential|authorization|cookie)", re.I)
 _ALLOWED_TOP = {
-    "global_config": {"card_type", "title", "generated_at", "health", "version", "user_root", "base", "wiki", "knowledge", "workspace", "resolver", "registry", "autonomy", "registered_projects", "problems"},
-    "current_project": {"card_type", "title", "generated_at", "health", "project", "wiki", "knowledge", "registry", "task_statistics", "in_progress_tasks", "completed_tasks", "summary", "problems"},
+    "global_config": {"card_type", "title", "generated_at", "health", "version", "user_root", "base", "wiki", "knowledge", "workspace", "resolver", "registry", "autonomy", "skill_topology", "registered_projects", "problems"},
+    "current_project": {"card_type", "title", "generated_at", "health", "project", "wiki", "knowledge", "registry", "task_statistics", "in_progress_tasks", "archived_tasks", "completed_tasks", "summary", "problems"},
     "active_task": {"card_type", "title", "generated_at", "health", "task", "workflow", "latest_checkpoint", "blockers", "verification", "evidence", "timeline", "summary", "problems"},
 }
 
@@ -152,17 +152,26 @@ def _template_parts(template: str) -> tuple[str, str, str]:
     return template[style_start:style_end].strip(), template[body_start:data_start].strip(), template[script_start:script_end].strip()
 
 
-def _inline_style(style: str) -> str:
+def _inline_style(style: str, *, active_task: bool = False, bounded_card: bool = False) -> str:
     scoped = style.replace(":root {", ":host {", 1)
     scoped = scoped.replace("  color-scheme: dark;\n", "")
     scoped = re.sub(r"\nhtml, body \{[^}]*\}\n", "\n", scoped, count=1)
     scoped = re.sub(r"\nbody \{.*?\n\}\n", "\n", scoped, count=1, flags=re.S)
     scoped = scoped.replace("height: 100%; ", "")
     scoped = scoped.replace("min-height: 0; ", "")
-    scoped = scoped.replace("overflow-y: auto; ", "")
+    scoped = re.sub(r"(\n\.grid \{[^}]*?)overflow-y: auto; ", r"\1", scoped, count=1)
     scoped = scoped.replace("position: sticky; ", "")
     scoped = scoped.replace("top: 0; ", "")
     scoped = scoped.replace("z-index: 10; ", "")
+    bounded_overrides = """
+.global-config-card, .current-project-card { overflow: hidden; }
+.card-content-scroll { min-height: 0; overflow-y: auto; }
+""" if bounded_card else ""
+    task_overrides = """
+.task-progress-card { overflow: hidden; }
+.task-progress-card .card-nav { position: static; }
+.task-progress-scroll { min-height: 0; overflow-y: auto; }
+""" if active_task else ""
     return scoped + """
 :host {
   display: block;
@@ -188,7 +197,7 @@ def _inline_style(style: str) -> str:
 .page { height: auto; margin: 0; padding: 0; }
 .grid { overflow: visible; }
 .card-nav { position: static; }
-"""
+""" + bounded_overrides + task_overrides
 
 
 def _inline_script(script: str, root_id: str) -> str:
@@ -218,13 +227,19 @@ template.remove();
 
 def _build_inline_fragment(template: str, target: Path, clean: Dict[str, Any]) -> str:
     style, markup, script = _template_parts(template)
+    card_type = clean.get("card_type")
+    style = _inline_style(
+        style,
+        active_task=card_type == "active_task",
+        bounded_card=card_type in {"global_config", "current_project"},
+    )
     payload = _encode_payload(clean)
     digest_source = f"{target}\0{payload}".encode("utf-8")
     root_id = f"tp-spec-card-{hashlib.sha256(digest_source).hexdigest()[:12]}"
     return f"""<div id="{root_id}">
   <template>
     <style>
-{_inline_style(style)}
+{style}
     </style>
 {markup}
     <script id="card-data" type="application/json">{payload}</script>

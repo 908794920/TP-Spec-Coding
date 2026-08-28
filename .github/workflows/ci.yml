@@ -24,6 +24,7 @@ jobs:
       - run: python -m pytest -q
       - run: python scripts/check_version_consistency.py
       - run: python scripts/update_role_catalog.py --verify
+      - run: python scripts/check_document_navigation.py
       - run: python scripts/check_portability.py
       - run: python scripts/update_manifest.py --verify-release
 

@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import db as dbmod
+from . import event_contract
 from . import event_policies
 from . import frontmatter
 from . import projection_cmd
@@ -358,6 +359,9 @@ def _cmd_code_review_record(args) -> int:
         artifact_digest = compute_text_artifact_digest(artifact_text)
 
         detail = {
+            "schema": event_contract.EVENT_SCHEMA,
+            "operation": "REVIEW",
+            "result_status": "BLOCKED" if str(args.decision).upper() == "BLOCKED" else "COMPLETED",
             "flush_id": flush_id,
             "review_kind": str(args.kind).upper(),
             "round": int(args.round or 1),
@@ -517,6 +521,9 @@ def cmd_review_record(args) -> int:
                     return 8
                 evidence_items.append(dict(ev_check.item))
         detail = {
+            "schema": event_contract.EVENT_SCHEMA,
+            "operation": "REVIEW",
+            "result_status": "BLOCKED" if str(args.decision).upper() == "BLOCKED" else "COMPLETED",
             "flush_id": flush_id,
             "review_kind": args.kind,
             "round": args.round,

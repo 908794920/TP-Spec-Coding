@@ -1,5 +1,6 @@
 ---
 name: knowledge-capture
+display_name: 知识提炼
 version: 5.2.7
 description: Use when a completed or maturing task produced verified, reusable project knowledge. Extract a durable Knowledge candidate for tp-knowledge without turning Knowledge maintenance into a completion gate.
 ---

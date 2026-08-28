@@ -1,5 +1,6 @@
 ---
 name: implementation-control
+display_name: 实现过程控制
 version: 5.2.7
 description: Use while implementing an TP-Spec-Coding task to control scope, evidence, database safety, and discovery escalation without making bookkeeping part of development.
 ---

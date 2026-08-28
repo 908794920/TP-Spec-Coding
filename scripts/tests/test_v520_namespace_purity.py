@@ -11,7 +11,6 @@ BASE = Path(__file__).parents[2]
 LEGACY_ALLOWED = {
     Path("CHANGELOG.md"),
     Path("cli/namespace_migration.py"),
-    Path("docs/history/v5.2.7-migration/MIGRATION_V520_NAMESPACE.md"),
     Path("scripts/tests/test_v520_namespace_migration.py"),
     Path("scripts/tests/test_v520_namespace_purity.py"),
 }
@@ -52,3 +51,7 @@ def test_canonical_launcher_names_exist_and_legacy_launchers_do_not():
         assert (BASE / "scripts" / name).is_file(), name
     for name in ("Invoke-AiWorkCli.ps1", "ai-work.ps1"):
         assert not (BASE / "scripts" / name).exists(), name
+
+
+def test_process_history_docs_are_not_shipped():
+    assert not any(p.is_file() or p.is_symlink() for p in (BASE / "docs/history").rglob("*")) if (BASE / "docs/history").exists() else True
