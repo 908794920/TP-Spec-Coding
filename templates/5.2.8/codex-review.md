@@ -2,7 +2,7 @@
 artifact: codex-review
 task_id: ""
 artifact_contract:
-  version: 5.2.7
+  version: 5.2.8
 ---
 
 # Verification Notes（按需）

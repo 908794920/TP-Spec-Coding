@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.2.7 临时工件维护命令。"""
+"""TP-Spec-Coding V5.2.8 临时工件维护命令。"""
 from __future__ import annotations
 
 import json

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.7 temporary artifact and work-session hardening regressions."""
+"""V5.2.8 temporary artifact and work-session hardening regressions."""
 from __future__ import annotations
 
 import contextlib

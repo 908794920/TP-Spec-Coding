@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.2.8] Open Release Line — 2026-08-28
+
+- 从 **5.2.7** 收敛到 **5.2.8** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.2.8`，不再保留 `templates/5.2.7`。
+- 继续维持 Role-first 产品形态：`tp-spec-coding` 唯一默认产品入口、`tp-software-lifecycle` 软件工程 Domain Agent 与 9 个 Formal Role 的活动契约不变。
+
 ## [5.2.7] Open Release Line — 2026-08-26
 
 - 任务事件展示与工作流判断改为结构化事实：`summary` 仅用于人类阅读，正式 CLI 自动记录 Event Semantics，并保留可信旧契约的确定性兼容。

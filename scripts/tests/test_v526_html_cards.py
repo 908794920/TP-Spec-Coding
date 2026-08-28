@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.7 read-only HTML information card regression tests."""
+"""V5.2.8 read-only HTML information card regression tests."""
 from __future__ import annotations
 
 import contextlib
