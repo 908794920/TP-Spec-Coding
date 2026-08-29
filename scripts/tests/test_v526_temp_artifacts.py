@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.8 temporary artifact and work-session hardening regressions."""
+"""V5.2.9 temporary artifact and work-session hardening regressions."""
 from __future__ import annotations
 
 import contextlib
@@ -8,6 +8,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -257,6 +258,12 @@ class TempArtifactCliCase(unittest.TestCase):
             "--registry", str(self.registry),
         ])
         self.assertEqual(rc, 0, (out, err))
+        subprocess.run(["git", "init", "-q"], cwd=self.project, check=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=self.project, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=self.project, check=True)
+        (self.project / "README.md").write_text("test baseline\n", encoding="utf-8", newline="\n")
+        subprocess.run(["git", "add", "README.md"], cwd=self.project, check=True)
+        subprocess.run(["git", "commit", "-qm", "baseline"], cwd=self.project, check=True)
         self.db = self.project / ".tp-spec" / "db" / "demo.db"
         self.task_id = "TASK-TEMP-CLI"
         self.task_dir = self.project / ".tp-spec" / "tasks" / self.task_id
@@ -266,6 +273,19 @@ class TempArtifactCliCase(unittest.TestCase):
             "--scaffold", "--task-dir", str(self.task_dir),
         ])
         self.assertEqual(rc, 0, (out, err))
+        (self.task_dir / "acceptance.md").write_text(
+            "# 验收条件与证据矩阵\n\n"
+            "```yaml\n"
+            "no_acceptance_required:\n"
+            "  declared: true\n"
+            "  reason: 临时工件测试没有业务验收项\n"
+            "deferred_acceptance: []\n"
+            "owner_waivers: []\n"
+            "database_operations: []\n"
+            "```\n",
+            encoding="utf-8",
+            newline="\n",
+        )
 
     def test_execution_temp_uses_owned_system_temp_instead_of_workspace(self):
         rc, out, err = run([

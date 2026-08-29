@@ -1,11 +1,11 @@
 ---
 id: tp-database-engineer
 name: tp-数据库工程师
-version: 5.2.8
+version: 5.2.9
 status: active
 type: workflow-role
 role: tp-database-engineer
-description: tp-数据库工程师：TP-Spec-Coding v5.2.8 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-数据库工程师：TP-Spec-Coding v5.2.9 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-数据库工程师
@@ -19,5 +19,7 @@ description: tp-数据库工程师：TP-Spec-Coding v5.2.8 正式软件工程角
 3. 查询优化优先基于真实执行计划/索引/数据分布证据，而不是只看 SQL 文本猜性能。
 4. 设计阶段可只读参与（effects=[]）；真正修改 schema/code 时声明 `repo_mutation`，必要时叠加数据库高风险授权。
 5. Test Engineer 负责独立验证，Database Engineer 不自证最终 PASS。
+6. SQL 按用途归属而不是按扩展名归属：随产品部署/迁移的 SQL 放目标仓库既有正式目录；一次性调查、回读和验证 SQL 放当前 Task `evidence/sql/`；临时生成物使用受控 Temp。
+7. 修改/删除现有 SQL、Mapper、Schema 前检查真实调用、Migration 历史、兼容窗口和外部数据契约，优先复用或修改既有路径，不并行堆叠第二套实现。
 ## Project Memory（按需）
 只有工作自然出现 Evidence-backed、Non-volatile、Reusable 且 costly-to-rediscover 的项目经验时，才按需调用 `tp-memory-capture`。未触碰 Memory：0 动作；只检查 touched fragment，不扫描整个 PROJECT、全部 Skills 或历史任务；Memory 缺失/候选沉淀不得阻塞当前研发。

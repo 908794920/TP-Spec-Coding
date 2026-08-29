@@ -26,6 +26,9 @@ controlled:
     - END
     - WORKFLOW_CONFIRM
     - DELIVERY_CONVERGE
+    - KNOWLEDGE_REQUEST
+    - KNOWLEDGE_CONVERGE
+    - SCOPE_CHANGE
     - STATE
     - BLOCK
     - RECORD
@@ -34,7 +37,7 @@ event_families:
   FACT:
     checkpoint_required: [operation, phase, result_status]
   VERIFICATION_COMPLETED:
-    required: [operation, decision, result_status]
+    required: [operation, decision, result_status, change_set_id]
     operation: VERIFY
   REVIEW_COMPLETED:
     required: [operation, review_kind, decision, result_status]
@@ -52,5 +55,14 @@ event_families:
     required: [operation, result_status]
     operation: WORKFLOW_CONFIRM
   DELIVERY_RESULT:
-    required: [operation, result_status]
+    required: [operation, result_status, verification_change_set_id, review_event_id, review_change_set_id, change_set_id]
     operation: DELIVERY_CONVERGE
+  KNOWLEDGE_CONVERGENCE_REQUEST:
+    required: [operation, result_status, delivery_event_id, verification_event_id, review_event_id, change_set_id, trigger_reason_codes, search_scope, source_refs]
+    operation: KNOWLEDGE_REQUEST
+  KNOWLEDGE_CONVERGENCE_RESULT:
+    required: [operation, result_status, request_event_id, change_set_id, knowledge_disposition, query_receipts, source_refs, source_items, reason_code]
+    operation: KNOWLEDGE_CONVERGE
+  SCOPE_CHANGE:
+    required: [operation, result_status, scope_id]
+    operation: SCOPE_CHANGE

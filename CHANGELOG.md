@@ -1,5 +1,14 @@
 # Changelog
 
+## [5.2.9] Development & Delivery Governance — 2026-08-29
+
+- 开发习惯收敛为“先调查、优先复用、最小修改、可读实现、真实验证、及时清理”；外部 AI 已完成实现后默认进入只读 Test/Review，无真实 Finding 时允许 `No findings` / 不修改。
+- Development / Verification / Code Review / Delivery 统一绑定真实 `change_set_id`；产品内容变化后旧 PASS 自动失效，Code Review 非 PASS 显式返工 Development。
+- Completion 要求所有 AC 明确处置；数据库声明升级为可重复 `database_operations`；UI AC 通过 Visual Manifest 绑定真实浏览器 Evidence，Delivery READY 拒绝未清理临时工件。
+- 状态投影新增 scope change、blocker/finding、quality facts 与 terminal manifest；终态目录可只读检测漂移，不追溯改写历史。
+- Knowledge 收敛改为 `KNOWLEDGE_CONVERGENCE_REQUEST/RESULT` typed effect，由 `tp-knowledge` 执行 targeted project+shared search；旧 `NO_CHANGE/DEFERRED` 不再充当新任务结论。
+- 活动契约从 **5.2.8** 升级到 **5.2.9**；`templates/5.2.9` 成为唯一活动模板。已终态 5.2.8 Task 保持只读；在途任务先 `project upgrade-contract`，再显式 `task migrate`，缺少 Change Set 的旧 Development/Verification/Review 事实按 stale 重新执行。
+
 ## [5.2.8] Open Release Line — 2026-08-28
 
 - 从 **5.2.7** 收敛到 **5.2.8** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.2.8`，不再保留 `templates/5.2.7`。

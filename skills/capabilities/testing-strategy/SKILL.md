@@ -1,11 +1,11 @@
 ---
 name: testing-strategy
 display_name: 分层测试
-version: 5.2.8
+version: 5.2.9
 description: Use to choose and execute risk-proportionate tests for code changes, mapping acceptance criteria to reproducible evidence without equating test count with confidence.
 ---
 
-# 分层测试 — V5.2.8 Record-first
+# 分层测试 — V5.2.9 Record-first
 
 ## 方法
 1. 将每个关键 AC/风险映射到合适验证方式与 evidence；没有必要时不追求测试数量。
@@ -16,6 +16,8 @@ description: Use to choose and execute risk-proportionate tests for code changes
 
 ## 数据与页面
 production read 必须用户明确确认并最小权限；DML/DDL/生产写必须动作级授权、实际执行、结果核验和回滚/清理证据。页面模式为 human 时，未由 human 实测不能写 PASS；自动页面验证只在部署/刷新就绪且模式授权时执行。
+
+存在 UI/页面 AC 时采用 **Diff-aware** 验证：先由当前 Change Set/Diff 推导受影响 route/page，再用真实浏览器检查声明视口、关键交互、页面状态、Console/Network 和横向滚动。源码 grep、DOM/CSS 字符串断言只能作为静态结构契约，不能单独构成视觉 PASS。具体执行与 Evidence 规则按需读取 `testing-strategy/references/visual-qa.md`。
 
 ## 完成判定
 PASS 的每个关键结论都能回到真实 evidence；验证 subject 实质变化后旧 PASS 不继续冒充当前 PASS，应重新验证或保持 `PASS_STALE`。

@@ -1,6 +1,6 @@
-# TP-Spec-Coding V5.2.8 生命周期
+# TP-Spec-Coding V5.2.9 生命周期
 
-V5.2.8 的目标是 **完成开发任务 + 任务溯源**。Runtime 是黑匣子记录器，不是研发流程收费站。
+V5.2.9 的目标是 **完成开发任务 + 任务溯源**。Runtime 是黑匣子记录器，不是研发流程收费站。
 
 ## 公开状态
 
@@ -8,7 +8,7 @@ V5.2.8 的目标是 **完成开发任务 + 任务溯源**。Runtime 是黑匣子
 
 异常分支仅有：`ACTIVE/NEW → BLOCKED → ACTIVE`，以及 `NEW/ACTIVE/BLOCKED → CANCELLED`。
 
-研发过程用 `current_phase` 记录：`intake / requirement / product / architecture / discovery / development / verification / delivery / other`。phase 只是查询事实，不是状态门禁。
+研发过程用 `current_phase` 记录：`intake / requirement / product / architecture / discovery / planning / development / verification / review / delivery / other`。phase 只是查询事实，不是状态门禁。
 
 ## 日常记录
 

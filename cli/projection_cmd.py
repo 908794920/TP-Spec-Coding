@@ -61,14 +61,16 @@ _TYPE_MAP = {
     "REVIEW": "REVIEW",
     "REVIEW_COMPLETED": "REVIEW_COMPLETED",
     "SCOPE_CHANGE": "SCOPE_CHANGE",
+    "KNOWLEDGE_CONVERGENCE_REQUEST": "KNOWLEDGE",
+    "KNOWLEDGE_CONVERGENCE_RESULT": "KNOWLEDGE",
     "KNOWLEDGE": "KNOWLEDGE",
-    # V5.2.8 A-04：reconcile 追加的审计事件；投影为 FACT 保持
+    # V5.2.9 A-04：reconcile 追加的审计事件；投影为 FACT 保持
     # events.jsonl 合法 type 集合不变（Test-TpSpecTask.ps1 EventTypes 零感知）。
     "RECONCILIATION": "FACT",
 }
 
 
-# V5.2.8 新工件（AI-B 模板定义；AI-C 可继续追加）：存在才纳入 source digest。
+# V5.2.9 新工件（AI-B 模板定义；AI-C 可继续追加）：存在才纳入 source digest。
 _V511_SOURCE_NAMES = (
     "requirement-knowledge.md",
     "requirement-clarifications.md",
@@ -79,9 +81,9 @@ _V511_SOURCE_NAMES = (
 
 
 def projection_source_names() -> List[str]:
-    """current view source_files 集中注册表（V5.2.8 §10.2）。
+    """current view source_files 集中注册表（V5.2.9 §10.2）。
 
-    AI-C 接入 V5.2.8 新工件规则时可追加文件名；commit 的
+    AI-C 接入 V5.2.9 新工件规则时可追加文件名；commit 的
     _continuation_sources 与 reconcile 共用本注册表，存在性过滤保证
     旧任务/低风险任务不受影响。
     """
@@ -155,14 +157,14 @@ def _format_status_yaml(
     blockers: List[str],
     findings: List[str],
     scope_changes: List[str],
+    quality_facts: Dict[str, str],
+    next_responsibility: str,
 ) -> str:
     """手写兼容 status.yaml 投影。"""
     lines: List[str] = []
 
     def fmt_list(items: List[str]) -> str:
-        if not items:
-            return "[]"
-        return "[" + ", ".join(items) + "]"
+        return json.dumps(items, ensure_ascii=False)
 
     def fmt_str(s: str) -> str:
         return f'"{s}"'
@@ -181,9 +183,15 @@ def _format_status_yaml(
     lines.append(f"blockers: {fmt_list(blockers)}")
     lines.append(f"findings: {fmt_list(findings)}")
     lines.append(f"scope_changes: {fmt_list(scope_changes)}")
+    lines.append(f"next_responsibility: {fmt_str(next_responsibility)}")
+    lines.append("quality_facts:")
+    lines.append(f"  change_set_id: {fmt_str(quality_facts.get('change_set_id', 'NOT_RECORDED'))}")
+    for key in ("development", "verification", "review", "delivery", "knowledge"):
+        lines.append(f"  {key}: {fmt_str(quality_facts.get(key, 'NOT_RECORDED'))}")
     lines.append("artifacts:")
     lines.append('  event_log: "events.jsonl"')
     lines.append('  continuation: "generated/continuation.md"')
+    lines.append('  terminal_manifest: "generated/terminal-manifest.json"')
     lines.append('  acceptance: "acceptance.md"')
     lines.append('  task_document: "task.md"')
     lines.append('  evidence: "evidence/"')
@@ -271,20 +279,254 @@ def _build_events_jsonl(events: List[Dict[str, Any]], task_id: str) -> Tuple[str
 
 
 def _extract_blockers(conn, task_id: str, current_state: str) -> List[str]:
-    """推导 blockers：当前 BLOCKED 时填最近一条 BLOCKED 事件摘要，否则空数组。"""
-    if current_state != "BLOCKED":
-        return []
-    row = conn.execute(
-        """
-        SELECT summary FROM task_event
-        WHERE task_id = ? AND event_type = 'STATE' AND to_state = 'BLOCKED'
-        ORDER BY id DESC LIMIT 1
-        """,
+    """投影当前仍有效的公开 blocker 与 Delivery blocker。"""
+    blockers: List[str] = []
+    if current_state == "BLOCKED":
+        row = conn.execute(
+            """
+            SELECT summary FROM task_event
+            WHERE task_id = ? AND event_type = 'STATE' AND to_state = 'BLOCKED'
+            ORDER BY id DESC LIMIT 1
+            """,
+            (task_id,),
+        ).fetchone()
+        if row and row["summary"]:
+            blockers.append(str(row["summary"]))
+
+    from . import event_policies
+    delivery = event_policies.load_trusted_governance_event(
+        conn, task_id, event_type="DELIVERY_RESULT",
+    )
+    if delivery is not None and str(delivery.detail.get("delivery_status") or "").upper() == "BLOCKED":
+        reason = str(delivery.detail.get("reason") or delivery.row["summary"] or "delivery blocked").strip()
+        kind = str(delivery.detail.get("blocker_kind") or "").strip().upper()
+        item = f"{kind}: {reason}" if kind else reason
+        if item and item not in blockers:
+            blockers.append(item)
+    return blockers
+
+
+def _extract_findings(conn, task_id: str) -> List[str]:
+    """投影最新未被后续有效 PASS 闭环的验证/代码审查 finding。"""
+    from . import event_policies
+
+    findings: List[str] = []
+    verification = event_policies.load_trusted_governance_event(
+        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer",
+    )
+    if verification is not None:
+        decision = str(verification.detail.get("decision") or "").upper()
+        if decision in {"FAIL", "NEEDS_FIX", "BLOCKED"}:
+            summary = str(verification.detail.get("summary") or verification.row["summary"] or "").strip()
+            findings.append(summary or f"verification {decision}")
+
+    review = event_policies.load_trusted_governance_event(
+        conn, task_id, event_type="REVIEW_COMPLETED", actor="tp-code-reviewer", review_kind="CODE",
+    )
+    if review is not None:
+        decision = str(review.detail.get("decision") or "").upper()
+        if decision in {"NEEDS_FIX", "REVISE", "FAIL", "BLOCKED"}:
+            summary = str(review.detail.get("summary") or review.row["summary"] or "").strip()
+            findings.append(summary or f"review {decision}")
+    return findings
+
+
+def _extract_scope_changes(conn, task_id: str) -> List[str]:
+    """按发生顺序投影可信 human_owner 范围变化。"""
+    from . import event_policies
+
+    events = event_policies.load_trusted_governance_events(
+        conn, task_id, event_type="SCOPE_CHANGE", actor="human_owner",
+    )
+    out: List[str] = []
+    for event in reversed(events):
+        scope_id = str(event.detail.get("scope_id") or "").strip()
+        summary = str(event.detail.get("summary") or event.row["summary"] or "").strip()
+        if scope_id and summary:
+            out.append(f"{scope_id}: {summary}")
+    return out
+
+
+def _latest_development_fact(conn, task_id: str) -> Dict[str, Any]:
+    """返回最新可信 Development checkpoint 的事件 id、Change Set 与仓库根。"""
+    from . import event_contract
+
+    rows = conn.execute(
+        "SELECT id, detail_json FROM task_event WHERE task_id=? AND event_type='FACT' ORDER BY id DESC",
         (task_id,),
-    ).fetchone()
-    if row and row["summary"]:
-        return [row["summary"]]
-    return []
+    ).fetchall()
+    for row in rows:
+        try:
+            detail = json.loads(row["detail_json"] or "{}")
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(detail, dict):
+            continue
+        if detail.get("producer") != "record-first" or str(detail.get("schema") or "") != event_contract.EVENT_SCHEMA:
+            continue
+        if str(detail.get("operation") or "").upper() != "CHECKPOINT":
+            continue
+        if str(detail.get("phase") or "").lower() != "development":
+            continue
+        if str(detail.get("result_status") or "").upper() != "COMPLETED":
+            continue
+        change_set_id = str(detail.get("change_set_id") or "").strip()
+        roots = [str(value).strip() for value in (detail.get("repo_roots") or []) if str(value).strip()]
+        if change_set_id:
+            return {"event_id": int(row["id"]), "change_set_id": change_set_id, "repo_roots": roots}
+    return {}
+
+
+def _current_change_set(development: Dict[str, Any]) -> tuple[str, str]:
+    """返回 (current_digest, development_status)；Git 读取失败时不伪造 CURRENT。"""
+    recorded = str(development.get("change_set_id") or "")
+    roots = list(development.get("repo_roots") or [])
+    if not recorded:
+        return "", "NOT_RECORDED"
+    if not roots:
+        return recorded, "UNKNOWN"
+    try:
+        from .change_set import capture_change_set
+        current = str(capture_change_set(roots).get("content_digest") or "")
+    except Exception:
+        return recorded, "UNKNOWN"
+    return current, "CURRENT" if current == recorded else "STALE"
+
+
+def _stale_value(value: str, *, stale: bool) -> str:
+    value0 = str(value or "NOT_RECORDED").upper()
+    return f"{value0}_STALE" if stale and value0 != "NOT_RECORDED" else value0
+
+
+def _extract_quality_facts(conn, task_id: str) -> Dict[str, str]:
+    """从可信账本和当前 Git 内容投影 current/stale 质量事实。"""
+    from . import event_policies
+
+    development = _latest_development_fact(conn, task_id)
+    current_digest, development_status = _current_change_set(development)
+    recorded_digest = str(development.get("change_set_id") or "")
+    current_id = current_digest or recorded_digest or "NOT_RECORDED"
+    out = {
+        "change_set_id": current_id,
+        "development": development_status,
+        "verification": "NOT_RECORDED",
+        "review": "NOT_RECORDED",
+        "delivery": "NOT_RECORDED",
+        # Task 7 会把这一占位投影替换为 typed Knowledge convergence 事实。
+        "knowledge": "NOT_RECORDED",
+    }
+    dev_event_id = int(development.get("event_id") or 0)
+    dev_stale = development_status != "CURRENT"
+
+    verification = event_policies.load_trusted_governance_event(
+        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer",
+    )
+    verification_current = False
+    if verification is not None:
+        v_change = str(verification.detail.get("change_set_id") or "")
+        verification_current = (
+            not dev_stale
+            and int(verification.row["id"]) > dev_event_id
+            and bool(current_digest)
+            and v_change == current_digest
+        )
+        out["verification"] = _stale_value(
+            str(verification.detail.get("decision") or "NOT_RECORDED"),
+            stale=not verification_current,
+        )
+
+    review = event_policies.load_trusted_governance_event(
+        conn, task_id, event_type="REVIEW_COMPLETED", actor="tp-code-reviewer", review_kind="CODE",
+    )
+    review_current = False
+    if review is not None:
+        r_change = str(review.detail.get("change_set_id") or "")
+        bound_verification = int(review.detail.get("verification_event_id") or 0)
+        current_verification_id = int(verification.row["id"]) if verification is not None else 0
+        review_current = (
+            verification_current
+            and r_change == current_digest
+            and bound_verification == current_verification_id
+        )
+        out["review"] = _stale_value(
+            str(review.detail.get("decision") or "NOT_RECORDED"),
+            stale=not review_current,
+        )
+
+    delivery = event_policies.load_trusted_governance_event(
+        conn, task_id, event_type="DELIVERY_RESULT",
+    )
+    delivery_current = False
+    if delivery is not None:
+        d_change = str(delivery.detail.get("change_set_id") or "")
+        bound_review = int(delivery.detail.get("review_event_id") or 0)
+        current_review_id = int(review.row["id"]) if review is not None else 0
+        delivery_current = review_current and d_change == current_digest and bound_review == current_review_id
+        out["delivery"] = _stale_value(
+            str(delivery.detail.get("delivery_status") or "NOT_RECORDED"),
+            stale=not delivery_current,
+        )
+
+    if delivery is not None and delivery_current and str(delivery.detail.get("delivery_status") or "").upper() == "READY":
+        delivery_id = int(delivery.row["id"])
+        request = None
+        for item in event_policies.load_trusted_governance_events(
+            conn, task_id, event_type="KNOWLEDGE_CONVERGENCE_REQUEST", actor="tp-integration-engineer",
+        ):
+            try:
+                if int(item.detail.get("delivery_event_id") or 0) != delivery_id:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            if str(item.detail.get("change_set_id") or "") != current_digest:
+                continue
+            request = item
+            break
+        if request is None:
+            out["knowledge"] = "NOT_REQUIRED"
+        else:
+            out["knowledge"] = "NOT_RUN"
+            request_id = int(request.row["id"])
+            allowed = {"CREATED", "UPDATED", "DUPLICATE", "NO_DURABLE_INSIGHT"}
+            for item in event_policies.load_trusted_governance_events(
+                conn, task_id, event_type="KNOWLEDGE_CONVERGENCE_RESULT", actor="tp-knowledge",
+            ):
+                try:
+                    if int(item.detail.get("request_event_id") or 0) != request_id:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                if str(item.detail.get("change_set_id") or "") != current_digest:
+                    continue
+                disposition = str(item.detail.get("knowledge_disposition") or "").upper()
+                if disposition in allowed:
+                    out["knowledge"] = disposition
+                    break
+    return out
+
+
+def _extract_next_responsibility(conn, task_id: str, current_owner: str) -> str:
+    """投影当前最明确的下一责任方，不创建新的 workflow state。"""
+    from . import event_policies
+
+    delivery = event_policies.load_trusted_governance_event(conn, task_id, event_type="DELIVERY_RESULT")
+    if delivery is not None and str(delivery.detail.get("delivery_status") or "").upper() == "BLOCKED":
+        responsibility = str(delivery.detail.get("responsibility") or "").strip()
+        if responsibility:
+            return responsibility
+
+    review = event_policies.load_trusted_governance_event(
+        conn, task_id, event_type="REVIEW_COMPLETED", actor="tp-code-reviewer", review_kind="CODE",
+    )
+    if review is not None and str(review.detail.get("decision") or "").upper() in {"NEEDS_FIX", "REVISE", "FAIL", "BLOCKED"}:
+        return "tp-development-engineer"
+
+    verification = event_policies.load_trusted_governance_event(
+        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer",
+    )
+    if verification is not None and str(verification.detail.get("decision") or "").upper() in {"NEEDS_FIX", "FAIL", "BLOCKED"}:
+        return "tp-development-engineer"
+    return current_owner or DEFAULT_OWNER_ROLE
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -310,10 +552,10 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
     """
     task_id = task["task_id"]
     base_version = str(task["base_version"] or "")
-    # V5.2.8 单一活动契约：旧契约非终态任务须先经官方 migrate/retire 处理；业务命令不直接在旧契约上重建投影。
+    # V5.2.9 单一活动契约：旧契约非终态任务须先经官方 migrate/retire 处理；业务命令不直接在旧契约上重建投影。
     if base_version != active_version():
         raise ValueError(
-            f"legacy contract task is a frozen static archive; the V5.2.8 runtime "
+            f"legacy contract task is a frozen static archive; the V5.2.9 runtime "
             f"rebuilds projections only for base_version={active_version()}"
         )
     events = conn.execute(
@@ -335,8 +577,12 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
         risk_level=task["risk_level"] or "L1",
         flow_level=task["flow_level"] or "L1",
         blockers=blockers,
-        findings=[],  # M3 简化：空数组
-        scope_changes=[],  # M3 简化：空数组
+        findings=_extract_findings(conn, task_id),
+        scope_changes=_extract_scope_changes(conn, task_id),
+        quality_facts=_extract_quality_facts(conn, task_id),
+        next_responsibility=_extract_next_responsibility(
+            conn, task_id, task["owner_role"] or DEFAULT_OWNER_ROLE
+        ),
     )
     events_jsonl, warnings = _build_events_jsonl(events, task_id)
     return status_yaml, events_jsonl, warnings
@@ -397,7 +643,7 @@ def _parse_status_yaml(text: str) -> Dict[str, str]:
 def validate_projection_files(conn, task, task_dir: Path) -> List[str]:
     """校验投影文件与 DB 一致，返回错误列表（空列表 = 一致）。
 
-    V5.2.8 A-04：reconcile 复用本函数做漂移检测（与 cmd_projection_validate 同逻辑）。
+    V5.2.9 A-04：reconcile 复用本函数做漂移检测（与 cmd_projection_validate 同逻辑）。
     """
     task_id = task["task_id"]
     status_path = task_dir / "status.yaml"

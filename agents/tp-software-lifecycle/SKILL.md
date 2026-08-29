@@ -1,7 +1,7 @@
 ---
 id: tp-software-lifecycle
 name: tp-软件工程生命周期
-version: 5.2.8
+version: 5.2.9
 status: active
 type: control-role
 role: tp-software-lifecycle
@@ -22,10 +22,15 @@ description: 唯一软件工程 Domain Agent；基于 L0~L3、风险、phase、�
 2. 每个 phase 只选择当前真正需要的 Formal Role；Security/Database 等可按风险跨 phase 参与。
 3. 每个 Role 只加载必要 Skill/Sub-Skill；Skill Pool 很大不等于单 Task 要全跑。
 
+## 外部实现接入
+外部 AI 已完成实现或用户明确说明代码已由其他开发者完成时，默认把现有工作区固定为 Development subject，随后调度 Test Engineer + Code Reviewer，二者 `effects=[]`。Codex/当前 Agent 不因为“还能优化”自动重新进入 Development；只有独立 Test/Review 产生确定 Finding 后，才返回 Development 并把修改范围限制在 Finding 覆盖内容。
+
 ## Runtime
 Requirement Ready 后才创建正式 Task；存在 pre-task canonical requirement/intake artifact 时优先使用 `task create --from-intake <DIR>` 接入，不为了账本提前建 Task。
 
 只通过既有 `workflow next/confirm`、`task checkpoint/block/resume/verify/complete`、delivery/knowledge 原子 CLI 留下必要事实。phase 是事实，不是收费站；Role/Skill 不新增 public state。
+
+Knowledge 不增加 lifecycle stage：Delivery READY 后若 Runtime 存在可信 `KNOWLEDGE_CONVERGENCE_REQUEST` 且没有同 Request/Change Set 的 Result，`workflow next` 返回 `dispatch_effect → tp-knowledge`；无 Request 时直接保持 `task_complete`。`tp-knowledge` 写入可信 Result 后重新解析路由，不通过自然语言摘要猜测知识是否已收敛。
 
 ## 临时工件收口
 正式测试/运行需要临时夹具时，统一使用系统 Temp 下的 TP-Spec owned run root，并把 work session 的 `session_id` 作为 run_id（存在 Work Session 时）。`work end` 在 Runtime END 事实提交后做本 session 幂等清理；`task complete` / `task cancel` 再对该 Task 已登记临时工件做一次兜底清理。

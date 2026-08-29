@@ -1,4 +1,4 @@
-version: 5.2.8
+version: 5.2.9
 mode: record-first
 principle: business work first; Runtime owns bookkeeping
 daily_api:
@@ -18,6 +18,7 @@ daily_api:
     purpose: Record actual technical verification.
     notes:
     - PASS requires at least one real evidence/* file.
+    - PASS is bound to the latest Development change_set_id; product content drift makes the old result stale.
     - Verification is a fact, not a phase-transition gate.
     - Task-bound Context Usage may be attached with --context-usage-json; invalid telemetry is WARN+DROP and never changes the operation result.
   task_block:
@@ -35,7 +36,10 @@ daily_api:
       facts.
     notes:
     - Actor defaults to the latest task owner; do not repeat role identity just for bookkeeping.
+    - Every AC must be PASS, NOT_REQUIRED, N/A, DEFERRED_ACCEPTED, or OWNER_WAIVED before completion; PENDING/BLOCKED is rejected.
+    - database_operations records each READ/DML/DDL separately; an unexecuted operation must be reconciled through its acceptance refs.
     - If a recorded verification subject changed, final truth is marked *_STALE instead of reusing PASS.
+    - Completion atomically writes generated/terminal-manifest.json with status/events/final-result so post-terminal drift can be detected without rewriting history.
   workflow_confirm:
     command: tp-spec workflow confirm --task <TASK> --task-dir <DIR>
     purpose: human_owner-only audited confirmation for the currently bound ordinary(each_stage) or material workflow boundary.
@@ -43,17 +47,17 @@ daily_api:
     - It records WORKFLOW_CONFIRMATION with confirmation_kind=ordinary|material, bound to source event/digest + target role/stage/mode; it is not a business DECISION.
     - A short Wake Prompt is returned only after the bound confirmation is accepted.
   task_delivery_converge:
-    command: tp-spec task delivery-converge --task <TASK> --task-dir <DIR> --knowledge-disposition CREATED|UPDATED|NO_CHANGE|DEFERRED|BLOCKED --reason <TEXT> ...
-    purpose: L2/L3 structured Delivery/Knowledge convergence bound to the current Verification PASS.
+    command: tp-spec task delivery-converge --task <TASK> --task-dir <DIR> --delivery-status READY|BLOCKED --reason <TEXT> ...
+    purpose: L2/L3 structured Delivery convergence bound to the current Verification PASS, Code Review PASS, and product change_set_id.
     notes:
     - A plain delivery checkpoint never satisfies this contract.
-    - Runtime executes the targeted current-project+shared search itself; CREATED/UPDATED additionally validate the exact canonical ref/Task evidence/source refs and run exact-canonical lint + incremental exact-ref index update/verify without a full Vault scan.
-    - DEFERRED needs a recovery condition and matching human_owner delivery-accept-deferred event; BLOCKED never completes the pipeline.
-    - Task-bound Context Usage may be attached with --context-usage-json; Runtime-generated Knowledge search receipts are captured automatically; invalid telemetry is WARN+DROP and never changes the operation result.
+    - Delivery does not accept a Knowledge disposition. If verified facts carry long-lived Knowledge signals, Runtime writes a separate KNOWLEDGE_CONVERGENCE_REQUEST in the same durable transaction.
+    - No Knowledge signal means no Request and no extra completion gate. A current Request without a trusted Result is routed as dispatch_effect(tp-knowledge).
+    - Task-bound Context Usage may be attached with --context-usage-json; invalid telemetry is WARN+DROP and never changes the operation result.
 project_api:
   project_bootstrap_check: tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only
   project_bootstrap: tp-spec project bootstrap --id <PROJECT> --root <ROOT>
-  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.2.8
+  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.2.9
 errors:
   PROJECT_BOOTSTRAP_AVAILABLE: read-only bootstrap check found a pristine project that may be initialized only after explicit human_owner action
   PROJECT_NOT_INITIALIZED: project ledger is not initialized; run project bootstrap/init first
@@ -61,7 +65,7 @@ errors:
 runtime_owned:
 - task identity / contract metadata
 - current_state / current_phase / current_owner projection
-- status.yaml / events.jsonl / generated/continuation.md / generated/final-result.md
+- status.yaml / events.jsonl / generated/continuation.md / generated/final-result.md / generated/terminal-manifest.json
 - provenance for adopted intake artifacts
 - durable journal and SQLite transaction recovery
 do_not_use_in_normal_role_flow:
@@ -79,7 +83,11 @@ optional_capabilities:
     are WARN
   work_sessions: available for timing evidence; never a workflow blocker
   acceptance_override: human_owner defer/waive without forging PASS
-  legacy_commit: compatibility/recovery surface; not the V5.2.8 daily role API
+  scope_change: human_owner-only typed scope correction via `task scope-change`; it rebuilds projections without creating a new Task state
+  terminal_integrity: read-only `task terminal-check` compares terminal artifacts with the completion-time manifest and never reopens history
+  knowledge_task_convergence: >-
+    Conditional typed effect: `tp-spec knowledge task-converge --task <TASK> --task-dir <DIR> --db <DB> --workspace-root <ROOT> --request-event-id <ID> --disposition CREATED|UPDATED|DUPLICATE|NO_DURABLE_INSIGHT --reason-code <CODE> --query <TEXT> --source <TASK-RELATIVE-PATH> [--knowledge-ref <REF>]`. It performs targeted current-project+shared search only; CREATED/UPDATED use exact-canonical lint + single-note incremental index before writing the tp-knowledge Result.
+  legacy_commit: compatibility/recovery surface; not the V5.2.9 daily role API
   context_effectiveness: >-
     Read-only report over Task-bound Context Usage receipts. It never gates workflow
     and never mutates Context assets.
@@ -89,6 +97,7 @@ rules:
       SQLite directly
     audited_write_commands:
     - task checkpoint / task verify / task block / task resume / task complete
+    - task scope-change
     - workflow confirm / task delivery-converge / task delivery-accept-deferred
     - work start / work end
     - acceptance-override

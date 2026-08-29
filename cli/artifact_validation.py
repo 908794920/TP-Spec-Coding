@@ -74,6 +74,116 @@ class ValidationResult:
         return [i.code for i in self.issues]
 
 
+@dataclass
+class VisualVerificationResult:
+    ok: bool
+    errors: List[str] = field(default_factory=list)
+    evidence_paths: List[str] = field(default_factory=list)
+    manifest: Dict[str, Any] = field(default_factory=dict)
+
+
+def validate_visual_verification_manifest(
+    task_dir: Path,
+    manifest_path: str,
+    *,
+    expected_change_set_id: str,
+    acceptance_ids: Optional[set[str]] = None,
+) -> VisualVerificationResult:
+    """校验真实浏览器视觉 Evidence Manifest，不解释图片语义。"""
+    from .evidence import validate_evidence_path
+
+    root = Path(task_dir).resolve()
+    errors: List[str] = []
+    evidence_paths: List[str] = []
+
+    def add_evidence(raw: Any, field_name: str, *, required: bool = True) -> None:
+        value = str(raw or "").strip()
+        if not value:
+            if required:
+                errors.append(f"{field_name} is required")
+            return
+        checked = validate_evidence_path(root, value, require_evidence_dir=True)
+        if not checked.ok:
+            errors.append(f"{field_name} invalid evidence: {checked.error}")
+            return
+        if checked.path not in evidence_paths:
+            evidence_paths.append(checked.path)
+
+    add_evidence(manifest_path, "manifest")
+    if errors:
+        return VisualVerificationResult(False, errors, evidence_paths, {})
+    try:
+        data = json.loads((root / manifest_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return VisualVerificationResult(False, [f"manifest JSON invalid: {exc}"], evidence_paths, {})
+    if not isinstance(data, dict):
+        return VisualVerificationResult(False, ["manifest must be a JSON object"], evidence_paths, {})
+    if data.get("schema") != "tp-spec.visual-verification/v1":
+        errors.append("schema must be tp-spec.visual-verification/v1")
+    if str(data.get("change_set_id") or "") != str(expected_change_set_id or ""):
+        errors.append("change_set_id must match current verified product content")
+    if not str(data.get("executed_at") or "").strip():
+        errors.append("executed_at is required")
+    if not str(data.get("browser") or "").strip():
+        errors.append("browser is required")
+
+    auth = data.get("auth") or {}
+    if not isinstance(auth, dict):
+        errors.append("auth must be an object")
+        auth = {}
+    bypass = auth.get("temporary_bypass_used", False)
+    if not isinstance(bypass, bool):
+        errors.append("auth.temporary_bypass_used must be boolean")
+    elif bypass:
+        add_evidence(auth.get("cleanup_evidence"), "auth.cleanup_evidence")
+
+    cases = data.get("cases")
+    if not isinstance(cases, list) or not cases:
+        errors.append("cases must be a non-empty list")
+        cases = []
+    known_acceptance = set(acceptance_ids or set())
+    for index, case in enumerate(cases):
+        prefix = f"cases[{index}]"
+        if not isinstance(case, dict):
+            errors.append(f"{prefix} must be an object")
+            continue
+        if not str(case.get("id") or "").strip():
+            errors.append(f"{prefix}.id is required")
+        refs = case.get("acceptance_refs")
+        if not isinstance(refs, list) or not refs or any(not str(x or "").strip() for x in refs):
+            errors.append(f"{prefix}.acceptance_refs must be a non-empty list")
+            refs = []
+        if known_acceptance:
+            unknown = [str(x) for x in refs if str(x) not in known_acceptance]
+            if unknown:
+                errors.append(f"{prefix}.acceptance_refs unknown: {', '.join(unknown)}")
+        if not str(case.get("route") or "").strip():
+            errors.append(f"{prefix}.route is required")
+        viewport = case.get("viewport")
+        if not isinstance(viewport, dict):
+            errors.append(f"{prefix}.viewport is required")
+        else:
+            for dim in ("width", "height"):
+                value = viewport.get(dim)
+                if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                    errors.append(f"{prefix}.viewport.{dim} must be a positive integer")
+        if not str(case.get("state") or "").strip():
+            errors.append(f"{prefix}.state is required")
+        add_evidence(case.get("actual"), f"{prefix}.actual")
+        add_evidence(case.get("report"), f"{prefix}.report")
+        add_evidence(case.get("reference"), f"{prefix}.reference", required=False)
+        add_evidence(case.get("diff"), f"{prefix}.diff", required=False)
+        if not isinstance(case.get("horizontal_overflow"), bool):
+            errors.append(f"{prefix}.horizontal_overflow must be boolean")
+        console_errors = case.get("console_errors")
+        if not isinstance(console_errors, int) or isinstance(console_errors, bool) or console_errors < 0:
+            errors.append(f"{prefix}.console_errors must be a non-negative integer")
+        if not isinstance(case.get("failed_requests"), list):
+            errors.append(f"{prefix}.failed_requests must be a list")
+
+    return VisualVerificationResult(not errors, errors, evidence_paths, data)
+
+
 # =============================================================================
 # YAML fail-closed 解析（任务书 §9.1）
 # =============================================================================
@@ -716,7 +826,7 @@ def _check_codex_review_body(task_dir: Path, issues: List[ValidationIssue]) -> N
                     # Fourth Hardening（P0-3/P1-2）：PASS 不允许 evidence=none
                     issues.append(ValidationIssue(
                         code=CODE_REVIEW_EMPTY,
-                        message="codex-review PASS evidence 'none' is rejected in V5.2.8; requires a real local_file",
+                        message="codex-review PASS evidence 'none' is rejected in V5.2.9; requires a real local_file",
                         artifact="codex-review.md",
                         field="review.evidence",
                     ))

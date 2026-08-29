@@ -72,6 +72,91 @@ def _cycles(edges: Dict[str, Set[str]]) -> Set[str]:
     return bad
 
 
+
+def lint_canonical_note(cfg, note: Dict[str, Any]) -> Dict[str, Any]:
+    """只校验一条精确 canonical note，不扫描整个 Knowledge vault。"""
+    root = cfg.paths.knowledge_physical_root
+    _registry_data, registry_ids = load_project_registry(cfg)
+    relation_types = load_relation_types()
+    violations: List[Dict[str, Any]] = []
+    warnings: List[Dict[str, Any]] = []
+    advisories: List[Dict[str, Any]] = []
+
+    def add(target: List[Dict[str, Any]], rule: str, location: str, message: str) -> None:
+        target.append({"path": note.get("rel_path", ""), "rule_id": rule, "location": location, "message": message})
+
+    fm = note.get("frontmatter")
+    if not isinstance(fm, dict):
+        add(violations, "K001", "frontmatter", note.get("parse_error") or "frontmatter missing")
+    else:
+        for loc, msg in _schema_errors(fm):
+            add(violations, "K001", loc, msg)
+        nid = str(fm.get("id") or "")
+        if not ID_PATTERN.match(nid):
+            add(violations, "K002", "id", f"invalid canonical id: {nid!r}")
+        project = str(fm.get("project") or "")
+        if project not in registry_ids and project not in {str(x.get("id") or "") for x in (_registry_data.get("shared_scopes") or []) if isinstance(x, dict)}:
+            add(violations, "K004", "project", f"project {project!r} not registered")
+        kind = str(fm.get("kind") or "")
+        if kind not in KINDS:
+            add(violations, "K005", "kind", f"unknown kind: {kind!r}")
+        if nid and not Path(note.get("rel_path") or "").name.startswith(nid + "-"):
+            add(violations, "K006", "filename", f"filename must start with {nid}-")
+        if any(seg in GENERATED_SEGMENTS for seg in Path(note.get("rel_path") or "").parts):
+            add(violations, "K014", "path", "canonical note is under a generated projection directory")
+
+        source_refs = fm.get("source_refs") or []
+        evidence_refs = fm.get("evidence_refs") or []
+        if not isinstance(source_refs, list):
+            source_refs = []
+        if not isinstance(evidence_refs, list):
+            evidence_refs = []
+        if not source_refs and not evidence_refs:
+            add(violations, "K009", "evidence", "canonical note has no source_refs/evidence_refs")
+        for idx, ev in enumerate(evidence_refs):
+            if not isinstance(ev, dict):
+                add(violations, "K017", f"evidence_refs/{idx}", "evidence entry must be an object")
+                continue
+            if str(ev.get("type") or "") not in {"source", "task", "code", "external"} or not str(ev.get("ref") or ""):
+                add(violations, "K017", f"evidence_refs/{idx}", "evidence type/ref invalid")
+
+        for idx, rel in enumerate(fm.get("relations") or []):
+            if not isinstance(rel, dict):
+                add(violations, "K007", f"relations/{idx}", "relation must be an object")
+                continue
+            rtype = str(rel.get("type") or "")
+            if not relation_types.get(rtype):
+                add(violations, "K007", f"relations/{idx}/type", f"unknown relation: {rtype}")
+            if not str(rel.get("target") or ""):
+                add(violations, "K007", f"relations/{idx}/target", "relation target is required")
+
+        for raw in WIKILINK_RE.findall(note.get("body") or ""):
+            target = raw.split("|", 1)[0].split("#", 1)[0].strip()
+            if not target or "/" not in target:
+                continue
+            if not target.startswith(ALLOWED_LINK_PREFIXES):
+                add(advisories, "K010", "wikilink", f"non-standard vault-root wikilink: {target}")
+                continue
+            target_path = root / target
+            if not target_path.suffix:
+                target_path = target_path.with_suffix(".md")
+            if not target_path.is_file():
+                add(violations, "K011", "wikilink", f"broken wikilink: {target}")
+
+    violations.sort(key=lambda x: (x["rule_id"], x["location"], x["message"]))
+    return {
+        "schema": "tp-spec.knowledge-lint/v1",
+        "status": "PASS" if not violations else "FAIL",
+        "scope": "exact-canonical",
+        "path": note.get("rel_path", ""),
+        "errors": len(violations),
+        "warnings": len(warnings),
+        "advisories": len(advisories),
+        "violations": violations,
+        "warning_records": warnings,
+        "advisory_records": advisories,
+    }
+
 def lint_knowledge(cfg) -> Dict[str, Any]:
     root = cfg.paths.knowledge_physical_root
     canonical, sources = collect_notes(root, cfg)

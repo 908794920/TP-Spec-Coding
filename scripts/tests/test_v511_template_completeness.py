@@ -99,7 +99,7 @@ class TestTemplateCompleteness(unittest.TestCase):
         self.assertNotIn("lifecycle", data)
         self.assertNotIn("section_owners", data)
         text = p.read_text(encoding="utf-8")
-        for heading in ("## 前置条件", "## 关键场景", "## 数据 / 日志检查", "## 回归范围"):
+        for heading in ("## 前置条件", "## 非可视化验证", "## 可视化验证", "## 回归范围"):
             self.assertIn(heading, text)
 
     def test_requirement_decisions_is_business_record_not_machine_form(self):

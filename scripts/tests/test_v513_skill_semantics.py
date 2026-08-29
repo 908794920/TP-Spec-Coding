@@ -112,20 +112,23 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
     def test_delivery_keeps_truthful_knowledge_boundaries(self):
         self.assertContainsAll(
             "skills/roles/tp-integration-engineer/SKILL.md",
-            "<= 5%",
-            "DEFERRED",
+            "KNOWLEDGE_CONVERGENCE_REQUEST",
+            "Integration 不写最终 Knowledge Result",
             "不重新裁决 PASS/FAIL",
             "tp-knowledge",
         )
         self.assertContainsAll(
             "agents/tp-knowledge/SKILL.md",
-            "task-scoped convergence",
+            "Task-scoped convergence",
             "targeted search",
             "90-sources",
-            "DEFERRED",
-            "不重新裁决 PASS/FAIL",
-            "<= 5%",
+            "NO_DURABLE_INSIGHT",
+            "NOT_RUN",
+            "不重新裁决软件 Verification/Review/Delivery",
         )
+        capture = read("skills/capabilities/knowledge-capture/SKILL.md")
+        self.assertNotIn("记录 `DEFERRED`", capture)
+        self.assertIn("不直接写最终 Knowledge disposition", capture)
 
     def test_tp_wiki_keeps_low_cost_semantic_truth_guardrails(self):
         self.assertContainsAll(

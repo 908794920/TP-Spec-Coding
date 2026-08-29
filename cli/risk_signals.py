@@ -109,21 +109,28 @@ def scan_texts(texts: Iterable[str], *, base_root: Optional["str | Path"] = None
 
 
 def _acceptance_risk_text(text: str) -> str:
-    """Remove static scaffold guidance while preserving selected acceptance values.
+    """只扫描 acceptance.md 中的真实验收行和 YAML 事实，忽略模板说明文字。
 
-    The acceptance template documents enum choices such as DDL/DML in comments and
-    explanatory inline-code lines. Those are not task facts and must not raise the
-    deterministic risk floor. A selected value (for example ``action: DML``) remains
-    in the scan input, so real database-change declarations still escalate.
+    模板会解释 DDL/DML 等枚举；这些静态说明不是任务风险事实。验收表中的
+    AC 内容和未注释的 fenced YAML 才参与风险下限判断。
     """
     lines: List[str] = []
+    in_yaml = False
     for line in str(text or "").splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("`") and "`" in stripped[1:]:
+        stripped = line.strip()
+        if stripped == "```yaml":
+            in_yaml = True
             continue
-        if re.match(r"^\s*[A-Za-z_][\w-]*\s*:", line):
-            line = line.split("#", 1)[0]
-        lines.append(line)
+        if stripped == "```" and in_yaml:
+            in_yaml = False
+            continue
+        if in_yaml:
+            if not stripped or stripped.startswith("#"):
+                continue
+            lines.append(line.split("#", 1)[0])
+            continue
+        if re.match(r"^\s*\|\s*AC-[^|\s]+\s*\|", line):
+            lines.append(line)
     return "\n".join(lines)
 
 

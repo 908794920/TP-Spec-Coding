@@ -115,6 +115,34 @@ def _staging_heads(profile: Dict[str, Any]) -> Dict[str, str]:
     return {str(item.get("id")): autonomy_git.head(root / str(item.get("path"))) for item in repos}
 
 
+def _prepare_l0_acceptance(task_dir: Path) -> None:
+    """为自治 L0 维护任务声明无独立业务验收项。
+
+    自治 L0 的真实收敛由 batch/integration 负责；这里仅移除模板中的空白 AC，
+    不把未执行的验收伪装成 PASS。更高等级任务仍必须显式填写 AC。
+    """
+    path = task_dir / "acceptance.md"
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8-sig")
+    lines = [line for line in text.splitlines() if not re.match(r"^\|\s*AC-01\s*\|\s*\|", line)]
+    text = "\n".join(lines) + "\n"
+    if "no_acceptance_required:" not in text:
+        marker = "结论列取值："
+        block = (
+            "```yaml\n"
+            "no_acceptance_required:\n"
+            "  declared: true\n"
+            "  reason: 自治 L0 维护任务由 batch/integration 收敛，无独立业务验收项\n"
+            "```\n\n"
+        )
+        if marker in text:
+            text = text.replace(marker, block + marker, 1)
+        else:
+            text += "\n" + block
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+
 def _create_task(profile_id: str, *, task_id: str, title: str, summary: str, risk: str, flow: str) -> Path:
     profile, root, runtime_id, db_path = _runtime(profile_id)
     args=type("AutonomyTaskCreateArgs",(),{
@@ -130,7 +158,10 @@ def _create_task(profile_id: str, *, task_id: str, title: str, summary: str, ris
         os.chdir(old)
     if rc != 0:
         raise DiscoveryError(f"AUTONOMY_TASK_CREATE_FAILED: {err.getvalue().strip() or out.getvalue().strip()}")
-    return root / ".tp-spec" / "tasks" / task_id
+    task_dir = root / ".tp-spec" / "tasks" / task_id
+    if risk == "L0" and flow == "L0":
+        _prepare_l0_acceptance(task_dir)
+    return task_dir
 
 
 def discover(*, profile_id: str, cycle_id: str, generation: int, discovery_key: str,

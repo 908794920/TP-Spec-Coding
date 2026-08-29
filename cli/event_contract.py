@@ -109,6 +109,10 @@ def validate_event_semantics(event_type: str, detail: Dict[str, Any] | None) -> 
     required = list(family.get("required") or [])
     if _upper(event_type) == "FACT" and operation == "CHECKPOINT":
         required = list(family.get("checkpoint_required") or [])
+    if _upper(event_type) == "REVIEW_COMPLETED":
+        review_kind = _upper(d.get("review_kind"))
+        if review_kind in {"CODE", "IMPLEMENTATION", "ULTRA_REVIEW"}:
+            required.extend(["change_set_id", "verification_event_id"])
     for field in required:
         if not str(d.get(field) or "").strip():
             errors.append(f"{_upper(event_type)} requires {field}")

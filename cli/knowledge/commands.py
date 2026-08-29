@@ -2,19 +2,21 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List
 
 from cli.content_systems import junction_relation, load_content_systems
-from .common import meta_paths, write_json, resolve_knowledge_project
+from .common import CANONICAL_SUBDIRS, meta_paths, write_json, resolve_knowledge_project, read_note
 from .eval import evaluate
 from .ingest import convert_batch, disposition, finalize_batch, ingest_status, register_batch
 from .migration import migration_plan
 from .normalization import normalization_plan, apply_normalization
-from .lint import lint_knowledge
-from .projection import build_projection, projection_status, search, telemetry_summary, update_projection
-from .state import commit_snapshot, create_audit_plan, maintain, record_audit, stage_scan, status as knowledge_status, task_scoped_convergence, verify
+from .lint import lint_knowledge, lint_canonical_note
+from .projection import build_projection, projection_status, search, telemetry_summary, update_projection, update_canonical_note_projection
+from .state import commit_snapshot, create_audit_plan, maintain, record_audit, stage_scan, status as knowledge_status, verify
 
 
 def _emit(data: Any) -> None:
@@ -160,15 +162,261 @@ def cmd_status(args) -> int:
     except Exception as exc: _emit({"schema":"tp-spec.knowledge-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
+def _task_convergence_request(conn, task_id: str, request_event_id: int):
+    from cli import event_policies
+
+    candidates = event_policies.load_trusted_governance_events(
+        conn, task_id,
+        event_type="KNOWLEDGE_CONVERGENCE_REQUEST",
+        actor="tp-integration-engineer",
+    )
+    for item in candidates:
+        if int(item.row["id"]) == int(request_event_id):
+            return item
+    raise ValueError(f"trusted Knowledge convergence request not found: {request_event_id}")
+
+
+def _task_convergence_sources(task_dir: Path, values: List[str]) -> tuple[List[str], List[Dict[str, Any]]]:
+    from cli import evidence
+
+    refs: List[str] = []
+    items: List[Dict[str, Any]] = []
+    for raw in values:
+        checked = evidence.validate_evidence_path(task_dir, raw, require_evidence_dir=False)
+        if not checked.ok:
+            raise ValueError(f"invalid Knowledge source: {checked.error}")
+        ref = str(checked.path or "").replace("\\", "/")
+        if ref not in refs:
+            refs.append(ref)
+            items.append(dict(checked.item or {"type": "local_file", "path": ref, "sha256": checked.sha256}))
+    if not refs:
+        raise ValueError("Knowledge convergence requires at least one Task source")
+    return refs, items
+
+
+def _search_receipt(cfg, query: str) -> Dict[str, Any]:
+    from cli.delivery_contract import validate_receipt_payload
+
+    hits = search(cfg, query, scope="project", record_telemetry=True)
+    matched = sorted({
+        str(hit.get("id") or "").strip()
+        for hit in hits
+        if str(hit.get("layer") or "") == "canonical" and str(hit.get("id") or "").strip()
+    })
+    receipt = {
+        "schema": "tp-spec.knowledge-search/v1",
+        "status": "PASS",
+        "scope": "project+shared",
+        "query": query,
+        "query_hash": hashlib.sha256(query.encode("utf-8")).hexdigest(),
+        "count": len(hits),
+        "results": hits,
+        "matched_canonical_refs": matched,
+    }
+    errors = validate_receipt_payload("search", receipt)
+    if errors:
+        raise ValueError("invalid Knowledge search receipt: " + "; ".join(errors))
+    return receipt
+
+
+def _resolve_exact_canonical_note(cfg, knowledge_ref: str) -> Dict[str, Any]:
+    """按稳定 ID 在受控 canonical 目录中精确定位一条知识，不扫描整个知识库。"""
+    resolved = resolve_knowledge_project(cfg, require=True)
+    candidates: List[Path] = []
+    project_root = Path(str(resolved.get("project_root") or ""))
+    for subdir in CANONICAL_SUBDIRS:
+        directory = project_root / subdir
+        if directory.is_dir():
+            candidates.extend(sorted(directory.glob(f"{knowledge_ref}-*.md")))
+    shared_dir = cfg.paths.knowledge_physical_root / str(cfg.knowledge_canonical.get("shared_dir") or "20-shared")
+    if shared_dir.is_dir():
+        candidates.extend(sorted(shared_dir.glob(f"{knowledge_ref}-*.md")))
+    unique = list(dict.fromkeys(path.resolve() for path in candidates if path.is_file()))
+    if len(unique) != 1:
+        raise ValueError(f"canonical Knowledge ref must resolve to exactly one note: {knowledge_ref}")
+    root = cfg.paths.knowledge_physical_root.resolve()
+    note = read_note(unique[0], root=root, scope="canonical")
+    if str(note.get("id") or "") != knowledge_ref:
+        raise ValueError(f"canonical Knowledge ref/id mismatch: {knowledge_ref}")
+    return note
+
+
+def _validate_knowledge_ref(cfg, *, disposition: str, knowledge_ref: str,
+                            receipts: List[Dict[str, Any]], task_id: str,
+                            source_refs: List[str]) -> Dict[str, Any] | None:
+    from cli.delivery_contract import validate_canonical_binding
+
+    matched = {
+        ref
+        for receipt in receipts
+        for ref in (receipt.get("matched_canonical_refs") or [])
+        if str(ref or "").strip()
+    }
+    if disposition == "DUPLICATE":
+        if not knowledge_ref or knowledge_ref not in matched:
+            raise ValueError("DUPLICATE knowledge-ref must be returned by targeted search")
+        return None
+    if disposition not in {"CREATED", "UPDATED"}:
+        if knowledge_ref:
+            raise ValueError(f"{disposition} must not declare knowledge-ref")
+        return None
+    if not knowledge_ref:
+        raise ValueError(f"{disposition} requires --knowledge-ref")
+    if disposition == "UPDATED" and knowledge_ref not in matched:
+        raise ValueError("UPDATED knowledge-ref must be returned by targeted search")
+
+    note = _resolve_exact_canonical_note(cfg, knowledge_ref)
+    lint_receipt = lint_canonical_note(cfg, note)
+    if lint_receipt.get("status") != "PASS":
+        raise ValueError("canonical Knowledge lint failed: " + json.dumps(lint_receipt.get("violations") or [], ensure_ascii=False))
+    errors = validate_canonical_binding(
+        note.get("frontmatter") or {},
+        task_id=task_id,
+        evidence_paths=source_refs,
+        source_refs=[],
+    )
+    if errors:
+        raise ValueError("invalid canonical Knowledge binding: " + "; ".join(errors))
+    index_receipt = update_canonical_note_projection(cfg, note)
+    return {"lint": lint_receipt, "index": index_receipt}
+
+
 def cmd_task_converge(args) -> int:
-    """Consume a compact verified handoff without re-reading Task/repository."""
+    """执行一次带证据的 Task-scoped Knowledge 收敛 effect。"""
+    from cli import db as dbmod, event_contract, orchestration, record_first, workflow_records
+    from cli.version import active_version
+
+    conn = None
     try:
-        payload = json.loads(args.handoff_json)
-        _emit(task_scoped_convergence(payload))
+        task_dir = Path(args.task_dir).resolve()
+        if not task_dir.is_dir():
+            raise ValueError(f"task directory not found: {task_dir}")
+        db_path = dbmod.resolve_db_path(args.db, task_id=args.task)
+        conn = dbmod.connect(db_path)
+        task = conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
+        if task is None:
+            raise ValueError(f"task not found: {args.task}")
+
+        request = _task_convergence_request(conn, args.task, int(args.request_event_id))
+        request_detail = dict(request.detail or {})
+        task_facts, events = orchestration._load_task_facts(args.task, db_path=db_path)
+        delivery_event = orchestration._delivery_completion_event(events, task_dir)
+        if delivery_event is None or int(request_detail.get("delivery_event_id") or 0) != int(delivery_event.get("id") or 0):
+            raise ValueError("Knowledge convergence request is stale: current READY delivery differs")
+
+        verification, _subject, current_change_set, _roots = workflow_records._latest_trusted_verification(
+            conn, args.task, task_dir,
+        )
+        current_change_set_id = str(current_change_set.get("content_digest") or "")
+        if str(request_detail.get("change_set_id") or "") != current_change_set_id:
+            raise ValueError("Knowledge convergence request change_set is stale")
+        if int(request_detail.get("verification_event_id") or 0) != int(verification.row["id"]):
+            raise ValueError("Knowledge convergence request verification binding is stale")
+
+        cfg = _cfg(args)
+        resolved = resolve_knowledge_project(cfg, require=True)
+        if str(resolved.get("project_id") or "") != str(task["project_id"] or ""):
+            raise ValueError("Knowledge project scope does not match Runtime task project")
+
+        source_refs, source_items = _task_convergence_sources(task_dir, list(args.source or []))
+        request_sources = {str(ref or "").replace("\\", "/").strip() for ref in (request_detail.get("source_refs") or []) if str(ref or "").strip()}
+        unbound_sources = sorted(ref for ref in source_refs if ref not in request_sources)
+        if unbound_sources:
+            raise ValueError("Knowledge source is not bound to the trusted request: " + ", ".join(unbound_sources))
+        queries = [str(q or "").strip() for q in (args.query or []) if str(q or "").strip()]
+        if not queries:
+            raise ValueError("Knowledge convergence requires at least one targeted query")
+        receipts = [_search_receipt(cfg, query) for query in queries]
+        disposition = str(args.disposition or "").upper()
+        knowledge_ref = str(args.knowledge_ref or "").strip()
+        canonical_receipt = _validate_knowledge_ref(
+            cfg,
+            disposition=disposition,
+            knowledge_ref=knowledge_ref,
+            receipts=receipts,
+            task_id=args.task,
+            source_refs=source_refs,
+        )
+
+        now = dbmod.now_iso()
+        flush_id = f"KNOWLEDGE-CONVERGE-{uuid.uuid4().hex}"
+        written: Dict[str, Any] = {}
+
+        def writer(dbconn, transaction_id=""):
+            detail: Dict[str, Any] = {
+                "transaction_id": transaction_id,
+                "flush_id": flush_id,
+                "schema_version": active_version(),
+                "task_id": args.task,
+                "actor_role": "tp-knowledge",
+                "created_at": now,
+                "request_event_id": int(request.row["id"]),
+                "change_set_id": current_change_set_id,
+                "knowledge_disposition": disposition,
+                "query_receipts": receipts,
+                "source_refs": source_refs,
+                "source_items": source_items,
+                "reason_code": str(args.reason_code or "").strip().upper(),
+            }
+            if knowledge_ref:
+                detail["knowledge_ref"] = knowledge_ref
+            if canonical_receipt is not None:
+                detail["canonical_receipt"] = canonical_receipt
+            detail = event_contract.add_event_semantics(
+                detail,
+                event_type="KNOWLEDGE_CONVERGENCE_RESULT",
+                operation="KNOWLEDGE_CONVERGE",
+                result_status="COMPLETED",
+                producer="knowledge_task_converge",
+                reason_code=detail["reason_code"],
+            )
+            cursor = dbconn.execute(
+                "INSERT INTO task_event (task_id,event_type,from_stage,to_stage,actor_role,reason_code,summary,detail_json,workflow_version,created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    args.task, "KNOWLEDGE_CONVERGENCE_RESULT", "delivery", "delivery",
+                    "tp-knowledge", detail["reason_code"],
+                    f"Knowledge convergence: {disposition}",
+                    json.dumps(detail, ensure_ascii=False), active_version(), now,
+                ),
+            )
+            written["event_id"] = int(cursor.lastrowid)
+            dbconn.execute("UPDATE task SET updated_at=? WHERE task_id=?", (now, args.task))
+
+        record_first._write_with_projection(
+            conn, task_dir, task,
+            operation="knowledge_task_converge",
+            target_state=str(task["current_state"] or "ACTIVE"),
+            owner_after=str(task["owner_role"] or "tp-integration-engineer"),
+            flush_id=flush_id,
+            writer=writer,
+            summary=f"Knowledge convergence: {disposition}",
+        )
+        _emit({
+            "schema": "tp-spec.knowledge-task-convergence/v1",
+            "status": "PASS",
+            "task_id": args.task,
+            "request_event_id": int(request.row["id"]),
+            "result_event_id": written.get("event_id"),
+            "change_set_id": current_change_set_id,
+            "knowledge_disposition": disposition,
+            "knowledge_ref": knowledge_ref or None,
+            "canonical_receipt": canonical_receipt,
+            "query_receipts": receipts,
+            "source_refs": source_refs,
+            "reason_code": str(args.reason_code or "").strip().upper(),
+        })
         return 0
     except Exception as exc:
-        _emit({"schema":"tp-spec.knowledge-task-convergence/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}","blocks_delivery":False})
+        _emit({
+            "schema":"tp-spec.knowledge-task-convergence/v1",
+            "status":"FAIL",
+            "error":f"{type(exc).__name__}: {exc}",
+        })
         return 1
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def cmd_ingest_register(args) -> int:
@@ -223,7 +471,7 @@ def add_knowledge_subparsers(root_subparsers) -> None:
     p=sub.add_parser("audit",help="Create deterministic L4 semantic audit scope"); _common(p); p.add_argument("--full",action="store_true"); p.set_defaults(func=cmd_audit)
     p=sub.add_parser("audit-record",help="Record conversational-model L4 result"); _common(p); p.add_argument("--result",required=True,choices=["PASS","FAIL","pass","fail"]); p.add_argument("--summary",required=True); p.add_argument("--document",action="append",default=[]); p.set_defaults(func=cmd_audit_record)
 
-    p=sub.add_parser("task-converge",help="Cheap task-scoped Knowledge disposition from a verified compact handoff"); p.add_argument("--handoff-json",required=True,help="compact tp-spec.knowledge-task-handoff/v1 JSON object"); p.set_defaults(func=cmd_task_converge)
+    p=sub.add_parser("task-converge",help="Evidence-backed task-scoped Knowledge convergence for one trusted request"); _common(p); p.add_argument("--task",required=True); p.add_argument("--task-dir",required=True); p.add_argument("--db",required=True); p.add_argument("--request-event-id",required=True,type=int); p.add_argument("--disposition",required=True,choices=["CREATED","UPDATED","DUPLICATE","NO_DURABLE_INSIGHT"]); p.add_argument("--reason-code",required=True); p.add_argument("--query",action="append",required=True); p.add_argument("--source",action="append",required=True); p.add_argument("--knowledge-ref"); p.set_defaults(func=cmd_task_converge)
 
     idx=sub.add_parser("index",help="Knowledge SQLite FTS5 projection"); idxsub=idx.add_subparsers(dest="index_cmd",required=True)
     p=idxsub.add_parser("build"); _common(p); p.set_defaults(func=cmd_index_build)

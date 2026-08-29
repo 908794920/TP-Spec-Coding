@@ -274,6 +274,86 @@ def build_projection(cfg, *, clean: bool = True) -> Dict[str, Any]:
     return result
 
 
+
+def update_canonical_note_projection(cfg, note: Dict[str, Any]) -> Dict[str, Any]:
+    """只增量索引一条精确 canonical note，不扫描整个 Knowledge vault。"""
+    if note.get("scope") != "canonical" or not str(note.get("id") or "").strip():
+        raise ValueError("exact Knowledge index requires one canonical note with stable id")
+    db = cfg.paths.knowledge_projection_db
+    if not db.is_file():
+        raise ValueError("knowledge projection database missing; run knowledge index build")
+    registry = load_source_registry(cfg)
+    conn = _connect(db)
+    try:
+        canonical_id = str(note["id"])
+        rel_path = str(note["rel_path"])
+        old_rows = conn.execute(
+            "SELECT id,rel_path FROM documents WHERE rel_path=? OR (scope='canonical' AND canonical_id=?)",
+            (rel_path, canonical_id),
+        ).fetchall()
+        for old_id, old_rel in old_rows:
+            old_rel = str(old_rel)
+            if old_rel != rel_path and (cfg.paths.knowledge_physical_root / old_rel).is_file():
+                raise ValueError(f"canonical id already exists at another live path: {canonical_id}")
+            doc_id = int(old_id)
+            chunk_ids = [int(r[0]) for r in conn.execute("SELECT id FROM chunks WHERE doc_id=?", (doc_id,)).fetchall()]
+            for chunk_id in chunk_ids:
+                conn.execute("DELETE FROM fts_chunks WHERE rowid=?", (chunk_id,))
+            conn.execute("DELETE FROM doc_links WHERE doc_id=?", (doc_id,))
+            conn.execute("DELETE FROM chunks WHERE doc_id=?", (doc_id,))
+            conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))
+        _insert_doc(conn, note, registry)
+
+        if str(cfg.knowledge_projection.get("graph_mode") or "optional") != "disabled":
+            fm = note.get("frontmatter") or {}
+            confidence = fm.get("confidence", 0)
+            try:
+                confidence = float(confidence)
+            except Exception:
+                confidence = 0.0
+            conn.execute(
+                """INSERT OR REPLACE INTO graph_nodes(canonical_id,kind,title,project,status,layer,rel_path,source_refs,confidence,last_verified)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (canonical_id, str(fm.get("kind") or ""), str(fm.get("title") or ""), str(fm.get("project") or ""),
+                 str(fm.get("status") or "active"), "canonical", rel_path,
+                 json.dumps(fm.get("source_refs") or [], ensure_ascii=False), confidence, str(fm.get("last_verified") or "")),
+            )
+            conn.execute("DELETE FROM graph_edges WHERE source_canonical_id=?", (canonical_id,))
+            refs = [str(x) for x in fm.get("source_refs") or []]
+            for rel in fm.get("relations") or []:
+                if not isinstance(rel, dict) or not rel.get("type") or not rel.get("target"):
+                    continue
+                rtype, target = str(rel["type"]), str(rel["target"])
+                edge_id = "E-" + hashlib.sha256(f"{canonical_id}|{rtype}|{target}".encode()).hexdigest()[:24]
+                conn.execute(
+                    """INSERT OR REPLACE INTO graph_edges(edge_id,source_canonical_id,target_id,relation_type,evidence_source_ids,origin,reason)
+                       VALUES(?,?,?,?,?,?,?)""",
+                    (edge_id, canonical_id, target, rtype, json.dumps(refs, ensure_ascii=False), "canonical", str(rel.get("note") or "")),
+                )
+            for ref in refs:
+                edge_id = "E-" + hashlib.sha256(f"{canonical_id}|source_refs|{ref}".encode()).hexdigest()[:24]
+                conn.execute(
+                    """INSERT OR REPLACE INTO graph_edges(edge_id,source_canonical_id,target_id,relation_type,evidence_source_ids,origin)
+                       VALUES(?,?,?,?,?,?)""",
+                    (edge_id, canonical_id, ref, "source_refs", json.dumps([ref], ensure_ascii=False), "canonical"),
+                )
+
+        subject = stable_hash({str(r[0]): str(r[1]) for r in conn.execute("SELECT rel_path,sha256 FROM documents ORDER BY rel_path")})
+        conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('projection_subject',?)", (subject,))
+        conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('last_update',?)", (now_iso(),))
+        conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('build_doc_count',?)", (str(conn.execute("SELECT count(*) FROM documents").fetchone()[0]),))
+        conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('build_chunk_count',?)", (str(conn.execute("SELECT count(*) FROM chunks").fetchone()[0]),))
+        conn.commit()
+        return {
+            "schema": "tp-spec.knowledge-index-exact/v1",
+            "status": "PASS",
+            "canonical_id": canonical_id,
+            "path": rel_path,
+            "sha256": str(note.get("sha256") or ""),
+        }
+    finally:
+        conn.close()
+
 def update_projection(cfg) -> Dict[str, Any]:
     db = cfg.paths.knowledge_projection_db
     if not db.is_file():

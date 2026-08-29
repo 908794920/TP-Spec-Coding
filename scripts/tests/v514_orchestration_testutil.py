@@ -6,6 +6,8 @@ from cli import db as dbmod
 from cli.version import active_version
 from cli.event_contract import EVENT_SCHEMA, add_event_semantics
 
+FIXTURE_CHANGE_SET_ID = "sha256:" + ("0" * 64)
+
 
 def make_db(path: Path, *, task_id='TASK-V514', risk='L1', flow='L1', state='NEW', phase='intake') -> str:
     # Machine-local workflow preference must never make Base tests depend on the developer's real ~/.tp-spec.
@@ -20,8 +22,11 @@ def make_db(path: Path, *, task_id='TASK-V514', risk='L1', flow='L1', state='NEW
 
 
 def add_checkpoint(db: str, task: str, actor: str, phase: str, summary='done'):
+    payload = {'schema_version': active_version()}
+    if actor == 'tp-development-engineer' and phase == 'development':
+        payload['change_set_id'] = FIXTURE_CHANGE_SET_ID
     conn=dbmod.connect(db); now=dbmod.now_iso(); detail=json.dumps(add_event_semantics(
-        {'schema_version': active_version()},
+        payload,
         event_type='FACT', operation='CHECKPOINT', result_status='COMPLETED',
         producer='record-first', phase=phase,
     ))
@@ -78,7 +83,11 @@ def add_review(db: str, task: str, decision='PASS'):
 
 def add_verify(db: str, task: str, decision='PASS'):
     conn=dbmod.connect(db); now=dbmod.now_iso(); detail=json.dumps(add_event_semantics(
-        {'review_kind':'VERIFICATION','schema_version':active_version()},
+        {
+            'review_kind':'VERIFICATION',
+            'schema_version':active_version(),
+            'change_set_id':FIXTURE_CHANGE_SET_ID,
+        },
         event_type='VERIFICATION_COMPLETED', operation='VERIFY',
         result_status='BLOCKED' if decision == 'BLOCKED' else 'COMPLETED',
         decision=decision, producer='test-fixture',
@@ -90,8 +99,20 @@ def add_verify(db: str, task: str, decision='PASS'):
 
 
 def add_code_review(db: str, task: str, decision='PASS'):
-    conn=dbmod.connect(db); now=dbmod.now_iso(); detail=json.dumps(add_event_semantics(
-        {'review_kind':'CODE','schema_version':active_version()},
+    conn=dbmod.connect(db)
+    verification = conn.execute(
+        "SELECT id FROM task_event WHERE task_id=? AND event_type='VERIFICATION_COMPLETED' "
+        "AND actor_role='tp-test-engineer' ORDER BY id DESC LIMIT 1",
+        (task,),
+    ).fetchone()
+    verification_event_id = int(verification['id']) if verification is not None else 0
+    now=dbmod.now_iso(); detail=json.dumps(add_event_semantics(
+        {
+            'review_kind':'CODE',
+            'schema_version':active_version(),
+            'change_set_id':FIXTURE_CHANGE_SET_ID,
+            'verification_event_id':verification_event_id,
+        },
         event_type='REVIEW_COMPLETED', operation='REVIEW',
         result_status='BLOCKED' if decision == 'BLOCKED' else 'COMPLETED',
         decision=decision, producer='test-fixture',

@@ -36,7 +36,7 @@ def test_agents_and_skills_is_current_model_not_migration_history():
 
 def test_changelog_keeps_release_history_not_process_plan():
     text = read("CHANGELOG.md")
-    assert "## [5.2.8]" in text
+    assert "## [5.2.9]" in text
     assert "tp-spec-coding" in text
     assert "tp-software-lifecycle" in text
     assert "文档入口" in text
