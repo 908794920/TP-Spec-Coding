@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """架构评审正式执行链（Hardening P0-2/P0-6）。
 
-依据：《V5.2.7 执行AI统一修复与自验证任务》§7 与《V5.2.7 源码级发布审查报告》
+依据：《V5.2.9 执行AI统一修复与自验证任务》§7 与《V5.2.9 源码级发布审查报告》
 P0-2（无架构评审可 DEVELOPING）/P0-6（新增角色不能通过正式 CLI 执行）。
 
 提供 ``tp-spec review record``：
@@ -270,6 +270,28 @@ def _code_review_subject_digest(task_dir: Path) -> str:
     return compute_verification_subject_digest(task_dir)
 
 
+def _verified_change_set_for_code_review(conn, task_id: str, task_dir: Path) -> tuple[Any, str, list[str], Dict[str, Any]]:
+    """加载当前 Test PASS，并确认它仍绑定当前产品内容。"""
+    from .change_set import capture_change_set
+
+    subject_digest = _code_review_subject_digest(task_dir)
+    verification = event_policies.load_trusted_governance_event(
+        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer",
+        decision="PASS", expected_subject_digest=subject_digest, evidence_dir=task_dir,
+    )
+    if verification is None:
+        raise ValueError("VERIFICATION_STALE")
+    detail = dict(verification.detail or {})
+    change_set_id = str(detail.get("change_set_id") or "").strip()
+    repo_roots = [str(value).strip() for value in (detail.get("repo_roots") or []) if str(value).strip()]
+    if not change_set_id or not repo_roots:
+        raise ValueError("VERIFICATION_CHANGE_SET_REQUIRED")
+    current = capture_change_set(repo_roots)
+    if str(current.get("content_digest") or "") != change_set_id:
+        raise ValueError("VERIFICATION_STALE")
+    return verification, change_set_id, repo_roots, current
+
+
 def _cmd_code_review_record(args) -> int:
     """Record a trusted CODE/IMPLEMENTATION/ULTRA_REVIEW result.
 
@@ -327,6 +349,13 @@ def _cmd_code_review_record(args) -> int:
         timestamp = dbmod.now_iso()
         flush_id = f"REVIEW-{uuid.uuid4().hex}"
         subject_digest = _code_review_subject_digest(task_dir)
+        try:
+            verification, change_set_id, repo_roots, current_change_set = _verified_change_set_for_code_review(
+                conn, task_id, task_dir
+            )
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 8
         evidence = list(args.evidence or [])
         evidence_items: List[Dict[str, str]] = []
         if evidence:
@@ -348,6 +377,8 @@ def _cmd_code_review_record(args) -> int:
             "findings_count": int(args.findings_count or 0),
             "summary": str(args.summary or ""),
             "subject_digest": subject_digest,
+            "change_set_id": change_set_id,
+            "verification_event_id": int(verification.row["id"]),
             "evidence": evidence,
             "recorded_at": timestamp,
         }
@@ -368,6 +399,10 @@ def _cmd_code_review_record(args) -> int:
             "artifact": artifact_rel,
             "artifact_digest": artifact_digest,
             "subject_digest": subject_digest,
+            "change_set_id": change_set_id,
+            "verification_event_id": int(verification.row["id"]),
+            "repo_roots": repo_roots,
+            "change_set_snapshot_digest": str(current_change_set.get("snapshot_digest") or ""),
             "findings_count": int(args.findings_count or 0),
             "decision": str(args.decision).upper(),
             # REVIEW_COMPLETED keeps an evidence identity field.  When the
@@ -422,7 +457,8 @@ def _cmd_code_review_record(args) -> int:
         )
         print(
             f"review record: {str(args.kind).upper()} decision={str(args.decision).upper()} "
-            f"round={args.round} subject_digest={subject_digest[:12]}... flush_id={flush_id}"
+            f"round={args.round} subject_digest={subject_digest[:12]}... "
+            f"change_set_id={change_set_id[:19]}... flush_id={flush_id}"
         )
         return 0
     finally:
@@ -588,7 +624,7 @@ def cmd_review_record(args) -> int:
 
 
 def add_review_subparsers(subparsers) -> None:
-    p = subparsers.add_parser("review", help="V5.2.7: formal architecture/code review commands")
+    p = subparsers.add_parser("review", help="V5.2.9: formal architecture/code review commands")
     sub = p.add_subparsers(dest="subcommand", required=True)
 
     pr = sub.add_parser("record", help="Record a formal ARCHITECTURE or CODE review decision")

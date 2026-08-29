@@ -1,7 +1,7 @@
 ---
 id: tp-knowledge
 name: tp-knowledge
-version: 5.2.7
+version: 5.2.9
 status: active
 type: human-owner-skill
 tool_agnostic: 本技能包不要求特定 IDE、账号、插件或用户目录绝对路径；从 TP-Spec-Coding/agents/tp-knowledge/SKILL.md 加载即可。
@@ -22,11 +22,11 @@ Knowledge 是 TP-Spec-Coding 的**长期可复用知识层**：业务规则、�
 - Task Runtime：一次研发发生了什么。
 - Knowledge：跨 Task 长期复用的事实、规则、经验与证据索引。
 
-本 Skill 不维护 Base VERSION、公共 Junction、`.tp-spec` 受管块或基座同步；需要时调用 `tp-base-maintenance`。不拥有 workflow state，不成为 Task 完成 Gate。
+本 Skill 不维护 Base VERSION、公共 Junction、`.tp-spec` 受管块或基座同步；需要时调用 `tp-base-maintenance`。不拥有 workflow state，也不是固定生命周期 phase。只有 Runtime 已产生可信 `KNOWLEDGE_CONVERGENCE_REQUEST` 时，当前 Task 的 Completion 才等待本 Skill 写出绑定同一 Request/Change Set 的 Result。
 
-**与软件生命周期解耦但可接收事实 handoff：** `tp-knowledge` 不是软件生命周期 phase，也不拥有 Task workflow state。`tp-integration-engineer` 只产生已验证的 compact delivery/knowledge facts，`tp-software-lifecycle` 可以把该 handoff 交给本 Agent 的 `task-scoped convergence`。Knowledge 的 `NO_CHANGE/DEFERRED` 不成为 Delivery 收费站；昂贵提炼可在交付后继续。
+**与软件生命周期解耦但可接收 typed effect：** `tp-integration-engineer` 只根据已验证交付事实发起 `KNOWLEDGE_CONVERGENCE_REQUEST`；`tp-software-lifecycle` 以 `dispatch_effect` 按需调度本 Agent。没有 Request 的 Task 显示 `NOT_REQUIRED`，不增加 Knowledge 步骤。存在 Request 但尚未执行时显示 `NOT_RUN`，不得伪装成“无变化”。
 
-**Task-scoped convergence 边界：** 只消费已验证 handoff，执行 current project + shared 的最小 targeted search，输出 CREATED / UPDATED / NO_CHANGE / DEFERRED / BLOCKED；不重新裁决 PASS/FAIL。正常 Fast Path 的纯治理增量 AI 开销目标 <= 5%。Task-scoped 模式不得扩张为 `90-sources` 原始 source ingest、source registry、Golden Set、全库 audit 或 migration/normalization；这些属于 Knowledge Domain 的独立系统维护模式。
+**Task-scoped convergence 边界：** 只消费可信 Request 和其中绑定的 Task 来源，执行 current project + registered shared scopes 的最小 targeted search，最终只写 `CREATED / UPDATED / DUPLICATE / NO_DURABLE_INSIGHT`。不重新裁决软件 Verification/Review/Delivery，不启动全库 scan、`90-sources` ingest、Golden Set、audit 或 migration/normalization。`CREATED/UPDATED` 必须绑定 exact canonical；`DUPLICATE` 必须命中已有 canonical；`NO_DURABLE_INSIGHT` 也必须有实际 query、来源和原因码。
 
 ## 1. 权威关系
 
@@ -91,19 +91,28 @@ maintain
 
 ## 3A. Task-scoped convergence
 
-软件 Task 完成阶段只接收 compact verified handoff，不重新读取整个 Task/仓库：
+软件 Delivery READY 后，只有出现已验证长期知识信号或 human_owner 明确要求时才产生 Request：
 
 ```text
-Integration verified facts
-→ tp-spec knowledge task-converge --handoff-json <JSON>
-→ NO_CHANGE | DEFERRED
+Delivery READY
+→ KNOWLEDGE_CONVERGENCE_REQUEST
+→ tp-spec knowledge task-converge --request-event-id <ID> ...
+→ targeted current-project + shared search
+→ KNOWLEDGE_CONVERGENCE_RESULT
+→ CREATED / UPDATED / DUPLICATE / NO_DURABLE_INSIGHT
 ```
 
-- `NO_CHANGE`：没有可复用长期事实，立即结束；
-- `DEFERRED`：有候选事实，交给 Knowledge Domain 后续 targeted synthesis；
-- 两者都 `blocks_delivery=false`；
-- 不允许为了 Knowledge disposition 回退软件生命周期；
-- Knowledge Runtime/SQLite 自身损坏仍按 Knowledge 专项 health policy 处理，但不得伪造软件交付失败。
+执行要求：
+
+- Request 必须绑定当前 Delivery、Verification、Review 和 `change_set_id`；绑定过期时拒绝执行；
+- `--query` 必须是真实执行的 targeted query，Result 保存 search receipt；
+- `--source` 必须是当前 Task 中可读取、可 hash 的来源工件；
+- `DUPLICATE` 的 `--knowledge-ref` 必须出现在本次 targeted search 命中中；
+- `CREATED / UPDATED` 的 `--knowledge-ref` 必须精确解析为 canonical，绑定当前 Task evidence，并通过局部 lint 与单条增量索引；
+- `NO_DURABLE_INSIGHT` 表示“已检索和评估后没有长期价值”，不是“没执行”；
+- `NOT_RUN` 只作为 Runtime 投影状态，不写成功 Result；
+- Integration 不写 Result，普通 `FACT` 也不能替代 Result；
+- 不为了 Knowledge 回退软件生命周期；若代码本身变化，由 Change Set 机制正常返回 Development。
 
 ## 4. 外部文档接入
 

@@ -306,26 +306,7 @@ def status(cfg) -> Dict[str, Any]:
 
 
 def task_scoped_convergence(handoff: Dict[str, Any]) -> Dict[str, Any]:
-    """Cheap task-scoped Knowledge disposition over already-verified facts.
-
-    This helper does not re-read the repository or Task. Empty reusable input is
-    a valid NO_CHANGE fast path and never blocks software delivery.
-    """
-    if not isinstance(handoff, dict) or not str(handoff.get("task_id") or "").strip():
-        raise ValueError("task-scoped Knowledge handoff requires task_id")
-    facts = list(handoff.get("verified_facts") or [])
-    findings = list(handoff.get("reusable_findings") or [])
-    refs = list(handoff.get("knowledge_refs") or [])
-    if not facts and not findings and not refs:
-        status = "NO_CHANGE"
-        reason = "no verified reusable Knowledge facts were handed off"
-    else:
-        status = "DEFERRED"
-        reason = "verified reusable facts require Knowledge-domain synthesis"
-    return {
-        "schema": "tp-spec.knowledge-task-convergence/v1",
-        "task_id": str(handoff["task_id"]),
-        "status": status,
-        "reason": reason,
-        "blocks_delivery": False,
-    }
+    """拒绝旧 compact handoff 快路径；Task Knowledge 必须使用 typed request/result。"""
+    raise ValueError(
+        "legacy task-scoped Knowledge handoff is retired; use knowledge task-converge --request-event-id"
+    )

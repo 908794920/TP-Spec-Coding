@@ -6,6 +6,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,6 +45,12 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         ])
         self.assertEqual(rc, 0, (out, err))
         self.db = self.project / '.tp-spec' / 'db' / 'demo.db'
+        subprocess.run(['git', 'init', '-q'], cwd=self.project, check=True)
+        subprocess.run(['git', 'config', 'user.name', 'test'], cwd=self.project, check=True)
+        subprocess.run(['git', 'config', 'user.email', 'test@example.com'], cwd=self.project, check=True)
+        (self.project / 'README.md').write_text('demo\n', encoding='utf-8')
+        subprocess.run(['git', 'add', 'README.md'], cwd=self.project, check=True)
+        subprocess.run(['git', 'commit', '-qm', 'baseline'], cwd=self.project, check=True)
         self.wiki_root = self.root / 'wiki'
         self.knowledge_root = self.root / 'knowledge'
         self.wiki_root.mkdir(parents=True, exist_ok=True)
@@ -72,6 +79,19 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
             '--db', str(self.db), '--scaffold', '--task-dir', str(task_dir),
         ])
         self.assertEqual(rc, 0, (out, err))
+        (task_dir / 'acceptance.md').write_text(
+            '# 验收条件与证据矩阵\n\n'
+            '```yaml\n'
+            'no_acceptance_required:\n'
+            '  declared: true\n'
+            '  reason: Delivery 流程测试不包含业务验收项\n'
+            'deferred_acceptance: []\n'
+            'owner_waivers: []\n'
+            'database_operations: []\n'
+            '```\n',
+            encoding='utf-8',
+            newline='\n',
+        )
         return task_dir
 
     def call(self, *args):
@@ -84,7 +104,7 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         )
         self.assertEqual(rc, 0, (out, err))
 
-    def verify(self, task_id: str, task_dir: Path, decision: str = 'PASS'):
+    def verify(self, task_id: str, task_dir: Path, decision: str = 'PASS', knowledge_signal: dict | None = None):
         args = [
             'task', 'verify', '--task', task_id, '--task-dir', str(task_dir),
             '--actor', 'tp-test-engineer', '--decision', decision,
@@ -95,6 +115,8 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
             evidence.parent.mkdir(exist_ok=True)
             evidence.write_text('verified\n', encoding='utf-8')
             args += ['--evidence', str(evidence.relative_to(task_dir)).replace('\\', '/')]
+        if knowledge_signal is not None:
+            args += ['--knowledge-signal-json', json.dumps(knowledge_signal, ensure_ascii=False)]
         rc, out, err = self.call(*args)
         self.assertEqual(rc, 0, (out, err))
 
@@ -133,7 +155,7 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         self.assertEqual(rc, 0, (out, err))
         return json.loads(out)
 
-    def prepare_l2_to_verification_pass(self, task_id: str, task_dir: Path):
+    def prepare_l2_to_verification_pass(self, task_id: str, task_dir: Path, knowledge_signal: dict | None = None):
         self.checkpoint(task_id, task_dir, 'tp-product-manager', 'requirement')
         self.checkpoint(task_id, task_dir, 'tp-software-architect', 'architecture')
         self.checkpoint(task_id, task_dir, 'tp-tech-lead', 'planning')
@@ -142,7 +164,7 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         )
         self.assertEqual(rc, 0, (out, err))
         self.checkpoint(task_id, task_dir, 'tp-development-engineer', 'development')
-        self.verify(task_id, task_dir, 'PASS')
+        self.verify(task_id, task_dir, 'PASS', knowledge_signal=knowledge_signal)
 
 
     def test_new_gate_events_are_trusted_only_from_official_producers(self):
@@ -260,7 +282,7 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         self.assertEqual(delivery['recommended_action'], 'await_confirmation')
         self.assertIsNone(delivery['skill_path'])
 
-    def test_plain_delivery_checkpoint_cannot_complete_but_valid_no_change_can(self):
+    def test_plain_delivery_checkpoint_cannot_complete_but_valid_ready_delivery_can(self):
         task_id = 'TASK-V522-DELIVERY'
         task_dir = self.create_task(task_id, 'L2')
         self.prepare_l2_to_verification_pass(task_id, task_dir)
@@ -312,10 +334,14 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         self.code_review(task_id, task_dir, 'PASS')
         self.assertEqual(orchestration.resolve_route(task_id, db_path=str(self.db))['next_stage'], 'delivery')
 
-    def test_task_scoped_knowledge_deferred_does_not_block_ready_delivery(self):
-        task_id = 'TASK-V522-KNOWLEDGE-DEFERRED'
+    def test_required_knowledge_convergence_blocks_completion_until_result(self):
+        task_id = 'TASK-V522-KNOWLEDGE-REQUIRED'
         task_dir = self.create_task(task_id, 'L2')
-        self.prepare_l2_to_verification_pass(task_id, task_dir)
+        self.prepare_l2_to_verification_pass(task_id, task_dir, knowledge_signal={
+            'type': 'ROOT_CAUSE_LEARNING',
+            'summary': '可复用故障根因',
+            'evidence': [],
+        })
         self.code_review(task_id, task_dir, 'PASS')
         rc, out, err = self.call(
             'task', 'delivery-converge', '--task', task_id, '--task-dir', str(task_dir),
@@ -323,18 +349,29 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
             '--reason', 'Verified change is ready for integration and no delivery blocker remains.',
         )
         self.assertEqual(rc, 0, (out, err))
-        detail = json.loads([dict(x) for x in self.events(task_id) if x['event_type']=='DELIVERY_RESULT'][-1]['detail_json'])
-        handoff = detail['knowledge_handoff']
-        handoff['verified_facts'] = ['durable reusable fact']
-        rc, out, err = run(['knowledge', 'task-converge', '--handoff-json', json.dumps(handoff)])
-        self.assertEqual(rc, 0, (out, err))
-        knowledge = json.loads(out)
-        self.assertEqual(knowledge['status'], 'DEFERRED')
-        self.assertFalse(knowledge['blocks_delivery'])
-        self.assertEqual(orchestration.resolve_route(task_id, db_path=str(self.db))['next_stage'], 'complete')
+        requests = [dict(x) for x in self.events(task_id) if x['event_type']=='KNOWLEDGE_CONVERGENCE_REQUEST']
+        self.assertEqual(len(requests), 1)
+        route = orchestration.resolve_route(task_id, db_path=str(self.db))
+        self.assertEqual(route['recommended_action'], 'dispatch_effect')
+        self.assertEqual(route['role_id'], 'tp-knowledge')
 
-    def test_ready_delivery_handoff_can_finish_with_no_change_without_knowledge_scan(self):
-        task_id = 'TASK-V522-KNOWLEDGE-NOCHANGE'
+        request_id = int(requests[-1]['id'])
+        verification = [dict(x) for x in self.events(task_id) if x['event_type']=='VERIFICATION_COMPLETED'][-1]
+        verification_detail = json.loads(verification['detail_json'])
+        source_ref = verification_detail['evidence'][0]
+        rc, out, err = run([
+            'knowledge', 'task-converge', '--task', task_id, '--task-dir', str(task_dir),
+            '--db', str(self.db), '--workspace-root', str(self.project),
+            '--request-event-id', str(request_id), '--disposition', 'NO_DURABLE_INSIGHT',
+            '--reason-code', 'TASK_SPECIFIC_LOW_REUSE_VALUE', '--query', 'root cause learning',
+            '--source', source_ref,
+        ])
+        self.assertEqual(rc, 0, (out, err))
+        self.assertEqual(json.loads(out)['knowledge_disposition'], 'NO_DURABLE_INSIGHT')
+        self.assertEqual(orchestration.resolve_route(task_id, db_path=str(self.db))['recommended_action'], 'task_complete')
+
+    def test_ready_delivery_without_knowledge_signal_needs_no_knowledge_effect(self):
+        task_id = 'TASK-V522-KNOWLEDGE-NOT-REQUIRED'
         task_dir = self.create_task(task_id, 'L2')
         self.prepare_l2_to_verification_pass(task_id, task_dir)
         self.code_review(task_id, task_dir, 'PASS')
@@ -344,10 +381,8 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
             '--reason', 'Verified change is ready for integration and no delivery blocker remains.',
         )
         self.assertEqual(rc, 0, (out, err))
-        detail = json.loads([dict(x) for x in self.events(task_id) if x['event_type']=='DELIVERY_RESULT'][-1]['detail_json'])
-        rc, out, err = run(['knowledge', 'task-converge', '--handoff-json', json.dumps(detail['knowledge_handoff'])])
-        self.assertEqual(rc, 0, (out, err))
-        self.assertEqual(json.loads(out)['status'], 'NO_CHANGE')
+        self.assertFalse([x for x in self.events(task_id) if x['event_type']=='KNOWLEDGE_CONVERGENCE_REQUEST'])
+        self.assertEqual(orchestration.resolve_route(task_id, db_path=str(self.db))['recommended_action'], 'task_complete')
 
     def test_blocked_delivery_result_prevents_pipeline_completion(self):
         task_id = 'TASK-V522-BLOCKED-DELIVERY'

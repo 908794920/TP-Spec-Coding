@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -30,7 +31,21 @@ from scripts.tests.runtime_testutil import build_task, run  # noqa: E402
 TASK_ID = "TASK-V512-INTEGRATED"
 
 
+def _ensure_git_baseline(task_dir: str) -> None:
+    project_root = Path(task_dir).parents[2]
+    if (project_root / ".git").exists():
+        return
+    subprocess.run(["git", "init", "-q"], cwd=project_root, check=True)
+    subprocess.run(["git", "config", "user.name", "test"], cwd=project_root, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=project_root, check=True)
+    marker = project_root / "README.md"
+    marker.write_text("test baseline\n", encoding="utf-8", newline="\n")
+    subprocess.run(["git", "add", "README.md"], cwd=project_root, check=True)
+    subprocess.run(["git", "commit", "-qm", "baseline"], cwd=project_root, check=True)
+
+
 def _advance_to_verifying(task_dir: str, db_path: str, task_id: str = TASK_ID) -> None:
+    _ensure_git_baseline(task_dir)
     for actor, phase, summary in (
         ("tp-product-manager", "requirement", "requirement complete"),
         ("tp-software-architect", "architecture", "architecture complete"),

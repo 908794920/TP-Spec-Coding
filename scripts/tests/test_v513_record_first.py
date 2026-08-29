@@ -11,6 +11,7 @@ import contextlib
 import io
 import json
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -46,6 +47,12 @@ class RecordFirstCase(unittest.TestCase):
             "--registry", str(self.registry),
         ])
         self.assertEqual(rc, 0, (out, err))
+        subprocess.run(["git", "init", "-q"], cwd=self.project, check=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=self.project, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=self.project, check=True)
+        (self.project / "README.md").write_text("demo\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README.md"], cwd=self.project, check=True)
+        subprocess.run(["git", "commit", "-qm", "baseline"], cwd=self.project, check=True)
         self.task_id = "TASK-V513-RECORD-FIRST"
         self.task_dir = self.project / ".tp-spec" / "tasks" / self.task_id
         rc, out, err = run([
@@ -54,9 +61,31 @@ class RecordFirstCase(unittest.TestCase):
             "--scaffold", "--task-dir", str(self.task_dir),
         ])
         self.assertEqual(rc, 0, (out, err))
+        # 本测试类关注 Record-first 事件语义，不定义业务 AC；显式声明无需验收，
+        # 避免依赖“空白 PENDING AC 也能结单”的旧行为。
+        (self.task_dir / "acceptance.md").write_text(
+            "# 验收条件与证据矩阵\n\n"
+            "```yaml\n"
+            "no_acceptance_required:\n"
+            "  declared: true\n"
+            "  reason: 本测试任务没有业务验收项\n"
+            "deferred_acceptance: []\n"
+            "owner_waivers: []\n"
+            "database_operations: []\n"
+            "```\n",
+            encoding="utf-8",
+            newline="\n",
+        )
 
     def call(self, *args):
         return run(list(args) + ["--db", str(self.db)])
+
+    def development_checkpoint(self):
+        rc, out, err = self.call(
+            "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
+            "--actor", "tp-development-engineer", "--phase", "development", "--summary", "implemented",
+        )
+        self.assertEqual(rc, 0, (out, err))
 
     def events(self):
         conn = dbmod.connect(str(self.db))
@@ -127,6 +156,7 @@ class RecordFirstCase(unittest.TestCase):
         self.assertEqual(self.task()["current_state"], "ACTIVE")
 
     def test_verification_pass_requires_real_evidence(self):
+        self.development_checkpoint()
         rc, out, err = self.call(
             "task", "verify", "--task", self.task_id, "--task-dir", str(self.task_dir),
             "--actor", "tp-test-engineer", "--decision", "PASS", "--summary", "测试通过",

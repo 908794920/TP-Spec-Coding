@@ -40,7 +40,7 @@ _TASK_ID_RE = re.compile(r"^TASK-[A-Za-z0-9][A-Za-z0-9._-]*$")
 # risk/flow 等级
 _RISK_LEVELS = ("L0", "L1", "L2", "L3")
 
-# Frozen long-state SHD compatibility table. Active V5.2.7 Record-first tasks return through the fast path and do not use this table.
+# Frozen long-state SHD compatibility table. Active V5.2.9 Record-first tasks return through the fast path and do not use this table.
 _SHD_TRANSITIONS: Dict[str, List[str]] = {
     "NEW": ["RISK_ANALYZING", "TECH_DESIGNING", "DEVELOPING", "CANCELLED"],
     "RISK_ANALYZING": ["REQUIREMENT_CLARIFYING", "PRODUCT_DESIGNING", "TECH_DESIGNING", "DEVELOPING", "TECHNICAL_DISCOVERY"],
@@ -76,7 +76,7 @@ _SHD_FORWARD_CONSUMERS: Dict[str, List[str]] = {
     "VERIFYING": ["REVIEWING", "CLOSING", "COMPLETED"],
 }
 
-# V5.2.7 A-01：front matter 解析统一走 cli/frontmatter.py（LF/CRLF/BOM 兼容）
+# V5.2.9 A-01：front matter 解析统一走 cli/frontmatter.py（LF/CRLF/BOM 兼容）
 _FM_RE = FRONTMATTER_RE
 
 # HPB: next_prompt 必须完整的 12 字段
@@ -152,7 +152,7 @@ def _check_shd_closure(
     risk_level: str = "",
     flow_level: str = "",
 ) -> List[str]:
-    """SHD M1/M2 + HPB 校验（V5.2.7），返回错误消息列表。"""
+    """SHD M1/M2 + HPB 校验（V5.2.9），返回错误消息列表。"""
     errors: List[str] = []
     # M1 反向一致性
     if current_state in _SHD_DRIVER:
@@ -231,7 +231,7 @@ def _check_shd_closure(
 _INTAKE_ARTIFACTS = (
     ("requirement.md", "requirement.md"),
     # One-time source compatibility: old pre-task requirement facts are adopted
-    # into the v5.2.7 canonical requirement artifact, never copied as a second
+    # into the v5.2.9 canonical requirement artifact, never copied as a second
     # active requirement model.
     ("requirement-knowledge.md", "requirement.md"),
     ("requirement-clarifications.md", "requirement-clarifications.md"),
@@ -258,7 +258,7 @@ def _adopt_intake_artifacts(scaffold_dir: Path, intake_dir: Path, task_id: str, 
             text = raw.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             raise ValueError(f"intake artifact must be UTF-8: {src}") from exc
-        # V5.2.7 Record-first: business roles own content, Runtime owns machine metadata.
+        # V5.2.9 Record-first: business roles own content, Runtime owns machine metadata.
         # Missing/mismatched front matter is normalized instead of sending the role
         # through a bookkeeping retry loop.
         artifact_type = target_name[:-3]
@@ -395,7 +395,7 @@ def _recover_interrupted_task_create(
 
 
 def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, flow: str, created_at: str) -> Path:
-    """Build a complete V5.2.7 task scaffold in a temporary sibling directory.
+    """Build a complete V5.2.9 task scaffold in a temporary sibling directory.
 
     The caller may atomically rename the returned directory after the DB transaction
     has prepared successfully.  No existing task directory is overwritten.
@@ -413,7 +413,7 @@ def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, fl
     if tmp.exists():
         shutil.rmtree(tmp, ignore_errors=True)
     shutil.copytree(template_root, tmp)
-    # V5.2.7 Record-first scaffold: create only the durable task shell. Optional
+    # V5.2.9 Record-first scaffold: create only the durable task shell. Optional
     # business artifacts are created when a role has real content, never because a
     # state machine requires an empty form. Base templates remain available.
     essential = {'task.md', 'acceptance.md', 'status.yaml'}
@@ -655,12 +655,12 @@ def cmd_task_create(args) -> int:
 
 
 def cmd_task_transition(args) -> int:
-    """V5.2.7 Hardening：禁用活动任务的独立状态推进（任务书 §4.2 方案 A）。
+    """V5.2.9 Hardening：禁用活动任务的独立状态推进（任务书 §4.2 方案 A）。
 
-    V5.2.7 遗留的独立 transition（直接 UPDATE task + INSERT STATE 事件）可绕过
+    V5.2.9 遗留的独立 transition（直接 UPDATE task + INSERT STATE 事件）可绕过
     commit 的 durable journal、projection 原子提交、架构评审与验收门禁，已被移除。
 
-    V5.2.7 活动任务：
+    V5.2.9 活动任务：
     - 日常事实入口为 ``task checkpoint/block/resume/verify/complete``；这些命令复用
       durable journal + projection 原子提交，但不暴露旧 handoff/phase gate；
     - 旧 long-state commit 已迁入 migration/history-only；日常只使用 Record-first API；
@@ -680,10 +680,10 @@ def cmd_task_transition(args) -> int:
             return 4
         # 历史任务：静态归档，只读拒绝（不推进、不改写）。
         if (task["base_version"] or "") != active_version():
-            print(f"ERROR: legacy contract task is a frozen static archive; the V5.2.7 runtime operates only base_version={active_version()}", file=sys.stderr)
+            print(f"ERROR: legacy contract task is a frozen static archive; the V5.2.9 runtime operates only base_version={active_version()}", file=sys.stderr)
             return 3
         # 活动任务：独立状态推进被禁用（方案 A）。
-        print("DIRECT_TRANSITION_DISABLED: V5.2.7 uses record-first task checkpoint/block/resume/complete; direct transition is not a daily API", file=sys.stderr)
+        print("DIRECT_TRANSITION_DISABLED: V5.2.9 uses record-first task checkpoint/block/resume/complete; direct transition is not a daily API", file=sys.stderr)
         return 9
     finally:
         conn.close()
@@ -819,10 +819,10 @@ def cmd_task_validate(args) -> int:
             print(f"ERROR: {e}", file=sys.stderr)
             return 3
         if (task["base_version"] or "") != active_version():
-            print(f"ERROR: legacy contract task is a frozen static archive; the V5.2.7 runtime validates only base_version={active_version()}", file=sys.stderr)
+            print(f"ERROR: legacy contract task is a frozen static archive; the V5.2.9 runtime validates only base_version={active_version()}", file=sys.stderr)
             return 3
         errors = []
-        # V5.2.7 Record-first validation protects ledger truth, not process completeness.
+        # V5.2.9 Record-first validation protects ledger truth, not process completeness.
         quick = conn.execute("PRAGMA quick_check").fetchone()
         if quick is None or str(quick[0]).lower() != "ok":
             errors.append(f"sqlite integrity check failed: {quick[0] if quick else 'no result'}")
@@ -976,6 +976,61 @@ def _replace_artifact_contract_version(text: str, target: str) -> str:
     return pattern.sub(lambda m: m.group(1) + target + m.group(3), text, count=1)
 
 
+def _migrate_legacy_database_verification(text: str) -> str:
+    """把旧 task 级数据库声明机械迁移成单条 database_operations。
+
+    旧契约只有一个 task 级 database_verification，因此迁移最多生成一条操作；
+    不推断第二条操作，也不伪造旧记录中不存在的 SQL 工件或执行证据。
+    """
+    import yaml
+
+    block_re = re.compile(r"```yaml\s*\n(?P<body>.*?)```", re.DOTALL | re.IGNORECASE)
+    for match in block_re.finditer(text):
+        try:
+            data = yaml.safe_load(match.group("body")) or {}
+        except Exception:
+            continue
+        if not isinstance(data, dict) or "database_verification" not in data:
+            continue
+        legacy = data.get("database_verification")
+        if not isinstance(legacy, dict):
+            continue
+        action = str(legacy.get("action") or "NONE").strip().upper()
+        if action == "NONE":
+            replacement = yaml.safe_dump({"database_operations": []}, allow_unicode=True, sort_keys=False).rstrip()
+        elif action in {"READ", "DML", "DDL"}:
+            ac_refs = []
+            for line in text.splitlines():
+                m = re.match(r"^\|\s*(AC-[A-Za-z0-9._-]+)\s*\|", line)
+                if m and m.group(1) not in ac_refs:
+                    ac_refs.append(m.group(1))
+            evidence = str(legacy.get("execution_evidence") or "").strip()
+            if action == "DML":
+                executed = str(legacy.get("dml_execution") or "").strip().lower() == "passed"
+            else:
+                executed = bool(evidence)
+            operation = {
+                "id": "DB-LEGACY-01",
+                "type": action,
+                "acceptance_refs": ac_refs,
+                "environment": str(legacy.get("environment") or ""),
+                "status": "EXECUTED" if executed else "NOT_EXECUTED",
+                "authorized_by": str(legacy.get("authorized_by") or ""),
+                "artifact_ref": "",
+                "execution_evidence": evidence if executed else "",
+                "expected_result": str(legacy.get("expected_result") or ""),
+                "rollback_or_cleanup": str(legacy.get("rollback_or_cleanup") or ""),
+                "residual_risk": str(legacy.get("dml_residual_risk") or ""),
+            }
+            replacement = yaml.safe_dump({"database_operations": [operation]}, allow_unicode=True, sort_keys=False).rstrip()
+        else:
+            # 未知 action 不是可机械迁移事实，保留原块让 migration 后置检查显式暴露。
+            return text
+        migrated = text[:match.start("body")] + replacement + "\n" + text[match.end("body"): ]
+        return migrated.replace("## 数据库验证声明", "## 数据库操作声明", 1)
+    return text
+
+
 def _upgrade_contract_artifact_text(name: str, text: str, source: str, target: str) -> str:
     """Apply deterministic artifact-shape migrations while preserving business prose."""
     out = _replace_artifact_contract_version(text, target)
@@ -986,10 +1041,12 @@ def _upgrade_contract_artifact_text(name: str, text: str, source: str, target: s
         out = out.replace(f"artifact_contract.version: {source}", f"artifact_contract.version: {target}")
         out = out.replace(f"templates/{source}", f"templates/{target}")
     if name == "codex-review.md":
-        # V5.2.7 review routing is Runtime-owned and unambiguously named next_state.
+        # V5.2.9 review routing is Runtime-owned and unambiguously named next_state.
         out = re.sub(r"(?m)^(\s*)intended_next\s*:\s*(.*)$", r"\1next_state: \2", out, count=1)
+    if name == "acceptance.md":
+        out = _migrate_legacy_database_verification(out)
     if name == "acceptance.md" and "owner_waivers:" not in out:
-        marker = "## 数据库验证声明"
+        marker = "## 数据库操作声明" if "## 数据库操作声明" in out else "## 数据库验证声明"
         block = (
             "## Owner 跳过记录\n\n"
             "```yaml\n"
@@ -1276,7 +1333,7 @@ def cmd_task_migrate(args) -> int:
                 tx_conn.execute(
                     "INSERT INTO task_event (task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (args.task, "STATE", current, migrated_state, task["current_stage"], migrated_phase,
-                     args.actor, "V5.2.7 record-first state collapse", json.dumps(detail, ensure_ascii=False), target, timestamp),
+                     args.actor, "V5.2.9 record-first state collapse", json.dumps(detail, ensure_ascii=False), target, timestamp),
                 )
             refreshed = tx_conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
             status_yaml, events_jsonl, warnings = projection_cmd.render_projection(tx_conn, refreshed)
@@ -1567,7 +1624,12 @@ def cmd_task_artifact_path(args) -> int:
         print(str(target))
         return 0
 
-    base = task_dir / "evidence" / "sql" if kind == "verification-sql" else task_dir / "evidence"
+    if kind == "verification-sql":
+        base = task_dir / "evidence" / "sql"
+    elif kind == "visual-evidence":
+        base = task_dir / "evidence" / "visual"
+    else:
+        base = task_dir / "evidence"
     target = base / name if name else base
     if args.ensure:
         (base if name else target).mkdir(parents=True, exist_ok=True)
@@ -1796,7 +1858,8 @@ def cmd_task_checkpoint(args) -> int:
         phase=args.phase, summary=args.summary, evidence=args.evidence,
         knowledge_signals=_parse_knowledge_signal_args(args.knowledge_signal_json),
         delivery_signals=args.delivery_signal,
-        context_usage=_parse_context_usage_arg(args.context_usage_json), db=args.db,
+        context_usage=_parse_context_usage_arg(args.context_usage_json),
+        repo_roots=args.repo_root, db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1859,6 +1922,83 @@ def cmd_task_complete(args) -> int:
     return 0
 
 
+def cmd_task_scope_change(args) -> int:
+    """记录可信 human_owner 范围变化，并同步可读投影。"""
+    from . import event_contract, record_first
+
+    if args.actor != "human_owner":
+        raise ValueError("scope change requires human_owner")
+    task_dir = record_first._task_dir(args.task_dir)
+    db_path = dbmod.resolve_db_path(args.db, task_id=args.task)
+    conn = dbmod.connect(db_path)
+    try:
+        task = record_first._load(conn, args.task)
+        state = str(task["current_state"] or "")
+        if state in record_first.TERMINAL_STATES:
+            raise ValueError(f"terminal task cannot accept scope change: {state}")
+        scope_id = str(args.scope_id or "").strip()
+        summary = str(args.summary or "").strip()
+        if not scope_id or not summary:
+            raise ValueError("scope change requires non-empty --scope-id and --summary")
+        now = dbmod.now_iso()
+        flush_id = f"SCOPE-{uuid.uuid4().hex}"
+        owner = str(task["owner_role"] or "")
+
+        def writer(dbconn, transaction_id=""):
+            detail = {
+                "transaction_id": transaction_id,
+                "producer": "task_scope_change",
+                "schema_version": active_version(),
+                "task_id": args.task,
+                "actor_role": "human_owner",
+                "created_at": now,
+                "flush_id": flush_id,
+                "scope_id": scope_id,
+                "summary": summary,
+            }
+            detail = event_contract.add_event_semantics(
+                detail, event_type="SCOPE_CHANGE", operation="SCOPE_CHANGE",
+                result_status="COMPLETED", producer="task_scope_change",
+            )
+            dbconn.execute(
+                "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (args.task, "SCOPE_CHANGE", "human_owner", summary,
+                 json.dumps(detail, ensure_ascii=False), active_version(), now),
+            )
+            dbconn.execute("UPDATE task SET updated_at=? WHERE task_id=?", (now, args.task))
+
+        record_first._write_with_projection(
+            conn, task_dir, task, operation="scope_change", target_state=state,
+            owner_after=owner, flush_id=flush_id, writer=writer,
+            summary=f"scope change {scope_id}: {summary}",
+        )
+        print(json.dumps({"task_id": args.task, "scope_id": scope_id, "summary": summary, "flush_id": flush_id}, ensure_ascii=False))
+        return 0
+    finally:
+        conn.close()
+
+
+def cmd_task_terminal_check(args) -> int:
+    """只读检查终态目录与结单时清单的漂移，不修改任何任务事实。"""
+    from . import record_first, transaction_commit
+
+    task_dir = record_first._task_dir(args.task_dir)
+    db_path = dbmod.resolve_db_path(args.db, task_id=args.task)
+    conn = dbmod.connect(db_path)
+    try:
+        task = record_first._load(conn, args.task)
+        state = str(task["current_state"] or "")
+        if state not in record_first.TERMINAL_STATES:
+            raise ValueError(f"terminal-check requires a terminal task, current_state={state}")
+        result = transaction_commit.terminal_integrity(task_dir, task_id=args.task)
+        result["state"] = state
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+    finally:
+        conn.close()
+
+
 def cmd_task_cancel(args) -> int:
     from . import record_first
     result = record_first.cancel(
@@ -1882,12 +2022,12 @@ def add_task_subparsers(task_parser) -> None:
     p_create.add_argument("--flow", required=True, choices=["L0", "L1", "L2", "L3"])
     p_create.add_argument("--summary", required=False, default="任务创建")
     p_create.add_argument("--db", required=False, default=None)
-    p_create.add_argument("--scaffold", action="store_true", help="Create the V5.2.7 task directory and templates together with the DB task")
+    p_create.add_argument("--scaffold", action="store_true", help="Create the V5.2.9 task directory and templates together with the DB task")
     p_create.add_argument("--from-intake", required=False, default=None, help="Adopt pre-task requirement artifacts from an intake directory; implies --scaffold and preserves source")
     p_create.add_argument("--task-dir", required=False, default=None, help="Scaffold destination (default: .tp-spec/tasks/<TASK-ID>)")
     p_create.set_defaults(func=cmd_task_create)
 
-    # V5.2.7 Record-first daily API: business facts, not workflow bookkeeping.
+    # V5.2.9 Record-first daily API: business facts, not workflow bookkeeping.
     from . import record_first
     p_cp = sub.add_parser("checkpoint", help="Record meaningful task progress; auto-activates NEW and rebuilds projections")
     p_cp.add_argument("--task", required=True)
@@ -1899,6 +2039,7 @@ def add_task_subparsers(task_parser) -> None:
     p_cp.add_argument("--knowledge-signal-json", action="append", help="structured JSON object with type/summary and optional evidence/source_refs")
     p_cp.add_argument("--delivery-signal", action="append")
     p_cp.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks checkpoint")
+    p_cp.add_argument("--repo-root", action="append", default=None, help="explicit product Git root; repeat for multi-repo Development checkpoint")
     p_cp.add_argument("--db", default=None)
     p_cp.set_defaults(func=cmd_task_checkpoint)
 
@@ -1957,6 +2098,21 @@ def add_task_subparsers(task_parser) -> None:
     p_complete.add_argument("--summary", required=True)
     p_complete.add_argument("--db", default=None)
     p_complete.set_defaults(func=cmd_task_complete)
+
+    p_scope = sub.add_parser("scope-change", help="human_owner: record an explicit scope change and rebuild projections")
+    p_scope.add_argument("--task", required=True)
+    p_scope.add_argument("--task-dir", required=True)
+    p_scope.add_argument("--actor", default="human_owner", choices=["human_owner"])
+    p_scope.add_argument("--scope-id", required=True)
+    p_scope.add_argument("--summary", required=True)
+    p_scope.add_argument("--db", default=None)
+    p_scope.set_defaults(func=cmd_task_scope_change)
+
+    p_terminal = sub.add_parser("terminal-check", help="Read-only check for post-terminal task artifact drift")
+    p_terminal.add_argument("--task", required=True)
+    p_terminal.add_argument("--task-dir", required=True)
+    p_terminal.add_argument("--db", default=None)
+    p_terminal.set_defaults(func=cmd_task_terminal_check)
 
     p_cancel = sub.add_parser("cancel", help="human_owner: cancel a non-terminal task without rewriting history")
     p_cancel.add_argument("--task", required=True)
@@ -2035,7 +2191,7 @@ def add_task_subparsers(task_parser) -> None:
     # task artifact-path (canonical auxiliary output destination)
     p_art = sub.add_parser("artifact-path", help="Resolve the canonical task-local path for SQL/evidence/temp artifacts")
     p_art.add_argument("--task-dir", required=True)
-    p_art.add_argument("--kind", required=True, choices=["verification-sql", "test-evidence", "execution-temp"])
+    p_art.add_argument("--kind", required=True, choices=["verification-sql", "test-evidence", "visual-evidence", "execution-temp"])
     p_art.add_argument("--name", required=False, default=None)
     p_art.add_argument("--task", required=False, default=None, help="required for execution-temp")
     p_art.add_argument("--project", required=False, default=None, help="explicit project identity for execution-temp")

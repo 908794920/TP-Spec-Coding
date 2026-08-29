@@ -58,6 +58,8 @@ def test_blocked_remains_a_controlled_review_decision():
         "decision": "BLOCKED",
         "result_status": "BLOCKED",
         "producer": "review_record",
+        "change_set_id": "sha256:fixture-code-review",
+        "verification_event_id": "EV-FIXTURE-VERIFY",
     }
     assert validate_event_semantics("REVIEW_COMPLETED", detail) == []
     semantics = normalize_event_semantics("REVIEW_COMPLETED", detail)

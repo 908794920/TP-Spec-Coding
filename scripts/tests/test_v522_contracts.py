@@ -9,6 +9,19 @@ LINT_RECEIPT={'schema':'tp-spec.knowledge-lint/v1','status':'PASS','errors':0}
 INDEX_RECEIPT={'status':'PASS','fresh':True}
 
 
+CHANGE_SET_ID = 'sha256:change-set'
+
+def _delivery_binding(verification_event_id: int = 77, subject: str = 'sha256:subject'):
+    return {
+        'verification_event_id': verification_event_id,
+        'verification_subject_digest': subject,
+        'verification_change_set_id': CHANGE_SET_ID,
+        'review_event_id': verification_event_id + 1,
+        'review_change_set_id': CHANGE_SET_ID,
+        'change_set_id': CHANGE_SET_ID,
+    }
+
+
 
 def test_missing_user_preferences_falls_back_to_material(tmp_path: Path):
     assert resolve_confirmation_policy(None, tmp_path / 'missing.yaml', 'material') == 'material'
@@ -31,7 +44,7 @@ def test_invalid_user_policy_fails_closed(tmp_path: Path):
 
 def test_boundary_confirmation_is_bound_to_source_fact_and_target():
     binding=build_boundary_binding(task_id='TASK-1',source_stage='verification',source_role='tp-test-engineer',source_event_id=42,source_event_digest='abc',target_stage='development',target_role='tp-development-engineer',execution_mode='DIRECT')
-    event={'task_id':'TASK-1','event_type':'WORKFLOW_CONFIRMATION','actor_role':'human_owner','created_at':'2026-08-14T00:00:00Z','workflow_version':'5.2.7','detail_json':json.dumps({'producer':'workflow_confirm','transaction_id':'tx1','schema_version':'5.2.7','task_id':'TASK-1','actor_role':'human_owner','created_at':'2026-08-14T00:00:00Z',**binding})}
+    event={'task_id':'TASK-1','event_type':'WORKFLOW_CONFIRMATION','actor_role':'human_owner','created_at':'2026-08-14T00:00:00Z','workflow_version':'5.2.9','detail_json':json.dumps({'producer':'workflow_confirm','transaction_id':'tx1','schema_version':'5.2.9','task_id':'TASK-1','actor_role':'human_owner','created_at':'2026-08-14T00:00:00Z',**binding})}
     assert workflow_confirmation_matches(event,binding)
     stale=dict(binding); stale['source_event_id']=43
     assert not workflow_confirmation_matches(event,stale)
@@ -53,8 +66,7 @@ def test_delivery_status_contract_is_integration_owned(status):
     detail={
         'delivery_status':status,
         'reason':'Verified integration status is recorded with concrete evidence and current subject binding.',
-        'verification_event_id':77,
-        'verification_subject_digest':'sha256:subject',
+        **_delivery_binding(),
     }
     if status == 'BLOCKED':
         detail.update({
@@ -67,7 +79,7 @@ def test_delivery_status_contract_is_integration_owned(status):
 
 
 def test_ready_delivery_requires_concrete_reason_and_verification_binding():
-    good={'delivery_status':'READY','reason':'Verified change is ready for integration and no delivery blocker remains.','verification_event_id':77,'verification_subject_digest':'sha256:subject'}
+    good={'delivery_status':'READY','reason':'Verified change is ready for integration and no delivery blocker remains.',**_delivery_binding()}
     assert validate_delivery_result(good)==[]
     assert validate_delivery_result({**good,'reason':'ok'})
     assert validate_delivery_result({**good,'verification_event_id':0})
@@ -75,14 +87,14 @@ def test_ready_delivery_requires_concrete_reason_and_verification_binding():
 
 
 def test_blocked_delivery_requires_recovery_contract_and_never_completes():
-    blocked={'delivery_status':'BLOCKED','reason':'Integration conflict prevents safe delivery of the verified subject.','verification_event_id':77,'verification_subject_digest':'sha256:subject','blocker_kind':'INTEGRATION_CONFLICT','recovery_condition':'resolve conflict and rerun integration readiness','responsibility':'integration engineer or human_owner'}
+    blocked={'delivery_status':'BLOCKED','reason':'Integration conflict prevents safe delivery of the verified subject.',**_delivery_binding(),'blocker_kind':'INTEGRATION_CONFLICT','recovery_condition':'resolve conflict and rerun integration readiness','responsibility':'integration engineer or human_owner'}
     assert validate_delivery_result(blocked)==[]
     assert not disposition_allows_pipeline_completion(blocked)
     assert validate_delivery_result({**blocked,'recovery_condition':''})
 
 
 def test_delivery_result_is_bound_to_latest_verification():
-    d={'delivery_status':'READY','reason':'Verified change is ready for integration and no delivery blocker remains.','verification_event_id':77,'verification_subject_digest':'sha256:subject'}
+    d={'delivery_status':'READY','reason':'Verified change is ready for integration and no delivery blocker remains.',**_delivery_binding()}
     assert delivery_result_matches_verification(d,77,'sha256:subject')
     assert not delivery_result_matches_verification(d,78,'sha256:subject')
     assert not delivery_result_matches_verification(d,77,'sha256:new')
@@ -92,7 +104,7 @@ from cli.workflow_records import build_confirmation_detail, build_delivery_detai
 
 def test_confirmation_detail_keeps_binding_and_trusted_identity_fields():
     binding=build_boundary_binding(task_id='TASK-1',source_stage='requirement',source_role='tp-product-manager',source_event_id=9,source_event_digest='sha256:event',target_stage='architecture',target_role='tp-software-architect',execution_mode='DIRECT')
-    detail=build_confirmation_detail(task_id='TASK-1',binding=binding,transaction_id='tx-1',flush_id='CONFIRM-1',created_at='2026-08-14T00:00:00Z',schema_version='5.2.7')
+    detail=build_confirmation_detail(task_id='TASK-1',binding=binding,transaction_id='tx-1',flush_id='CONFIRM-1',created_at='2026-08-14T00:00:00Z',schema_version='5.2.9')
     assert detail['producer']=='workflow_confirm' and detail['actor_role']=='human_owner'
     assert detail['transaction_id']=='tx-1' and detail['task_id']=='TASK-1'
     assert all(detail[k]==v for k,v in binding.items())
@@ -101,17 +113,18 @@ def test_confirmation_detail_keeps_binding_and_trusted_identity_fields():
 def test_delivery_detail_binds_verification_and_readiness_fields():
     detail=build_delivery_detail(
         task_id='TASK-1', transaction_id='tx-2', flush_id='DELIVERY-1',
-        created_at='2026-08-14T00:00:00Z', schema_version='5.2.7',
+        created_at='2026-08-14T00:00:00Z', schema_version='5.2.9',
         verification_event_id=77, verification_subject_digest='sha256:subject',
+        verification_change_set_id=CHANGE_SET_ID, review_event_id=78,
+        review_change_set_id=CHANGE_SET_ID, change_set_id=CHANGE_SET_ID,
         delivery_status='READY', reason='Verified change is ready for integration and no delivery blocker remains.',
         repo_snapshot={'before_head':'a','after_head':'b','merge_commit':'m'},
-        knowledge_handoff={'task_id':'TASK-1','verification_event_id':77},
     )
     assert detail['producer']=='delivery_converge' and detail['actor_role']=='tp-integration-engineer'
     assert detail['verification_event_id']==77 and detail['verification_subject_digest']=='sha256:subject'
     assert detail['delivery_status']=='READY'
     assert detail['repo_snapshot']['before_head']=='a'
-    assert detail['knowledge_handoff']['task_id']=='TASK-1'
+    assert 'knowledge_handoff' not in detail
     assert 'knowledge_disposition' not in detail
 
 from cli.workflow_controls import trusted_event_detail, find_matching_confirmation, event_digest
@@ -119,9 +132,9 @@ from cli.delivery_contract import find_delivery_completion_event
 
 
 def _trusted_event(event_id, event_type, actor, producer, detail_extra=None):
-    detail={'transaction_id':f'tx-{event_id}','producer':producer,'schema_version':'5.2.7','task_id':'TASK-1','actor_role':actor,'created_at':'2026-08-14T00:00:00Z'}
+    detail={'transaction_id':f'tx-{event_id}','producer':producer,'schema_version':'5.2.9','task_id':'TASK-1','actor_role':actor,'created_at':'2026-08-14T00:00:00Z'}
     detail.update(detail_extra or {})
-    return {'id':event_id,'task_id':'TASK-1','event_type':event_type,'actor_role':actor,'to_stage':'','summary':'','detail_json':json.dumps(detail,ensure_ascii=False),'workflow_version':'5.2.7','created_at':'2026-08-14T00:00:00Z'}
+    return {'id':event_id,'task_id':'TASK-1','event_type':event_type,'actor_role':actor,'to_stage':'','summary':'','detail_json':json.dumps(detail,ensure_ascii=False),'workflow_version':'5.2.9','created_at':'2026-08-14T00:00:00Z'}
 
 
 def test_trusted_event_detail_requires_identity_chain():
@@ -140,36 +153,36 @@ def test_matching_confirmation_ignores_stale_source_binding():
 
 
 def test_plain_delivery_checkpoint_does_not_count_as_delivery_completion():
-    verify=_trusted_event(20,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s'})
+    verify=_trusted_event(20,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s','change_set_id':CHANGE_SET_ID})
     checkpoint=_trusted_event(21,'FACT','tp-integration-engineer','record-first',{'operation':'CHECKPOINT','phase':'delivery'})
     assert find_delivery_completion_event([verify,checkpoint],verification_event=verify,current_subject_digest='sha256:s') is None
 
 
 def test_ready_delivery_result_completes_and_new_verification_invalidates_it():
-    verify=_trusted_event(20,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s'})
-    detail={'verification_event_id':20,'verification_subject_digest':'sha256:s','delivery_status':'READY','reason':'Verified change is ready for integration and no blocker remains.'}
+    verify=_trusted_event(20,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s','change_set_id':CHANGE_SET_ID})
+    detail={'verification_event_id':20,'verification_subject_digest':'sha256:s','verification_change_set_id':CHANGE_SET_ID,'review_event_id':21,'review_change_set_id':CHANGE_SET_ID,'change_set_id':CHANGE_SET_ID,'delivery_status':'READY','reason':'Verified change is ready for integration and no blocker remains.'}
     delivery=_trusted_event(21,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',detail)
     assert find_delivery_completion_event([verify,delivery],verification_event=verify,current_subject_digest='sha256:s') is delivery
-    verify2=_trusted_event(22,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s2'})
+    verify2=_trusted_event(22,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s2','change_set_id':CHANGE_SET_ID})
     assert find_delivery_completion_event([verify,delivery,verify2],verification_event=verify2,current_subject_digest='sha256:s2') is None
 
 
 def test_newer_blocked_delivery_overrides_older_ready_result_for_same_verification():
-    verify=_trusted_event(20,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s'})
-    ready=_trusted_event(21,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',{'verification_event_id':20,'verification_subject_digest':'sha256:s','delivery_status':'READY','reason':'Verified change is ready for integration and no blocker remains.'})
-    blocked=_trusted_event(22,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',{'verification_event_id':20,'verification_subject_digest':'sha256:s','delivery_status':'BLOCKED','reason':'Integration conflict prevents safe delivery of the verified subject.','blocker_kind':'INTEGRATION_CONFLICT','recovery_condition':'resolve the conflict and rerun readiness','responsibility':'integration engineer'})
+    verify=_trusted_event(20,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s','change_set_id':CHANGE_SET_ID})
+    ready=_trusted_event(21,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',{'verification_event_id':20,'verification_subject_digest':'sha256:s','verification_change_set_id':CHANGE_SET_ID,'review_event_id':21,'review_change_set_id':CHANGE_SET_ID,'change_set_id':CHANGE_SET_ID,'delivery_status':'READY','reason':'Verified change is ready for integration and no blocker remains.'})
+    blocked=_trusted_event(22,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',{'verification_event_id':20,'verification_subject_digest':'sha256:s','verification_change_set_id':CHANGE_SET_ID,'review_event_id':21,'review_change_set_id':CHANGE_SET_ID,'change_set_id':CHANGE_SET_ID,'delivery_status':'BLOCKED','reason':'Integration conflict prevents safe delivery of the verified subject.','blocker_kind':'INTEGRATION_CONFLICT','recovery_condition':'resolve the conflict and rerun readiness','responsibility':'integration engineer'})
     assert find_delivery_completion_event([verify,ready,blocked],verification_event=verify,current_subject_digest='sha256:s') is None
 
 
 def test_delivery_completion_rejects_removed_legacy_commit_producer():
-    verify=_trusted_event(30,'VERIFICATION_COMPLETED','tp-test-engineer','commit',{'decision':'PASS','subject_digest':'sha256:s'})
-    delivery=_trusted_event(31,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',{'verification_event_id':30,'verification_subject_digest':'sha256:s','delivery_status':'READY','reason':'Verified change is ready for integration and no blocker remains.'})
+    verify=_trusted_event(30,'VERIFICATION_COMPLETED','tp-test-engineer','commit',{'decision':'PASS','subject_digest':'sha256:s','change_set_id':CHANGE_SET_ID})
+    delivery=_trusted_event(31,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',{'verification_event_id':30,'verification_subject_digest':'sha256:s','verification_change_set_id':CHANGE_SET_ID,'review_event_id':21,'review_change_set_id':CHANGE_SET_ID,'change_set_id':CHANGE_SET_ID,'delivery_status':'READY','reason':'Verified change is ready for integration and no blocker remains.'})
     assert find_delivery_completion_event([verify,delivery],verification_event=verify,current_subject_digest='sha256:s') is None
 
 
 def test_knowledge_handoff_is_not_part_of_delivery_completion_decision():
-    verify=_trusted_event(40,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s'})
-    delivery=_trusted_event(41,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',{'verification_event_id':40,'verification_subject_digest':'sha256:s','delivery_status':'READY','reason':'Verified change is ready for integration and no blocker remains.','knowledge_handoff':{'task_id':'TASK-1','verified_facts':['durable fact']}})
+    verify=_trusted_event(40,'VERIFICATION_COMPLETED','tp-test-engineer','record-first',{'decision':'PASS','subject_digest':'sha256:s','change_set_id':CHANGE_SET_ID})
+    delivery=_trusted_event(41,'DELIVERY_RESULT','tp-integration-engineer','delivery_converge',{'verification_event_id':40,'verification_subject_digest':'sha256:s','verification_change_set_id':CHANGE_SET_ID,'review_event_id':21,'review_change_set_id':CHANGE_SET_ID,'change_set_id':CHANGE_SET_ID,'delivery_status':'READY','reason':'Verified change is ready for integration and no blocker remains.','knowledge_handoff':{'task_id':'TASK-1','verified_facts':['durable fact']}})
     assert find_delivery_completion_event([verify,delivery],verification_event=verify,current_subject_digest='sha256:s') is delivery
 
 from cli.delivery_contract import validate_receipt_payload
@@ -233,15 +246,11 @@ def test_task_scoped_knowledge_convergence_does_not_call_full_vault_scanners():
         assert forbidden not in source
 
 
-def test_task_scoped_knowledge_no_change_is_nonblocking_fast_path():
+def test_legacy_task_scoped_knowledge_fast_paths_are_retired():
     from cli.knowledge import state as knowledge_state
-    result=knowledge_state.task_scoped_convergence({'task_id':'TASK-1','verified_facts':[],'reusable_findings':[]})
-    assert result['status']=='NO_CHANGE'
-    assert result['blocks_delivery'] is False
-
-
-def test_task_scoped_knowledge_reusable_fact_is_deferred_without_blocking_delivery():
-    from cli.knowledge import state as knowledge_state
-    result=knowledge_state.task_scoped_convergence({'task_id':'TASK-1','verified_facts':['reusable rule'],'reusable_findings':[]})
-    assert result['status']=='DEFERRED'
-    assert result['blocks_delivery'] is False
+    for payload in (
+        {'task_id':'TASK-1','verified_facts':[],'reusable_findings':[]},
+        {'task_id':'TASK-1','verified_facts':['reusable rule'],'reusable_findings':[]},
+    ):
+        with pytest.raises(ValueError, match='legacy task-scoped Knowledge handoff is retired'):
+            knowledge_state.task_scoped_convergence(payload)

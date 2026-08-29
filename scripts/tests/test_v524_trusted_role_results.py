@@ -6,19 +6,22 @@ import pytest
 from cli import autonomy_integration, context_effectiveness, delivery_contract, record_first
 from cli.migrations.v5_2_3.role_map import ROLE_MAP
 
+CHANGE_SET_ID = 'sha256:change-set'
+
 
 def _trusted_event(event_type, actor, producer, decision, *, event_id=1, subject="subject"):
     created = "2026-08-18T00:00:00+00:00"
     detail = {
         "transaction_id": "tx-1",
         "producer": producer,
-        "schema_version": "5.2.7",
+        "schema_version": "5.2.9",
         "task_id": "TASK-1",
         "actor_role": actor,
         "created_at": created,
         "decision": decision,
         "subject_digest": subject,
         "operation": "VERIFY" if event_type == "VERIFICATION_COMPLETED" else None,
+        "change_set_id": CHANGE_SET_ID if event_type == "VERIFICATION_COMPLETED" else None,
     }
     return {
         "id": event_id,
@@ -26,7 +29,7 @@ def _trusted_event(event_type, actor, producer, decision, *, event_id=1, subject
         "event_type": event_type,
         "actor_role": actor,
         "created_at": created,
-        "workflow_version": "5.2.7",
+        "workflow_version": "5.2.9",
         "detail_json": json.dumps(detail),
     }
 
@@ -64,6 +67,10 @@ def test_delivery_contract_binds_test_and_integration_roles():
         "reason": "verified change is ready for integration",
         "verification_event_id": 11,
         "verification_subject_digest": "subject",
+        "verification_change_set_id": CHANGE_SET_ID,
+        "review_event_id": 10,
+        "review_change_set_id": CHANGE_SET_ID,
+        "change_set_id": CHANGE_SET_ID,
         "knowledge_handoff": {"task_id": "TASK-1", "verification_event_id": 11},
     })
     delivery["detail_json"] = json.dumps(detail)

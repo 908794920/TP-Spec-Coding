@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.7 deterministic, read-only workflow orchestration.
+"""V5.2.9 deterministic, read-only workflow orchestration.
 
 Workflow chooses *when* to invoke a role.  Skills choose *how* to do the work.
 The existing Task Runtime remains the only durable fact ledger.
@@ -256,6 +256,42 @@ def validate_contract(base_root: Optional["str | Path"] = None) -> List[str]:
         strict_unknown_fields=True, use_cache=False,
     )
     phases = set(((workflow.get("rules") or {}).get("phases") or {}).get("values") or [])
+
+    lifecycle_path = root / "governance" / "lifecycle.md"
+    try:
+        lifecycle_text = lifecycle_path.read_text(encoding="utf-8-sig")
+        phase_line = next(
+            (line for line in lifecycle_text.splitlines() if "`current_phase`" in line and "记录" in line),
+            "",
+        )
+        declared_lifecycle_phases: set[str] = set()
+        for group in re.findall(r"`([^`]+)`", phase_line):
+            if group == "current_phase":
+                continue
+            declared_lifecycle_phases.update(
+                value.strip() for value in group.split("/") if value.strip()
+            )
+        missing_lifecycle_phases = sorted(phases - declared_lifecycle_phases)
+        if missing_lifecycle_phases:
+            errors.append(
+                "lifecycle.md missing workflow phases: " + ", ".join(missing_lifecycle_phases)
+            )
+    except Exception as exc:
+        errors.append(f"lifecycle.md phase declaration: {exc}")
+
+    for rule in contract.get("conditional_roles") or []:
+        if not isinstance(rule, dict):
+            continue
+        role_id = str(rule.get("role") or "")
+        role = roles.get(role_id)
+        if role is None:
+            continue
+        catalog_phases = {str(value) for value in (role.get("phases") or [])}
+        for phase in (str(value) for value in (rule.get("phases") or [])):
+            if phase not in catalog_phases:
+                errors.append(
+                    f"{role_id}: conditional orchestration phase {phase!r} not declared in role catalog phases"
+                )
     for level in LEVELS:
         pipeline = (contract.get("pipelines") or {}).get(level)
         if not isinstance(pipeline, list) or not pipeline:
@@ -429,6 +465,32 @@ def _latest_checkpoint(events: Iterable[Dict[str, Any]], *, actor: str, phase: s
     return None
 
 
+def _development_change_set_binding(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    activity = _latest_checkpoint_activity(events, actor="tp-development-engineer", phase="development")
+    if not activity or activity["semantics"]["result_status"] != "COMPLETED":
+        return None
+    detail = activity["detail"]
+    change_set_id = str(detail.get("change_set_id") or "").strip()
+    repo_roots = [str(value).strip() for value in (detail.get("repo_roots") or []) if str(value).strip()]
+    if not repo_roots:
+        for repo in ((detail.get("change_set") or {}).get("repositories") or []):
+            if isinstance(repo, dict) and str(repo.get("root_locator") or "").strip():
+                repo_roots.append(str(repo["root_locator"]).strip())
+    return {
+        "event": activity["event"],
+        "detail": detail,
+        "change_set_id": change_set_id,
+        "repo_roots": repo_roots,
+    }
+
+
+def _current_bound_change_set(binding: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not binding.get("change_set_id") or not binding.get("repo_roots"):
+        return None
+    from .change_set import capture_change_set
+    return capture_change_set(binding["repo_roots"])
+
+
 def _stage_completion_event(stage: str, events: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     mapping = {
         "requirement": ("tp-product-manager", "requirement"),
@@ -527,6 +589,109 @@ def _delivery_completion_event(events: List[Dict[str, Any]], task_dir: Optional[
     )
 
 
+def _knowledge_request_for_delivery(events: List[Dict[str, Any]], delivery_event: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if delivery_event is None:
+        return None
+    delivery_id = int(delivery_event.get("id") or 0)
+    for event in reversed(events):
+        detail = workflow_controls.trusted_event_detail(
+            event,
+            event_type="KNOWLEDGE_CONVERGENCE_REQUEST",
+            producer="delivery_converge",
+            actor="tp-integration-engineer",
+        )
+        if detail is None:
+            continue
+        try:
+            if int(detail.get("delivery_event_id") or 0) != delivery_id:
+                continue
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(detail.get("trigger_reason_codes"), list) or not detail.get("trigger_reason_codes"):
+            continue
+        if str(detail.get("search_scope") or "") != "project+shared":
+            continue
+        if not isinstance(detail.get("source_refs"), list) or not detail.get("source_refs"):
+            continue
+        return {"event": event, "detail": detail}
+    return None
+
+
+def _knowledge_result_sources_current(detail: Dict[str, Any], task_dir: Optional[Path]) -> bool:
+    if task_dir is None:
+        return False
+    refs = {str(x or "").replace("\\", "/").strip() for x in (detail.get("source_refs") or []) if str(x or "").strip()}
+    items = detail.get("source_items")
+    if not refs or not isinstance(items, list) or not items:
+        return False
+    from .evidence import validate_evidence_path
+    seen = set()
+    for item in items:
+        if not isinstance(item, dict):
+            return False
+        path = str(item.get("path") or "").replace("\\", "/").strip()
+        if not path or path not in refs:
+            return False
+        checked = validate_evidence_path(task_dir, item, require_evidence_dir=False)
+        if not checked.ok or str(item.get("sha256") or "") != str(checked.sha256 or ""):
+            return False
+        seen.add(path)
+    return seen == refs
+
+
+def _knowledge_result_for_request(events: List[Dict[str, Any]], request: Dict[str, Any],
+                                  task_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    request_event = request["event"]
+    request_detail = request["detail"]
+    request_id = int(request_event.get("id") or 0)
+    change_set_id = str(request_detail.get("change_set_id") or "")
+    allowed = {"CREATED", "UPDATED", "DUPLICATE", "NO_DURABLE_INSIGHT"}
+    for event in reversed(events):
+        detail = workflow_controls.trusted_event_detail(
+            event,
+            event_type="KNOWLEDGE_CONVERGENCE_RESULT",
+            producer="knowledge_task_converge",
+            actor="tp-knowledge",
+        )
+        if detail is None:
+            continue
+        try:
+            if int(detail.get("request_event_id") or 0) != request_id:
+                continue
+        except (TypeError, ValueError):
+            continue
+        if str(detail.get("change_set_id") or "") != change_set_id:
+            continue
+        disposition = str(detail.get("knowledge_disposition") or "").upper()
+        if disposition not in allowed:
+            continue
+        receipts = detail.get("query_receipts")
+        if not isinstance(receipts, list) or not receipts:
+            continue
+        if any(delivery_contract.validate_receipt_payload("search", receipt) for receipt in receipts):
+            continue
+        if not isinstance(detail.get("source_refs"), list) or not detail.get("source_refs"):
+            continue
+        if not _knowledge_result_sources_current(detail, task_dir):
+            continue
+        if not str(detail.get("reason_code") or "").strip():
+            continue
+        knowledge_ref = str(detail.get("knowledge_ref") or "").strip()
+        if disposition in {"CREATED", "UPDATED"} and not knowledge_ref:
+            continue
+        if disposition == "DUPLICATE":
+            matched = {
+                str(ref or "").strip()
+                for receipt in receipts
+                for ref in (receipt.get("matched_canonical_refs") or [])
+                if str(ref or "").strip()
+            }
+            if not knowledge_ref or knowledge_ref not in matched:
+                continue
+        return {"event": event, "detail": detail}
+    return None
+
+
 def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Build compact deterministic input so delivery can do targeted convergence only."""
     facts: Dict[str, Dict[str, Any]] = {}
@@ -596,10 +761,12 @@ def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]]) -> D
         "knowledge_signals": knowledge_signals,
         "delivery_signals": delivery_signals,
         "verification_binding": verification_binding,
-        "knowledge_requirement": {
+        "knowledge_effect": {
             "scope": "current project + shared",
-            "targeted_search_required": True,
-            "disposition_required": ["CREATED", "UPDATED", "NO_CHANGE", "DEFERRED", "BLOCKED"],
+            "request_when_signals_present": True,
+            "result_owner": "tp-knowledge",
+            "result_dispositions": ["CREATED", "UPDATED", "DUPLICATE", "NO_DURABLE_INSIGHT"],
+            "integration_writes_result": False,
         },
         "read_policy": "targeted-only; no full Task/source/Knowledge reread by default",
         "subagents": "forbidden-by-default",
@@ -656,6 +823,7 @@ def _execution_mode(step: Dict[str, Any], level: str, signals: set[str]) -> str:
 def _decision_for_action(action: Optional[str]) -> str:
     return {
         "dispatch_role": "DISPATCH_ROLE",
+        "dispatch_effect": "DISPATCH_EFFECT",
         "await_confirmation": "AWAIT_CONFIRMATION",
         "await_effect_approval": "BOUNDARY_REACHED",
         "task_complete": "TASK_COMPLETE",
@@ -843,6 +1011,19 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                 source_stage="architecture_review", source_role="tp-software-architect",
             )
 
+    code_review = _latest_code_review(events)
+    if code_review and code_review["decision"] in {"NEEDS_FIX", "REVISE", "FAIL", "BLOCKED"}:
+        development_after_review = _stage_completion_event("development", events)
+        if not development_after_review or int(development_after_review.get("id") or 0) <= int(code_review["event"].get("id") or 0):
+            return _route_role_boundary(
+                task, level, events, policy=policy, next_stage="development",
+                role_id="tp-development-engineer",
+                skill_path=str(role_map["tp-development-engineer"]["skill_path"]),
+                execution_mode="DIRECT", reason_codes=["CODE_REVIEW_REWORK"],
+                source_event=code_review["event"], source_stage="review", source_role="tp-code-reviewer",
+                required_effects=["repo_mutation"], allowed_effects=allowed_set,
+            )
+
     verification = _latest_verification(events)
     if verification and verification["decision"] in {"NEEDS_FIX", "FAIL"}:
         if verification["decision"] == "NEEDS_FIX":
@@ -870,6 +1051,41 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                 skill_path=str(role_map[rid]["skill_path"]), execution_mode=mode,
                 reason_codes=[code], source_event=verification["event"],
                 source_stage="verification", source_role="tp-test-engineer",
+            )
+
+    development_activity = _latest_checkpoint_activity(
+        events, actor="tp-development-engineer", phase="development"
+    )
+    if development_activity and development_activity["semantics"]["result_status"] == "COMPLETED":
+        legacy_change_set = str(development_activity["detail"].get("change_set_id") or "").strip()
+        if not legacy_change_set:
+            return _route_role_boundary(
+                task, level, events, policy=policy, next_stage="development",
+                role_id="tp-development-engineer",
+                skill_path=str(role_map["tp-development-engineer"]["skill_path"]),
+                execution_mode="DIRECT", reason_codes=["CHANGE_SET_REQUIRED"],
+                source_event=development_activity["event"], source_stage="development",
+                source_role="tp-development-engineer", required_effects=["repo_mutation"],
+                allowed_effects=allowed_set,
+            )
+
+    development_binding = _development_change_set_binding(events)
+    if development_binding and development_binding.get("change_set_id") and development_binding.get("repo_roots"):
+        try:
+            current_change_set = _current_bound_change_set(development_binding)
+        except Exception as exc:
+            raise OrchestrationError(f"CHANGE_SET_UNAVAILABLE: {exc}") from exc
+        if current_change_set and str(current_change_set.get("content_digest") or "") != development_binding["change_set_id"]:
+            source = code_review["event"] if code_review else development_binding["event"]
+            source_stage = "review" if code_review else "development"
+            source_role = "tp-code-reviewer" if code_review else "tp-development-engineer"
+            return _route_role_boundary(
+                task, level, events, policy=policy, next_stage="development",
+                role_id="tp-development-engineer",
+                skill_path=str(role_map["tp-development-engineer"]["skill_path"]),
+                execution_mode="DIRECT", reason_codes=["CHANGE_SET_STALE"],
+                source_event=source, source_stage=source_stage, source_role=source_role,
+                required_effects=["repo_mutation"], allowed_effects=allowed_set,
             )
 
     pipeline = (contract.get("pipelines") or {}).get(level) or []
@@ -951,6 +1167,24 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             human_confirmation_already_satisfied=material_satisfied,
             required_effects=step_effects, allowed_effects=allowed_set,
             recommended_roles=recommended_roles,
+        )
+
+    delivery_event = _delivery_completion_event(events, task_dir)
+    knowledge_request = _knowledge_request_for_delivery(events, delivery_event)
+    if knowledge_request is not None and _knowledge_result_for_request(events, knowledge_request, task_dir) is None:
+        knowledge_role = role_map.get("tp-knowledge") or {}
+        return _route_dict(
+            task, level, next_stage="complete", role_id="tp-knowledge",
+            skill_path=str(knowledge_role.get("skill_path") or "agents/tp-knowledge/SKILL.md"),
+            execution_mode="DIRECT", reason_codes=["KNOWLEDGE_CONVERGENCE_REQUIRED"],
+            action="dispatch_effect", confirmation_policy=policy,
+            context={
+                "request_event_id": int(knowledge_request["event"].get("id") or 0),
+                "change_set_id": str(knowledge_request["detail"].get("change_set_id") or ""),
+                "trigger_reason_codes": list(knowledge_request["detail"].get("trigger_reason_codes") or []),
+                "search_scope": "project+shared",
+                "source_refs": list(knowledge_request["detail"].get("source_refs") or []),
+            },
         )
 
     return _route_dict(task, level, next_stage="complete", role_id=None, skill_path=None,

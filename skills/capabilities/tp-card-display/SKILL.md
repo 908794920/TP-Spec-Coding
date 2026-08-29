@@ -1,7 +1,7 @@
 ---
 name: tp-card-display
 display_name: 卡片展示调度
-version: 5.2.7
+version: 5.2.9
 description: 只读卡片展示能力；仅在用户明确要求查看 TP-Spec 全局、项目或任务卡片时，消费官方 CARD_DISPLAY 结果并按真实宿主能力选择会话内、Web Artifact 或离线 HTML 展示层。
 ---
 

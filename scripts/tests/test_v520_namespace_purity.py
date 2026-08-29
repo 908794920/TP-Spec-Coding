@@ -7,7 +7,7 @@ from pathlib import Path
 BASE = Path(__file__).parents[2]
 
 # Legacy names are legal only at the explicit one-shot migration boundary or in
-# historical release notes. Everything else is active v5.2.7 surface.
+# historical release notes. Everything else is active v5.2.9 surface.
 LEGACY_ALLOWED = {
     Path("CHANGELOG.md"),
     Path("cli/namespace_migration.py"),

@@ -1,4 +1,4 @@
-version: "5.2.7"
+version: "5.2.9"
 entry_role: tp-software-lifecycle
 level_resolution:
   rule: MAX_RISK_FLOW
@@ -10,7 +10,7 @@ runtime:
   new_public_states: false
   new_database_objects: false
   ordinary_confirmation_persisted: true
-  trusted_completion_sources: [CHECKPOINT, REVIEW_COMPLETED, VERIFICATION_COMPLETED, DELIVERY_RESULT]
+  trusted_completion_sources: [CHECKPOINT, REVIEW_COMPLETED, VERIFICATION_COMPLETED, DELIVERY_RESULT, KNOWLEDGE_CONVERGENCE_RESULT]
 execution:
   lazy_load_role_skill: true
   prefer_parallel_isolated_subagents: true
@@ -32,6 +32,7 @@ signals:
   root_cause_prefix: "workflow:root-cause:"
   security_risk: "workflow:security-risk"
   database_risk: "workflow:database-risk"
+  knowledge_required: "workflow:knowledge-required"
 presentation:
   stages:
     requirement: {label: 需求, description: 澄清并确认需求与验收边界。}
@@ -46,6 +47,7 @@ presentation:
     complete: {label: 完成, description: 正式任务已满足完成条件。}
   actions:
     dispatch_role: {label: 进入下一步骤, description: 调度对应正式角色继续执行。}
+    dispatch_effect: {label: 执行知识收敛, description: 不新增生命周期阶段，按需调度 tp-knowledge 完成已请求的 Knowledge effect。}
     await_confirmation: {label: 等待确认, description: 当前边界需要 human_owner 明确确认后继续。}
     await_effect_approval: {label: 等待执行授权, description: 下一步骤需要尚未允许的变更效果。}
     task_complete: {label: 完成任务, description: 工作流已完成，等待正式 task complete 收口。}

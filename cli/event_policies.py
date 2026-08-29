@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""V5.2.7 可信事件注册表（Final Hardening 单一来源）。
+"""V5.2.9 可信事件注册表（Final Hardening 单一来源）。
 
-依据：《V5.2.7 Final Hardening Invariant 修复任务》Task 1（§3）与《V5.2.7
+依据：《V5.2.9 Final Hardening Invariant 修复任务》Task 1（§3）与《V5.2.9
 HARDENING 源码复审报告》P0-1/P0-2。INV-02：治理事件只能由可信生产者产生；
 INV-03：门禁不信任 type/actor/summary 三元组，只接受含完整身份链的可信事件。
 
@@ -80,12 +80,12 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
     "REVIEW_COMPLETED": _policy("governance", ("review_record", "commit"), True, _REVIEW_IDENTITY_FIELDS),
     "REVIEW": _policy("governance", ("review_record", "commit"), True, _EVENT_SCHEMA_FIELDS),
     "VERIFICATION": _policy("governance", ("commit",), True, _EVENT_SCHEMA_FIELDS),
-    # V5.2.7 Record-first verification is a trusted fact but no longer a state gate.
+    # V5.2.9 Record-first verification is a trusted fact but no longer a state gate.
     # It binds decision + current technical subject digest + real evidence without
     # requiring a role-authored review artifact.
     "VERIFICATION_COMPLETED": _policy(
         "governance", ("commit", "record-first"), False,
-        _EVENT_SCHEMA_FIELDS + ("decision", "subject_digest", "evidence"),
+        _EVENT_SCHEMA_FIELDS + ("decision", "subject_digest", "change_set_id", "evidence"),
     ),
     "CANCEL_REQUESTED": _policy("governance", ("transition_task", "commit"), True, _EVENT_SCHEMA_FIELDS),
     "CANCEL_CONFIRMED": _policy("governance", ("transition_task", "commit"), True, _EVENT_SCHEMA_FIELDS),
@@ -103,9 +103,21 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
     "DELIVERY_RESULT": _policy(
         "governance", ("delivery_converge",), True,
         _EVENT_SCHEMA_FIELDS + ("verification_event_id", "verification_subject_digest",
+                                "verification_change_set_id", "review_event_id",
+                                "review_change_set_id", "change_set_id",
                                 "delivery_status", "reason"),
     ),
-    "SCOPE_CHANGE": _policy("governance", ("commit", "receipt_record"), True, _EVENT_SCHEMA_FIELDS + ("scope_id",)),
+    "KNOWLEDGE_CONVERGENCE_REQUEST": _policy(
+        "governance", ("delivery_converge",), True,
+        _EVENT_SCHEMA_FIELDS + ("delivery_event_id", "verification_event_id", "review_event_id",
+                                "change_set_id", "trigger_reason_codes", "search_scope", "source_refs"),
+    ),
+    "KNOWLEDGE_CONVERGENCE_RESULT": _policy(
+        "governance", ("knowledge_task_converge",), True,
+        _EVENT_SCHEMA_FIELDS + ("request_event_id", "change_set_id", "knowledge_disposition",
+                                "query_receipts", "source_refs", "source_items", "reason_code"),
+    ),
+    "SCOPE_CHANGE": _policy("governance", ("task_scope_change",), True, _EVENT_SCHEMA_FIELDS + ("scope_id", "summary")),
     "AUDIT": _policy("governance", ("admin_recovery", "reconcile"), True, _EVENT_SCHEMA_FIELDS),
     "PHASE_EXIT": _policy("governance", ("commit",), False, _EVENT_SCHEMA_FIELDS),
     # 工作会话 / 返工：正式命令产生的动作记录，投影为 FACT；不影响状态机门禁，
@@ -213,7 +225,7 @@ def _file_sha256(path: Path) -> str:
     return compute_text_artifact_file_digest(path)
 
 
-def load_trusted_governance_event(
+def load_trusted_governance_events(
     conn,
     task_id: str,
     *,
@@ -225,21 +237,17 @@ def load_trusted_governance_event(
     artifact_path: Optional[Union[str, Path]] = None,
     expected_subject_digest: Optional[str] = None,
     evidence_dir: Optional[Union[str, Path]] = None,
-) -> Optional[TrustedEvent]:
-    """Load the most recent *valid* trusted governance event.
-
-    Rows are scanned newest-first and each candidate is validated completely.
-    An unrelated or malformed newer event must not hide an older valid event,
-    while no invalid candidate is ever accepted (fail-closed).
-    """
+) -> list[TrustedEvent]:
+    """返回全部可信治理事件，按事件 id 从新到旧排列。"""
     policy = EVENT_POLICIES.get(event_type)
     if not policy or policy["authority"] != "governance":
-        return None
+        return []
     rows = conn.execute(
         "SELECT * FROM task_event WHERE task_id=? AND event_type=? ORDER BY id DESC",
         (task_id, event_type),
     ).fetchall()
     fields = tuple(detail_required) if detail_required is not None else policy["required_fields"]
+    trusted: list[TrustedEvent] = []
     for row in rows:
         detail = _event_detail(row)
         producer = detail.get("producer") or detail.get("source_command") or ""
@@ -277,9 +285,6 @@ def load_trusted_governance_event(
             if not declared_subject or declared_subject != expected_subject_digest:
                 continue
         if evidence_dir is not None:
-            # Governance PASS evidence must be independent, immutable evidence
-            # stored below evidence/.  Projection files and review artifacts are
-            # never accepted as proof of themselves.
             items = detail.get("evidence_items")
             if not isinstance(items, list) or not items:
                 continue
@@ -289,19 +294,36 @@ def load_trusted_governance_event(
                 if not isinstance(item, dict):
                     evidence_ok = False
                     break
-                checked = validate_evidence_path(
-                    evidence_dir, item, require_evidence_dir=True
-                )
-                if not checked.ok:
-                    evidence_ok = False
-                    break
-                if str(item.get("sha256") or "") != checked.sha256:
+                checked = validate_evidence_path(evidence_dir, item, require_evidence_dir=True)
+                if not checked.ok or str(item.get("sha256") or "") != checked.sha256:
                     evidence_ok = False
                     break
             if not evidence_ok:
                 continue
-        return TrustedEvent(row=row, detail=detail, policy=policy)
-    return None
+        trusted.append(TrustedEvent(row=row, detail=detail, policy=policy))
+    return trusted
+
+
+def load_trusted_governance_event(
+    conn,
+    task_id: str,
+    *,
+    event_type: str,
+    actor: Optional[str] = None,
+    decision: Optional[str] = None,
+    detail_required: Optional[tuple] = None,
+    review_kind: Optional[str] = None,
+    artifact_path: Optional[Union[str, Path]] = None,
+    expected_subject_digest: Optional[str] = None,
+    evidence_dir: Optional[Union[str, Path]] = None,
+) -> Optional[TrustedEvent]:
+    """加载最新一条可信治理事件。"""
+    events = load_trusted_governance_events(
+        conn, task_id, event_type=event_type, actor=actor, decision=decision,
+        detail_required=detail_required, review_kind=review_kind, artifact_path=artifact_path,
+        expected_subject_digest=expected_subject_digest, evidence_dir=evidence_dir,
+    )
+    return events[0] if events else None
 
 
 def has_trusted_governance_event(

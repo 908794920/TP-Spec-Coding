@@ -155,6 +155,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -190,6 +191,12 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
         ])
         self.assertEqual(rc, 0, (out, err))
         self.db = self.project / ".tp-spec" / "db" / "demo.db"
+        subprocess.run(["git", "init", "-q"], cwd=self.project, check=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=self.project, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=self.project, check=True)
+        (self.project / "README.md").write_text("demo\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README.md"], cwd=self.project, check=True)
+        subprocess.run(["git", "commit", "-qm", "baseline"], cwd=self.project, check=True)
         self.wiki_root = self.root / "wiki"; self.wiki_root.mkdir()
         self.knowledge_root = self.root / "knowledge"
         (self.knowledge_root / "00-system").mkdir(parents=True)
@@ -214,6 +221,11 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
         rc, out, err = self.call(
             "task", "create", "--id", self.task_id, "--project", "demo",
             "--risk", "L2", "--flow", "L2", "--scaffold", "--task-dir", str(self.task_dir),
+        )
+        self.assertEqual(rc, 0, (out, err))
+        rc, out, err = self.call(
+            "task", "checkpoint", "--task", self.task_id, "--task-dir", str(self.task_dir),
+            "--actor", "tp-development-engineer", "--phase", "development", "--summary", "baseline implementation",
         )
         self.assertEqual(rc, 0, (out, err))
 
@@ -289,7 +301,7 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
         self.assertEqual(detail["context_usage"][0]["source_type"], "memory_skill")
 
     def test_review_persists_context_usage_and_malformed_is_soft(self):
-        template = Path(__file__).resolve().parents[2] / "templates" / "5.2.7" / "architecture-review.md"
+        template = Path(__file__).resolve().parents[2] / "templates" / "5.2.9" / "architecture-review.md"
         shutil.copy2(template, self.task_dir / "architecture-review.md")
         payload = json.dumps([{
             "source_type": "wiki", "asset_id": "wiki:demo/backend/architecture.md",
@@ -322,6 +334,11 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
         )
         self.assertEqual(rc, 0, (out, err))
         rc, out, err = self.call(
+            "review", "record", "--task", self.task_id, "--task-dir", str(self.task_dir),
+            "--actor", "tp-code-reviewer", "--kind", "CODE", "--decision", "PASS", "--summary", "reviewed",
+        )
+        self.assertEqual(rc, 0, (out, err))
+        rc, out, err = self.call(
             "task", "delivery-converge", "--task", self.task_id, "--task-dir", str(self.task_dir),
             "--delivery-status", "READY",
             "--reason", "Verified change is ready for integration and no delivery blocker remains.",
@@ -332,7 +349,13 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
         detail = self.latest_detail("DELIVERY_RESULT")
         self.assertNotIn("context_usage", detail)
         self.assertEqual(detail["delivery_status"], "READY")
-        self.assertEqual(detail["knowledge_handoff"]["task_id"], self.task_id)
+        self.assertNotIn("knowledge_handoff", detail)
+        conn = dbmod.connect(str(self.db))
+        try:
+            count = conn.execute("SELECT COUNT(*) AS c FROM task_event WHERE task_id=? AND event_type='KNOWLEDGE_CONVERGENCE_REQUEST'", (self.task_id,)).fetchone()["c"]
+            self.assertEqual(count, 0)
+        finally:
+            conn.close()
 
 
 def test_shared_guidance_declares_best_effort_context_telemetry_without_skill_bloat():

@@ -1,11 +1,11 @@
 ---
 id: tp-development-engineer
 name: tp-开发工程师
-version: 5.2.7
+version: 5.2.9
 status: active
 type: workflow-role
 role: tp-development-engineer
-description: tp-开发工程师：TP-Spec-Coding v5.2.7 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-开发工程师：TP-Spec-Coding v5.2.9 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-开发工程师
@@ -22,7 +22,10 @@ description: tp-开发工程师：TP-Spec-Coding v5.2.7 正式软件工程角色
 6. 测试扩展必须可追溯到 AC、直接改动/回归、发现缺陷或明确专项风险，不为了覆盖率无边界扩张。
 7. 复杂实施信息才写 implementation artifact；简单任务不重复描述 diff。真实命令输出、测试结果和查询证据进入 evidence。
 8. 需求/方案与真实系统冲突、范围外修改、关键授权缺失或风险显著变化时停止扩大修改，交对应 Role/human_owner 处理。
-9. 复杂或非显而易见逻辑补 Why/Constraint/Risk 注释；明显代码不强制注释，失效注释及时删除/更新。
+9. 新增或修改的人工注释默认使用中文，只解释 Why/Constraint/Risk；类名、方法名、协议名和标准技术术语保持原文。明显代码不强制注释，失效注释及时删除/更新。
+10. 默认以熟悉 Java/Spring/Vue、但不了解本 Task 的 1～3 年开发人员能够读懂和维护为基线；优先显式控制流和业务命名，不以技巧、链式表达或减少行数为目标。
+11. 复杂反射、DSL、多层泛型、连续函数式组合、单实现多层模式，以及新增 abstraction/config/dependency/compatibility path，必须由当前真实需求、caller、variation 或已证明风险支撑。
+12. 写完必须重新阅读完整 Diff，并删除本次修改制造的 orphan、重复路径、无调用 helper、调试输出和低价值平行测试；不顺手清理无关历史代码。
 
 ## Repository Boundary Guard
 写任何文件前确认目标仓库、当前工作目录所属仓库和文件实际归属；不得仅凭设计文档路径跨仓创建代码/DDL/配置。数据库脚本、升级文件同样遵守目标仓库既有规范。

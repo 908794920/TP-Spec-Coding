@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""V5.2.7 fail-closed YAML 解析与工件结构校验（Hardening P0-3/P1-4）。
+"""V5.2.9 fail-closed YAML 解析与工件结构校验（Hardening P0-3/P1-4）。
 
-依据：《V5.2.7 执行AI统一修复与自验证任务》§9.1（使用真实 YAML 解析，禁止仅正则）
-与《V5.2.7 源码级发布审查报告》P1-4（deferred_acceptance 仍使用正则）。
+依据：《V5.2.9 执行AI统一修复与自验证任务》§9.1（使用真实 YAML 解析，禁止仅正则）
+与《V5.2.9 源码级发布审查报告》P1-4（deferred_acceptance 仍使用正则）。
 
 设计：
 - ``parse_yaml_fail_closed(text, name)``：真实 YAML 解析（pyyaml 可用时），
@@ -108,6 +108,8 @@ _OWNER_WAIVER_REQUIRED_FIELDS = (
 VERDICT_ENUM = (
     "PASS", "NOT_REQUIRED", "N/A", "PENDING", "BLOCKED", "DEFERRED_ACCEPTED", "OWNER_WAIVED",
 )
+DATABASE_OPERATION_TYPES = {"READ", "DML", "DDL"}
+DATABASE_OPERATION_STATUSES = {"PLANNED", "EXECUTED", "NOT_EXECUTED", "NOT_REQUIRED"}
 
 
 def normalize_verdict(raw: str) -> str:
@@ -126,6 +128,10 @@ class AcceptanceCheckResult:
     deferred_entries: List[Dict[str, Any]] = field(default_factory=list)
     owner_waiver_entries: List[Dict[str, Any]] = field(default_factory=list)
     human_rows: List[Dict[str, str]] = field(default_factory=list)
+    database_operations: List[Dict[str, Any]] = field(default_factory=list)
+    verdict_counts: Dict[str, int] = field(default_factory=dict)
+    acceptance_ids: List[str] = field(default_factory=list)
+    page_verification: Optional[Dict[str, Any]] = None
     no_acceptance_required: Optional[Dict[str, Any]] = None
 
     @property
@@ -145,6 +151,7 @@ def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_h
     """
     result = AcceptanceCheckResult()
     ac_row_count = 0
+    ac_verdicts: Dict[str, str] = {}
 
     # 1) 验收表格结论列：verdict 枚举 + PENDING/BLOCKED 拒绝 + PASS 证据
     for line in text.splitlines():
@@ -155,6 +162,11 @@ def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_h
         cells = [c.strip() for c in line.split("|")]
         if len(cells) > 8:
             verdict = normalize_verdict(cells[8])
+            ac = m.group(1)
+            ac_verdicts[ac] = verdict
+            result.acceptance_ids.append(ac)
+            if verdict in VERDICT_ENUM:
+                result.verdict_counts[verdict] = result.verdict_counts.get(verdict, 0) + 1
             condition = cells[2]
             evidence_path = cells[6]
             witness_level = cells[7].strip().lower() if len(cells) > 7 else ""
@@ -206,13 +218,29 @@ def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_h
         parsed_any = True
         # page_verification
         pv = data.get("page_verification")
+        if pv is not None and not isinstance(pv, dict):
+            result.ok = False
+            result.issues.append("page_verification must be a mapping")
         if isinstance(pv, dict):
+            result.page_verification = dict(pv)
+            visual = pv.get("visual")
+            if visual is not None and not isinstance(visual, dict):
+                result.ok = False
+                result.issues.append("page_verification.visual must be a mapping")
+            elif isinstance(visual, dict):
+                required = visual.get("required")
+                if not isinstance(required, bool):
+                    result.ok = False
+                    result.issues.append("page_verification.visual.required must be boolean")
+                if required is True and not str(visual.get("evidence_manifest") or "").strip():
+                    result.ok = False
+                    result.issues.append("page_verification.visual required=true needs evidence_manifest")
             mode = pv.get("mode")
             if enforce_completion and mode == "human":
                 human_pass = any(r.get("verdict") == "PASS" for r in result.human_rows)
                 if human_pass and pv.get("human_witness") != "confirmed":
                     result.ok = False
-                    result.issues.append("page_verification mode=human requires human_witness=confirmed for human PASS rows; deferred/waived rows do not require witness")
+                    result.issues.append("human PASS requires confirmed human witness when page_verification mode=human; deferred/waived rows do not require witness")
         # deferred_acceptance
         deferred = data.get("deferred_acceptance")
         if deferred is not None:
@@ -250,7 +278,99 @@ def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_h
                         result.ok = False
                         result.issues.append("owner_waivers item actor must be human_owner")
                     result.owner_waiver_entries.append(item)
-        # database_verification DML 强制
+        # database_operations：允许一个 Task 记录多次 READ/DML/DDL，避免单值覆盖真实历史。
+        operations = data.get("database_operations")
+        if operations is not None:
+            if not isinstance(operations, list):
+                result.ok = False
+                result.issues.append("database_operations must be a list")
+            else:
+                seen_ids = set()
+                for item in operations:
+                    if not isinstance(item, dict):
+                        result.ok = False
+                        result.issues.append("database_operations item must be a mapping")
+                        continue
+                    op = dict(item)
+                    op_id = str(op.get("id") or "").strip()
+                    op_type = str(op.get("type") or "").strip().upper()
+                    status = str(op.get("status") or "").strip().upper()
+                    refs = op.get("acceptance_refs")
+                    if not op_id:
+                        result.ok = False
+                        result.issues.append("database_operations item id is required")
+                    elif op_id in seen_ids:
+                        result.ok = False
+                        result.issues.append(f"database_operations duplicate id: {op_id}")
+                    else:
+                        seen_ids.add(op_id)
+                    if op_type not in DATABASE_OPERATION_TYPES:
+                        result.ok = False
+                        result.issues.append(f"database_operations {op_id or '<missing>'} type must be READ|DML|DDL")
+                    if status not in DATABASE_OPERATION_STATUSES:
+                        result.ok = False
+                        result.issues.append(
+                            f"database_operations {op_id or '<missing>'} status must be PLANNED|EXECUTED|NOT_EXECUTED|NOT_REQUIRED"
+                        )
+                    if refs is None:
+                        refs = []
+                    if not isinstance(refs, list) or any(not str(x or "").strip() for x in refs):
+                        result.ok = False
+                        result.issues.append(f"database_operations {op_id or '<missing>'} acceptance_refs must be a list")
+                        refs = []
+                    refs0 = [str(x).strip() for x in refs]
+                    if op_type in {"DML", "DDL"} and not refs0:
+                        result.ok = False
+                        result.issues.append(f"database_operations {op_id or '<missing>'} {op_type} requires acceptance_refs")
+                    unknown_refs = [x for x in refs0 if x not in ac_verdicts]
+                    if unknown_refs:
+                        result.ok = False
+                        result.issues.append(
+                            f"database_operations {op_id or '<missing>'} unknown acceptance_refs: {', '.join(unknown_refs)}"
+                        )
+                    if status == "EXECUTED":
+                        if op_type in {"DML", "DDL"}:
+                            if str(op.get("authorized_by") or "").strip() != "human_owner":
+                                result.ok = False
+                                result.issues.append(
+                                    f"database_operations {op_id or '<missing>'} EXECUTED {op_type} requires authorized_by=human_owner"
+                                )
+                            if not str(op.get("artifact_ref") or "").strip():
+                                result.ok = False
+                                result.issues.append(
+                                    f"database_operations {op_id or '<missing>'} EXECUTED {op_type} requires artifact_ref"
+                                )
+                            if not str(op.get("rollback_or_cleanup") or "").strip():
+                                result.ok = False
+                                result.issues.append(
+                                    f"database_operations {op_id or '<missing>'} EXECUTED {op_type} requires rollback_or_cleanup"
+                                )
+                        if not str(op.get("execution_evidence") or "").strip():
+                            result.ok = False
+                            result.issues.append(
+                                f"database_operations {op_id or '<missing>'} EXECUTED {op_type or '<missing>'} requires execution_evidence"
+                            )
+                    elif status == "NOT_EXECUTED" and str(op.get("execution_evidence") or "").strip():
+                        result.ok = False
+                        result.issues.append(
+                            f"database_operations {op_id or '<missing>'} NOT_EXECUTED must not contain execution_evidence"
+                        )
+                    if enforce_completion and status in {"PLANNED", "NOT_EXECUTED"}:
+                        unresolved = [
+                            ref for ref in refs0
+                            if ac_verdicts.get(ref) not in {"NOT_REQUIRED", "N/A", "DEFERRED_ACCEPTED", "OWNER_WAIVED"}
+                        ]
+                        if unresolved:
+                            result.ok = False
+                            result.issues.append(
+                                f"database_operations {op_id or '<missing>'} {status} requires acceptance disposition for: {', '.join(unresolved)}"
+                            )
+                    op["type"] = op_type
+                    op["status"] = status
+                    op["acceptance_refs"] = refs0
+                    result.database_operations.append(op)
+
+        # 旧 database_verification 仅保留兼容读取；新模板不再生成。
         dv = data.get("database_verification")
         if enforce_completion and isinstance(dv, dict) and dv.get("action") == "DML":
             if dv.get("dml_execution") != "passed":

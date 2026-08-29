@@ -1,5 +1,5 @@
-# TP-Spec-Coding V5.2.7 — Record-first active workflow
-version: "5.2.7"
+# TP-Spec-Coding V5.2.9 — Record-first active workflow
+version: "5.2.9"
 workflow:
   name: "TP-Spec-Coding Record-first Workflow"
   description: "个人本地开发黑匣子：开发优先，Runtime 旁路记录；phase 是事实，不是收费站。"
@@ -85,7 +85,6 @@ rules:
       - "knowledge retrieval not recorded"
       - "structured refs incomplete"
       - "recommended independent architecture review not run"
-      - "knowledge convergence deferred"
     automation:
       - "Runtime owns task identity, contract metadata, owner/phase projection, generated views and provenance"
       - "normal roles do not maintain refresh, handoff or phase-exit bookkeeping"
@@ -102,10 +101,11 @@ rules:
       - "human_owner explicitly requests an independent review"
   completion:
     semantics:
-      - "COMPLETED means work ended; it does not imply every recommended test or knowledge action ran"
+      - "COMPLETED requires every acceptance criterion to be explicitly disposed; deferred/waived work remains non-PASS"
       - "final-result exposes the actual latest verification fact"
       - "BLOCKED cannot become COMPLETED until the explicit blocker is resolved"
-      - "human test not executed must never be rewritten as PASS"
+      - "human test not executed must never be rewritten as PASS; use trusted defer/waive when completion is accepted with residual risk"
+      - "when current Delivery emitted KNOWLEDGE_CONVERGENCE_REQUEST, completion requires a trusted tp-knowledge Result bound to the same Request and change_set_id"
   database_access:
     description:
       - "read-only development/test inspection is allowed within task scope"

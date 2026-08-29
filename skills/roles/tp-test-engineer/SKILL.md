@@ -1,11 +1,11 @@
 ---
 id: tp-test-engineer
 name: tp-测试工程师
-version: 5.2.7
+version: 5.2.9
 status: active
 type: workflow-role
 role: tp-test-engineer
-description: tp-测试工程师：TP-Spec-Coding v5.2.7 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-测试工程师：TP-Spec-Coding v5.2.9 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-测试工程师
@@ -28,6 +28,8 @@ description: tp-测试工程师：TP-Spec-Coding v5.2.7 正式软件工程角色
 3. PASS 必须绑定真实 Evidence；未执行的人测/浏览器测保持 PENDING/DEFER/WAIVE，不能写 PASS。
 4. Evidence subject 后续实质变化后旧 PASS 失效；标记 `PASS_STALE` 并必须重跑受影响验证。
 5. 生产只读/写入继续遵守明确确认与高风险授权。
+6. 测试创建时先判断是 durable regression test 还是 temporary diagnostic test；前者保护现实行为，后者进入受控 Temp 并在收敛前清理。已有测试已充分覆盖时优先复用/扩展，不用测试数量制造“更保险”的错觉。按需读取 `testing-strategy/references/test-value.md`。
+7. 源码 grep、DOM/CSS 字符串断言只能作为静态结构契约；存在 UI/页面 AC 时必须另做真实浏览器和交互验证。先从 Change Set/Diff 推导受影响页面，绑定当前 `change_set_id` 的 Visual Manifest；按需读取 `testing-strategy/references/visual-qa.md`。
 
 ## 缺陷与返工
 - `NEEDS_FIX`：当前范围内可最小修复；修复后重跑受影响测试。

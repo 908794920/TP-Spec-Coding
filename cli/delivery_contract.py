@@ -15,6 +15,17 @@ def _concrete_reason(value: Any) -> bool:
     return len(text) >= 12 and text.lower() not in generic
 
 
+def validate_task_temp_artifacts(records: List[Dict[str, Any]]) -> List[str]:
+    """Delivery READY 前校验由 TP-Spec 登记的机器本地临时工件。"""
+    statuses = {str(row.get("status") or "").upper() for row in records}
+    errors: List[str] = []
+    if "ACTIVE" in statuses:
+        errors.append("TEMP_ARTIFACT_ACTIVE")
+    if statuses & {"CLEANUP_PENDING", "INVALID"}:
+        errors.append("TEMP_ARTIFACT_CLEANUP_PENDING")
+    return errors
+
+
 def validate_delivery_result(detail: Dict[str, Any]) -> List[str]:
     """Validate Integration-owned delivery facts.
 
@@ -35,6 +46,21 @@ def validate_delivery_result(detail: Dict[str, Any]) -> List[str]:
         errors.append("verification_event_id is invalid")
     if not str(detail.get("verification_subject_digest") or "").strip():
         errors.append("verification_subject_digest is required")
+    for key in ("verification_change_set_id", "review_change_set_id", "change_set_id"):
+        if not str(detail.get(key) or "").strip():
+            errors.append(f"{key} is required")
+    try:
+        if int(detail.get("review_event_id") or 0) <= 0:
+            errors.append("review_event_id is required")
+    except (TypeError, ValueError):
+        errors.append("review_event_id is invalid")
+    ids = {
+        str(detail.get("verification_change_set_id") or ""),
+        str(detail.get("review_change_set_id") or ""),
+        str(detail.get("change_set_id") or ""),
+    }
+    if "" not in ids and len(ids) != 1:
+        errors.append("verification/review/delivery change_set_id must match")
     snap = detail.get("repo_snapshot")
     if snap is not None:
         if not isinstance(snap, dict):
@@ -44,9 +70,6 @@ def validate_delivery_result(detail: Dict[str, Any]) -> List[str]:
                 value = snap.get(key)
                 if value is not None and not isinstance(value, str):
                     errors.append(f"repo_snapshot.{key} must be a string")
-    handoff = detail.get("knowledge_handoff")
-    if handoff is not None and not isinstance(handoff, dict):
-        errors.append("knowledge_handoff must be an object")
     if status == "BLOCKED":
         kind = str(detail.get("blocker_kind") or "").upper()
         if kind not in DELIVERY_BLOCKER_KINDS:
@@ -58,12 +81,17 @@ def validate_delivery_result(detail: Dict[str, Any]) -> List[str]:
     return errors
 
 
-def delivery_result_matches_verification(detail: Dict[str, Any], event_id: int, subject_digest: str) -> bool:
+def delivery_result_matches_verification(detail: Dict[str, Any], event_id: int, subject_digest: str,
+                                         change_set_id: str | None = None) -> bool:
     try:
         recorded_id = int(detail.get("verification_event_id") or 0)
     except (TypeError, ValueError):
         return False
-    return recorded_id == int(event_id) and str(detail.get("verification_subject_digest") or "") == str(subject_digest or "")
+    if recorded_id != int(event_id) or str(detail.get("verification_subject_digest") or "") != str(subject_digest or ""):
+        return False
+    if change_set_id is not None and str(detail.get("change_set_id") or "") != str(change_set_id):
+        return False
+    return True
 
 
 def disposition_allows_pipeline_completion(detail: Dict[str, Any], *, deferred_accepted: bool = False) -> bool:
@@ -84,7 +112,8 @@ def find_delivery_completion_event(events: List[Dict[str, Any]], *, verification
     if str(verification_detail.get("subject_digest") or "") != str(current_subject_digest or ""):
         return None
     verification_id = int(verification_event.get("id") or 0)
-    if not verification_id:
+    change_set_id = str(verification_detail.get("change_set_id") or "")
+    if not verification_id or not change_set_id:
         return None
     for event in reversed(events):
         detail = trusted_event_detail(
@@ -92,7 +121,7 @@ def find_delivery_completion_event(events: List[Dict[str, Any]], *, verification
         )
         if detail is None or validate_delivery_result(detail):
             continue
-        if not delivery_result_matches_verification(detail, verification_id, current_subject_digest):
+        if not delivery_result_matches_verification(detail, verification_id, current_subject_digest, change_set_id):
             continue
         return event if str(detail.get("delivery_status") or "").upper() == "READY" else None
     return None

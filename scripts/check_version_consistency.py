@@ -68,6 +68,7 @@ _ALLOWED_HISTORY_GLOBS = (
     "scripts/tests/test_b18_*",
     "scripts/ci/Test-V510*",
     "CHANGELOG.md",
+    "docs/MIGRATION_V529.md",  # 当前迁移说明必须精确引用上一活动契约
     "manifest.sha256",  # 生成产物，可引用历史文件名
     "db/registry.local.json",
     "db/registry.local.json.example",

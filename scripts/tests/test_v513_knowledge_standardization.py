@@ -123,10 +123,10 @@ class TestKnowledgeContracts(KnowledgeCase):
         self.assertIn("tp-spec knowledge search", knowledge_rule)
         self.assertIn("tp-knowledge", knowledge_rule)
         self.assertNotIn("PRIVATE_VAULT_ROOT", knowledge_rule)
-        self.assertIn("compact `knowledge_handoff`", delivery)
-        self.assertIn("task-scoped convergence", delivery)
-        self.assertIn("Integration 不做 Knowledge qualification", delivery)
-        self.assertIn("task-scoped", knowledge)
+        self.assertIn("KNOWLEDGE_CONVERGENCE_REQUEST", delivery)
+        self.assertIn("Integration 不写最终 Knowledge Result", delivery)
+        self.assertIn("typed effect", delivery)
+        self.assertIn("Task-scoped convergence", knowledge)
 
     def test_lint_accepts_verifies_and_structured_code_evidence(self):
         self.canonical("10-projects/demo/30-features/DEMO-FEAT-001-Feature.md", cid="DEMO-FEAT-001", kind="feature", title="Feature", source_refs="[TASK-1]")

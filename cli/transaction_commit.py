@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Neutral durable transaction/projection primitives for V5.2.7 Record-first Runtime.
+"""Neutral durable transaction/projection primitives for V5.2.9 Record-first Runtime.
 
 This module contains no legacy long-state workflow or Action-role policy.  Migration-only
 compatibility remains under :mod:`cli.migrations.v5_2_3`.
@@ -27,6 +27,8 @@ from .transaction_journal import JOURNAL_SCHEMA, PHASE_DB_COMMITTED, PHASE_FILES
 from .version import active_version
 
 ACTIVE_CONTRACT = active_version()
+TERMINAL_MANIFEST_REL = "generated/terminal-manifest.json"
+TERMINAL_MANIFEST_SCHEMA = "tp-spec.terminal-manifest/v1"
 
 def _read(path: Path) -> str:
     # Preserve CRLF/LF exactly: generated-view digests must agree with the
@@ -41,7 +43,7 @@ def _continuation_sources(task_dir: Path, state: str) -> List[Path]:
         names.extend(["implementation.md", "codex-review.md"])
     elif state == "VERIFYING":
         names.append("implementation.md")
-    # V5.2.7 §3.8/§10.2：新工件经集中注册表纳入 source digest（存在才纳入）
+    # V5.2.9 §3.8/§10.2：新工件经集中注册表纳入 source digest（存在才纳入）
     names.extend(projection_cmd.projection_source_names())
     return [task_dir / name for name in names if (task_dir / name).is_file()]
 
@@ -103,6 +105,20 @@ def _current_view_rel(state: str) -> str:
     """当前视图投影的相对路径（按状态选择 continuation/final-result）。"""
     return "generated/final-result.md" if state == "COMPLETED" else "generated/continuation.md"
 
+def _acceptance_projection_summary(task_dir: Path) -> tuple[dict[str, int], list[dict]]:
+    """读取验收矩阵的结构化统计，仅用于当前视图展示。"""
+    path = task_dir / "acceptance.md"
+    if not path.is_file():
+        return {}, []
+    try:
+        from . import yaml_checks
+        result = yaml_checks.check_acceptance_yaml(
+            _read(path), enforce_completion=False, allow_human_pending=True
+        )
+        return dict(result.verdict_counts), list(result.database_operations)
+    except Exception:
+        return {}, []
+
 def _latest_projected_verification(task_dir: Path) -> str:
     """Return the latest verification fact and mark subject changes as stale."""
     path = task_dir / "events.jsonl"
@@ -126,24 +142,191 @@ def _latest_projected_verification(task_dir: Path) -> str:
         return "UNKNOWN"
     return latest
 
-def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str) -> str:
-    """Render the readable current view from ledger facts.
+def _terminal_manifest_excluded(rel: str) -> bool:
+    """终态清单忽略 Runtime 事务工件和清单自身。"""
+    if rel == TERMINAL_MANIFEST_REL:
+        return True
+    parts = Path(rel).parts
+    if not parts:
+        return True
+    if parts[0] == ".tp-spec" or parts[0].startswith(".v511-bak-"):
+        return True
+    name = parts[-1]
+    if name.startswith(".") and name.endswith(".tmp"):
+        return True
+    return False
 
-    V5.2.7 intentionally exposes state/phase/result facts, not handoff bureaucracy.
-    """
+
+def _terminal_file_records(
+    task_dir: Path, overlays: Optional[Dict[str, str]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """构建确定性的终态文件身份；overlays 表示同一事务尚未最终落盘的文本。"""
+    records: Dict[str, Dict[str, Any]] = {}
+    for path in sorted(task_dir.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        rel = path.relative_to(task_dir).as_posix()
+        if _terminal_manifest_excluded(rel):
+            continue
+        data = path.read_bytes()
+        records[rel] = {
+            "path": rel,
+            "size": len(data),
+            "sha256": "sha256:" + hashlib.sha256(data).hexdigest(),
+        }
+    for rel, text in sorted((overlays or {}).items()):
+        rel0 = Path(rel).as_posix()
+        if _terminal_manifest_excluded(rel0):
+            continue
+        data = str(text).encode("utf-8")
+        records[rel0] = {
+            "path": rel0,
+            "size": len(data),
+            "sha256": "sha256:" + hashlib.sha256(data).hexdigest(),
+        }
+    return records
+
+
+def build_terminal_manifest_text(
+    task_dir: Path,
+    *,
+    task_id: str,
+    terminal_state: str,
+    terminal_event_id: int,
+    overlays: Optional[Dict[str, str]] = None,
+) -> str:
+    """生成结单时的只读文件清单；调用方负责与 DB/投影同事务提交。"""
+    records = _terminal_file_records(task_dir, overlays)
+    payload = {
+        "schema": TERMINAL_MANIFEST_SCHEMA,
+        "task_id": task_id,
+        "terminal_state": terminal_state,
+        "terminal_event_id": int(terminal_event_id),
+        "generated_at": dbmod.now_iso(),
+        "runtime_version": ACTIVE_CONTRACT,
+        "files": [records[key] for key in sorted(records)],
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+
+
+def terminal_integrity(task_dir: Path, *, task_id: str) -> Dict[str, Any]:
+    """只读比较当前任务目录与结单清单；不修改 DB、事件或任务状态。"""
+    manifest_path = task_dir / TERMINAL_MANIFEST_REL
+    empty = {"task_id": task_id, "status": "MISSING", "added": [], "modified": [], "deleted": []}
+    if not manifest_path.is_file():
+        return empty
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {**empty, "error": f"invalid terminal manifest: {exc}"}
+    if manifest.get("schema") != TERMINAL_MANIFEST_SCHEMA or str(manifest.get("task_id") or "") != task_id:
+        return {**empty, "error": "terminal manifest identity mismatch"}
+
+    expected: Dict[str, Dict[str, Any]] = {}
+    for item in manifest.get("files") or []:
+        if isinstance(item, dict) and str(item.get("path") or ""):
+            expected[str(item["path"])] = item
+    current = _terminal_file_records(task_dir)
+    added = sorted(set(current) - set(expected))
+    deleted = sorted(set(expected) - set(current))
+    modified = sorted(
+        rel for rel in set(current) & set(expected)
+        if current[rel].get("sha256") != expected[rel].get("sha256")
+        or current[rel].get("size") != expected[rel].get("size")
+    )
+    return {
+        "task_id": task_id,
+        "status": "DRIFTED" if added or modified or deleted else "CURRENT",
+        "added": added,
+        "modified": modified,
+        "deleted": deleted,
+    }
+
+
+def _status_context(task_dir: Path) -> Dict[str, Any]:
+    """读取刚生成的 status 投影中的少量人类可读事实。"""
+    context: Dict[str, Any] = {
+        "blockers": [],
+        "next_responsibility": "unknown",
+        "change_set_id": "NOT_RECORDED",
+        "quality_facts": {},
+    }
+    path = task_dir / "status.yaml"
+    if not path.is_file():
+        return context
+    in_quality = False
+    try:
+        for raw in _read(path).splitlines():
+            line = raw.rstrip()
+            if line.startswith("blockers:"):
+                raw_value = line.split(":", 1)[1].strip()
+                try:
+                    value = json.loads(raw_value)
+                    context["blockers"] = value if isinstance(value, list) else []
+                except json.JSONDecodeError:
+                    context["blockers"] = []
+            elif line.startswith("next_responsibility:"):
+                context["next_responsibility"] = line.split(":", 1)[1].strip().strip('"\\\'') or "unknown"
+            elif line == "quality_facts:":
+                in_quality = True
+            elif in_quality and line.startswith("  ") and ":" in line:
+                key, value = line.strip().split(":", 1)
+                value = value.strip().strip('"\\\'')
+                context["quality_facts"][key] = value
+                if key == "change_set_id":
+                    context["change_set_id"] = value
+            elif line and not line.startswith(" "):
+                in_quality = False
+    except OSError:
+        return context
+    return context
+
+
+def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str) -> str:
+    """从账本投影生成当前人类视图，不把展示事实升级成新状态。"""
     state = str(task["current_state"] or "NEW")
     owner = str(task["owner_role"] or "unknown")
     phase = str(task["current_stage"] or "intake")
     sources = _continuation_sources(task_dir, state)
     verification = _latest_projected_verification(task_dir)
+    status_context = _status_context(task_dir)
+    quality = status_context.get("quality_facts") or {}
+    blockers = status_context.get("blockers") or []
+    blocker_text = "、".join(str(item) for item in blockers) if blockers else "无"
+
     if state == "COMPLETED":
         body = (
             "# 生成的结项摘要\n\n"
-            f"- 任务状态：COMPLETED\n"
+            "- 任务状态：COMPLETED\n"
             f"- 最后阶段：{phase}\n"
             f"- 最后执行角色：{owner}\n"
             f"- 技术验证事实：{verification}\n"
             f"- 结论：{summary}\n"
+        )
+        counts, database_operations = _acceptance_projection_summary(task_dir)
+        not_required = counts.get("NOT_REQUIRED", 0) + counts.get("N/A", 0)
+        unresolved = counts.get("PENDING", 0) + counts.get("BLOCKED", 0)
+        body += (
+            f"- 验收结论：PASS：{counts.get('PASS', 0)}；"
+            f"NOT_REQUIRED/N/A：{not_required}；"
+            f"DEFERRED_ACCEPTED：{counts.get('DEFERRED_ACCEPTED', 0)}；"
+            f"OWNER_WAIVED：{counts.get('OWNER_WAIVED', 0)}；未处置：{unresolved}\n"
+        )
+        if database_operations:
+            db_items = [
+                f"{item.get('id', '?')}={item.get('type', '?')}/{item.get('status', '?')}"
+                for item in database_operations
+            ]
+            body += "- 数据库操作：" + "、".join(db_items) + "\n"
+        else:
+            body += "- 数据库操作：无\n"
+        body += (
+            f"- Verification：{quality.get('verification', 'NOT_RECORDED')}\n"
+            f"- Code Review：{quality.get('review', 'NOT_RECORDED')}\n"
+            f"- Delivery：{quality.get('delivery', 'NOT_RECORDED')}\n"
+            f"- Knowledge：{quality.get('knowledge', 'NOT_RECORDED')}\n"
+            f"- 未解决阻塞：{blocker_text}\n"
+            "- 终态完整性：CAPTURED（同一结单事务生成 terminal manifest；后续使用 `task terminal-check` 检查漂移）\n"
         )
         deferred = _deferred_acceptance_items(task_dir)
         if deferred:
@@ -151,13 +334,17 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
         if verification != "PASS":
             body += "- 提示：COMPLETED 表示任务工作已结束，不代表未记录/失败/延期的验证被改写为 PASS。\n"
         return _generated_view_text(task_dir, "final-result.md", body, sources, flush_id)
+
     body = (
         "# 任务接续区\n\n"
         f"- 状态：{state}\n"
         f"- 当前阶段：{phase}\n"
         f"- 最近执行角色：{owner}\n"
+        f"- 最新 Change Set：{status_context.get('change_set_id') or 'NOT_RECORDED'}\n"
+        f"- 当前阻塞：{blocker_text}\n"
+        f"- 下一责任：{status_context.get('next_responsibility') or owner}\n"
         f"- 最近记录：{summary}\n"
-        "\n> V5.2.7：phase 是查询事实，不是流程门禁；继续完成业务工作即可。\n"
+        "\n> V5.2.9：phase 是查询事实，不是流程门禁；继续完成业务工作即可。\n"
     )
     return _generated_view_text(task_dir, "continuation.md", body, sources, flush_id)
 
@@ -281,7 +468,7 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
                          db_state_before: str = "", target_state: str = "",
                          owner_before: str = "", owner_after: str = "",
                          flush_id: str = "") -> Dict[str, str]:
-    """一致性提交核心（V5.2.7 durable journal 版）：
+    """一致性提交核心（V5.2.9 durable journal 版）：
 
     1. BEGIN IMMEDIATE 获取 SQLite writer serialization；2. 读取 revision 并备份现有投影；
     3. 写 durable journal（PREPARED）；4. db_and_render(conn) 写 DB 并渲染投影；
@@ -294,6 +481,9 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
     返回渲染文本（供调用方打印摘要）。
     """
     tx_id = transaction_journal.new_transaction_id()
+    effective_rel_paths = list(rel_paths)
+    if target_state == "COMPLETED" and TERMINAL_MANIFEST_REL not in effective_rel_paths:
+        effective_rel_paths.append(TERMINAL_MANIFEST_REL)
     bak_dir = task_dir / f".v511-bak-{tx_id}"
     journal: Dict[str, Any] = {}
     journal_prepared = False
@@ -317,7 +507,7 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
             raise
 
         rev_before = transaction_journal.current_revision(conn, task_id)
-        _backup(task_dir, bak_dir, rel_paths)
+        _backup(task_dir, bak_dir, effective_rel_paths)
         journal = {
             "schema": JOURNAL_SCHEMA,
             "transaction_id": tx_id,
@@ -345,7 +535,7 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
                     before_digest=_sha256_file(bak_dir / rel),
                     target_digest=None,
                 )
-                for rel in rel_paths
+                for rel in effective_rel_paths
             ],
             "created_at": dbmod.now_iso(),
             "updated_at": dbmod.now_iso(),
@@ -354,8 +544,23 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
         journal_prepared = True
 
         texts = db_and_render(conn, transaction_id=tx_id)
+        if target_state == "COMPLETED":
+            state_event = conn.execute(
+                "SELECT id FROM task_event WHERE task_id=? AND event_type='STATE' "
+                "AND to_state='COMPLETED' AND detail_json LIKE ? ORDER BY id DESC LIMIT 1",
+                (task_id, f'%"{flush_id}"%'),
+            ).fetchone()
+            if state_event is None:
+                raise ValueError("TERMINAL_MANIFEST_EVENT_MISSING: completion STATE event not found")
+            texts[TERMINAL_MANIFEST_REL] = build_terminal_manifest_text(
+                task_dir,
+                task_id=task_id,
+                terminal_state=target_state,
+                terminal_event_id=int(state_event["id"]),
+                overlays=texts,
+            )
         journal["expected_revision_after"] = transaction_journal.current_revision(conn, task_id)
-        _stage_and_replace(task_dir, texts, rel_paths)
+        _stage_and_replace(task_dir, texts, effective_rel_paths)
         journal["phase"] = PHASE_FILES_REPLACED
         for entry in journal["files"]:
             entry["target_digest"] = _sha256_file(task_dir / entry["path"])
@@ -395,7 +600,7 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
 
         if journal_prepared:
             try:
-                _restore(task_dir, bak_dir, rel_paths, journal)
+                _restore(task_dir, bak_dir, effective_rel_paths, journal)
             except Exception as restore_err:
                 raise ReconciliationRequiredError(
                     f"DB rolled back but file restore FAILED: {restore_err}; "

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from cli import autonomy_batch, autonomy_cycle, autonomy_profile, autonomy_records, autonomy_workspace, record_first
+from cli import autonomy_batch, autonomy_cycle, autonomy_discovery, autonomy_profile, autonomy_records, autonomy_workspace, record_first
 from cli import main as climain
 
 
@@ -41,7 +41,7 @@ def create_ready_batch(root: Path, profile, ws):
     try: rc,o,e=run(["task","create","--id","TASK-AUTO-1","--project","autonomy-demo","--risk","L0","--flow","L0","--title","integration","--scaffold"])
     finally: os.chdir(old)
     assert rc==0,(o,e)
-    td=auto/".tp-spec"/"tasks"/"TASK-AUTO-1"; autonomy_records.record_discovered("demo","TASK-AUTO-1",str(td),discovery_key="repo/integration")
+    td=auto/".tp-spec"/"tasks"/"TASK-AUTO-1"; autonomy_discovery._prepare_l0_acceptance(td); autonomy_records.record_discovered("demo","TASK-AUTO-1",str(td),discovery_key="repo/integration")
     c0=autonomy_cycle.begin_cycle("demo"); autonomy_records.record_decision("demo","TASK-AUTO-1",decision="APPROVED",reason="ok"); autonomy_cycle.end_cycle("demo",c0["cycle_id"],c0["generation"])
     c1=autonomy_cycle.begin_cycle("demo"); b=autonomy_batch.create_batch("demo",c1["cycle_id"],c1["generation"],["TASK-AUTO-1"]); autonomy_batch.start_task("demo",b["batch_id"],"TASK-AUTO-1",c1["cycle_id"],c1["generation"])
     for rid in (profile["canonical"]["repositories"]["mutable"]):

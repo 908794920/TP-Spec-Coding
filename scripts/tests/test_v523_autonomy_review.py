@@ -4,7 +4,7 @@ import contextlib, io, os, subprocess, tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from cli import autonomy_batch, autonomy_cycle, autonomy_profile, autonomy_records, autonomy_workspace, record_first
+from cli import autonomy_batch, autonomy_cycle, autonomy_discovery, autonomy_profile, autonomy_records, autonomy_workspace, record_first
 from cli import main as climain
 
 
@@ -39,6 +39,7 @@ def create_task(profile, task_id):
     finally: os.chdir(old)
     assert rc==0,(o,e)
     td=auto/".tp-spec"/"tasks"/task_id
+    autonomy_discovery._prepare_l0_acceptance(td)
     autonomy_records.record_discovered("demo",task_id,str(td),discovery_key=f"repo/{task_id}")
     return td
 
