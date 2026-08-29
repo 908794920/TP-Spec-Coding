@@ -2,7 +2,7 @@
 artifact: implementation
 task_id: ""
 artifact_contract:
-  version: 5.2.9
+  version: 5.3.0
 ---
 
 # Implementation（按需）

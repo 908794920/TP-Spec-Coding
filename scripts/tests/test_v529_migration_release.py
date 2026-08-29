@@ -15,11 +15,11 @@ from scripts.tests.runtime_testutil import build_task, run
 
 
 def _legacy_version() -> str:
-    return ".".join(["5", "2", "8"])
+    return ".".join(["5", "2", "9"])
 
 
 def _target_version() -> str:
-    return ".".join(["5", "2", "9"])
+    return ".".join(["5", "3", "0"])
 
 
 def _git_baseline(task_dir: str) -> Path:

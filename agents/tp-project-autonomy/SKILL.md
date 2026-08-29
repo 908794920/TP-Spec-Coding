@@ -1,7 +1,7 @@
 ---
 id: tp-project-autonomy
 name: tp-项目自治维护
-version: 5.2.9
+version: 5.3.0
 status: active
 type: control-role
 role: tp-project-autonomy

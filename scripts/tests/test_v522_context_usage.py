@@ -301,7 +301,7 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
         self.assertEqual(detail["context_usage"][0]["source_type"], "memory_skill")
 
     def test_review_persists_context_usage_and_malformed_is_soft(self):
-        template = Path(__file__).resolve().parents[2] / "templates" / "5.2.9" / "architecture-review.md"
+        template = Path(__file__).resolve().parents[2] / "templates" / "5.3.0" / "architecture-review.md"
         shutil.copy2(template, self.task_dir / "architecture-review.md")
         payload = json.dumps([{
             "source_type": "wiki", "asset_id": "wiki:demo/backend/architecture.md",

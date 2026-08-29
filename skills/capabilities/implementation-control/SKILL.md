@@ -1,11 +1,11 @@
 ---
 name: implementation-control
 display_name: 实现过程控制
-version: 5.2.9
+version: 5.3.0
 description: Use while implementing an TP-Spec-Coding task when code changes, refactoring, reuse decisions, debugging, or scope control are required.
 ---
 
-# 实现过程控制 — V5.2.9 Record-first
+# 实现过程控制 — V5.3.0 Record-first
 
 ## 目的
 把“先理解、再最小修改、验证后再继续”变成默认开发习惯。目标不是写更多代码，而是用最小、可读、可验证的改动解决当前真实问题。

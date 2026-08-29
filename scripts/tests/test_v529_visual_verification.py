@@ -366,8 +366,8 @@ def test_visual_qa_guidance_and_template_are_explicit():
     test_role = (root / "skills/roles/tp-test-engineer/SKILL.md").read_text(encoding="utf-8")
     review_role = (root / "skills/roles/tp-code-reviewer/SKILL.md").read_text(encoding="utf-8")
     integration_role = (root / "skills/roles/tp-integration-engineer/SKILL.md").read_text(encoding="utf-8")
-    acceptance = (root / "templates/5.2.9/acceptance.md").read_text(encoding="utf-8")
-    guide = (root / "templates/5.2.9/requirement-test-guide.md").read_text(encoding="utf-8")
+    acceptance = (root / "templates/5.3.0/acceptance.md").read_text(encoding="utf-8")
+    guide = (root / "templates/5.3.0/requirement-test-guide.md").read_text(encoding="utf-8")
     visual_reference = root / "skills/capabilities/testing-strategy/references/visual-qa.md"
 
     assert "Diff-aware" in testing_skill
