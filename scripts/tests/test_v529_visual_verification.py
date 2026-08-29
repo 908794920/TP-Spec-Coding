@@ -243,7 +243,7 @@ def test_visual_evidence_artifact_path_is_canonical_and_safe():
             "task", "artifact-path", "--task-dir", str(td), "--kind", "visual-evidence", "--ensure",
         )
         assert rc == 0, (out, err)
-        assert Path(out.strip()) == td / "evidence" / "visual"
+        assert Path(out.strip()).resolve() == (td / "evidence" / "visual").resolve()
         assert (td / "evidence" / "visual").is_dir()
         rc, out, err = case.call(
             "task", "artifact-path", "--task-dir", str(td), "--kind", "visual-evidence", "--name", "../escape.png",
