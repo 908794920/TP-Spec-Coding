@@ -1,6 +1,6 @@
 catalog_version: "5.3.0"
 base_version: "5.3.0"
-generated_utc: 20260830T074752Z
+generated_utc: 20260831T071447Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -48,7 +48,7 @@ roles:
   phases: [other]
   capabilities: [base.configure, base.migrate, base.doctor, base.repair]
   owns_states: []
-  content_sha256: 82FCA6EA983F6DF4E9708279EB4862F7F8C9120DAB3EFA477395B81FF960E7D2
+  content_sha256: 56635F2A2856B76FA0EC5D0A8BE8C1130EC7F1E9DF5B09729C29A16C41FD865B
 - workflow_role: tp-knowledge
   display_name: tp-knowledge
   type: human-owner-skill
@@ -57,7 +57,7 @@ roles:
   phases: [other, delivery]
   capabilities: [knowledge.search, knowledge.ingest, knowledge.converge, knowledge.audit]
   owns_states: []
-  content_sha256: DDFDD343FEDD47725C8C0F9A523B9E08D7F44E77CD2CF7518ED69A8D0DC09806
+  content_sha256: 6E89DC7AD8E6BF51F77AE784265FAE998CA68A83218D28385D45B909D371648A
 - workflow_role: tp-wiki
   display_name: tp-wiki
   type: human-owner-skill
@@ -66,7 +66,7 @@ roles:
   phases: [other]
   capabilities: [wiki.plan, wiki.update, wiki.audit, wiki.search]
   owns_states: []
-  content_sha256: A7BF3374EC92091AD66D134B555E24FBA4C0A67B52BCDAA59EB48B80A28821C1
+  content_sha256: 93D5578B4AD3137FCCA68495C6C8EF54F77F3E40B88D680F89279414FE1B154E
 - workflow_role: tp-product-manager
   display_name: tp-产品经理
   type: workflow-role

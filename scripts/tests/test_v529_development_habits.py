@@ -38,6 +38,70 @@ def test_lifecycle_and_integration_keep_external_implementation_review_only():
     assert "Integration 发现问题必须返回 Development" in integration
 
 
+def test_systematic_debugging_requires_executed_red_feedback_loop_before_product_change():
+    debugging = read("skills/capabilities/systematic-debugging/SKILL.md")
+    for phrase in [
+        "修改产品代码之前",
+        "已经实际执行",
+        "Red-capable",
+        "Deterministic",
+        "Fast",
+        "Agent-runnable",
+        "LOOP_UNAVAILABLE",
+        "已有失败测试",
+        "新增最小回归测试",
+        "CLI/HTTP fixture",
+        "Headless Browser",
+        "Trace/Event replay",
+        "Throwaway harness",
+        "Property/Fuzz loop",
+        "Differential/Bisect loop",
+        "结构化 HITL",
+        "原始、未最小化的反馈回路",
+        "临时诊断 instrumentation",
+        "错误的浅层测试",
+    ]:
+        assert phrase in debugging
+    assert debugging.index("已经实际执行") < debugging.index("提出少量可证伪假设")
+
+
+
+def test_implementation_control_uses_ordered_solution_ladder_without_weakening_quality():
+    implementation = read("skills/capabilities/implementation-control/SKILL.md")
+    ladder = [
+        "当前功能是否真的需要存在",
+        "当前代码库是否已有可直接复用实现",
+        "只需修改现有实现",
+        "JDK / 标准库",
+        "框架或平台原生能力",
+        "项目已安装依赖",
+        "最简单的局部表达",
+        "新增满足当前需求的最小实现",
+    ]
+    positions = [implementation.index(token) for token in ladder]
+    assert positions == sorted(positions)
+    for phrase in [
+        "信任边界输入验证",
+        "防数据丢失的错误处理",
+        "安全、权限和隐私",
+        "可访问性",
+        "事务、一致性、并发、幂等",
+        "兼容性",
+        "最小充分验证",
+    ]:
+        assert phrase in implementation
+
+
+def test_implementation_control_exposes_simplification_audit_lenses_without_new_finding_schema():
+    anti_patterns = read("skills/capabilities/implementation-control/references/anti-patterns.md")
+    for lens in ["`delete`", "`stdlib`", "`native`", "`yagni`", "`shrink`"]:
+        assert lens in anti_patterns
+    assert "不创建第二套 Finding schema" in anti_patterns
+    for severity in ["必须修复", "建议修复", "可选优化", "无需修改"]:
+        assert severity in anti_patterns
+
+
+
 def test_capability_references_capture_overdevelopment_and_low_value_tests():
     implementation = read("skills/capabilities/implementation-control/SKILL.md")
     anti_patterns = read("skills/capabilities/implementation-control/references/anti-patterns.md")

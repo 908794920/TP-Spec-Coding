@@ -22,6 +22,34 @@ def read(path: str) -> str:
     return (BASE / path).read_text(encoding="utf-8")
 
 
+CONTEXT_POINTER_RE = re.compile(
+    r"(?m)^- 读取条件：(?P<trigger>[^；\n]+)；内容：(?P<content>[^；\n]+)；路径："
+    r"\[(?P<label>[^\]]+)\]\((?P<path>references/[^)]+\.md)\)\s*$"
+)
+
+PROGRESSIVE_DISCLOSURE = {
+    "agents/tp-knowledge/SKILL.md": {
+        "references/external-ingestion.md": "Registered Source Accountability = 100%",
+        "references/legacy-normalization.md": "knowledge migrate-normalize --apply",
+        "references/scheduled-maintenance.md": "NEEDS_REVIEW",
+    },
+    "agents/tp-wiki/SKILL.md": {
+        "references/initial-build.md": "initial_build_effective_coverage_min",
+        "references/anchor-recovery.md": "wiki anchors-repair --apply",
+        "references/scheduled-maintenance.md": "SCHEDULER_BOOTSTRAP.md",
+    },
+    "agents/tp-base-maintenance/SKILL.md": {
+        "references/junction-migration.md": "MANUAL_REVIEW",
+        "references/project-integration.md": "LEGACY_ACTIVE_REFERENCE",
+        "references/project-bootstrap.md": "PROJECT_BOOTSTRAP_UNSAFE",
+    },
+}
+
+
+def _context_pointers(path: str) -> dict[str, re.Match[str]]:
+    return {m.group("path"): m for m in CONTEXT_POINTER_RE.finditer(read(path))}
+
+
 class TestWorkflowRoleSemantics(unittest.TestCase):
     def assertContainsAll(self, path: str, *needles: str):
         text = read(path)
@@ -137,9 +165,56 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
             "Wiki 服务检索与研发质量",
             "不为形式评分扩写低价值内容",
             "一个源码文件不等于一篇 Wiki",
-            "initial_build_effective_coverage_min",
-            "不得为了 100% 调分母",
         )
+
+    def test_progressive_disclosure_context_pointers_are_explicit_and_scoped(self):
+        for skill_path, expected_refs in PROGRESSIVE_DISCLOSURE.items():
+            pointers = _context_pointers(skill_path)
+            self.assertEqual(set(pointers), set(expected_refs), skill_path)
+            skill_dir = (BASE / skill_path).parent.resolve()
+            for rel, match in pointers.items():
+                self.assertTrue(match.group("trigger").strip(), f"{skill_path}: missing trigger for {rel}")
+                self.assertTrue(match.group("content").strip(), f"{skill_path}: missing content for {rel}")
+                target = (skill_dir / rel).resolve()
+                try:
+                    target.relative_to(skill_dir)
+                except ValueError:
+                    self.fail(f"{skill_path}: reference escapes owning Skill directory: {rel}")
+                self.assertTrue(target.is_file(), f"{skill_path}: missing reference {rel}")
+
+    def test_progressive_disclosure_keeps_core_truth_in_main_and_branch_details_in_references(self):
+        core_main = {
+            "agents/tp-knowledge/SKILL.md": (
+                "Canonical Markdown + 注册 evidence 是 Knowledge truth",
+                "Task-scoped convergence",
+                "baseline 只在当前 truth",
+            ),
+            "agents/tp-wiki/SKILL.md": (
+                "Source Code = 当前技术事实",
+                "Currentity 分类",
+                "唯一合法顺序",
+                "禁止推进 baseline",
+            ),
+            "agents/tp-base-maintenance/SKILL.md": (
+                "Runtime 不得依赖",
+                "Project Scope 不得丢失",
+                "只有 human_owner 明确要求 configure/migrate/repair 时才写",
+            ),
+        }
+        for skill_path, anchors in core_main.items():
+            main = read(skill_path)
+            for token in anchors:
+                self.assertIn(token, main, f"{skill_path}: core truth moved out of main Skill: {token}")
+
+        for skill_path, refs in PROGRESSIVE_DISCLOSURE.items():
+            main = read(skill_path)
+            skill_dir = (BASE / skill_path).parent
+            for rel, branch_anchor in refs.items():
+                target = skill_dir / rel
+                self.assertTrue(target.is_file(), f"{skill_path}: missing reference {rel}")
+                ref_text = target.read_text(encoding="utf-8")
+                self.assertIn(branch_anchor, ref_text, f"{rel}: missing migrated branch semantic anchor")
+                self.assertNotIn(branch_anchor, main, f"{skill_path}: branch detail duplicated in main Skill")
 
     def test_wiki_rules_make_l4_adversarial_without_document_bloat(self):
         content = read("wiki/rules/content-standard.md")

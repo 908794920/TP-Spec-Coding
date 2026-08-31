@@ -116,23 +116,7 @@ Runtime `project.root_path` 与 Runtime Registry 是 machine-local locator/cache
 
 ## 4. Junction 收敛安全规则
 
-迁移必须严格按：
-
-```text
-WRITE PROJECT BINDING
-→ RE-RESOLVE Base/Wiki/Knowledge
-→ 比对旧链接物理 Target
-→ 完全一致才可移除链接对象
-```
-
-强约束：
-
-- 只删除 Junction/symlink **本身**，绝不删除 Target；
-- 若 `.tp-spec/<name>` 是真实目录而非链接，标记 `MANUAL_REVIEW`，不得自动删；
-- link target 与 Resolver target 不一致 → `BLOCKED`；
-- Knowledge/Wiki project scope 未解析时，不得移除对应链接；
-- 旧 Knowledge Registry 尚无 `workspace_roots` 时，可用现有 `.tp-spec/knowledge` Junction/symlink **精确匹配已注册 `10-projects/<id>`** 作为一次性 binding seed；不得按目录名猜；
-- 简单 `content-systems.yaml` 只有在与用户 Installation 完全等价时才可选择删除；含项目特有 override 必须保留。
+项目侧 Junction/symlink 只属于兼容迁移面。只有新 Project Binding 可解析，且旧链接物理 Target 与 Resolver target **精确一致**时，才允许移除链接对象；只删除链接本身，绝不删除 Target。真实目录、target mismatch、scope 未解析或归属无法证明时必须 fail-closed，不得为了目录整洁猜测处理。详细迁移分支按下方 Context Pointer 读取。
 
 ## 5. Health 结论
 
@@ -150,34 +134,15 @@ CLI 可输出 `PASS/FAIL/READY/BLOCKED` 作为确定性执行状态，两者不�
 
 缺失可选 Junction 不是故障。
 
-### Project integration surface
 
-`tp-spec base sync-project --workspace-root <ROOT>` 默认只读计划；显式 `--apply` 后才允许：
 
-- 新建/更新根 `AGENTS.md` 的 `tp-spec-base:managed` block；
-- 新建/更新根 `README.md` 的同一 managed block，并保留项目自身内容；
-- 生成/更新 Base-owned `.tp-spec/README.md`；
-- 从 project-local `content-systems.yaml` 移除与当前 Installation 完全重复的 machine roots；若只剩 schema/空 override，则删除该冗余 project config；
-- 含真实项目级 coverage/quality 等 override 时保留语义，只移除可证明冗余的 machine roots。
+## 6. 按需 Context Pointers
 
-遇到 malformed managed markers、与 Installation 不一致的 absolute project override 或其他无法证明安全的 machine path 必须 `BLOCKED`，不得猜测或静默重写。
+- 读取条件：执行 legacy Junction/symlink 迁移或移除；内容：迁移顺序阻塞条件一次性binding seed与link删除边界；路径：[Junction 迁移](references/junction-migration.md)
+- 读取条件：执行 base sync-project 或检查 active task portability；内容：项目入口surfaceportable override与active formal artifact规则；路径：[项目接入与可移植性](references/project-integration.md)
+- 读取条件：检查或执行项目 Runtime bootstrap；内容：pristine判定授权条件与bootstrap fail-closed边界；路径：[Project bootstrap](references/project-bootstrap.md)
 
-### Active task portability
-
-Base 只检查 `.tp-spec/tasks` 中仍处于 `NEW/ACTIVE/BLOCKED` 的顶层 Markdown formal artifacts。若发现具有执行语义的旧 `.tp-spec/knowledge|wiki|scripts|agents|governance|skills|templates|automation|cli` 路径，报告 `LEGACY_ACTIVE_REFERENCE` 并要求 targeted review。明确的 legacy/禁止使用描述不作为 actionable finding。`tasksHistory`、evidence 与已完成任务不做历史清洗。
-
-SQLite `*.db-wal` / `*.db-shm` 属于 transient runtime，不作为 portable truth，不因其存在判定 portability FAIL。
-
-### Project bootstrap 健康边界
-
-本 Skill 继续负责项目 Runtime 初始化健康检查，但它与 Base Binding 迁移是两件事。
-
-- 只读预检：`tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only`；
-- 未初始化且确认 pristine 时，只有 human_owner 明确要求才执行 bootstrap；
-- 非 pristine、ledger/registry 歧义或已有不兼容状态必须 fail-closed，保留 `PROJECT_BOOTSTRAP_UNSAFE`；
-- 不得把“去 Junction / 写 project-binding”误当成“初始化项目 Runtime”。
-
-## 6. 写入边界
+## 7. 写入边界
 
 默认 doctor/resolve/migration-plan 只读。只有 human_owner 明确要求 configure/migrate/repair 时才写。
 
@@ -199,7 +164,7 @@ SQLite `*.db-wal` / `*.db-shm` 属于 transient runtime，不作为 portable tru
 - 绕过 Base 官方命令直接手工改 Runtime SQLite；
 - 为了“目录干净”删除真实 `.tp-spec` 项目状态目录。
 
-## 7. 与其他 Skill 的边界
+## 8. 与其他 Skill 的边界
 
 - Knowledge 内容/迁移/索引 → `tp-knowledge`
 - Code-understanding Wiki → `tp-wiki`

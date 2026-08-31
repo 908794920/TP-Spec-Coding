@@ -114,30 +114,11 @@ Delivery READY
 - Integration 不写 Result，普通 `FACT` 也不能替代 Result；
 - 不为了 Knowledge 回退软件生命周期；若代码本身变化，由 Change Set 机制正常返回 Development。
 
-## 4. 外部文档接入
+## 4. 按需 Context Pointers
 
-按 `automation/knowledge/ingest-batch.md` 与 `knowledge/rules/ingestion-standard.md` 执行：
-
-```text
-REGISTER → MANIFEST/HASH → DEDUP → CONVERT/QUARANTINE
-→ GROUP/TRIAGE → SEARCH EXISTING CANONICAL
-→ AI READ/UPDATE/CREATE/MERGE → FINAL TRUTH SCAN → INDEX → VERIFY → AUDIT → FINALIZE
-```
-
-默认本地文档转换直接使用 Base 固定的 Microsoft MarkItDown 运行时，不重复实现 PDF/Office 解析器：
-
-```text
-tp-spec knowledge ingest register --workspace-root <workspace> --project <id> --batch <name> --source-root <path>
-tp-spec knowledge ingest convert  --workspace-root <workspace> --batch <name>
-```
-
-`convert` 只对已登记、hash 未漂移的本地 `convert_candidate` 生成 machine-owned Markdown intake；成功后来源仍保持 `pending`，不会自动升级成 canonical truth。转换失败只隔离对应 source 为 `quarantined`，后续 disposition / canonicalization 仍由本 Domain 按证据处理。
-
-目标不是“每份 Source 都生成一篇 Knowledge”，而是 **Registered Source Accountability = 100%**。允许 disposition：
-
-`pending / canonicalized / merged / source_only / duplicate / superseded / quarantined / excluded`。
-
-项目归属、原始文档删除、冲突 merge/split、破坏性转换必须由 human_owner 明确授权；无人值守定时会话不得擅自决定。
+- 读取条件：接入或重新处理已登记的外部文档批次；内容：注册转换分流canonicalization与人工授权边界；路径：[外部文档接入](references/external-ingestion.md)
+- 读取条件：迁移或标准化已有 Knowledge Vault；内容：deterministic normalization与语义歧义处理边界；路径：[Legacy Knowledge 标准化](references/legacy-normalization.md)
+- 读取条件：由 human_owner 配置的 Knowledge Scheduler 唤起维护；内容：对话模型定时维护协议与人工决策阻塞规则；路径：[定时维护](references/scheduled-maintenance.md)
 
 ## 5. Evidence
 
@@ -146,40 +127,13 @@ tp-spec knowledge ingest convert  --workspace-root <workspace> --batch <name>
 强断言（当前入口、必须、唯一、数值、配置项、责任层）必须回真实 evidence。没有本地 Task evidence root 时，`TASK-*` 只能称为“已登记/可外部解析”，不得声称已本地复验。
 
 
-## 5A. Legacy Knowledge 标准化
-
-已有 Vault 迁移先执行 deterministic normalization，再让模型处理语义歧义：
-
-```text
-knowledge migrate-plan
-→ knowledge migrate-normalize           # dry-run
-→ knowledge migrate-normalize --apply  # 仅 safe changes
-→ knowledge lint
-→ targeted AI review
-```
-
-自动层只允许结构/别名/稳定 ID 可证明的兼容变换；`implemented_by/evolves_into`、缺失 evidence、缺失真实 verification date 等必须留给 targeted review。不得让模型为了 lint PASS 批量发明 evidence/date/关系。详见 `knowledge/rules/migration-standard.md`。
-
-## 6. 对话模型定时维护
-
-Knowledge 定时器的执行者是**对话模型**，不是单纯脚本。Scheduler 只保存短 bootstrap；每次唤起后：
-
-1. 解析当前 Base/Knowledge；
-2. 读取 `automation/knowledge/daily-maintenance.md` 当前 canonical protocol；
-3. 通过 Knowledge CLI 获取 deterministic facts；
-4. 只在有明确证据/范围时做 targeted AI UPDATE；
-5. 不得使用 AskUserQuestion；需要人工决策则记录 `NEEDS_REVIEW`，保持旧 baseline；
-6. 输出简洁日报：变化、自动动作、质量结果、未处理阻塞。
-
-定时器本身不得复制整套维护提示词，否则 Base 升级后会产生双权威。
-
-## 7. 检索与可观测性
+## 6. 检索与可观测性
 
 优先通过 `tp-spec knowledge search` 使用标准投影。标准搜索只记录 query hash、模式、候选/结果数量、fallback、耗时等轻量 telemetry，不保存原始 query 正文。
 
 关注：canonical hit、source fallback、no-result、latency。检索策略变化前运行 `tp-spec knowledge eval` 对当前 Golden Set 回归；不得仅因旧 DB 存在 vector 表而恢复 Embedding。它们用于判断 Knowledge 是否真正帮助 Agent，而不是把“文档数”当产品 KPI。
 
-## 8. 禁止事项
+## 7. 禁止事项
 
 - 不负责 Base 同步/修复；
 - 不把检索 projection DB 当唯一备份；

@@ -177,13 +177,17 @@ class TestV512Maintenance(unittest.TestCase):
 
     def test_role_contracts_encode_pristine_and_pretask_boundaries(self):
         base_maintenance = (BASE / "agents" / "tp-base-maintenance" / "SKILL.md").read_text(encoding="utf-8")
+        bootstrap_ref_path = BASE / "agents" / "tp-base-maintenance" / "references" / "project-bootstrap.md"
+        self.assertTrue(bootstrap_ref_path.is_file())
+        base_bootstrap = bootstrap_ref_path.read_text(encoding="utf-8")
         requirement = (BASE / "skills" / "roles" / "tp-product-manager" / "SKILL.md").read_text(encoding="utf-8")
         architecture = (BASE / "skills" / "roles" / "tp-software-architect" / "SKILL.md").read_text(encoding="utf-8")
         lifecycle = (BASE / "agents" / "tp-software-lifecycle" / "SKILL.md").read_text(encoding="utf-8")
         runtime_api = (BASE / "governance" / "runtime-api.yaml").read_text(encoding="utf-8")
         self.assertIn("TP-Spec-Coding Installation + Project Binding", base_maintenance)
         self.assertIn("Workspace Inventory", base_maintenance)
-        self.assertIn("PROJECT_BOOTSTRAP_UNSAFE", base_maintenance)
+        self.assertIn("PROJECT_BOOTSTRAP_UNSAFE", base_bootstrap)
+        self.assertNotIn("PROJECT_BOOTSTRAP_UNSAFE", base_maintenance)
         self.assertIn("需求分析允许发生在正式 Task 创建之前", requirement)
         self.assertIn("不得为了 FACT/DECISION/账本提前建 Task", requirement)
         self.assertNotIn("--from-intake <DIR>", architecture)

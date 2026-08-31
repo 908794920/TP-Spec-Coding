@@ -33,4 +33,4 @@ release/
 /docs/planning/
 
 # TP-Spec 项目级 Web Artifact（presentation-only，可重建，不进入版本库）
-.tp-spec
+.tp-spec/card/
