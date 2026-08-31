@@ -1,7 +1,7 @@
 ---
 name: tp-autonomy-review
 display_name: 自治审查
-version: 5.2.9
+version: 5.3.0
 description: 只读查看所有 Autonomy Profile 的 Inbox、Batch、Task、真实 Git commit/diff 与 Verification evidence；不写 Canonical。
 ---
 

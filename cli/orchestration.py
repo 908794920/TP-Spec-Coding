@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.9 deterministic, read-only workflow orchestration.
+"""V5.3.0 deterministic, read-only workflow orchestration.
 
 Workflow chooses *when* to invoke a role.  Skills choose *how* to do the work.
 The existing Task Runtime remains the only durable fact ledger.
@@ -1271,6 +1271,8 @@ def resolve_progress(
             "role_display": _role_display(role_map, role),
             "status": status,
             "required": bool(step.get("required")),
+            "trigger": str(step.get("trigger") or ""),
+            "definition_source": "workflow.pipeline",
             "completion_event_id": completion_event_id,
             "completion_source": completion_source,
         }
@@ -1279,6 +1281,26 @@ def resolve_progress(
             completed_steps.append(item)
         elif not current_step and status in {"进行中", "已阻塞"}:
             current_step = item
+
+    pipeline_role_ids = {str(item.get("role") or "") for item in steps if str(item.get("role") or "")}
+    conditional_roles: List[Dict[str, Any]] = []
+    seen_conditional_roles: set[str] = set()
+    for recommendation in route.get("recommended_roles") or []:
+        if not isinstance(recommendation, dict):
+            continue
+        role_id = str(recommendation.get("role_id") or "")
+        if not role_id or role_id in pipeline_role_ids or role_id in seen_conditional_roles:
+            continue
+        seen_conditional_roles.add(role_id)
+        conditional_roles.append({
+            "role_id": role_id,
+            "role_display": _role_display(role_map, role_id),
+            "skill_path": str(recommendation.get("skill_path") or ""),
+            "trigger": str(recommendation.get("trigger") or ""),
+            "reason_code": str(recommendation.get("reason_code") or ""),
+            "capabilities": list(recommendation.get("capabilities") or []),
+            "definition_source": "workflow.conditional_roles",
+        })
 
     next_stage = str(route.get("next_stage") or "")
     next_step: Dict[str, Any] = {}
@@ -1322,6 +1344,7 @@ def resolve_progress(
         "next_step": next_step,
         "next_step_source": "workflow_contract" if next_step else "none",
         "steps": steps,
+        "conditional_roles": conditional_roles,
         "reference_steps": [],
         "route": {
             "decision": str(route.get("decision") or ""),

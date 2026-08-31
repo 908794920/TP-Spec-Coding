@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.9 generated Agent/Role/Skill topology contract."""
+"""V5.3.0 generated Agent/Role/Skill topology contract."""
 from __future__ import annotations
 
 import copy

@@ -7,7 +7,7 @@
 - 第一次接触项目：先读根目录 [`README.md`](../README.md)。
 - 安装、机器配置、项目接入和排错：读 [`GETTING_STARTED.md`](GETTING_STARTED.md)。
 - 理解 Agent / Role / Skill / Runtime：读 [`AGENTS_AND_SKILLS.md`](AGENTS_AND_SKILLS.md)。
-- 升级到 V5.2.9 的在途项目/Task：读 [`MIGRATION_V529.md`](MIGRATION_V529.md)。
+- 升级到 V5.3.0 的在途项目/Task：读 [`MIGRATION_V529.md`](MIGRATION_V529.md)。
 
 ## 按 Agent 选择入口
 

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import contextlib
-import io
 import json
 import tempfile
 from pathlib import Path
 
 from cli import db as dbmod
-from cli import main as climain
+from scripts.tests.runtime_testutil import run
 from cli import context_effectiveness
 
 
@@ -20,16 +18,16 @@ def _make_db() -> tuple[Path, object]:
     with dbmod.transactional(conn):
         conn.execute(
             "INSERT INTO project(project_id,project_name,root_path,base_version,schema_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-            ("A", "A", str(root / "A"), "5.2.9", 1, now, now),
+            ("A", "A", str(root / "A"), "5.3.0", 1, now, now),
         )
         conn.execute(
             "INSERT INTO project(project_id,project_name,root_path,base_version,schema_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-            ("B", "B", str(root / "B"), "5.2.9", 1, now, now),
+            ("B", "B", str(root / "B"), "5.3.0", 1, now, now),
         )
         for task_id, project_id in (("TASK-A1", "A"), ("TASK-A2", "A"), ("TASK-B1", "B")):
             conn.execute(
                 "INSERT INTO task(task_id,project_id,title,risk_level,flow_level,current_state,current_stage,owner_role,base_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (task_id, project_id, task_id, "L1", "L1", "ACTIVE", "development", "tp-development-engineer", "5.2.9", now, now),
+                (task_id, project_id, task_id, "L1", "L1", "ACTIVE", "development", "tp-development-engineer", "5.3.0", now, now),
             )
     return path, conn
 
@@ -153,14 +151,9 @@ def test_report_command_is_read_only_and_has_all_source_buckets():
         _insert_event(conn, detail=_detail("record-first", "CHECKPOINT", [_usage("wiki", "wiki:A/x.md", "adopted")]))
         before = conn.execute("SELECT COUNT(*) AS c FROM task_event").fetchone()["c"]
         conn.close()
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            try:
-                rc = climain.main(["report", "context-effectiveness", "--project", "A", "--days", "30", "--json", "--db", str(path)])
-            except SystemExit as exc:
-                rc = exc.code if isinstance(exc.code, int) else 1
-        assert rc == 0, err.getvalue()
-        data = json.loads(out.getvalue())
+        rc, out, err = run(["report", "context-effectiveness", "--project", "A", "--days", "30", "--json", "--db", str(path)])
+        assert rc == 0, err
+        data = json.loads(out)
         assert data["schema"] == "tp-spec.context-effectiveness/v1"
         assert set(data["sources"]) == {"wiki", "knowledge", "memory_project", "memory_skill"}
         conn2 = dbmod.connect(str(path))
@@ -180,14 +173,9 @@ def test_report_text_renders_same_metrics():
     try:
         _insert_event(conn, detail=_detail("record-first", "CHECKPOINT", [_usage("wiki", "wiki:A/x.md", "adopted")]))
         conn.close()
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            try:
-                rc = climain.main(["report", "context-effectiveness", "--project", "A", "--days", "30", "--db", str(path)])
-            except SystemExit as exc:
-                rc = exc.code if isinstance(exc.code, int) else 1
-        assert rc == 0, err.getvalue()
-        text = out.getvalue()
+        rc, out, err = run(["report", "context-effectiveness", "--project", "A", "--days", "30", "--db", str(path)])
+        assert rc == 0, err
+        text = out
         assert "Context Effectiveness: A (30d)" in text
         assert "Wiki" in text
         assert "retrieved: 1" in text
@@ -202,12 +190,7 @@ def test_report_text_renders_same_metrics():
 def test_report_days_must_be_positive():
     path, conn = _make_db(); conn.close()
     try:
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            try:
-                rc = climain.main(["report", "context-effectiveness", "--project", "A", "--days", "0", "--json", "--db", str(path)])
-            except SystemExit as exc:
-                rc = exc.code if isinstance(exc.code, int) else 1
+        rc, out, err = run(["report", "context-effectiveness", "--project", "A", "--days", "0", "--json", "--db", str(path)])
         assert rc != 0
     finally:
         import shutil; shutil.rmtree(path.parent, ignore_errors=True)

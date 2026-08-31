@@ -5,9 +5,7 @@ Covers pristine Runtime bootstrap, actionable task-create errors, and pre-task i
 """
 from __future__ import annotations
 
-import contextlib
 import hashlib
-import io
 import json
 import shutil
 import sys
@@ -18,19 +16,9 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE))
 
+from scripts.tests.runtime_testutil import run
 from cli import db as dbmod  # noqa: E402
-from cli import main as climain  # noqa: E402
 from cli.version import active_version  # noqa: E402
-
-
-def run(argv):
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        try:
-            rc = climain.main(argv)
-        except SystemExit as exc:
-            rc = exc.code if isinstance(exc.code, int) else 1
-    return rc, out.getvalue(), err.getvalue()
 
 
 class TestV512Maintenance(unittest.TestCase):
@@ -189,13 +177,17 @@ class TestV512Maintenance(unittest.TestCase):
 
     def test_role_contracts_encode_pristine_and_pretask_boundaries(self):
         base_maintenance = (BASE / "agents" / "tp-base-maintenance" / "SKILL.md").read_text(encoding="utf-8")
+        bootstrap_ref_path = BASE / "agents" / "tp-base-maintenance" / "references" / "project-bootstrap.md"
+        self.assertTrue(bootstrap_ref_path.is_file())
+        base_bootstrap = bootstrap_ref_path.read_text(encoding="utf-8")
         requirement = (BASE / "skills" / "roles" / "tp-product-manager" / "SKILL.md").read_text(encoding="utf-8")
         architecture = (BASE / "skills" / "roles" / "tp-software-architect" / "SKILL.md").read_text(encoding="utf-8")
         lifecycle = (BASE / "agents" / "tp-software-lifecycle" / "SKILL.md").read_text(encoding="utf-8")
         runtime_api = (BASE / "governance" / "runtime-api.yaml").read_text(encoding="utf-8")
         self.assertIn("TP-Spec-Coding Installation + Project Binding", base_maintenance)
         self.assertIn("Workspace Inventory", base_maintenance)
-        self.assertIn("PROJECT_BOOTSTRAP_UNSAFE", base_maintenance)
+        self.assertIn("PROJECT_BOOTSTRAP_UNSAFE", base_bootstrap)
+        self.assertNotIn("PROJECT_BOOTSTRAP_UNSAFE", base_maintenance)
         self.assertIn("需求分析允许发生在正式 Task 创建之前", requirement)
         self.assertIn("不得为了 FACT/DECISION/账本提前建 Task", requirement)
         self.assertNotIn("--from-intake <DIR>", architecture)

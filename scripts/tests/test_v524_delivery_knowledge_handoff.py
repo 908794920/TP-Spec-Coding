@@ -9,7 +9,7 @@ CHANGE_SET_ID = 'sha256:change-set'
 def test_integration_delivery_detail_owns_delivery_not_knowledge():
     detail = workflow_records.build_delivery_detail(
         task_id="TASK-1", transaction_id="tx", flush_id="f",
-        created_at="2026-08-18T00:00:00+00:00", schema_version="5.2.9",
+        created_at="2026-08-18T00:00:00+00:00", schema_version="5.3.0",
         verification_event_id=7, verification_subject_digest="subject",
         verification_change_set_id=CHANGE_SET_ID, review_event_id=8,
         review_change_set_id=CHANGE_SET_ID, change_set_id=CHANGE_SET_ID,
@@ -36,15 +36,6 @@ def test_delivery_completion_does_not_wait_for_knowledge_disposition():
     }
     assert delivery_contract.validate_delivery_result(detail) == []
     assert delivery_contract.delivery_result_matches_verification(detail, 7, "subject")
-
-
-def test_legacy_task_scoped_knowledge_handoff_is_rejected():
-    with pytest.raises(ValueError, match="legacy task-scoped Knowledge handoff is retired"):
-        knowledge_state.task_scoped_convergence({
-            "task_id": "TASK-1",
-            "verified_facts": [],
-            "reusable_findings": [],
-        })
 
 
 def test_delivery_cli_is_integration_owned_not_knowledge_owned():

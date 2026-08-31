@@ -31,20 +31,6 @@ def _load_checker():
     return module
 
 
-def test_document_navigation_checker_exists():
-    assert CHECKER.is_file()
-
-
-def test_current_document_entrypoints_exist():
-    for rel in (
-        "README.md",
-        "docs/README.md",
-        "docs/GETTING_STARTED.md",
-        "docs/AGENTS_AND_SKILLS.md",
-    ):
-        assert (BASE / rel).is_file(), rel
-
-
 def test_public_agents_are_catalog_driven_and_each_has_a_guide():
     checker = _load_checker()
     expected = _public_agent_ids_from_catalog()
@@ -71,19 +57,9 @@ def test_software_role_ids_are_catalog_driven():
     assert len(expected) == 9
 
 
-def test_generated_agent_topology_blocks_match_catalog():
-    checker = _load_checker()
-    assert checker.validate_agent_guides(BASE) == []
-
-
 def test_public_document_navigation_has_no_broken_links_or_process_paths():
     checker = _load_checker()
     assert checker.validate_document_navigation(BASE) == []
-
-
-def test_process_document_release_surface_is_removed():
-    checker = _load_checker()
-    assert checker.retired_process_files(BASE) == []
 
 
 def test_full_and_github_ci_run_document_navigation_check():

@@ -6,18 +6,18 @@ import os
 from pathlib import Path
 
 from cli import db as dbmod
-from cli import main as climain
+from scripts.tests.cli_testutil import invoke_main
 from cli.version import active_version
 
 BASE = Path(__file__).resolve().parents[2]
 PROJECT_ID = "p-test"
 
 
-def run(argv: list[str]):
+def run(argv: list[str], *, refresh_card: bool = False):
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         try:
-            rc = climain.main(argv)
+            rc = invoke_main(argv, refresh_card=refresh_card)
         except SystemExit as exc:
             rc = exc.code if isinstance(exc.code, int) else 1
     return rc, out.getvalue(), err.getvalue()

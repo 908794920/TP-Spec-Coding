@@ -176,7 +176,11 @@ tr:last-child td { border-bottom: 0; }
 .workflow-step-title { font-size: var(--tp-font-size-body); font-weight: var(--tp-font-weight-semibold); line-height: var(--tp-leading-compact); overflow-wrap: anywhere; }
 .workflow-step-meta, .workflow-step-status { margin-top: 4px; color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); overflow-wrap: anywhere; }
 .workflow-step-status { color: var(--tp-secondary); font-weight: var(--tp-font-weight-semibold); }
-.workflow-optional { display: inline-flex; margin-top: 7px; padding: 2px 6px; border: 1px solid var(--tp-border); border-radius: 999px; color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); }
+.workflow-step-kind { display: inline-flex; margin-top: 7px; padding: 2px 6px; border: 1px solid var(--tp-border); border-radius: 999px; color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); }
+.workflow-conditional-roles { display: grid; gap: 7px; margin-top: 8px; }
+.workflow-conditional-role { padding: 9px 10px; border: 1px solid var(--tp-border); border-radius: 8px; background: var(--tp-panel3); }
+.workflow-conditional-role-title { font-size: var(--tp-font-size-body); font-weight: var(--tp-font-weight-semibold); line-height: var(--tp-leading-compact); overflow-wrap: anywhere; }
+.workflow-role-note { margin-top: 7px; color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); }
 .workflow-next { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--tp-border); }
 .workflow-tech { margin-top: 12px; }
 .workflow-tech-toggle { border: 1px solid var(--tp-border); background: var(--tp-panel3); color: var(--tp-text); border-radius: 7px; padding: 6px 9px; font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); cursor: pointer; }
@@ -941,8 +945,9 @@ function workflowStageLabel(workflow, stage) {
 }
 
 function renderSteps(workflow, id) {
-  const section = namedCard(id || 'workflow', '工作流进度');
+  const section = namedCard(id || 'workflow', '工作步骤');
   const steps = Array.isArray(workflow.steps) ? workflow.steps : [];
+  const conditionalRoles = Array.isArray(workflow.conditional_roles) ? workflow.conditional_roles : [];
   const next = workflow.next_step || {};
   const current = workflow.current_step && workflow.current_step.stage ? workflow.current_step : {};
   const currentStage = String(current.stage || '');
@@ -956,7 +961,7 @@ function renderSteps(workflow, id) {
       main,
       node('div', 'workflow-current-title', projectedLabel(current.stage_display)),
       node('div', 'workflow-current-meta', [
-        projectedLabel(current.role_display, '未指定负责人'),
+        current.role ? `执行角色：${projectedLabel(current.role_display, '未指定角色')}` : '',
         current.status ? displayStatus(current.status) : projectedLabel(next.action_display, '待处理'),
       ].filter(Boolean).join(' · ')),
     );
@@ -978,9 +983,9 @@ function renderSteps(workflow, id) {
         step,
         node('div', 'workflow-step-title', projectedLabel(stepData.stage_display)),
         node('div', 'workflow-step-status', displayStatus(stepData.status)),
-        node('div', 'workflow-step-meta', projectedLabel(stepData.role_display, '未指定负责人')),
+        node('div', 'workflow-step-meta', stepData.role ? `执行角色：${projectedLabel(stepData.role_display, '未指定角色')}` : ''),
+        node('span', 'workflow-step-kind', stepData.required ? '必需步骤' : '条件步骤'),
       );
-      if (!stepData.required) append(step, node('span', 'workflow-optional', '按条件启用'));
       append(box, step);
     });
     append(section, box);
@@ -989,12 +994,29 @@ function renderSteps(workflow, id) {
     if (workflow.reference_steps) append(section, node('div', 'subtle', (workflow.reference_steps || []).join(' → ')));
   }
 
+  if (conditionalRoles.length) {
+    const roleList = node('div', 'workflow-conditional-roles');
+    conditionalRoles.forEach((roleData) => {
+      const row = node('div', 'workflow-conditional-role');
+      append(row, node('div', 'workflow-conditional-role-title', projectedLabel(roleData.role_display, '未配置角色名称')));
+      append(roleList, row);
+    });
+    append(
+      section,
+      node('div', 'subsection-title', '条件参与角色'),
+      node('div', 'workflow-role-note', '以下专业能力按当前风险或触发条件参与，不属于固定工作步骤。'),
+      roleList,
+    );
+  }
+  append(section, node('div', 'workflow-role-note', '角色代表专业职责/SKILL，不代表独立人员。'));
+
   if (next.stage) {
     const nextBox = node('div', 'workflow-next');
+    const nextRole = next.role ? `执行角色：${projectedLabel(next.role_display, '未指定角色')}` : '';
     append(
       nextBox,
       node('div', 'section-title', '下一步'),
-      node('div', '', `${projectedLabel(next.stage_display)}${next.role ? ` · ${projectedLabel(next.role_display, '未指定负责人')}` : ''}`),
+      node('div', '', [projectedLabel(next.stage_display), nextRole].filter(Boolean).join(' · ')),
       node('div', 'subtle', [
         projectedLabel(next.action_display, '未配置展示名称'),
         next.confirmation_required ? projectedLabel(next.confirmation_display, '需要确认') : '',
@@ -1013,7 +1035,7 @@ function renderSteps(workflow, id) {
   panel.id = techId;
   panel.hidden = true;
   const currentRaw = workflow.current_step || {};
-  panel.textContent = [
+  const detailLines = [
     `current.stage=${currentRaw.stage || ''}`,
     `current.role=${currentRaw.role || ''}`,
     `current.source=${workflow.current_step_source || ''}`,
@@ -1021,8 +1043,27 @@ function renderSteps(workflow, id) {
     `next.role=${next.role || ''}`,
     `next.action=${next.action || ''}`,
     `next.confirmation_reason=${next.confirmation_reason || ''}`,
+    `next.reason_codes=${Array.isArray(next.reason_codes) ? next.reason_codes.join(',') : ''}`,
     `next.source=${workflow.next_step_source || ''}`,
-  ].join('\n');
+  ];
+  steps.forEach((stepData, index) => {
+    detailLines.push(
+      `steps[${index}].stage=${stepData.stage || ''}`,
+      `steps[${index}].role=${stepData.role || ''}`,
+      `steps[${index}].required=${Boolean(stepData.required)}`,
+      `steps[${index}].trigger=${stepData.trigger || ''}`,
+      `steps[${index}].definition_source=${stepData.definition_source || ''}`,
+    );
+  });
+  conditionalRoles.forEach((roleData, index) => {
+    detailLines.push(
+      `conditional_roles[${index}].role_id=${roleData.role_id || ''}`,
+      `conditional_roles[${index}].trigger=${roleData.trigger || ''}`,
+      `conditional_roles[${index}].reason_code=${roleData.reason_code || ''}`,
+      `conditional_roles[${index}].definition_source=${roleData.definition_source || ''}`,
+    );
+  });
+  panel.textContent = detailLines.join('\n');
   toggle.addEventListener('click', () => {
     const expanded = toggle.getAttribute('aria-expanded') === 'true';
     toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');

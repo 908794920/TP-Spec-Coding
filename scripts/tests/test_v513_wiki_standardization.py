@@ -1117,11 +1117,12 @@ class TestWikiContracts(unittest.TestCase):
 
     def test_tp_knowledge_uses_resolved_targets_and_junction_is_compat(self):
         text = (BASE / "agents" / "tp-knowledge" / "SKILL.md").read_text(encoding="utf-8")
+        scheduled = (BASE / "agents" / "tp-knowledge" / "references" / "scheduled-maintenance.md").read_text(encoding="utf-8")
         self.assertIn("Content Systems Resolver", text)
         self.assertIn("knowledge_physical_root", text)
         self.assertIn("Junction 仅是兼容/浏览入口", text)
-        self.assertIn("automation/", text)
-        self.assertNotIn("D:\\private\\knowledge-vault", text)
+        self.assertIn("automation/", scheduled)
+        self.assertNotIn("D:\\private\\knowledge-vault", text + scheduled)
 
     def test_scheduler_uses_versioned_canonical_prompt(self):
         boot = (BASE / "automation" / "wiki" / "SCHEDULER_BOOTSTRAP.md").read_text(encoding="utf-8")

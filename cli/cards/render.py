@@ -71,7 +71,7 @@ def artifact_output_path(root: "str | Path | None" = None) -> Path:
     """
     explicit = os.environ.get("TP_SPEC_CARD_ARTIFACT_ROOT")
     base = Path(root if root is not None else (explicit or Path.cwd())).expanduser().resolve(strict=False)
-    return base / ".tp-spec-preview" / "card" / "index.html"
+    return base / ".tp-spec" / "card" / "index.html"
 
 
 def default_output_path(card_type: str, identifier: Optional[str] = None) -> Path:

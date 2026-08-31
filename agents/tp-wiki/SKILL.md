@@ -1,12 +1,12 @@
 ---
 id: tp-wiki
 name: tp-wiki
-version: 5.2.9
+version: 5.3.0
 status: active
 type: human-owner-skill
 tool_agnostic: 本技能包不要求特定 IDE、账号、插件、模型或绝对路径；从 TP-Spec-Coding 相对路径加载即可。
 description: >
-  代码理解 Wiki 工程师（tp-wiki）：V5.2.9 代码理解 Wiki 专项 Skill：把当前源码事实维护为高信息密度、可溯源、可增量更新的代码认知地图。
+  代码理解 Wiki 工程师（tp-wiki）：V5.3.0 代码理解 Wiki 专项 Skill：把当前源码事实维护为高信息密度、可溯源、可增量更新的代码认知地图。
   不拥有 workflow state；可由 human_owner 显式调用，或由 human_owner 已配置的 canonical Wiki automation 调用。
 ---
 
@@ -77,7 +77,7 @@ Knowledge   = 跨任务长期有效的业务/经验知识
 
 质量取舍优先级：**误导当前主路径 / 责任归因错误 / 核心模块漏图 > 引用与覆盖完整度 > 边角实现细节**。Wiki 服务检索与研发质量，不为形式评分扩写低价值内容。
 
-首次构建时，先把 Wiki-eligible source 按能力/子系统做**语义聚类**再设计文档拓扑；一个源码文件不等于一篇 Wiki。`quality.initial_build_effective_coverage_min` 是首次可信 baseline 的**就绪阈值**（默认 0.95），与日常 `effective_wiki_coverage_warn` 分离：低于阈值必须继续处理 uncovered，不能把“verify 没有 coverage ERROR”解释成“半成品可以结单”。对剩余 uncovered 逐项判断“补进现有/聚合 Wiki”还是“确实应排除并给出真实 reason”，不得为了 100% 调分母。
+Wiki 文档按能力/子系统组织，一个源码文件不等于一篇 Wiki。首次可信 baseline 的语义聚类、覆盖阈值与 uncovered 处置属于按需分支，见下方 Context Pointer。
 
 ## 4. 变更处理
 
@@ -124,11 +124,13 @@ SCAN → CLASSIFY → TOPOLOGY → PLAN → AI UPDATE
 
 以下任一发生都禁止推进 baseline：AI 未更新、质量 FAIL、UNCERTAIN 未解决、L4 未做/失败、运行中断、scan 后源码再次变化。
 
-Anchor baseline 异常时先 `wiki anchors-doctor`。只有 `repairable=true` 才允许 `wiki anchors-repair --apply`；若 current source 已偏离 committed snapshot，则旧行签名不可恢复，必须 fail-closed 转重新验证/full-rebuild。不得手改 `wiki-cite-anchors.json`、hash、snapshot_id 或 cite line。
 
-## 8. Automation
 
-外部 AI Scheduler 只保存 `automation/wiki/SCHEDULER_BOOTSTRAP.md` 中的短 bootstrap；每次运行读取当前 `automation/wiki/daily-maintenance.md`。canonical protocol 无法读取时停止，禁止凭记忆继续。
+## 8. 按需 Context Pointers
+
+- 读取条件：首次构建或全量重建一个 repo 的可信 Wiki baseline；内容：语义聚类覆盖阈值与uncovered处置；路径：[首次构建](references/initial-build.md)
+- 读取条件：Anchor baseline 异常或 cite line 无法恢复；内容：anchors doctor修复条件与fail-closed重建边界；路径：[Anchor 恢复](references/anchor-recovery.md)
+- 读取条件：由 human_owner 配置的 Wiki Scheduler 唤起维护；内容：短bootstrap与canonical daily protocol读取规则；路径：[定时维护](references/scheduled-maintenance.md)
 
 ## 9. 禁止事项
 

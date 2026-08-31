@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""V5.2.9 temporary artifact and work-session hardening regressions."""
+"""V5.3.0 temporary artifact and work-session hardening regressions."""
 from __future__ import annotations
 
-import contextlib
 from concurrent.futures import ThreadPoolExecutor
-import io
 import json
 import os
 import shutil
@@ -14,18 +12,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from cli import main as climain
+from scripts.tests.runtime_testutil import run
 from cli import temp_artifacts
-
-
-def run(argv):
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        try:
-            rc = climain.main(argv)
-        except SystemExit as exc:
-            rc = exc.code if isinstance(exc.code, int) else 1
-    return rc, out.getvalue(), err.getvalue()
 
 
 class TempArtifactUnitCase(unittest.TestCase):

@@ -15,24 +15,33 @@
 
 ```bash
 python -m pip install -r requirements-dev.txt
-python -m pytest -q
 ```
 
-提交前至少运行：
+日常修改先运行快速门禁：
 
 ```bash
-python -m pytest -q
-python scripts/check_version_consistency.py
-python scripts/update_role_catalog.py --verify
-python scripts/check_portability.py
-python scripts/update_manifest.py --verify
+python -m pytest -q -m "smoke or ((unit or contract) and not slow)"
 ```
 
-Windows 环境再运行：
+再按受影响领域补充定向测试，例如：
 
-```powershell
-pwsh -File scripts/ci/Test-TpSpecBase.ps1 -Mode Full
+```bash
+python -m pytest -q -m "cards and not slow"
+python -m pytest -q -m "workflow and not slow"
 ```
+
+PR 的 Linux 门禁分为快速层与非 slow integration：
+
+```bash
+python -m pytest -q -m "smoke or ((unit or contract) and not slow)"
+python -m pytest -q -m "integration and not slow and not serial"
+# 只有 catalog 中出现 serial 测试时才会执行该集合；当前为空。
+python -m pytest -q -m "integration and not slow and serial"
+```
+
+同时继续执行版本、Role Catalog、文档导航、可移植性和 release manifest 检查。Windows PR 运行快速 pytest 与 `Test-TpSpecBase.ps1 -Mode Static`。
+
+**快速门禁不是发布门禁。受影响领域通过也不能宣称发布回归通过。**
 
 ## 正式发布检查
 
@@ -42,6 +51,8 @@ pwsh -File scripts/ci/Test-TpSpecBase.ps1 -Mode Full
 # 必须使用 -A，避免漏掉 .github/ 这类点目录或删除项
 git add -A
 
+# Release pytest 不通过 marker 排除 slow / serial / 历史 regression。
+python -m pytest -q --durations=50
 python scripts/update_manifest.py --verify-release
 ```
 

@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import contextlib
-import io
 import json
 import os
 import shutil
@@ -13,18 +11,9 @@ from unittest.mock import patch
 
 import pytest
 
+from scripts.tests.runtime_testutil import run
 from cli import db as dbmod
-from cli import event_policies, main as climain, orchestration
-
-
-def run(argv):
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        try:
-            rc = climain.main(argv)
-        except SystemExit as exc:
-            rc = exc.code if isinstance(exc.code, int) else 1
-    return rc, out.getvalue(), err.getvalue()
+from cli import event_policies, orchestration
 
 
 class KnowledgeTaskCase:
@@ -204,6 +193,19 @@ def test_required_request_without_result_routes_knowledge_and_blocks_completion(
         )
         assert rc != 0
         assert "INTEGRITY_PIPELINE_PENDING" in err
+
+        rc, out, err = run([
+            "knowledge", "task-converge",
+            "--task", task_id, "--task-dir", str(task_dir), "--db", str(case.db),
+            "--workspace-root", str(case.project), "--request-event-id", str(request_row["id"]),
+            "--disposition", "NO_DURABLE_INSIGHT",
+            "--reason-code", "TASK_SPECIFIC_LOW_REUSE_VALUE",
+            "--query", "one-off business rule", "--source", "evidence/verification.txt",
+        ])
+        assert rc == 0, (out, err)
+        completed = orchestration.resolve_route(task_id, db_path=str(case.db))
+        assert completed["recommended_action"] == "task_complete"
+        assert completed["next_stage"] == "complete"
     finally:
         case.teardown_method()
 

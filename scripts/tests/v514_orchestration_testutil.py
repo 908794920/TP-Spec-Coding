@@ -1,6 +1,5 @@
 from __future__ import annotations
 import json
-import os
 from pathlib import Path
 from cli import db as dbmod
 from cli.version import active_version
@@ -10,8 +9,6 @@ FIXTURE_CHANGE_SET_ID = "sha256:" + ("0" * 64)
 
 
 def make_db(path: Path, *, task_id='TASK-V514', risk='L1', flow='L1', state='NEW', phase='intake') -> str:
-    # Machine-local workflow preference must never make Base tests depend on the developer's real ~/.tp-spec.
-    os.environ['TP_SPEC_USER_ROOT'] = str(path.parent / '.tp-spec-test-user')
     path.parent.mkdir(parents=True, exist_ok=True)
     conn=dbmod.connect(str(path)); dbmod.init_schema(conn)
     now=dbmod.now_iso(); v=active_version()

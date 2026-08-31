@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.9 MarkItDown document-normalization integration regression."""
+"""V5.3.0 MarkItDown document-normalization integration regression."""
 from __future__ import annotations
 
 import importlib
@@ -234,10 +234,12 @@ def test_markitdown_runtime_dependency_and_operator_docs_are_pinned():
     requirements = (BASE / "requirements.txt").read_text(encoding="utf-8")
     notices = (BASE / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
     knowledge_skill = (BASE / "agents/tp-knowledge/SKILL.md").read_text(encoding="utf-8")
+    knowledge_ingestion = (BASE / "agents/tp-knowledge/references/external-ingestion.md").read_text(encoding="utf-8")
     product_skill = (BASE / "skills/roles/tp-product-manager/SKILL.md").read_text(encoding="utf-8")
 
     assert "markitdown[pdf,docx,xlsx,xls,pptx]==0.1.7" in requirements
     assert "Microsoft MarkItDown" in notices
     assert "MIT" in notices
-    assert "tp-spec knowledge ingest convert" in knowledge_skill
+    assert "tp-spec knowledge ingest convert" in knowledge_ingestion
+    assert "tp-spec knowledge ingest convert" not in knowledge_skill
     assert "tp-spec document convert" in product_skill

@@ -23,7 +23,6 @@ BASE = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE))
 
 from cli import db as dbmod  # noqa: E402
-from cli import main as climain  # noqa: E402
 from cli.digest import compute_verification_subject_digest  # noqa: E402
 from cli.version import active_version  # noqa: E402
 from scripts.tests.runtime_testutil import build_task, run  # noqa: E402
@@ -236,10 +235,8 @@ class TestContractUpgradeAndPlanning(unittest.TestCase):
                 ("TASK-UPGRADE-ONLY", "p512", "x", "L1", "L1", legacy, "NEW", "tp-software-architect", now, now),
             )
         conn.close()
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            rc = climain.main(["project", "upgrade-contract", "--id", "p512", "--db", str(db_path)])
-        self.assertEqual(rc, 0, (out.getvalue(), err.getvalue()))
+        rc, out, err = run(["project", "upgrade-contract", "--id", "p512", "--db", str(db_path)])
+        self.assertEqual(rc, 0, (out, err))
         conn = dbmod.connect(str(db_path))
         try:
             project_base = conn.execute("SELECT base_version FROM project WHERE project_id='p512'").fetchone()["base_version"]

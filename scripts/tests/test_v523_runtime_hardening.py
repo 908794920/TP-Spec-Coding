@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import contextlib
-import io
 import json
 import os
 import shutil
@@ -15,21 +13,11 @@ from unittest.mock import patch
 BASE = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE))
 
+from scripts.tests.runtime_testutil import run
 from cli import transaction_commit  # noqa: E402
 from cli import db as dbmod  # noqa: E402
-from cli import main as climain  # noqa: E402
 from cli import transaction_journal  # noqa: E402
 from cli.version import active_version  # noqa: E402
-
-
-def run(argv):
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        try:
-            rc = climain.main(argv)
-        except SystemExit as exc:
-            rc = exc.code if isinstance(exc.code, int) else 1
-    return rc, out.getvalue(), err.getvalue()
 
 
 def make_runtime_db(db_path: Path, project_id: str, root_path: Path) -> None:

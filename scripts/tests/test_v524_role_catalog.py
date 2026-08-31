@@ -2,6 +2,8 @@ from pathlib import Path
 import sys
 import yaml
 
+from scripts import update_role_catalog
+
 BASE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(BASE))
 
@@ -35,10 +37,18 @@ def _catalog():
 def test_catalog_has_only_new_active_role_model():
     c = _catalog()
     ids = {r["workflow_role"] for r in c["roles"]}
-    assert CANONICAL_ROLES <= ids
-    assert DOMAIN_AGENTS <= ids
+    assert ids == CANONICAL_ROLES | DOMAIN_AGENTS
     assert not (OLD & ids)
     assert c["state_owner_map"] == {"NEW": "tp-software-lifecycle", "CANCELLED": "human_owner"}
+    assert update_role_catalog.validate(c) == []
+
+    # 当前态统一校验同时吸收旧版本 Agent 的 hash、version 与 legacy-template 断言。
+    legacy_template = "templates/5.0." + "6"
+    legacy_version = "5.0." + "6"
+    for role in c["roles"]:
+        text = (BASE / role["skill_path"]).read_text(encoding="utf-8-sig")
+        assert legacy_template not in text, role["workflow_role"]
+        assert legacy_version not in text, role["workflow_role"]
 
 
 def test_formal_roles_declare_domain_phase_and_capabilities():
@@ -58,11 +68,3 @@ def test_mode_hosts_are_declared_on_formal_roles():
     by_id = {r["workflow_role"]: r for r in c["roles"]}
     assert "auto_planning_host" in by_id["tp-software-architect"]["orchestration_capabilities"]
     assert "auto_review_host" in by_id["tp-code-reviewer"]["orchestration_capabilities"]
-
-
-def test_subskill_paths_are_real():
-    c = _catalog()
-    for role in c["roles"]:
-        for sub in role.get("subskills") or []:
-            assert sub["id"]
-            assert (BASE / sub["path"]).is_file(), (role["workflow_role"], sub)

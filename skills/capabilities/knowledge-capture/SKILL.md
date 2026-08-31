@@ -1,11 +1,11 @@
 ---
 name: knowledge-capture
 display_name: 知识提炼
-version: 5.2.9
+version: 5.3.0
 description: Use when a completed or maturing task produced verified, reusable project knowledge and a candidate needs to be identified for tp-knowledge.
 ---
 
-# 知识提炼 — V5.2.9 Record-first
+# 知识提炼 — V5.3.0 Record-first
 
 ## 目的
 只沉淀未来仍有复用价值的事实，不把任务过程日志、聊天、临时 workaround 或未验证推测升级成长期知识。

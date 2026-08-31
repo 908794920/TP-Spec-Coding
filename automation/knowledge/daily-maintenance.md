@@ -1,4 +1,4 @@
-# Knowledge Daily Maintenance Protocol — V5.2.9
+# Knowledge Daily Maintenance Protocol — V5.3.0
 
 ## 1. Execution model
 

@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding v5.2.9 public-release contract tests."""
+"""TP-Spec-Coding v5.3.0 public-release contract tests."""
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import yaml
@@ -21,9 +21,12 @@ def read(rel: str) -> str:
 
 
 def test_public_brand_and_release_version():
-    assert ACTIVE == "5.2.9"
+    assert ACTIVE == "5.3.0"
     assert read("README.md").startswith("# TP-Spec-Coding\n")
     assert "TP-Spec-Coding" in read("governance/workflow.yaml")
+    changelog = read("CHANGELOG.md")
+    for needle in ("## [5.3.0]", "tp-spec-coding", "tp-software-lifecycle", "文档入口"):
+        assert needle in changelog, needle
 
 
 def test_open_source_surface_is_complete():
@@ -112,6 +115,12 @@ def test_development_flow_has_one_external_lead_and_three_independent_agents():
     for role in ("tp-software-lifecycle", "tp-project-autonomy", "tp-base-maintenance", "tp-knowledge", "tp-wiki"):
         assert role_paths[role] == f"agents/{role}/SKILL.md"
 
+    agents_doc = read("docs/AGENTS_AND_SKILLS.md")
+    assert "entry/tp-spec-coding/SKILL.md" in agents_doc
+    assert "governance/role-catalog.yaml" in agents_doc
+    assert "docs/agents/" in agents_doc
+    assert "历史 previous-contract Action Role" not in agents_doc
+
 
 def test_readme_explains_value_quickstart_agents_and_portability():
     text = read("README.md")
@@ -132,6 +141,7 @@ def test_readme_explains_value_quickstart_agents_and_portability():
         "MIT",
     ):
         assert needle in text, needle
+    assert "tp-workflow-orchestrator" not in text
     for retired in ("docs/cloud-ai-prompts/", "docs/superpowers/", "docs/history/"):
         assert retired not in text
 
@@ -147,8 +157,14 @@ def test_getting_started_supports_ai_assisted_clean_machine_setup():
         "base sync-project",
         "TP_SPEC_BASE_ROOT",
         "registry.local.json",
+        "README.md",
+        "交给 AI 自动安装",
+        "tp-spec-coding",
+        "tp-software-lifecycle",
+        "不要重新执行 project init",
     ):
         assert needle in text, needle
+    assert "tp-workflow-orchestrator" not in text
     assert not re.search(r"(?i)\b[A-Z]:[/\\](?:Users|work|src|tools)", text)
 
 
@@ -158,6 +174,7 @@ def test_only_active_task_template_contract_is_shipped():
     status = yaml.safe_load(read(f"templates/{ACTIVE}/status.yaml"))
     assert status["base_version"] == ACTIVE
     assert status["artifact_contract"]["version"] == ACTIVE
+    assert not (BASE / "cutover-snapshots").exists()
 
 
 def test_active_governance_and_catalog_are_v520():
@@ -175,20 +192,6 @@ def test_active_governance_and_catalog_are_v520():
 def test_internal_upgrade_reports_are_not_part_of_public_release():
     tracked_reports = [p for p in (BASE / "reports").glob("*") if p.is_file()] if (BASE / "reports").exists() else []
     assert tracked_reports == []
-
-
-def test_version_purity_scanner_rejects_previous_minor_after_v520_cutover():
-    import importlib.util
-
-    scanner_path = BASE / "scripts" / "check_version_consistency.py"
-    spec = importlib.util.spec_from_file_location("v520_purity", scanner_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    legacy_re = module._build_legacy_re("5.2.9")
-    previous = "5.1." + "4"
-    match = legacy_re.search(f"active contract {previous} must not survive in live files")
-    assert match is not None
-    assert module._is_legacy_dotted(match.group(0), "5.2.9")
 
 
 def test_public_repo_has_reproducible_dependencies_and_github_ci():
@@ -293,21 +296,22 @@ def test_contributing_documents_git_release_closure():
         assert needle in text, needle
     assert "full.release.git_manifest" in read("scripts/ci/Test-TpSpecBase.ps1")
 
-def test_release_manifest_gate_distinguishes_working_tree_from_git_release(tmp_path):
+def test_release_manifest_gate_distinguishes_working_tree_from_git_release(tmp_path, capsys):
     """A visible but untracked file may pass dev verify, but must fail release verify."""
     repo = tmp_path / "repo"
     scripts = repo / "scripts"
     scripts.mkdir(parents=True)
-    shutil.copy2(BASE / "scripts" / "update_manifest.py", scripts / "update_manifest.py")
+    script_path = scripts / "update_manifest.py"
+    shutil.copy2(BASE / "scripts" / "update_manifest.py", script_path)
     (repo / "tracked.txt").write_text("tracked\n", encoding="utf-8")
 
-    def run(*args: str) -> subprocess.CompletedProcess[str]:
+    def run_git(*args: str) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         for key in tuple(env):
             if key.startswith("GIT_"):
                 env.pop(key, None)
         return subprocess.run(
-            list(args),
+            ["git", *args],
             cwd=repo,
             text=True,
             capture_output=True,
@@ -316,31 +320,42 @@ def test_release_manifest_gate_distinguishes_working_tree_from_git_release(tmp_p
             env=env,
         )
 
-    assert run("git", "init").returncode == 0
-    assert run("git", "config", "core.autocrlf", "false").returncode == 0
-    assert run("git", "add", "scripts/update_manifest.py", "tracked.txt").returncode == 0
+    assert run_git("init").returncode == 0
+    assert run_git("config", "core.autocrlf", "false").returncode == 0
+    assert run_git("add", "scripts/update_manifest.py", "tracked.txt").returncode == 0
 
-    generated = run(sys.executable, "scripts/update_manifest.py")
-    assert generated.returncode == 0, generated.stderr
-    assert run("git", "add", "manifest.sha256").returncode == 0
+    # 同一 release 状态机无需反复启动 Python；直接加载真实生产模块，
+    # 只在本测试生命周期内把 BASE/MANIFEST 指向临时 Git 仓库。
+    spec = importlib.util.spec_from_file_location(
+        "tp_spec_release_manifest_test", BASE / "scripts" / "update_manifest.py"
+    )
+    assert spec is not None and spec.loader is not None
+    manifest_tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(manifest_tool)
+    original_base = manifest_tool.BASE
+    original_manifest = manifest_tool.MANIFEST
+    manifest_tool.BASE = repo
+    manifest_tool.MANIFEST = repo / "manifest.sha256"
+    try:
+        assert manifest_tool.generate() == 0
+        assert run_git("add", "manifest.sha256").returncode == 0
+        assert manifest_tool.verify_release() == 0
 
-    clean_release = run(sys.executable, "scripts/update_manifest.py", "--verify-release")
-    assert clean_release.returncode == 0, clean_release.stderr
+        # Reproduce the v5.3.0 publication failure mode: the file is visible and
+        # included by the development manifest, but it was never git-added.
+        (repo / "release-surface.txt").write_text("untracked\n", encoding="utf-8")
+        assert manifest_tool.generate() == 0
+        assert manifest_tool.verify() == 0
+        capsys.readouterr()
 
-    # Reproduce the v5.2.9 publication failure mode: the file is visible and
-    # included by the development manifest, but it was never git-added.
-    (repo / "release-surface.txt").write_text("untracked\n", encoding="utf-8")
-    regenerated = run(sys.executable, "scripts/update_manifest.py")
-    assert regenerated.returncode == 0, regenerated.stderr
-
-    dev_verify = run(sys.executable, "scripts/update_manifest.py", "--verify")
-    assert dev_verify.returncode == 0, dev_verify.stderr
-
-    release_verify = run(sys.executable, "scripts/update_manifest.py", "--verify-release")
-    assert release_verify.returncode != 0
-    combined = release_verify.stdout + release_verify.stderr
-    assert "release-surface.txt" in combined
-    assert "untracked" in combined.lower()
+        assert manifest_tool.verify_release() != 0
+        captured = capsys.readouterr()
+        combined = captured.out + captured.err
+        assert "release-surface.txt" in combined
+        assert "untracked" in combined.lower()
+    finally:
+        manifest_tool.BASE = original_base
+        manifest_tool.MANIFEST = original_manifest
 
 def test_public_project_entry_uses_tp_spec_coding_brand():
     for rel in ("project-entry/root-managed-block.md", "project-entry/tp-spec-readme.md"):

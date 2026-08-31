@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.2.9 read-only HTML information card regression tests."""
+"""V5.3.0 read-only HTML information card regression tests."""
 from __future__ import annotations
 
 import contextlib
@@ -13,6 +13,7 @@ import yaml
 
 from cli import db as dbmod
 from cli import main as climain
+from scripts.tests.cli_testutil import invoke_main
 from cli.version import active_version
 
 BASE = Path(__file__).resolve().parents[2]
@@ -27,7 +28,7 @@ def _run(argv: list[str]):
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         try:
-            rc = climain.main(argv)
+            rc = invoke_main(argv, refresh_card=True)
         except SystemExit as exc:
             rc = exc.code if isinstance(exc.code, int) else 1
     return rc, out.getvalue(), err.getvalue()
@@ -1051,7 +1052,7 @@ def test_stable_web_artifact_path_is_fixed_under_workspace(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
-    assert artifact_output_path(workspace) == (workspace / ".tp-spec-preview" / "card" / "index.html").resolve()
+    assert artifact_output_path(workspace) == (workspace / ".tp-spec" / "card" / "index.html").resolve()
 
 
 def test_explicit_project_card_also_updates_fixed_web_artifact(tmp_path, monkeypatch):
@@ -1062,10 +1063,11 @@ def test_explicit_project_card_also_updates_fixed_web_artifact(tmp_path, monkeyp
         "card", "project", "--root", str(fx["workspace"]), "--output", str(offline),
     ])
 
-    artifact = fx["workspace"] / ".tp-spec-preview" / "card" / "index.html"
+    artifact = fx["workspace"] / ".tp-spec" / "card" / "index.html"
     assert rc == 0, (out, err)
     assert offline.is_file()
     assert artifact.is_file()
+    assert not (fx["workspace"] / ".tp-spec-preview" / "card" / "index.html").exists()
     assert f"WEB_ARTIFACT: {artifact.resolve()}" in out
     text = artifact.read_text(encoding="utf-8")
     assert "当前项目概况" in text
@@ -1082,7 +1084,7 @@ def test_global_and_task_cards_accept_explicit_artifact_root_and_reuse_index(tmp
     rc, out, err = _run([
         "card", "global", "--output", str(global_offline), "--artifact-root", str(artifact_root),
     ])
-    artifact = artifact_root / ".tp-spec-preview" / "card" / "index.html"
+    artifact = artifact_root / ".tp-spec" / "card" / "index.html"
     assert rc == 0, (out, err)
     assert artifact.is_file()
     assert "TP-Spec 全局配置" in artifact.read_text(encoding="utf-8")
@@ -1097,7 +1099,7 @@ def test_global_and_task_cards_accept_explicit_artifact_root_and_reuse_index(tmp
     assert "当前任务进度" in text
     assert "TASK-ACTIVE" in text
     assert "TP-Spec 全局配置" not in text
-    assert list((artifact_root / ".tp-spec-preview" / "card").glob("*.html")) == [artifact]
+    assert list((artifact_root / ".tp-spec" / "card").glob("*.html")) == [artifact]
 
 
 def test_artifact_write_failure_keeps_explicit_offline_preview_successful(tmp_path, monkeypatch):
@@ -1127,7 +1129,7 @@ def test_formal_runtime_refresh_updates_fixed_workspace_artifact(tmp_path, monke
         "--title", "Artifact task", "--risk", "L0", "--flow", "L0", "--db", str(fx["db_path"]),
     ])
 
-    artifact = fx["workspace"] / ".tp-spec-preview" / "card" / "index.html"
+    artifact = fx["workspace"] / ".tp-spec" / "card" / "index.html"
     assert rc == 0, (out, err)
     assert artifact.is_file(), err
     text = artifact.read_text(encoding="utf-8")
@@ -1157,7 +1159,7 @@ def test_renderer_avoids_navigation_and_expansion_scroll_side_effects():
 def test_entry_skill_prefers_fixed_web_artifact_with_offline_fallback():
     text = (BASE / "entry" / "tp-spec-coding" / "SKILL.md").read_text(encoding="utf-8")
 
-    assert ".tp-spec-preview/card/index.html" in text
+    assert ".tp-spec/card/index.html" in text
     assert "Web Artifact" in text or "网站预览" in text
     assert "离线 HTML" in text
     assert "不得只返回" in text
@@ -1166,7 +1168,7 @@ def test_entry_skill_prefers_fixed_web_artifact_with_offline_fallback():
 def test_lifecycle_skill_refreshes_fixed_artifact_without_new_runtime_semantics():
     text = (BASE / "agents" / "tp-software-lifecycle" / "SKILL.md").read_text(encoding="utf-8")
 
-    assert ".tp-spec-preview/card/index.html" in text
+    assert ".tp-spec/card/index.html" in text
     assert "覆盖" in text
     assert "不新增 public state" in text
 
@@ -1182,8 +1184,22 @@ def test_renderer_uses_internal_scroll_to_reduce_host_layout_shift():
 
 
 def test_repo_ignores_generated_web_artifact_directory():
-    text = (BASE / ".gitignore").read_text(encoding="utf-8")
-    assert ".tp-spec-preview/" in text.splitlines()
+    lines = (BASE / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert ".tp-spec/card/" in lines
+    assert ".tp-spec-preview/" not in lines
+    assert ".tp-spec/" not in lines
+
+
+def test_project_local_artifact_placement_is_documented():
+    maintenance = (BASE / "agents" / "tp-base-maintenance" / "SKILL.md").read_text(encoding="utf-8")
+    readme = (BASE / "project-entry" / "tp-spec-readme.md").read_text(encoding="utf-8")
+
+    for text in (maintenance, readme):
+        assert ".tp-spec/card" in text
+        assert "presentation-only" in text
+        assert "rebuildable" in text
+        assert "non-authoritative" in text
+        assert "system Temp" in text
 
 
 def test_inline_renderer_emits_three_host_safe_card_fragments(tmp_path):
@@ -1422,7 +1438,7 @@ def test_all_explicit_card_commands_can_emit_inline_fragments(tmp_path, monkeypa
         assert payload["schema"] == "tp-spec.card-display/v1"
         assert payload["card_type"] == card_type
         assert payload["offline_html"] == str(offline.resolve())
-        assert payload["web_artifact"] == str((artifact_root / ".tp-spec-preview" / "card" / "index.html").resolve())
+        assert payload["web_artifact"] == str((artifact_root / ".tp-spec" / "card" / "index.html").resolve())
         assert payload["inline"]["status"] == "generated"
         assert payload["inline"]["path"] == str(inline.resolve())
         fragment = inline.read_text(encoding="utf-8")
@@ -1490,7 +1506,7 @@ def test_formal_runtime_inline_failure_keeps_runtime_and_other_previews_successf
     assert rc == 0, (out, err)
     assert "CARD_INLINE_WARNING" in err
     assert (card_root / "tasks" / "TASK-INLINE-WARN.html").is_file()
-    assert (fx["workspace"] / ".tp-spec-preview" / "card" / "index.html").is_file()
+    assert (fx["workspace"] / ".tp-spec" / "card" / "index.html").is_file()
     conn = dbmod.connect_readonly(str(fx["db_path"]))
     try:
         row = conn.execute("SELECT task_id FROM task WHERE task_id='TASK-INLINE-WARN'").fetchone()
@@ -1643,7 +1659,7 @@ def test_card_display_result_reports_generated_artifact_and_fragment(tmp_path, m
         "schema": "tp-spec.card-display/v1",
         "card_type": "global_config",
         "offline_html": str(offline.resolve()),
-        "web_artifact": str((artifact_root / ".tp-spec-preview" / "card" / "index.html").resolve()),
+        "web_artifact": str((artifact_root / ".tp-spec" / "card" / "index.html").resolve()),
         "artifact": {"status": "generated", "error": None},
         "inline": {"requested": True, "status": "generated", "path": str(inline.resolve()), "error": None},
     }
@@ -1733,7 +1749,10 @@ def test_task_card_workflow_renderer_uses_projected_labels_and_accessible_techni
     assert "workflow-tech-toggle" in text
     assert "aria-expanded" in text
     assert "aria-controls" in text
-    assert "按条件启用" in text
+    assert "必需步骤" in text
+    assert "条件步骤" in text
+    assert "执行角色：" in text
+    assert "条件参与角色" in text
     assert "displayStage(next.stage)" not in text
     assert "`${next.action || ''}" not in text
 
@@ -1981,3 +2000,49 @@ def test_structured_evidence_keeps_task_anchor_when_workspace_root_is_unavailabl
     assert rows[0]["verification"] == "structured"
     assert rows[0]["display_path"] == ".tp-spec/tasks/TASK-NO-ROOT/evidence/proof.txt"
     assert rows[0]["current_exists"] is None
+
+
+def test_card_display_skill_contract_separates_generation_capability_and_actual_render():
+    display = (BASE / "skills" / "capabilities" / "tp-card-display" / "SKILL.md").read_text(encoding="utf-8")
+    entry = (BASE / "entry" / "tp-spec-coding" / "SKILL.md").read_text(encoding="utf-8")
+    lifecycle = (BASE / "agents" / "tp-software-lifecycle" / "SKILL.md").read_text(encoding="utf-8")
+    combined = "\n".join((display, entry, lifecycle))
+
+    assert "fragment generated" in display
+    assert "host capability confirmed" in display
+    assert "actual host render" in display
+    assert "capability 未确认" in display
+    assert "实际桥接调用成功" in display
+    assert "inline.status=generated" in combined
+    assert "inline.status=generated` 永远不等于“已展示”" in display
+
+
+def test_card_display_skill_contract_declares_fail_closed_fallback_reasons():
+    display = (BASE / "skills" / "capabilities" / "tp-card-display" / "SKILL.md").read_text(encoding="utf-8")
+
+    for reason in (
+        "INLINE_CAPABILITY_UNAVAILABLE",
+        "INLINE_RENDER_FAILED",
+        "INLINE_GENERATION_FAILED",
+        "WEB_ARTIFACT_UNAVAILABLE",
+        "WEB_ARTIFACT_OPEN_FAILED",
+    ):
+        assert reason in display
+    assert "会话内 HTML fragment → Web Artifact → 离线 HTML" in display
+    assert "Runtime DB" in display
+
+
+def test_card_display_generation_contract_does_not_claim_host_render_state(tmp_path, monkeypatch):
+    _runtime_fixture(tmp_path, monkeypatch)
+    offline = tmp_path / "global.html"
+    inline = tmp_path / "inline.html"
+
+    rc, out, err = _run([
+        "card", "global", "--output", str(offline), "--inline-output", str(inline),
+    ])
+
+    assert rc == 0, (out, err)
+    payload = _card_display_payload(out)
+    assert payload["inline"]["status"] == "generated"
+    assert "rendered" not in payload["inline"]
+    assert "host_capability" not in payload["inline"]
