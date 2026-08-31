@@ -826,7 +826,7 @@ def _check_codex_review_body(task_dir: Path, issues: List[ValidationIssue]) -> N
                     # Fourth Hardening（P0-3/P1-2）：PASS 不允许 evidence=none
                     issues.append(ValidationIssue(
                         code=CODE_REVIEW_EMPTY,
-                        message="codex-review PASS evidence 'none' is rejected in V5.3.0; requires a real local_file",
+                        message="codex-review PASS evidence 'none' is rejected in V5.3.1; requires a real local_file",
                         artifact="codex-review.md",
                         field="review.evidence",
                     ))

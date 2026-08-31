@@ -1,7 +1,7 @@
 ---
 id: tp-spec-coding
 name: tp-软件生命周期
-version: 5.3.0
+version: 5.3.1
 status: active
 type: control-role
 role: tp-spec-coding

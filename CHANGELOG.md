@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.3.1] Open Release Line — 2026-08-31
+
+- 从 **5.3.0** 收敛到 **5.3.1** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.3.1`，不再保留 `templates/5.3.0`。
+- 继续维持 Role-first 产品形态：`tp-spec-coding` 唯一默认产品入口、`tp-software-lifecycle` 软件工程 Domain Agent 与各 Formal Role 的活动契约不变。
+
 ## [5.3.0] Open Release Line — 2026-08-29
 
 - 从 **5.2.9** 收敛到 **5.3.0** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.3.0`，不再保留 `templates/5.2.9`。

@@ -1,11 +1,11 @@
 ---
 name: task-decomposition
 display_name: 任务拆解
-version: 5.3.0
+version: 5.3.1
 description: Use when a technical plan is complex enough to benefit from explicit executable work items. Split by independently verifiable outcomes, dependencies, scope, and acceptance links.
 ---
 
-# 任务拆解 — V5.3.0 Record-first
+# 任务拆解 — V5.3.1 Record-first
 
 ## 目的
 让复杂任务可并行或可接续，而不是给每个小任务强制制造工作项表。确定性小改无需拆解。

@@ -9,7 +9,7 @@ CHANGE_SET_ID = 'sha256:change-set'
 def test_integration_delivery_detail_owns_delivery_not_knowledge():
     detail = workflow_records.build_delivery_detail(
         task_id="TASK-1", transaction_id="tx", flush_id="f",
-        created_at="2026-08-18T00:00:00+00:00", schema_version="5.3.0",
+        created_at="2026-08-18T00:00:00+00:00", schema_version="5.3.1",
         verification_event_id=7, verification_subject_digest="subject",
         verification_change_set_id=CHANGE_SET_ID, review_event_id=8,
         review_change_set_id=CHANGE_SET_ID, change_set_id=CHANGE_SET_ID,
