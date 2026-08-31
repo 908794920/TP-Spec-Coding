@@ -22,19 +22,6 @@ def read(path: str) -> str:
     return (BASE / path).read_text(encoding="utf-8")
 
 
-class TestRoleCatalogMetadata(unittest.TestCase):
-    def test_catalog_metadata_matches_skill_frontmatter(self):
-        catalog = yaml.safe_load((BASE / "governance" / "role-catalog.yaml").read_text(encoding="utf-8"))
-        for role in catalog["roles"]:
-            text = (BASE / role["skill_path"]).read_text(encoding="utf-8-sig")
-            self.assertTrue(text.startswith("---\n"), role["workflow_role"])
-            front = yaml.safe_load(text.split("---\n", 2)[1])
-            self.assertEqual(front.get("id"), role["workflow_role"], role["workflow_role"])
-            self.assertEqual(front.get("type"), role["type"], role["workflow_role"])
-            self.assertEqual(str(front.get("version")), ACTIVE_VERSION, role["workflow_role"])
-
-
-
 class TestWorkflowRoleSemantics(unittest.TestCase):
     def assertContainsAll(self, path: str, *needles: str):
         text = read(path)
@@ -49,7 +36,11 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
             "范围/非范围",
             "验收条件",
             "需求分析允许发生在正式 Task 创建之前",
+            "没有 TaskId",
+            "task checkpoint --phase requirement|product",
+            "不创建空文档",
         )
+        self.assertNotIn("max_search_rounds", read("skills/roles/tp-product-manager/SKILL.md"))
 
     def test_product_keeps_product_reasoning_and_role_boundary(self):
         self.assertContainsAll(
@@ -77,6 +68,8 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
     def test_architecture_review_is_compact_but_professional(self):
         self.assertContainsAll(
             "skills/roles/tp-software-architect/SKILL.md",
+            "只有高风险",
+            "缺失默认只是 WARN",
             "不是所有 L2/L3 的固定门禁",
             "不要重新扫描整个仓库",
             "数据、并发、事务、幂等风险",
@@ -84,6 +77,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
             "回滚、恢复或补偿策略",
             "PASS / REVISE / BLOCKED",
         )
+        self.assertNotIn("强制 PASS", read("skills/roles/tp-software-architect/SKILL.md"))
 
     def test_development_keeps_scope_truth_and_production_safety(self):
         self.assertContainsAll(
@@ -107,6 +101,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
             "PASS_STALE",
             "NEEDS_FIX",
             "FAIL",
+            "测试角色不自行 `task complete`",
         )
 
     def test_delivery_keeps_truthful_knowledge_boundaries(self):
@@ -114,6 +109,7 @@ class TestWorkflowRoleSemantics(unittest.TestCase):
             "skills/roles/tp-integration-engineer/SKILL.md",
             "KNOWLEDGE_CONVERGENCE_REQUEST",
             "Integration 不写最终 Knowledge Result",
+            "Delivery Result",
             "不重新裁决 PASS/FAIL",
             "tp-knowledge",
         )

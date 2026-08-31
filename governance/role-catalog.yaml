@@ -1,6 +1,6 @@
 catalog_version: "5.3.0"
 base_version: "5.3.0"
-generated_utc: 20260829T140822Z
+generated_utc: 20260830T074752Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -14,7 +14,7 @@ roles:
   phases: [other]
   capabilities: [domain.routing, status.compact, explain.route]
   owns_states: []
-  content_sha256: 05C4F5BB97D07BD215D923F90E5F5ADA6F269358C96E1D24BEBE78076834EE45
+  content_sha256: D098109E59CF02F722D34C56090E3C4CBB068FDBB7761F85EC6097086017F463
 - workflow_role: tp-software-lifecycle
   display_name: tp-软件工程生命周期
   type: control-role
@@ -25,7 +25,7 @@ roles:
   domain_skills:
     - {id: tp-card-display, path: skills/capabilities/tp-card-display/SKILL.md, mode: conditional}
   owns_states: [NEW]
-  content_sha256: CACD9CF22109478FF843C777DEFFC60507DBC5E8B4CA62B2AFB6AF1F4B74D6B5
+  content_sha256: EAFB6F2B9E4AFE975930BDC3AC4FD37732B2BD0E9704C57C2295863BFED13DD7
 - workflow_role: tp-project-autonomy
   display_name: tp-项目自治维护
   type: control-role
@@ -48,7 +48,7 @@ roles:
   phases: [other]
   capabilities: [base.configure, base.migrate, base.doctor, base.repair]
   owns_states: []
-  content_sha256: AB8960612DF9455F2BF4541CC3003843C1E35363FACC03628B33B1EC0CFC605D
+  content_sha256: 82FCA6EA983F6DF4E9708279EB4862F7F8C9120DAB3EFA477395B81FF960E7D2
 - workflow_role: tp-knowledge
   display_name: tp-knowledge
   type: human-owner-skill

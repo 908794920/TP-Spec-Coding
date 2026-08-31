@@ -66,6 +66,12 @@ Workspace Inventory 默认：
 - 项目 `content-systems.yaml` 只保留真正的项目级 override；与 Installation 重复的 machine roots 应移除；
 - 项目根 `README.md` / `AGENTS.md` 的 TP-Spec-Coding managed block 与 `.tp-spec/README.md` 由 Base 模板确定性维护，禁止渲染 machine-local 路径。
 
+### 项目级生成物放置规则
+
+与当前项目绑定、由 TP-Spec-Coding 生成、非产品源码且无需独立外部存储的本地产物，默认收敛到 `<workspace>/.tp-spec/<feature>/`，不得为单一功能在项目根新增 `.tp-spec-*`、`.xxx-preview`、`.tmp` 等兄弟隐藏目录。当前固定卡片 Web Artifact 为 `.tp-spec/card/index.html`。
+
+`.tp-spec/card` 仅属于 **presentation-only / rebuildable / non-authoritative** 展示产物：删除后可由正式 `tp-spec card ...` 或 Runtime refresh 重建，不写 Runtime/Task truth，不成为任务账本或产品内容。高频、短生命周期 execution scratch（测试工作区、ZIP 解压、中间渲染等）继续使用受 ownership 管理的 **system Temp**，不得为了目录统一迁回 `.tp-spec`。用户级/机器级状态继续使用 `~/.tp-spec/`。
+
 ## 2. Project Scope 不得丢失
 
 去 Junction ≠ 全局搜索。

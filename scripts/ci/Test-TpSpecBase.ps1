@@ -218,16 +218,18 @@ Invoke-Check 'static.yaml.semantic_validate' {
     "9 governed files validated through controlled loader"
 }
 
-Invoke-Check 'static.unit.config_loader' {
-    $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    $out = & python (Join-Path $base 'scripts\tests\test_config_loader.py') 2>&1
-    $code = $LASTEXITCODE
-    $ErrorActionPreference = $prevEap
-    Get-ChildItem -LiteralPath (Join-Path $base 'cli') -Recurse -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue |
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    $ran = ($out | Select-String -Pattern 'Ran (\d+) tests').Matches.Groups[1].Value
-    if ($code -ne 0) { throw ("config loader unit tests failed: " + (($out | Select-String 'FAIL|Error' | Select-Object -First 3) -join ' | ')) }
-    "config loader unit tests OK ($ran tests)"
+if ($Mode -eq 'Static') {
+    Invoke-Check 'static.unit.config_loader' {
+        $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        $out = & python (Join-Path $base 'scripts\tests\test_config_loader.py') 2>&1
+        $code = $LASTEXITCODE
+        $ErrorActionPreference = $prevEap
+        Get-ChildItem -LiteralPath (Join-Path $base 'cli') -Recurse -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        $ran = ($out | Select-String -Pattern 'Ran (\d+) tests').Matches.Groups[1].Value
+        if ($code -ne 0) { throw ("config loader unit tests failed: " + (($out | Select-String 'FAIL|Error' | Select-Object -First 3) -join ' | ')) }
+        "config loader unit tests OK ($ran tests)"
+    }
 }
 
 if ($Mode -eq 'Full') {

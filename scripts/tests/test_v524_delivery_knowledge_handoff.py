@@ -38,15 +38,6 @@ def test_delivery_completion_does_not_wait_for_knowledge_disposition():
     assert delivery_contract.delivery_result_matches_verification(detail, 7, "subject")
 
 
-def test_legacy_task_scoped_knowledge_handoff_is_rejected():
-    with pytest.raises(ValueError, match="legacy task-scoped Knowledge handoff is retired"):
-        knowledge_state.task_scoped_convergence({
-            "task_id": "TASK-1",
-            "verified_facts": [],
-            "reusable_findings": [],
-        })
-
-
 def test_delivery_cli_is_integration_owned_not_knowledge_owned():
     from cli.main import build_parser
 

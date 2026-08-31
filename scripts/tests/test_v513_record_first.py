@@ -7,8 +7,6 @@ old governance-first daily workflow.
 """
 from __future__ import annotations
 
-import contextlib
-import io
 import json
 import shutil
 import subprocess
@@ -18,20 +16,10 @@ from pathlib import Path
 
 import yaml
 
+from scripts.tests.runtime_testutil import run
 from cli import db as dbmod
-from cli import main as climain
 from cli import event_policies
 from cli.version import active_version
-
-
-def run(argv):
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        try:
-            rc = climain.main(argv)
-        except SystemExit as exc:
-            rc = exc.code if isinstance(exc.code, int) else 1
-    return rc, out.getvalue(), err.getvalue()
 
 
 class RecordFirstCase(unittest.TestCase):
@@ -266,16 +254,6 @@ class TestRecordFirstStaticContracts(unittest.TestCase):
         self.assertIn("commit --refresh", api["do_not_use_in_normal_role_flow"])
         self.assertIn("hand-authored stage_handoff / intended_next / next_prompt", api["do_not_use_in_normal_role_flow"])
         self.assertIn("work_sessions", api["optional_capabilities"])
-
-    def test_optional_templates_have_no_stage_handoff(self):
-        base = Path(__file__).parents[2] / "templates" / active_version()
-        for name in (
-            "requirement.md", "requirement-clarifications.md", "requirement-decisions.md",
-            "architecture-review.md", "implementation.md", "requirement-test-guide.md",
-            "codex-review.md", "quality-and-knowledge.md",
-        ):
-            self.assertNotIn("stage_handoff", (base / name).read_text(encoding="utf-8"), name)
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

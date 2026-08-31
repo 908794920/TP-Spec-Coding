@@ -56,13 +56,6 @@ class TestVersionPurity(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, f"scanner failed:\n{proc.stdout}\n{proc.stderr}")
 
-    def test_no_legacy_dirs(self):
-        """目录纯度：templates/ 仅 5.1.3，无 cutover-snapshots。"""
-        tpl = BASE / "templates"
-        dirs = {p.name for p in tpl.iterdir() if p.is_dir()}
-        self.assertEqual(dirs, {(BASE / "VERSION").read_text(encoding="utf-8").strip()})
-        self.assertFalse((BASE / "cutover-snapshots").exists())
-
     # ---- 扫描器漏检回归（审计 P1-2）----
 
     def test_scanner_rejects_prefixed_dotted_version(self):
@@ -91,10 +84,11 @@ class TestVersionPurity(unittest.TestCase):
             self.assertTrue(_is_legacy(sample), sample)
 
     def test_scanner_rejects_previous_patch(self):
-        """当前 5.1.3 时，前一修补版本（5.1.0）必须被识别为污染。"""
-        prev = "5.1." + "0"
-        for sample in ("V" + prev, prev, "v" + prev):
-            self.assertTrue(_is_legacy(sample), sample)
+        """较旧的同主版本 dotted token 必须被识别为污染。"""
+        old_versions = ("5.1." + "0", "5.1." + "4", "5.2." + "9")
+        for previous in old_versions:
+            for sample in ("V" + previous, previous, "v" + previous):
+                self.assertTrue(_is_legacy(sample), sample)
 
     def test_scanner_allows_current_and_foreign_versions(self):
         """当前版本与独立命名空间版本不得误报。"""

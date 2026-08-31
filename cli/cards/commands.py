@@ -140,7 +140,7 @@ def add_card_subparsers(subparsers) -> None:
     global_parser.add_argument("--installation", default=None, help="installation.yaml path override")
     global_parser.add_argument("--registry", default=None, help="registry.local.json path override")
     global_parser.add_argument("--output", default=None, help="offline HTML output path")
-    global_parser.add_argument("--artifact-root", default=None, help="workspace root for fixed .tp-spec-preview/card/index.html Web Artifact")
+    global_parser.add_argument("--artifact-root", default=None, help="workspace root for fixed .tp-spec/card/index.html Web Artifact")
     global_parser.add_argument("--inline-output", default=None, help="host visualization HTML fragment output path")
     global_parser.set_defaults(func=cmd_global)
 
@@ -159,6 +159,6 @@ def add_card_subparsers(subparsers) -> None:
     task_parser.add_argument("--registry", default=None, help="registry.local.json path override")
     task_parser.add_argument("--base-root", default=None, help="Base root used by workflow resolver")
     task_parser.add_argument("--output", default=None, help="offline HTML output path")
-    task_parser.add_argument("--artifact-root", default=None, help="workspace root for fixed .tp-spec-preview/card/index.html Web Artifact")
+    task_parser.add_argument("--artifact-root", default=None, help="workspace root for fixed .tp-spec/card/index.html Web Artifact")
     task_parser.add_argument("--inline-output", default=None, help="host visualization HTML fragment output path")
     task_parser.set_defaults(func=cmd_task)

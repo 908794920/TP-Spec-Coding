@@ -150,8 +150,6 @@ def test_resolved_canonical_is_upgraded_to_adopted():
     assert by_id["knowledge:DEMO-FEAT-001"]["stage"] == "adopted"
     assert by_id["knowledge:DEMO-FEAT-NEW"]["stage"] == "adopted"
 
-import contextlib
-import io
 import json
 import os
 import shutil
@@ -162,17 +160,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cli import db as dbmod
-from cli import main as climain
-
-
-def _run(argv):
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        try:
-            rc = climain.main(argv)
-        except SystemExit as exc:
-            rc = exc.code if isinstance(exc.code, int) else 1
-    return rc, out.getvalue(), err.getvalue()
+from scripts.tests.runtime_testutil import run as _run
 
 
 class TestContextUsageRuntimeIntegration(unittest.TestCase):

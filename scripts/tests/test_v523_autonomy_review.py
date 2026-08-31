@@ -1,29 +1,11 @@
 from __future__ import annotations
 
-import contextlib, io, os, subprocess, tempfile
+import os, subprocess, tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts.tests.autonomy_testutil import run, git_repo
 from cli import autonomy_batch, autonomy_cycle, autonomy_discovery, autonomy_profile, autonomy_records, autonomy_workspace, record_first
-from cli import main as climain
-
-
-def run(argv):
-    o,e=io.StringIO(),io.StringIO()
-    with contextlib.redirect_stdout(o),contextlib.redirect_stderr(e):
-        try: rc=climain.main(argv)
-        except SystemExit as ex: rc=int(ex.code or 0)
-    return rc,o.getvalue(),e.getvalue()
-
-
-def git_repo(path: Path):
-    path.mkdir(parents=True)
-    subprocess.run(["git","init","-q","-b","main",str(path)],check=True)
-    subprocess.run(["git","-C",str(path),"config","user.email","x@y.z"],check=True)
-    subprocess.run(["git","-C",str(path),"config","user.name","x"],check=True)
-    (path/"README.md").write_text("base\n",encoding="utf-8")
-    subprocess.run(["git","-C",str(path),"add","."],check=True)
-    subprocess.run(["git","-C",str(path),"commit","-qm","init"],check=True)
 
 
 def setup(root: Path):

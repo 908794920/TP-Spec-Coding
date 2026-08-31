@@ -44,6 +44,28 @@ def test_task_runtime_file_does_not_change_product_digest(tmp_path: Path):
     assert current_content_digest([repo]) == before
 
 
+def test_project_card_artifact_does_not_change_product_change_set(tmp_path: Path):
+    repo = make_repo(tmp_path)
+    before = capture_change_set([repo])
+
+    artifact = repo / ".tp-spec" / "card" / "index.html"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("first render\n", encoding="utf-8")
+    after_create = capture_change_set([repo])
+
+    artifact.write_text("second render\n", encoding="utf-8")
+    after_update = capture_change_set([repo])
+
+    assert after_create["content_digest"] == before["content_digest"]
+    assert after_update["content_digest"] == before["content_digest"]
+    for snapshot in (after_create, after_update):
+        assert all(
+            not str(entry["path"]).replace("\\", "/").startswith(".tp-spec/card/")
+            for repository in snapshot["repositories"]
+            for entry in repository["entries"]
+        )
+
+
 def test_committed_runtime_file_does_not_change_product_digest(tmp_path: Path):
     repo = make_repo(tmp_path)
     before = current_content_digest([repo])

@@ -26,7 +26,7 @@ description: TP-Spec-Coding 唯一默认产品入口；以低上下文成本识�
 ## HTML 信息卡片
 用户明确要求查看全局、项目或任务卡片时，路由到 `tp-software-lifecycle` 的按需能力 `tp-card-display`：全局使用 `tp-spec card global`，项目使用 `tp-spec card project`，任务使用 `tp-spec card task --task <TASK-ID>`。入口本身不记忆宿主参数、不直接构造卡片 HTML，也不把任何通用可视化指令当作固定展示协议。
 
-`tp-card-display` 必须先运行权威 `tp-spec card ...` 命令并读取 `CARD_DISPLAY`，再根据当前宿主**实际可用**的展示能力选择：会话内 HTML fragment → 固定 `.tp-spec-preview/card/index.html` Web Artifact → 离线 HTML。`inline.status=generated` 只表示片段已生成，不能据此声称宿主已经渲染。 宿主有可用展示能力时不得只返回裸路径；必须明确实际采用的是会话内、Web Artifact 还是离线 HTML。
+`tp-card-display` 必须运行权威卡片命令并读取 `CARD_DISPLAY`，再按 fail-closed 规则选择：会话内 HTML fragment → 固定 `.tp-spec/card/index.html` Web Artifact → 离线 HTML。必须独立判断 fragment 是否生成、宿主 inline capability 是否已确认、本次 Host bridge 是否实际渲染成功；`inline.status=generated` 只证明片段生成，capability 未确认按不可用处理，只有实际桥接调用成功后才能声称“会话内已展示”。宿主有可用展示能力时不得只返回裸路径；降级时必须说明实际展示层和原因。
 
 普通代码搜索、文件读取、测试、Shell 操作和一般任务执行不得自动生成显式卡片。任务卡片自动刷新仍由软件生命周期中已成功持久化的正式 Runtime 白名单触发；任何卡片展示失败不得改变 Runtime 事实。
 

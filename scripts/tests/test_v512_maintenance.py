@@ -5,9 +5,7 @@ Covers pristine Runtime bootstrap, actionable task-create errors, and pre-task i
 """
 from __future__ import annotations
 
-import contextlib
 import hashlib
-import io
 import json
 import shutil
 import sys
@@ -18,19 +16,9 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE))
 
+from scripts.tests.runtime_testutil import run
 from cli import db as dbmod  # noqa: E402
-from cli import main as climain  # noqa: E402
 from cli.version import active_version  # noqa: E402
-
-
-def run(argv):
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        try:
-            rc = climain.main(argv)
-        except SystemExit as exc:
-            rc = exc.code if isinstance(exc.code, int) else 1
-    return rc, out.getvalue(), err.getvalue()
 
 
 class TestV512Maintenance(unittest.TestCase):

@@ -1,15 +1,9 @@
-import contextlib,io,json,tempfile
+import json,tempfile
 from pathlib import Path
 from cli import db as dbmod
-from cli import main as climain, orchestration
+from cli import orchestration
+from scripts.tests.runtime_testutil import run
 from scripts.tests.v514_orchestration_testutil import make_db,add_checkpoint,add_decision,add_review,add_code_review,add_verify,add_workflow_confirmation
-
-
-def run(argv):
-    o,e=io.StringIO(),io.StringIO()
-    with contextlib.redirect_stdout(o),contextlib.redirect_stderr(e):
-        rc=climain.main(argv)
-    return rc,o.getvalue(),e.getvalue()
 
 def test_workflow_next_cli_is_readonly_and_json_stable():
     with tempfile.TemporaryDirectory() as td:

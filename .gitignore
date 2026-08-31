@@ -32,5 +32,5 @@ release/
 # 未发布规划文档：不进入正式发布 Git/manifest，由后续版本分支单独归档
 /docs/planning/
 
-# TP-Spec 本地 Web Artifact 预览（可重建，不进入版本库）
-.tp-spec-preview/
+# TP-Spec 项目级 Web Artifact（presentation-only，可重建，不进入版本库）
+.tp-spec

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import contextlib
-import io
 import json
 import os
 import shutil
@@ -11,20 +9,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts.tests.runtime_testutil import run
 from cli import db as dbmod
 from cli import event_contract
-from cli import main as climain
 from cli import orchestration
-
-
-def run(argv):
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        try:
-            rc = climain.main(argv)
-        except SystemExit as exc:
-            rc = exc.code if isinstance(exc.code, int) else 1
-    return rc, out.getvalue(), err.getvalue()
 
 
 def git(repo: Path, *args: str) -> str:
@@ -212,6 +200,13 @@ class V529ChangeSetWorkflowCase(unittest.TestCase):
 
         self.assertNotEqual(rc, 0)
         self.assertIn("DELIVERY_CHANGE_SET_MISMATCH", err)
+
+        # 新 Verification 之后必须产生新的 Code Review；刷新后才重新进入 Delivery。
+        self.review(task_id, task_dir)
+        refreshed = orchestration.resolve_route(
+            task_id, db_path=str(self.db), allowed_effects=["repo_mutation"]
+        )
+        self.assertEqual(refreshed["next_stage"], "delivery")
 
 
 class V529CodeReviewSemanticContractCase(unittest.TestCase):

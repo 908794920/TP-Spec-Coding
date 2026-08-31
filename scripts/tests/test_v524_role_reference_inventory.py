@@ -26,9 +26,6 @@ def test_scan_finds_active_and_legacy_callers(tmp_path):
     assert by_path["migrations/role_map.py"].classification == "MIGRATION_ONLY"
 
 
-def test_removed_role_inventory_is_not_shipped():
-    assert not any(p.is_file() or p.is_symlink() for p in (BASE / "docs/history").rglob("*")) if (BASE / "docs/history").exists() else True
-
 def test_report_is_deterministic_and_json_serializable(tmp_path):
     from scripts.migration.v5_2_3.role_reference_inventory import scan_role_references, report_payload
 

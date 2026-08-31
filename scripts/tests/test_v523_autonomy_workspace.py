@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import contextlib
-import io
 import json
 import os
 import subprocess
@@ -9,18 +7,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from cli import main as climain
+from scripts.tests.autonomy_testutil import run
 from cli import autonomy_profile, autonomy_workspace
-
-
-def run(argv):
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        try:
-            rc = climain.main(argv)
-        except SystemExit as exc:
-            rc = int(exc.code or 0)
-    return rc, out.getvalue(), err.getvalue()
 
 
 def git_repo(path: Path, branch="main"):

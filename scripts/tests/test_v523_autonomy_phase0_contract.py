@@ -1,23 +1,14 @@
 from __future__ import annotations
 
-import contextlib
-import io
 import json
 import tempfile
 from pathlib import Path
 
-from cli import main as climain
 from cli import orchestration
+from scripts.tests.runtime_testutil import run
 from scripts.tests.v514_orchestration_testutil import make_db
 
 BASE = Path(__file__).resolve().parents[2]
-
-
-def run(argv):
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        rc = climain.main(argv)
-    return rc, out.getvalue(), err.getvalue()
 
 
 def test_every_pipeline_stage_declares_known_effects_and_current_mutation_surface_is_explicit():
