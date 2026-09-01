@@ -42,9 +42,9 @@ Knowledge 不增加 lifecycle stage：Delivery READY 后若 Runtime 存在可信
 ## HTML 任务卡片刷新
 正式 Runtime 步骤成功并产生持久化事实后，可按既有白名单刷新该 task_id 的一次性 HTML 任务快照。刷新白名单保持：`task create / task checkpoint / task verify / task block / task resume / task delivery-converge / task complete`、`work start / work end`、`workflow confirm`。普通文件读取、代码搜索、测试、Shell 命令以及只读 `workflow next`/`task get` 不触发刷新。
 
-自动刷新仍由 Runtime hook 负责，使用明确 task_id 和正式 Runtime/Resolver 事实；不得根据最近执行的任意命令猜测 task_id，也不会扫描或猜测“最近任务”。只有当前宿主 inline capability 已确认时，才可在**该单个子进程**设置 `TP_SPEC_CARD_INLINE_OUTPUT`；capability 未确认按不可用处理。刷新输出的 `CARD_DISPLAY` 只证明展示候选物生成事实，其中 `inline.status=generated` 不代表 Host 已渲染，只有实际桥接调用成功后才能声称会话内展示成功。每次刷新仍覆盖当前工作区固定 `.tp-spec/card/index.html` Web Artifact。
+自动刷新仍由 Runtime hook 负责，使用明确 task_id 和正式 Runtime/Resolver 事实；不得根据最近执行的任意命令猜测 task_id，也不会扫描或猜测“最近任务”。本 Agent 仅拥有**刷新触发策略**：触发后使用当前 Base 的统一 `cli/cards` 渲染入口，并遵循 `tp-card-display` 的展示契约。不得复制卡片模板、渲染器或 Host bridge，避免手动展示与自动刷新产生版本分叉。只有当前宿主 inline capability 已确认时，才可在**该单个子进程**设置 `TP_SPEC_CARD_INLINE_OUTPUT`；capability 未确认按不可用处理。刷新输出的 `CARD_DISPLAY` 只证明展示候选物生成事实，其中 `inline.status=generated` 不代表 Host 已渲染，只有实际桥接调用成功后才能声称会话内展示成功。每次刷新仍覆盖当前工作区固定 `.tp-spec/card/index.html` Web Artifact。
 
-用户明确要求“显示卡片”时，按需加载 `tp-card-display`。该能力按“会话内 fragment → Web Artifact → 离线 HTML”选择展示层，并区分 inline generation、Host capability 与实际 render 结果；任何降级只作为当次展示解释，不写入 Runtime/Task 事实。不自行生成第二份卡片数据，也不把通用可视化文本当作固定协议。
+用户明确要求“显示卡片”时，由产品入口直接路由 `tp-card-display`。该 Agent按“会话内 fragment → Web Artifact → 离线 HTML”选择展示层，并区分 inline generation、Host capability 与实际 render 结果；任何降级只作为当次展示解释，不写入 Runtime/Task 事实。不自行生成第二份卡片数据，也不把通用可视化文本当作固定协议。
 
 HTML 卡片失败不得改变原命令成功结果；Artifact/fragment 失败同样不得改变原命令成功结果。卡片只是可删除、可重建的只读展示快照，不新增 public state，不写回 Runtime/Wiki/Knowledge。
 

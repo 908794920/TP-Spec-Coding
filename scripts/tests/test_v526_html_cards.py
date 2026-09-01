@@ -1542,15 +1542,29 @@ def test_formal_refresh_forwards_explicit_base_root_to_task_snapshot(tmp_path, m
 def test_card_skills_use_governed_display_contract_with_host_capability_fallbacks():
     entry = (BASE / "entry" / "tp-spec-coding" / "SKILL.md").read_text(encoding="utf-8")
     lifecycle = (BASE / "agents" / "tp-software-lifecycle" / "SKILL.md").read_text(encoding="utf-8")
+    display = (BASE / "agents" / "tp-card-display" / "SKILL.md").read_text(encoding="utf-8")
 
-    assert "tp-card-display" in entry
-    assert "CARD_DISPLAY" in entry
+    assert "card → `tp-card-display`" in entry
+    assert "tp-software-lifecycle` 的按需能力" not in entry
     assert "visualize" not in entry
-    assert "宿主" in entry and "Web Artifact" in entry and "离线 HTML" in entry
-    assert "tp-card-display" in lifecycle
+    assert "CARD_DISPLAY" in display
+    assert "宿主" in display and "Web Artifact" in display and "离线 HTML" in display
+    assert "刷新触发策略" in lifecycle
+    assert "tp-card-display` 的展示契约" in lifecycle
+    assert "不得复制卡片模板、渲染器或 Host bridge" in lifecycle
     assert "CARD_DISPLAY" in lifecycle
     assert "TP_SPEC_CARD_INLINE_OUTPUT" in lifecycle
     assert "会话内" in lifecycle
+
+
+def test_explicit_card_commands_and_runtime_refresh_share_the_canonical_renderer():
+    commands = (BASE / "cli" / "cards" / "commands.py").read_text(encoding="utf-8")
+    trigger = (BASE / "cli" / "cards" / "trigger.py").read_text(encoding="utf-8")
+
+    assert "def render_display_outputs(" in commands
+    assert "render_inline_card(snapshot, inline_output)" in commands
+    assert "from .commands import render_display_outputs" in trigger
+    assert "render_display_outputs(" in trigger
 
 
 def test_global_snapshot_and_renderer_include_skill_topology_with_name_and_id(tmp_path, monkeypatch):
@@ -2003,7 +2017,7 @@ def test_structured_evidence_keeps_task_anchor_when_workspace_root_is_unavailabl
 
 
 def test_card_display_skill_contract_separates_generation_capability_and_actual_render():
-    display = (BASE / "skills" / "capabilities" / "tp-card-display" / "SKILL.md").read_text(encoding="utf-8")
+    display = (BASE / "agents" / "tp-card-display" / "SKILL.md").read_text(encoding="utf-8")
     entry = (BASE / "entry" / "tp-spec-coding" / "SKILL.md").read_text(encoding="utf-8")
     lifecycle = (BASE / "agents" / "tp-software-lifecycle" / "SKILL.md").read_text(encoding="utf-8")
     combined = "\n".join((display, entry, lifecycle))
@@ -2018,7 +2032,7 @@ def test_card_display_skill_contract_separates_generation_capability_and_actual_
 
 
 def test_card_display_skill_contract_declares_fail_closed_fallback_reasons():
-    display = (BASE / "skills" / "capabilities" / "tp-card-display" / "SKILL.md").read_text(encoding="utf-8")
+    display = (BASE / "agents" / "tp-card-display" / "SKILL.md").read_text(encoding="utf-8")
 
     for reason in (
         "INLINE_CAPABILITY_UNAVAILABLE",

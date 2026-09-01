@@ -33,7 +33,7 @@ CLI / Runtime
 
 ## 3. Domain Agent 导航
 
-五个当前公开 Domain Agent 的用户入口统一从 [`docs/README.md`](README.md) 选择，对应导航文件都位于 `docs/agents/`。导航中的 ID、路径、Role/Skill 关系由 Role Catalog 校验或生成；“适用场景”和“边界”才由人维护。
+六个当前公开 Domain Agent 的用户入口统一从 [`docs/README.md`](README.md) 选择，对应导航文件都位于 `docs/agents/`。导航中的 ID、路径、Role/Skill 关系由 Role Catalog 校验或生成；“适用场景”和“边界”才由人维护。
 
 ## 4. 生成型 topology
 

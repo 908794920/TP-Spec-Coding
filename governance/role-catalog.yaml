@@ -1,6 +1,6 @@
 catalog_version: "5.3.1"
 base_version: "5.3.1"
-generated_utc: 20260831T093423Z
+generated_utc: 20260901T074507Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -14,7 +14,7 @@ roles:
   phases: [other]
   capabilities: [domain.routing, status.compact, explain.route]
   owns_states: []
-  content_sha256: 6AD56DCB23CC839751E899A9DA36B77E2E8DF1C456780CD3D6CF0CA0F47AC96D
+  content_sha256: C59979FE59B7A022C49C89F17B3AA3CF6E15C9634B9C02390A61BFC6CB9C74AE
 - workflow_role: tp-software-lifecycle
   display_name: tp-软件工程生命周期
   type: control-role
@@ -22,10 +22,17 @@ roles:
   domain: software
   phases: [intake, requirement, product, discovery, architecture, planning, development, verification, review, delivery]
   capabilities: [lifecycle.routing, role.resolution, workflow.coordination]
-  domain_skills:
-    - {id: tp-card-display, path: skills/capabilities/tp-card-display/SKILL.md, mode: conditional}
   owns_states: [NEW]
-  content_sha256: 38164AEB20EA08C12338CC735BAE7F9C027029AB8FC66750B12B73220EE32DA9
+  content_sha256: 3E6B216D00BEC4DD68540F420C3302AEF4EA6DB7A73EA1C33003AA0259017CF2
+- workflow_role: tp-card-display
+  display_name: 卡片展示调度
+  type: human-owner-skill
+  skill_path: agents/tp-card-display/SKILL.md
+  domain: card
+  phases: [other]
+  capabilities: [card.global, card.project, card.task, card.host-display]
+  owns_states: []
+  content_sha256: F50AE58D2B970EB056FE62EE1F8E557F905F8B33230694589A1F2FED102195C7
 - workflow_role: tp-project-autonomy
   display_name: tp-项目自治维护
   type: control-role
@@ -195,6 +202,12 @@ topology:
       kind: domain-agent
       path: agents/tp-software-lifecycle/SKILL.md
       domain: software
+    tp-card-display:
+      id: tp-card-display
+      name: 卡片展示调度
+      kind: domain-agent
+      path: agents/tp-card-display/SKILL.md
+      domain: card
     tp-project-autonomy:
       id: tp-project-autonomy
       name: tp-项目自治维护
@@ -273,11 +286,6 @@ topology:
       kind: formal-role
       path: skills/roles/tp-integration-engineer/SKILL.md
       domain: software
-    tp-card-display:
-      id: tp-card-display
-      name: 卡片展示调度
-      kind: capability-skill
-      path: skills/capabilities/tp-card-display/SKILL.md
     tp-autonomy-setup:
       id: tp-autonomy-setup
       name: 自治配置
@@ -348,6 +356,9 @@ topology:
     to: tp-software-lifecycle
     relation: routes-to
   - from: tp-spec-coding
+    to: tp-card-display
+    relation: routes-to
+  - from: tp-spec-coding
     to: tp-project-autonomy
     relation: routes-to
   - from: tp-spec-coding
@@ -386,10 +397,6 @@ topology:
   - from: tp-software-lifecycle
     to: tp-integration-engineer
     relation: owns-role
-  - from: tp-software-lifecycle
-    to: tp-card-display
-    relation: uses-skill
-    mode: conditional
   - from: tp-project-autonomy
     to: tp-autonomy-setup
     relation: uses-skill
