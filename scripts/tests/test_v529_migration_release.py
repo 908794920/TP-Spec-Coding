@@ -19,7 +19,8 @@ def _legacy_version() -> str:
 
 
 def _target_version() -> str:
-    return ".".join(["5", "3", "0"])
+    """Migration target is the currently active contract, not a frozen release literal."""
+    return active_version()
 
 
 def _git_baseline(task_dir: str) -> Path:
@@ -90,7 +91,7 @@ def test_old_database_verification_migrates_to_exactly_one_operation():
 
 
 def test_terminal_v528_history_is_not_rewritten(tmp_path: Path):
-    assert active_version() == _target_version()
+    assert _target_version() != _legacy_version()
     task_id = "TASK-V529-TERMINAL"
     task_dir, db_path = build_task(tmp_path, task_id=task_id)
     _downgrade_task(task_dir, db_path, task_id)
@@ -121,7 +122,7 @@ def test_terminal_v528_history_is_not_rewritten(tmp_path: Path):
 
 
 def test_inflight_v528_pass_without_change_set_becomes_stale_after_migration(tmp_path: Path):
-    assert active_version() == _target_version()
+    assert _target_version() != _legacy_version()
     task_id = "TASK-V529-STALE"
     task_dir, db_path = build_task(tmp_path, task_id=task_id, risk="L1", flow="L1")
     _git_baseline(task_dir)
@@ -163,7 +164,7 @@ def test_inflight_v528_pass_without_change_set_becomes_stale_after_migration(tmp
 
 
 def test_old_no_change_does_not_satisfy_new_required_knowledge(tmp_path: Path):
-    assert active_version() == _target_version()
+    assert _target_version() != _legacy_version()
     task_id = "TASK-V529-KNOWLEDGE"
     task_dir, db_path = build_task(tmp_path, task_id=task_id, risk="L0", flow="L0")
     _git_baseline(task_dir)
@@ -204,7 +205,7 @@ def test_old_no_change_does_not_satisfy_new_required_knowledge(tmp_path: Path):
 
 
 def test_release_contract_is_v529_and_single_active_template():
-    assert active_version() == _target_version()
+    assert _target_version() != _legacy_version()
     base = Path(__file__).resolve().parents[2]
     active_dirs = sorted(p.name for p in (base / "templates").iterdir() if p.is_dir())
     assert active_dirs == [_target_version()]

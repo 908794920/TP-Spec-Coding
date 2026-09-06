@@ -36,6 +36,7 @@ def test_public_agents_are_catalog_driven_and_each_has_a_guide():
     expected = _public_agent_ids_from_catalog()
     assert expected == [
         "tp-software-lifecycle",
+        "tp-card-display",
         "tp-project-autonomy",
         "tp-base-maintenance",
         "tp-knowledge",

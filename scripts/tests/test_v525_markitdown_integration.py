@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.3.0 MarkItDown document-normalization integration regression."""
+"""V5.3.1 MarkItDown document-normalization integration regression."""
 from __future__ import annotations
 
 import importlib

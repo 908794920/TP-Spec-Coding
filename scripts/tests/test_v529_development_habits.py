@@ -8,7 +8,7 @@ def read(rel: str) -> str:
 
 
 def test_implementation_template_contains_pre_and_post_change_contract():
-    text = read("templates/5.3.0/implementation.md")
+    text = read("templates/5.3.1/implementation.md")
     for marker in [
         "### Usage Footprint",
         "### 可复用代码",
@@ -129,7 +129,7 @@ def test_capability_references_capture_overdevelopment_and_low_value_tests():
 
 
 def test_test_guide_separates_visual_and_non_visual_validation():
-    guide = read("templates/5.3.0/requirement-test-guide.md")
+    guide = read("templates/5.3.1/requirement-test-guide.md")
     assert "## 非可视化验证" in guide
     assert "## 可视化验证" in guide
     assert "登录策略" in guide

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.3.0 generated Agent/Role/Skill topology contract."""
+"""V5.3.1 generated Agent/Role/Skill topology contract."""
 from __future__ import annotations
 
 import copy
@@ -95,27 +95,32 @@ def test_validator_detects_generated_topology_drift():
     assert any("topology drift" in error for error in errors)
 
 
-def test_card_display_skill_is_lifecycle_capability_not_product_entry():
+def test_card_display_is_direct_card_domain_agent():
     catalog = _catalog()
     topology = catalog["topology"]
     nodes = topology["nodes"]
     edges = topology["edges"]
 
     assert nodes["tp-card-display"]["name"] == "卡片展示调度"
-    assert nodes["tp-card-display"]["kind"] == "capability-skill"
-    assert nodes["tp-card-display"]["path"] == "skills/capabilities/tp-card-display/SKILL.md"
+    assert nodes["tp-card-display"]["kind"] == "domain-agent"
+    assert nodes["tp-card-display"]["path"] == "agents/tp-card-display/SKILL.md"
     assert any(
+        edge["from"] == "tp-spec-coding"
+        and edge["to"] == "tp-card-display"
+        and edge["relation"] == "routes-to"
+        for edge in edges
+    )
+    assert not any(
         edge["from"] == "tp-software-lifecycle"
         and edge["to"] == "tp-card-display"
         and edge["relation"] == "uses-skill"
         for edge in edges
     )
-    assert not any(edge["relation"] == "routes-to" and edge["to"] == "tp-card-display" for edge in edges)
     assert topology["root_id"] == "tp-spec-coding"
 
 
 def test_card_display_skill_declares_read_only_host_routing_boundaries():
-    text = (BASE / "skills" / "capabilities" / "tp-card-display" / "SKILL.md").read_text(encoding="utf-8")
+    text = (BASE / "agents" / "tp-card-display" / "SKILL.md").read_text(encoding="utf-8")
 
     for required in ("CARD_DISPLAY", "tp-spec card", "Web Artifact", "离线 HTML", "宿主", "明确要求"):
         assert required in text

@@ -69,6 +69,8 @@ _ALLOWED_HISTORY_GLOBS = (
     "scripts/ci/Test-V510*",
     "CHANGELOG.md",
     "docs/MIGRATION_V529.md",  # 当前迁移说明必须精确引用上一活动契约
+    "docs/TESTING.md",  # 测试治理审计：精确引用治理发生时的原始基线版本数据
+    "scripts/tests/test_test_suite_governance.py",  # 断言 TESTING.md 记录的历史基线事实
     "manifest.sha256",  # 生成产物，可引用历史文件名
     "db/registry.local.json",
     "db/registry.local.json.example",

@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 """模板完整性回归：当前单活动契约模板集和 canonical requirement 工件可解析。
 
-Pure stdlib unittest; offline. 验证（定向修复任务 §5/§6/§11.2/§11.3）：
+Pure stdlib unittest; offline. 验证：
 - 当前 templates/<active> 包含 canonical requirement 和必要按需工件；
-- 5 个新工件均有可解析 YAML front matter；
-- front matter 包含 artifact / task_id / artifact_contract.version / owner / status / stage_handoff；
+- 5 个按需工件均有可解析的最小 YAML front matter；
 - artifact_contract.version == 当前活动版本；
-- requirement-test-guide 含 ac_coverage 与稳定测试 ID（T-00x）；
-- requirement-decisions 使用顶层 decisions 列表（非 fenced 多段 YAML 作为唯一机器事实）；
+- Requirement Frontier 只扩展既有可选业务记录，不新增工件或 Runtime schema；
+- requirement-decisions 保持业务记录而非 front matter 机器状态；
 - 当前版本是唯一活动模板目录（单活动契约）。
 
 Run:
@@ -108,7 +107,20 @@ class TestTemplateCompleteness(unittest.TestCase):
         self.assertNotIn("decisions", data)
         text = p.read_text(encoding="utf-8")
         self.assertIn("只记录真实发生", text)
-        self.assertIn("| 决策 | 原因/上下文 | 影响 |", text)
+        self.assertIn("| decision_id | 问题 | prerequisites | status | blocking | recommendation | human decision / 受控默认 | impact | evidence_refs | supersedes / history |", text)
+        self.assertIn("保留原 decision", text)
+
+    def test_requirement_clarifications_distinguishes_all_blockers_from_frontier(self):
+        p = BASE / "templates" / ACTIVE_VERSION / "requirement-clarifications.md"
+        data = _parse_front_matter(p)
+        self.assertEqual(data["blocking_open"], 0)
+        self.assertIsInstance(data["blocking_open"], int)
+        self.assertNotIn("current_frontier", data)
+        text = p.read_text(encoding="utf-8")
+        self.assertIn("全部未解决", text)
+        self.assertIn("不是 Current Frontier 的条目数", text)
+        for heading in ("## Fact Investigation", "## Current Frontier", "## Deferred Decisions"):
+            self.assertIn(heading, text)
 
     def test_architecture_review_decision_enum(self):
         p = BASE / "templates" / ACTIVE_VERSION / "architecture-review.md"

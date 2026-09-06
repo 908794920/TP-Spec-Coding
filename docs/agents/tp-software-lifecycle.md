@@ -31,10 +31,6 @@
 | tp-代码审查员 | `tp-code-reviewer` | [`skills/roles/tp-code-reviewer/SKILL.md`](../../skills/roles/tp-code-reviewer/SKILL.md) |
 | tp-集成交付工程师 | `tp-integration-engineer` | [`skills/roles/tp-integration-engineer/SKILL.md`](../../skills/roles/tp-integration-engineer/SKILL.md) |
 
-### Domain / Capability Skill
-
-- `tp-card-display` (conditional) → [`skills/capabilities/tp-card-display/SKILL.md`](../../skills/capabilities/tp-card-display/SKILL.md)
-
 <!-- TP-SPEC:AGENT-TOPOLOGY-END -->
 
 ## 相关文档

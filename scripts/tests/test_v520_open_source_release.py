@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding v5.3.0 public-release contract tests."""
+"""TP-Spec-Coding v5.3.1 public-release contract tests."""
 from __future__ import annotations
 
 import importlib.util
@@ -21,11 +21,11 @@ def read(rel: str) -> str:
 
 
 def test_public_brand_and_release_version():
-    assert ACTIVE == "5.3.0"
+    assert ACTIVE == "5.3.1"
     assert read("README.md").startswith("# TP-Spec-Coding\n")
     assert "TP-Spec-Coding" in read("governance/workflow.yaml")
     changelog = read("CHANGELOG.md")
-    for needle in ("## [5.3.0]", "tp-spec-coding", "tp-software-lifecycle", "文档入口"):
+    for needle in ("## [5.3.1]", "tp-spec-coding", "tp-software-lifecycle", "文档入口"):
         assert needle in changelog, needle
 
 
@@ -89,6 +89,7 @@ def test_development_flow_has_one_external_lead_and_three_independent_agents():
     }
     assert exposed == {
         "tp-software-lifecycle",
+        "tp-card-display",
         "tp-project-autonomy",
         "tp-base-maintenance",
         "tp-knowledge",
@@ -112,7 +113,7 @@ def test_development_flow_has_one_external_lead_and_three_independent_agents():
         assert role_paths[role] == f"skills/roles/{role}/SKILL.md"
     assert (BASE / "entry/tp-spec-coding/SKILL.md").is_file()
     assert role_paths["tp-spec-coding"] == "entry/tp-spec-coding/SKILL.md"
-    for role in ("tp-software-lifecycle", "tp-project-autonomy", "tp-base-maintenance", "tp-knowledge", "tp-wiki"):
+    for role in ("tp-software-lifecycle", "tp-card-display", "tp-project-autonomy", "tp-base-maintenance", "tp-knowledge", "tp-wiki"):
         assert role_paths[role] == f"agents/{role}/SKILL.md"
 
     agents_doc = read("docs/AGENTS_AND_SKILLS.md")
@@ -341,7 +342,7 @@ def test_release_manifest_gate_distinguishes_working_tree_from_git_release(tmp_p
         assert run_git("add", "manifest.sha256").returncode == 0
         assert manifest_tool.verify_release() == 0
 
-        # Reproduce the v5.3.0 publication failure mode: the file is visible and
+        # Reproduce the v5.3.1 publication failure mode: the file is visible and
         # included by the development manifest, but it was never git-added.
         (repo / "release-surface.txt").write_text("untracked\n", encoding="utf-8")
         assert manifest_tool.generate() == 0

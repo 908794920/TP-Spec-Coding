@@ -14,7 +14,7 @@ def _trusted_event(event_type, actor, producer, decision, *, event_id=1, subject
     detail = {
         "transaction_id": "tx-1",
         "producer": producer,
-        "schema_version": "5.3.0",
+        "schema_version": "5.3.1",
         "task_id": "TASK-1",
         "actor_role": actor,
         "created_at": created,
@@ -29,7 +29,7 @@ def _trusted_event(event_type, actor, producer, decision, *, event_id=1, subject
         "event_type": event_type,
         "actor_role": actor,
         "created_at": created,
-        "workflow_version": "5.3.0",
+        "workflow_version": "5.3.1",
         "detail_json": json.dumps(detail),
     }
 

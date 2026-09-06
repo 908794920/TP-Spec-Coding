@@ -114,6 +114,8 @@ TEST_FILE_CATALOG = {
     'scripts/tests/test_v529_migration_release.py': _case('integration', ('migration', 'release'), 'KEEP_INDEPENDENT_CONTRACT', 'v529 migration release regression/compatibility contract', resources=('subprocess', 'sqlite', 'git')),
     'scripts/tests/test_v529_terminal_projection.py': _case('integration', ('runtime',), 'KEEP_INDEPENDENT_CONTRACT', 'v529 terminal projection regression/compatibility contract', resources=('subprocess', 'sqlite', 'git', 'env_mutation')),
     'scripts/tests/test_v529_visual_verification.py': _case('integration', ('workflow', 'cards'), 'KEEP_INDEPENDENT_CONTRACT', 'visual evidence manifest and temporary-auth cleanup delivery gates', resources=('subprocess', 'sqlite', 'git', 'shared_temp', 'env_mutation'), slow=True),
+    'scripts/tests/test_v531_graphify_no_go.py': _case('contract', ('release',), 'KEEP_INDEPENDENT_CONTRACT', 'Graphify M2 No-Go decision, no-runtime-dependency boundary, and release-note traceability'),
+    'scripts/tests/test_v531_requirement_frontier.py': _case('contract', ('workflow', 'roles'), 'KEEP_INDEPENDENT_CONTRACT', 'conditional Requirement Frontier ordering, fact/decision separation, convergence, and no-new-runtime boundary'),
 }
 
 SMOKE_NODEIDS = {

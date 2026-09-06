@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.3.0 installation/project binding resolver.
+"""TP-Spec-Coding V5.3.1 installation/project binding resolver.
 
 This module separates four authorities:
 

@@ -1,11 +1,11 @@
 ---
 id: tp-development-engineer
 name: tp-开发工程师
-version: 5.3.0
+version: 5.3.1
 status: active
 type: workflow-role
 role: tp-development-engineer
-description: tp-开发工程师：TP-Spec-Coding v5.3.0 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-开发工程师：TP-Spec-Coding v5.3.1 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-开发工程师

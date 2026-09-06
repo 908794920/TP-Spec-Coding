@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-TP-Spec-Coding itself is distributed under the repository's MIT License. The v5.3.0 implementation also studies or adapts small ideas from third-party open-source projects. No third-party repository is vendored into this source tree.
+TP-Spec-Coding itself is distributed under the repository's MIT License. The v5.3.1 implementation also studies or adapts small ideas from third-party open-source projects. No third-party repository is vendored into this source tree.
 
 ## Alibaba OpenCodeReview
 
@@ -24,6 +24,17 @@ The TP-Spec-Coding implementation is a Python adaptation integrated with TP-Spec
 The TP-Spec-Coding boundary intentionally exposes only explicit local-file conversion. Remote retrieval remains a separate responsibility.
 
 ## Design References Not Vendored
+
+### Graphify
+
+- Project: `Graphify-Labs/graphify`
+- Evaluated package: `graphifyy==0.9.53`
+- Evaluated commit: `33362d969292b57eda82f3fbd9eb5f3f5bc9bbc2`
+- License: Apache License 2.0
+- Decision: the v5.3.1 Provider Spike is No-Go because the evaluated Java output failed the upstream endpoint validator.
+- Distribution boundary: Graphify is not vendored and is not a runtime dependency of TP-Spec-Coding.
+
+No Graphify source, Java extractor, cache implementation, or Provider Adapter is included in this source tree. A future upstream version requires a new independent Spike before adoption.
 
 The following projects were used as architecture/design references only; their source code is not copied into TP-Spec-Coding:
 
