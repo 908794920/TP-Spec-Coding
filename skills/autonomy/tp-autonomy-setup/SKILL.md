@@ -1,7 +1,7 @@
 ---
 name: tp-autonomy-setup
 display_name: 自治配置
-version: 5.3.1
+version: 5.3.2
 description: 创建或维护一个长期 Autonomous Maintenance Profile 与隔离 Workspace，并生成可恢复的外部 Scheduler/Executor bootstrap prompt。
 ---
 

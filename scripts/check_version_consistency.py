@@ -48,6 +48,7 @@ _ALLOWED_HISTORY_PREFIXES = (
     "cli/migrations/",
     "scripts/migration/",
     "scripts/tests/fixtures/history/",
+    "docs/decisions/",  # 决策 ADR 归档：精确引用决策发生时的基座契约版本
 )
 # 精确文件 glob 匹配（相对 BASE）。
 _ALLOWED_HISTORY_GLOBS = (
@@ -68,6 +69,7 @@ _ALLOWED_HISTORY_GLOBS = (
     "scripts/tests/test_b18_*",
     "scripts/ci/Test-V510*",
     "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md",  # 第三方声明归档：精确引用评估/发布发生时的版本号
     "docs/MIGRATION_V529.md",  # 当前迁移说明必须精确引用上一活动契约
     "docs/TESTING.md",  # 测试治理审计：精确引用治理发生时的原始基线版本数据
     "scripts/tests/test_test_suite_governance.py",  # 断言 TESTING.md 记录的历史基线事实

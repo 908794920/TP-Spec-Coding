@@ -1,4 +1,4 @@
-version: 5.3.1
+version: 5.3.2
 mode: record-first
 principle: business work first; Runtime owns bookkeeping
 daily_api:
@@ -57,7 +57,7 @@ daily_api:
 project_api:
   project_bootstrap_check: tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only
   project_bootstrap: tp-spec project bootstrap --id <PROJECT> --root <ROOT>
-  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.3.1
+  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.3.2
 errors:
   PROJECT_BOOTSTRAP_AVAILABLE: read-only bootstrap check found a pristine project that may be initialized only after explicit human_owner action
   PROJECT_NOT_INITIALIZED: project ledger is not initialized; run project bootstrap/init first
@@ -87,7 +87,7 @@ optional_capabilities:
   terminal_integrity: read-only `task terminal-check` compares terminal artifacts with the completion-time manifest and never reopens history
   knowledge_task_convergence: >-
     Conditional typed effect: `tp-spec knowledge task-converge --task <TASK> --task-dir <DIR> --db <DB> --workspace-root <ROOT> --request-event-id <ID> --disposition CREATED|UPDATED|DUPLICATE|NO_DURABLE_INSIGHT --reason-code <CODE> --query <TEXT> --source <TASK-RELATIVE-PATH> [--knowledge-ref <REF>]`. It performs targeted current-project+shared search only; CREATED/UPDATED use exact-canonical lint + single-note incremental index before writing the tp-knowledge Result.
-  legacy_commit: compatibility/recovery surface; not the V5.3.1 daily role API
+  legacy_commit: compatibility/recovery surface; not the V5.3.2 daily role API
   context_effectiveness: >-
     Read-only report over Task-bound Context Usage receipts. It never gates workflow
     and never mutates Context assets.

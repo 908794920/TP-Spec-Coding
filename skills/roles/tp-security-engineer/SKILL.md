@@ -1,11 +1,11 @@
 ---
 id: tp-security-engineer
 name: tp-安全工程师
-version: 5.3.1
+version: 5.3.2
 status: active
 type: workflow-role
 role: tp-security-engineer
-description: tp-安全工程师：TP-Spec-Coding v5.3.1 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-安全工程师：TP-Spec-Coding v5.3.2 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-安全工程师

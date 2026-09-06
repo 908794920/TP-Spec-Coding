@@ -1,2 +1,2 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.3.1 standardized Knowledge Content System."""
+"""TP-Spec-Coding V5.3.2 standardized Knowledge Content System."""

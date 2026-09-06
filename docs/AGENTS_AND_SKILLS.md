@@ -1,4 +1,4 @@
-# TP-Spec-Coding Agent / Role / Skill 模型（v5.3.1）
+# TP-Spec-Coding Agent / Role / Skill 模型（v5.3.2）
 
 [`governance/role-catalog.yaml`](../governance/role-catalog.yaml) 是当前 Agent / Formal Role / Skill 路径与生成型 topology 的权威。面向用户的 Domain 导航位于 [`docs/agents/`](agents/)，不在本文复制第二套完整能力清单。
 

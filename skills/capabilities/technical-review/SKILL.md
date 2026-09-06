@@ -1,11 +1,11 @@
 ---
 name: technical-review
 display_name: 独立技术审查
-version: 5.3.1
+version: 5.3.2
 description: Use for independent implementation review. Check real code/diff, traceability, engineering risks, and evidence without letting the implementer self-approve or requiring workflow bookkeeping.
 ---
 
-# 独立技术审查 — V5.3.1 Record-first
+# 独立技术审查 — V5.3.2 Record-first
 
 ## 原则
 独立验收不能只复述 implementation 摘要。必须检查适用的真实代码/diff/配置、测试和 evidence，并明确哪些结论是已验证、哪些只是未覆盖边界。
