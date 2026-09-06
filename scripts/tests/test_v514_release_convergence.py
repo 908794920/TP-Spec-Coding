@@ -22,6 +22,7 @@ FLOW_SKILLS = {
 }
 EXPOSED_AGENTS = {
     "tp-software-lifecycle",
+    "tp-card-display",
     "tp-base-maintenance",
     "tp-knowledge",
     "tp-wiki",

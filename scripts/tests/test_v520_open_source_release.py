@@ -89,6 +89,7 @@ def test_development_flow_has_one_external_lead_and_three_independent_agents():
     }
     assert exposed == {
         "tp-software-lifecycle",
+        "tp-card-display",
         "tp-project-autonomy",
         "tp-base-maintenance",
         "tp-knowledge",
@@ -112,7 +113,7 @@ def test_development_flow_has_one_external_lead_and_three_independent_agents():
         assert role_paths[role] == f"skills/roles/{role}/SKILL.md"
     assert (BASE / "entry/tp-spec-coding/SKILL.md").is_file()
     assert role_paths["tp-spec-coding"] == "entry/tp-spec-coding/SKILL.md"
-    for role in ("tp-software-lifecycle", "tp-project-autonomy", "tp-base-maintenance", "tp-knowledge", "tp-wiki"):
+    for role in ("tp-software-lifecycle", "tp-card-display", "tp-project-autonomy", "tp-base-maintenance", "tp-knowledge", "tp-wiki"):
         assert role_paths[role] == f"agents/{role}/SKILL.md"
 
     agents_doc = read("docs/AGENTS_AND_SKILLS.md")

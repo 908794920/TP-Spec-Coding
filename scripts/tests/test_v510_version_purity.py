@@ -52,6 +52,7 @@ class TestVersionPurity(unittest.TestCase):
             [sys.executable, str(_SCANNER)],
             capture_output=True,
             text=True,
+            encoding="utf-8",  # scanner deterministically forces UTF-8 stdio
             cwd=str(BASE),
         )
         self.assertEqual(proc.returncode, 0, f"scanner failed:\n{proc.stdout}\n{proc.stderr}")

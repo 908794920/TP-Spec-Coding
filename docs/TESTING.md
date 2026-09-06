@@ -265,7 +265,7 @@ python -m pytest -q --durations=50
 
 ## 8. Fail-closed 规则
 
-- `pytest.ini` 使用 `strict_markers = true`；测试源码使用未注册 marker 时 collection 失败。
+- `pytest.ini` 通过 `addopts = --strict-markers` 启用严格 marker；测试源码使用未注册 marker 时 collection 失败。
 - `scripts/tests/conftest.py` 对每个 collected item 应用 catalog 默认分类。
 - 每个 collected item 必须恰好一个 primary layer，且至少一个 domain。
 - 新增 `test_*.py` 但未登记 catalog 时立即 `UsageError`，不能静默落入默认 bucket。

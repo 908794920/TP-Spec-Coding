@@ -21,6 +21,7 @@ CANONICAL_ROLES = {
 DOMAIN_AGENTS = {
     "tp-spec-coding",
     "tp-software-lifecycle",
+    "tp-card-display",
     "tp-project-autonomy",
     "tp-base-maintenance",
     "tp-knowledge",

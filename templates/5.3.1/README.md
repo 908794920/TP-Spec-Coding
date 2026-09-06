@@ -15,7 +15,13 @@
 - `acceptance.md`：需要明确验收项时使用；
 - `status.yaml`：Runtime 投影。
 
-其他模板均是**按需工件**：有内容价值才创建，不存在不阻塞任务。
+其他模板均是**按需工件**：有内容价值才创建，不存在不阻塞任务。没有真实澄清、决策或架构内容时不创建空工件。
+
+## Requirement Frontier（条件方法）
+
+Requirement Frontier 只用于复杂 L2/L3 且多个关键决策存在前置依赖的需求；L0/L1、单一问题和无依赖决策仍走最小澄清路径，不增加固定问卷。它只复用 `requirement.md`、`requirement-clarifications.md` 和 `requirement-decisions.md`，不新增 Runtime state、workflow stage、Task Event、数据库或固定工件。
+
+`blocking_open` 表示当前相关决策树中全部未解决的 blocking decision 和 blocking fact investigation，包括等待事实、等待前置 decision 和 Current Frontier；它不是当前可向用户提问的数量。Current Frontier 包含所有前置条件已解决、技术事实已调查且现在可以决定的未决 decision；Agent 只提出其中真正 blocking 的问题，或组成最小 coherent batch。依赖本轮答案的下游问题必须延后，事实问题先由 Agent 读取 Wiki、Knowledge、Memory、代码、配置和文档并做只读调查。
 
 ## 日常 Runtime 动作
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import configparser
 import importlib.util
 from pathlib import Path
 
@@ -61,6 +62,25 @@ def test_pytest_governance_files_exist():
     assert CATALOG_PATH.is_file()
     assert (TESTS_ROOT / "conftest.py").is_file()
     assert DOC_PATH.is_file()
+
+
+def test_pytest_ini_enables_strict_markers_via_addopts():
+    """pytest>=8 dropped the strict_markers ini key; the contract must be enabled by addopts.
+
+    Without effective strict-marker enforcement an unregistered marker would only
+    produce PytestUnknownMarkWarning and continue running, violating the documented
+    fail-closed marker contract.
+    """
+    parser = configparser.ConfigParser()
+    read_files = parser.read(PYTEST_INI)
+    assert read_files == [str(PYTEST_INI)], "pytest.ini must be readable"
+    assert parser.has_section("pytest")
+    assert not parser.has_option("pytest", "strict_markers"), (
+        "strict_markers is an invalid pytest>=8 ini key and is silently ignored; "
+        "enable strict markers via addopts = --strict-markers"
+    )
+    addopts = parser.get("pytest", "addopts", fallback="").split()
+    assert "--strict-markers" in addopts, "addopts must include --strict-markers"
 
 
 def test_catalog_covers_every_behavior_test_file_without_stale_paths():

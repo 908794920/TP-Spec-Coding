@@ -1,6 +1,6 @@
 catalog_version: "5.3.1"
 base_version: "5.3.1"
-generated_utc: 20260901T074507Z
+generated_utc: 20260904T082711Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -86,7 +86,7 @@ roles:
     - {id: assumption-management, path: skills/capabilities/assumption-management/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 611B35F42CABFD84B66A96A12F3630F562A807307CEC16F6A4778F6174AAEF3F
+  content_sha256: E77A9D1BF852ED12F743F54D9D002EE77B74BEB2D73B1E2DED20DDD54073A7A3
 - workflow_role: tp-software-architect
   display_name: tp-软件架构师
   type: workflow-role

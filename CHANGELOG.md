@@ -4,6 +4,9 @@
 
 - 从 **5.3.0** 收敛到 **5.3.1** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.3.1`，不再保留 `templates/5.3.0`。
 - 继续维持 Role-first 产品形态：`tp-spec-coding` 唯一默认产品入口、`tp-software-lifecycle` 软件工程 Domain Agent 与各 Formal Role 的活动契约不变。
+- Graphify Provider Spike 在固定 `graphifyy==0.9.53` / commit `33362d969292b57eda82f3fbd9eb5f3f5bc9bbc2` 上因 dangling endpoint 未通过上游 validator；M2 正式 **No-Go**，不实现 Source Graph v1，不增加 Graphify 运行时依赖、Adapter 或替代 AST。
+- v5.3.1 后续增量范围收敛为 **Requirement Frontier**：仅在复杂 L2/L3 的前置依赖决策中启用，复用现有 requirement-clarification 与按需 Requirement 工件，L0/L1 默认路径不增加问卷或状态。
+- 修复发布测试漂移：公开 Domain Agent 契约纳入既有 `tp-card-display`，v5.2.9 migration 回归面向当前活动契约而非写死 5.3.0。
 
 ## [5.3.0] Open Release Line — 2026-08-29
 
