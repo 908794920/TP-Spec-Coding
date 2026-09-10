@@ -1080,7 +1080,7 @@ def _task_migratable_artifacts(task_dir: Path) -> Dict[str, str]:
         path = task_dir / name
         if path.is_file():
             try:
-                result[name] = path.read_text(encoding="utf-8-sig")
+                result[name] = path.read_bytes().decode("utf-8")
             except OSError:
                 continue
     return result
@@ -1093,7 +1093,7 @@ def _task_contract_files(task_dir: Path) -> Dict[str, str]:
         if not path.is_file() or path.suffix.lower() not in {'.md', '.yaml', '.yml'}:
             continue
         try:
-            text = path.read_text(encoding='utf-8-sig')
+            text = path.read_bytes().decode('utf-8')
         except OSError:
             continue
         if re.search(r'(?ms)^artifact_contract:\s*\n\s+version:', text):
@@ -1183,6 +1183,19 @@ def _deep_projection_snapshot(conn, task, task_dir: Path, actor: str = "human_ow
     return issues
 
 
+def _migration_input_snapshot(task_dir: Path) -> Dict[str, str]:
+    """Bind task-root inputs by content; evidence subdirectories remain immutable."""
+    snapshot: Dict[str, str] = {}
+    for path in sorted(task_dir.iterdir()):
+        if path.suffix.lower() not in {".md", ".yaml", ".yml", ".json", ".jsonl"}:
+            continue
+        if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+            raise ValueError(f"MIGRATION_INPUT_UNSAFE: linked task artifact {path.name}")
+        if path.is_file():
+            snapshot[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return snapshot
+
+
 def cmd_task_migrate(args) -> int:
     """Atomically migrate/repair a non-terminal task to the active contract.
 
@@ -1212,8 +1225,12 @@ def cmd_task_migrate(args) -> int:
     if not os.path.isfile(db_path):
         print(f"ERROR: database not found: {db_path}", file=sys.stderr)
         return 4
-    conn = dbmod.connect(db_path)
+    conn = dbmod.connect_readonly(db_path)
     try:
+        schema_ok, schema_issues = dbmod.verify_schema(conn)
+        if not schema_ok:
+            print(f"ERROR: SCHEMA_MISMATCH: {schema_issues}; task migration cannot relabel an unknown database schema", file=sys.stderr)
+            return 6
         from . import transaction_commit, projection_cmd, reconcile_cmd, event_policies
         from .migrations.v5_2_3.role_map import map_active_owner
         task = conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
@@ -1226,7 +1243,11 @@ def cmd_task_migrate(args) -> int:
         if (task["current_state"] or "") in {"COMPLETED", "CANCELLED"}:
             print("ERROR: terminal tasks are immutable archives and are not migrated", file=sys.stderr)
             return 5
+        from .migrations import contract_migration_policy
         old = str(task["base_version"] or "")
+        if not contract_migration_policy(old, target)["migration_supported"]:
+            print(f"ERROR: UNSUPPORTED_MIGRATION_SOURCE: task contract {old!r} -> {target}; no changes", file=sys.stderr)
+            return 6
         if not old:
             print("ERROR: DB task.base_version is empty; migration source is ambiguous", file=sys.stderr)
             return 6
@@ -1239,9 +1260,19 @@ def cmd_task_migrate(args) -> int:
             )
             return 6
 
-        contract_files = _task_contract_files(task_dir)
+        input_snapshot = _migration_input_snapshot(task_dir)
+        status_text = status_path.read_bytes().decode("utf-8-sig")
+        if (_yaml_scalar(status_text, "task_id") or "") not in {"", args.task}:
+            raise ValueError("MIGRATION_INPUT_CHANGED: status task identity changed; replan")
+        input_revision = transaction_commit.transaction_journal.current_revision(conn, args.task)
+        input_task = dict(task)
         migratable_artifacts = _task_migratable_artifacts(task_dir)
         versions = _artifact_contract_versions(task_dir)
+        unsupported = {name: version for name, version in versions.items()
+                       if not contract_migration_policy(version, target)["migration_supported"]}
+        if unsupported:
+            print(f"ERROR: UNSUPPORTED_MIGRATION_SOURCE: artifact contracts {unsupported}; no changes", file=sys.stderr)
+            return 6
         status_base = _yaml_scalar(status_text, "base_version") or ""
         m_contract = re.search(r'(?ms)^artifact_contract:\s*\n\s+version:\s*["\']?([^"\'\n#]+)', status_text)
         status_contract = m_contract.group(1).strip() if m_contract else ""
@@ -1359,12 +1390,26 @@ def cmd_task_migrate(args) -> int:
                 ),
             )
 
+        def recheck_migration_inputs(tx_conn):
+            latest = tx_conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
+            latest_project = tx_conn.execute("SELECT base_version FROM project WHERE project_id=?",
+                                             (task["project_id"],)).fetchone()
+            if (not dbmod.verify_schema(tx_conn)[0] or latest is None or dict(latest) != input_task
+                    or event_policies.is_task_retired(tx_conn, args.task)
+                    or latest_project is None or str(latest_project["base_version"]) != target
+                    or transaction_commit.transaction_journal.current_revision(tx_conn, args.task) != input_revision
+                    or _migration_input_snapshot(task_dir) != input_snapshot):
+                raise ValueError("MIGRATION_INPUT_CHANGED: task, contract, event or artifact changed; replan before migration")
+
         rel_paths = sorted(set(texts) | {"status.yaml", "events.jsonl", "handoff.json", view_rel})
+        conn.close()
+        conn = dbmod.connect(db_path)
         transaction_commit._commit_with_recovery(
             task_dir, conn, rel_paths, db_and_render,
             task_id=args.task, operation="contract_migrate",
             db_state_before=current, target_state=migrated_state,
             owner_before=owner, owner_after=migrated_owner, flush_id=flush_id,
+            before_prepare=recheck_migration_inputs,
         )
         refreshed = conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
         after_drift = _deep_projection_snapshot(conn, refreshed, task_dir, args.actor)
@@ -1417,9 +1462,14 @@ def cmd_task_migration_plan(args) -> int:
     if not os.path.isfile(db_path):
         print(f"ERROR: database not found: {db_path}", file=sys.stderr)
         return 4
-    conn = dbmod.connect(db_path)
+    conn = dbmod.connect_readonly(db_path)
     try:
+        schema_ok, schema_issues = dbmod.verify_schema(conn)
+        if not schema_ok:
+            print(f"ERROR: SCHEMA_MISMATCH: {schema_issues}; inspection only, no changes", file=sys.stderr)
+            return 6
         from . import event_policies
+        from .migrations import contract_migration_policy
         project = conn.execute("SELECT * FROM project WHERE project_id=?", (args.project,)).fetchone()
         if project is None:
             print(f"ERROR: project not found: {args.project}", file=sys.stderr)
@@ -1451,6 +1501,7 @@ def cmd_task_migration_plan(args) -> int:
                 "classification": "",
                 "decision_options": [],
                 "issues": [],
+                "compatibility": contract_migration_policy(db_base, active_version()),
             }
             if not task_dir.is_dir():
                 entry["four_way"] = {
@@ -1496,6 +1547,21 @@ def cmd_task_migration_plan(args) -> int:
                 "generated_projection": generated_status,
             }
             entry["artifact_versions"] = versions
+            unsupported = {name: version for name, version in versions.items()
+                           if not contract_migration_policy(version, active_version())["migration_supported"]}
+            if unsupported:
+                entry["compatibility"] = {**entry["compatibility"], "migration_supported": False,
+                                          "unsupported_artifacts": unsupported}
+            entry["planned_artifact_changes"] = []
+            if entry["compatibility"]["migration_supported"]:
+                for name, before_text in _task_migratable_artifacts(task_dir).items():
+                    after_text = _upgrade_contract_artifact_text(name, before_text, db_base, active_version())
+                    if before_text != after_text:
+                        entry["planned_artifact_changes"].append({
+                            "path": name,
+                            "before_sha256": hashlib.sha256(before_text.encode("utf-8")).hexdigest(),
+                            "after_sha256": hashlib.sha256(after_text.encode("utf-8")).hexdigest(),
+                        })
             for bucket in ("status", "events", "handoff", "generated"):
                 entry["issues"].extend(deep[bucket])
             if status_state and status_state != str(task["current_state"] or ""):
@@ -1519,6 +1585,10 @@ def cmd_task_migration_plan(args) -> int:
                     entry["issues"].append(f"DB/status artifact contract mismatch: db={db_base!r}, artifact={status_contract!r}")
                 if len(unique_versions) > 1:
                     entry["issues"].append(f"mixed artifact contracts: {unique_versions}")
+            if not entry["compatibility"]["migration_supported"]:
+                entry["classification"] = "UNSUPPORTED_MIGRATION_SOURCE"
+                entry["decision_options"] = ["KEEP_OLD_ARCHIVE", "WAIT_FOR_CONFIRMATION"]
+                entry["issues"].append(f"unsupported migration input: {entry['compatibility'].get('unsupported_artifacts') or db_base!r}")
             items.append(entry)
 
         blocked = [i for i in items if i["classification"] != "CURRENT"]
@@ -1527,6 +1597,15 @@ def cmd_task_migration_plan(args) -> int:
         report = {
             "schema": "tp-spec.task-migration-plan/v3",
             "active_version": active_version(),
+            "read_only": True,
+            "compatibility": contract_migration_policy(project_base, active_version()),
+            "migration_boundary": {
+                "automatic_migration": False,
+                "backup": "Back up the selected database (including live WAL via an approved SQLite backup) and task directory before authorized migration.",
+                "recovery": "Journal-backed process-crash recovery; use reconcile for an interrupted commit. No blind rollback over newer user facts.",
+                "preserved": ["historical_events", "evidence", "project_overrides", "memory", "durable_tests"],
+                "evidence_policy": "Old PASS keeps its original subject; future gates require applicable current evidence.",
+            },
             "project_id": args.project,
             "project_base_version": project_base,
             "project_contract_current": project_contract_current,
@@ -1535,7 +1614,9 @@ def cmd_task_migration_plan(args) -> int:
             "retired_historical_tasks": retired_ids,
             "active_non_terminal_tasks": len(items),
             "release_gate": "PASS" if (project_contract_current and not blocked) else "BLOCKED",
-            "project_action": "NO_ACTION" if project_contract_current else "RUN_PROJECT_UPGRADE_CONTRACT",
+            "project_action": "NO_ACTION" if project_contract_current else (
+                "RUN_PROJECT_UPGRADE_CONTRACT" if contract_migration_policy(project_base, active_version())["migration_supported"]
+                else "UNSUPPORTED_MIGRATION_SOURCE"),
             "requires_explicit_decision": [i["task_id"] for i in blocked],
             "tasks": items,
         }
@@ -1851,6 +1932,15 @@ def _parse_context_usage_arg(raw):
     return decoded
 
 
+def cmd_task_run_pytest(args) -> int:
+    from .pytest_execution import run_pytest
+    result = run_pytest(task_id=args.task, task_dir=args.task_dir, tests=args.test,
+                        repo_root=args.repo_root, authorization_evidence=args.authorization_evidence,
+                        request_id=args.request_id, summary=args.summary, timeout=args.timeout, db=args.db)
+    print(json.dumps(result, ensure_ascii=False))
+    return int(result["command_exit_code"])
+
+
 def cmd_task_checkpoint(args) -> int:
     from . import record_first
     result = record_first.checkpoint(
@@ -1859,7 +1949,10 @@ def cmd_task_checkpoint(args) -> int:
         knowledge_signals=_parse_knowledge_signal_args(args.knowledge_signal_json),
         delivery_signals=args.delivery_signal,
         context_usage=_parse_context_usage_arg(args.context_usage_json),
-        repo_roots=args.repo_root, db=args.db,
+        repo_roots=args.repo_root, request_id=args.request_id, collect=args.collect,
+        result_reports=getattr(args, "result_report", None),
+        report_artifact_root=getattr(args, "report_artifact_root", None),
+        recorded_result_ids=getattr(args, "recorded_result", None), db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1869,7 +1962,9 @@ def cmd_task_block(args) -> int:
     from . import record_first
     result = record_first.block(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
-        reason=args.reason, phase=args.phase, db=args.db,
+        reason=args.reason, phase=args.phase, kind=args.kind,
+        responsibility=args.responsibility, condition=args.condition,
+        requires_tasks=args.requires_task, prerequisite_evidence=args.prerequisite_evidence, db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1879,7 +1974,7 @@ def cmd_task_resume(args) -> int:
     from . import record_first
     result = record_first.resume(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
-        summary=args.summary, phase=args.phase, db=args.db,
+        summary=args.summary, phase=args.phase, resolution_evidence=args.resolution_evidence, db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1890,9 +1985,10 @@ def cmd_task_verify(args) -> int:
     result = record_first.verify(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
         decision=args.decision, summary=args.summary, evidence=args.evidence,
+        scope=getattr(args, "scope", "full"), checks=getattr(args, "check", None),
         knowledge_signals=_parse_knowledge_signal_args(args.knowledge_signal_json),
         delivery_signals=args.delivery_signal,
-        context_usage=_parse_context_usage_arg(args.context_usage_json), db=args.db,
+        context_usage=_parse_context_usage_arg(args.context_usage_json), request_id=args.request_id, db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1940,6 +2036,12 @@ def cmd_task_scope_change(args) -> int:
         summary = str(args.summary or "").strip()
         if not scope_id or not summary:
             raise ValueError("scope change requires non-empty --scope-id and --summary")
+        repo_roots = getattr(args, "repo_root", None)
+        if repo_roots is not None:
+            from .change_set import _git_root
+            repo_roots = sorted({str(_git_root(value)) for value in repo_roots})
+            if not repo_roots:
+                raise ValueError("DELIVERY_SCOPE_INVALID: an explicit repository scope cannot be empty")
         now = dbmod.now_iso()
         flush_id = f"SCOPE-{uuid.uuid4().hex}"
         owner = str(task["owner_role"] or "")
@@ -1956,6 +2058,8 @@ def cmd_task_scope_change(args) -> int:
                 "scope_id": scope_id,
                 "summary": summary,
             }
+            if repo_roots is not None:
+                detail["repo_roots"] = repo_roots
             detail = event_contract.add_event_semantics(
                 detail, event_type="SCOPE_CHANGE", operation="SCOPE_CHANGE",
                 result_status="COMPLETED", producer="task_scope_change",
@@ -2036,12 +2140,29 @@ def add_task_subparsers(task_parser) -> None:
     p_cp.add_argument("--phase", required=True, choices=record_first.PHASES)
     p_cp.add_argument("--summary", required=True)
     p_cp.add_argument("--evidence", action="append")
+    p_cp.add_argument("--request-id", help="reuse for retrying one logical request; new work needs a new ID")
+    p_cp.add_argument("--collect", action="append", help="copy a completed local output into bound task evidence; repeatable")
+    p_cp.add_argument("--recorded-result", type=int, action="append", help="reference a trusted existing development/verification/CODE event without re-signing it")
+    p_cp.add_argument("--result-report", action="append", help="accept an existing JUnit/Base/review/Playwright JSON report as an observation; never executes a tool or grants PASS")
+    p_cp.add_argument("--report-artifact-root", help="explicitly opt in to collect report-declared browser media under this approved local output directory; no network or arbitrary file discovery")
     p_cp.add_argument("--knowledge-signal-json", action="append", help="structured JSON object with type/summary and optional evidence/source_refs")
     p_cp.add_argument("--delivery-signal", action="append")
     p_cp.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks checkpoint")
     p_cp.add_argument("--repo-root", action="append", default=None, help="explicit product Git root; repeat for multi-repo Development checkpoint")
     p_cp.add_argument("--db", default=None)
     p_cp.set_defaults(func=cmd_task_checkpoint)
+
+    p_run = sub.add_parser("run-pytest", help="Run explicitly authorized, selected pytest files and auto-record observed outputs; never grants formal PASS")
+    p_run.add_argument("--task", required=True)
+    p_run.add_argument("--task-dir", required=True)
+    p_run.add_argument("--test", action="append", required=True, help="explicit .py file or node ID inside one bound repo; repeatable, no arbitrary options")
+    p_run.add_argument("--repo-root", help="one root already bound by the development checkpoint; required for multi-repo tasks")
+    p_run.add_argument("--authorization-evidence", required=True, help="existing evidence for the caller's approved command scope; a reference is not itself a grant")
+    p_run.add_argument("--request-id", required=True, help="stable logical test-run ID; never reuse for new execution")
+    p_run.add_argument("--summary", required=True)
+    p_run.add_argument("--timeout", type=float, default=600.0, help="seconds to wait for the owned pytest process; no automatic rerun after interruption")
+    p_run.add_argument("--db", default=None)
+    p_run.set_defaults(func=cmd_task_run_pytest)
 
     p_block = sub.add_parser("block", help="Record a real blocker and set task state BLOCKED")
     p_block.add_argument("--task", required=True)
@@ -2050,6 +2171,12 @@ def add_task_subparsers(task_parser) -> None:
     p_block.add_argument("--reason", required=True)
     p_block.add_argument("--phase", choices=record_first.PHASES)
     p_block.add_argument("--db", default=None)
+    from .waiting import KINDS
+    p_block.add_argument("--kind", choices=KINDS, default="unspecified")
+    p_block.add_argument("--responsibility", choices=record_first.ACTORS)
+    p_block.add_argument("--condition", help="specific recovery condition; not an executable expression")
+    p_block.add_argument("--requires-task", action="append", help="same-project dependency task; repeatable")
+    p_block.add_argument("--prerequisite-evidence", action="append", help="current failed prerequisite evidence/*")
     p_block.set_defaults(func=cmd_task_block)
 
     p_resume = sub.add_parser("resume", help="Resolve the explicit blocker and resume ACTIVE work")
@@ -2059,6 +2186,7 @@ def add_task_subparsers(task_parser) -> None:
     p_resume.add_argument("--summary", required=True)
     p_resume.add_argument("--phase", choices=record_first.PHASES)
     p_resume.add_argument("--db", default=None)
+    p_resume.add_argument("--resolution-evidence", action="append", help="new evidence/* for typed wait resolution")
     p_resume.set_defaults(func=cmd_task_resume)
 
     p_verify = sub.add_parser("verify", help="Record actual technical verification; PASS requires real evidence/* and never acts as a phase gate")
@@ -2068,6 +2196,9 @@ def add_task_subparsers(task_parser) -> None:
     p_verify.add_argument("--decision", required=True, choices=["PASS", "FAIL", "NEEDS_FIX"])
     p_verify.add_argument("--summary", required=True)
     p_verify.add_argument("--evidence", action="append")
+    p_verify.add_argument("--scope", choices=["full", "technical"], default="full", help="full keeps all existing checks; technical is explicitly limited and cannot satisfy delivery/completion")
+    p_verify.add_argument("--check", action="append", help="actual check performed; required for technical scope, repeat for multiple checks")
+    p_verify.add_argument("--request-id", help="reuse only for retrying the same actual verification record")
     p_verify.add_argument("--knowledge-signal-json", action="append", help="structured JSON object with type/summary and optional evidence/source_refs")
     p_verify.add_argument("--delivery-signal", action="append")
     p_verify.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks verification")
@@ -2105,6 +2236,7 @@ def add_task_subparsers(task_parser) -> None:
     p_scope.add_argument("--actor", default="human_owner", choices=["human_owner"])
     p_scope.add_argument("--scope-id", required=True)
     p_scope.add_argument("--summary", required=True)
+    p_scope.add_argument("--repo-root", action="append", help="owner-approved complete effective repository list; repeat for every included repo; omitted means no repository-scope replacement, not an operation grant")
     p_scope.add_argument("--db", default=None)
     p_scope.set_defaults(func=cmd_task_scope_change)
 

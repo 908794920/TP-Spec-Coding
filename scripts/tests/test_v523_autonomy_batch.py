@@ -4,7 +4,7 @@ import json, os, subprocess, tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.tests.autonomy_testutil import run, git_repo
+from scripts.tests.autonomy_testutil import run, git_repo, record_fixture_verification
 from cli import autonomy_batch, autonomy_cycle, autonomy_discovery, autonomy_profile, autonomy_records, autonomy_workspace, record_first
 
 
@@ -34,6 +34,7 @@ def approve(profile, task):
 def complete_l0(ws, task, td):
     db=ws["db_path"]
     record_first.checkpoint(task_id=task,task_dir=str(td),actor="tp-development-engineer",phase="development",summary="done",db=db)
+    record_fixture_verification(db, task, td)
     record_first.complete(task_id=task,task_dir=str(td),actor="tp-development-engineer",summary="complete",db=db)
 
 
@@ -122,3 +123,27 @@ def test_batch_create_enforces_cycle_existing_task_budget_before_manifest_creati
             with pytest.raises(Exception,match="CYCLE_TASK_LIMIT_REACHED"):
                 autonomy_batch.create_batch("demo",c1["cycle_id"],c1["generation"],["TASK-AUTO-1","TASK-AUTO-2"])
             assert autonomy_batch.list_batches("demo")==[]
+
+
+def test_b17_changed_l0_still_requires_verification_before_completion(tmp_path, monkeypatch):
+    import pytest
+    from cli import db as dbmod
+
+    monkeypatch.setenv("TP_SPEC_USER_ROOT", str(tmp_path / "user"))
+    profile, ws = setup(tmp_path)
+    task_id = "TASK-AUTO-UNVERIFIED"
+    task_dir = create_task(tmp_path, profile, task_id)
+    repo = Path(profile["autonomous"]["workspace_root"]) / "repo"
+    changed = repo / "unverified.txt"
+    changed.write_text("unverified change\n", encoding="utf-8")
+    record_first.checkpoint(task_id=task_id, task_dir=str(task_dir), actor="tp-development-engineer",
+                            phase="development", summary="fixture change", db=ws["db_path"])
+    with dbmod.connect_readonly(ws["db_path"]) as conn:
+        before = conn.execute("SELECT COUNT(*) FROM task_event").fetchone()[0]
+    with pytest.raises(ValueError, match="CURRENT_VERIFICATION_REQUIRED"):
+        record_first.complete(task_id=task_id, task_dir=str(task_dir), actor="tp-development-engineer",
+                              summary="must not complete without verification", db=ws["db_path"])
+    with dbmod.connect_readonly(ws["db_path"]) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM task_event").fetchone()[0] == before
+        assert conn.execute("SELECT current_state FROM task WHERE task_id=?", (task_id,)).fetchone()[0] != "COMPLETED"
+    assert changed.read_text(encoding="utf-8") == "unverified change\n"

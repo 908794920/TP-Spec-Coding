@@ -43,6 +43,7 @@ def test_l1_routes_formal_roles_and_preserves_effect_boundary():
         r = orchestration.resolve_route('TASK-V514', db_path=db)
         assert r['role_id'] == 'tp-product-manager'
         add_checkpoint(db, 'TASK-V514', 'tp-product-manager', 'requirement')
+        add_decision(db, 'TASK-V514', 'workflow:include-stage:architecture')
         r = orchestration.resolve_route('TASK-V514', db_path=db)
         assert r['role_id'] == 'tp-software-architect' and r['next_stage'] == 'architecture'
         add_checkpoint(db, 'TASK-V514', 'tp-software-architect', 'architecture')

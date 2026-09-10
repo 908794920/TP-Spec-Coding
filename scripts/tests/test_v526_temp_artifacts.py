@@ -13,7 +13,11 @@ from pathlib import Path
 from unittest import mock
 
 from scripts.tests.runtime_testutil import run
-from cli import temp_artifacts
+import pytest
+
+from cli import db as dbmod
+from cli import report_cmd, temp_artifacts
+from scripts.tests.v532_testutil import make_runtime, run_cli, task_args
 
 
 class TempArtifactUnitCase(unittest.TestCase):
@@ -701,8 +705,11 @@ class TempArtifactContractCase(unittest.TestCase):
     def test_test_engineer_requires_owned_system_temp_and_immutable_source_inputs(self):
         base = Path(__file__).parents[2]
         skill = (base / "skills" / "roles" / "tp-test-engineer" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("task artifact-path --kind execution-temp", skill)
-        self.assertIn("--db <RUNTIME-DB>", skill)
+        self.assertIn("[生命周期操作参考](../../../docs/agents/tp-software-lifecycle.md)", skill)
+        self.assertIn("读取条件", skill)
+        guide = (base / "docs/agents/tp-software-lifecycle.md").read_text(encoding="utf-8")
+        self.assertIn("task artifact-path --kind execution-temp", guide)
+        self.assertIn("--db <RUNTIME-DB>", guide)
         self.assertIn("系统临时目录", skill)
         self.assertIn("禁止在项目工作区创建 `.tmp`", skill)
         self.assertIn("用户原始文件", skill)
@@ -712,8 +719,11 @@ class TempArtifactContractCase(unittest.TestCase):
     def test_lifecycle_documents_interrupted_recovery_and_report_only_orphan_check(self):
         base = Path(__file__).parents[2]
         skill = (base / "agents" / "tp-software-lifecycle" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("work end --reason interrupted", skill)
-        self.assertIn("temp orphan-check --db <DB>", skill)
+        self.assertIn("[生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)", skill)
+        self.assertIn("读取条件", skill)
+        guide = (base / "docs/agents/tp-software-lifecycle.md").read_text(encoding="utf-8")
+        self.assertIn("work end --reason interrupted", guide)
+        self.assertIn("temp orphan-check --db <DB>", guide)
         self.assertIn("只报告", skill)
         self.assertIn("不得自动删除", skill)
 
@@ -728,3 +738,245 @@ class TempArtifactContractCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+# B06: actual CLI work-segment identity and read-only history interpretation.
+
+
+def _b06_work(db, tid, operation, *args):
+    return run_cli(['work', operation, '--task', tid, '--role', 'tp-test-engineer',
+                    '--db', str(db), *args])
+
+
+def test_b06_work_end_cannot_close_other_agent_or_cleanup_its_files(tmp_path, monkeypatch):
+    _, db, _, tid = make_runtime(tmp_path, monkeypatch)
+    assert _b06_work(db, tid, 'start', '--agent', 'worker-a')[0] == 0
+    cleanup_calls = []
+    monkeypatch.setattr(temp_artifacts, 'cleanup_run_if_registered',
+                        lambda **kwargs: cleanup_calls.append(kwargs) or {})
+    rc, out, err = _b06_work(db, tid, 'end', '--agent', 'worker-b', '--reason', 'completed')
+    assert rc != 0 and 'WORK_SESSION_OWNER_MISMATCH' in err, (out, err)
+    with dbmod.connect_readonly(str(db)) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM task_event WHERE event_type='WORK_SESSION_ENDED'").fetchone()[0] == 0
+    assert cleanup_calls == []
+    assert _b06_work(db, tid, 'end', '--agent', 'worker-a', '--reason', 'interrupted')[0] == 0
+    assert len(cleanup_calls) == 1
+
+
+@pytest.mark.parametrize('terminal', ['cancel', 'complete'])
+def test_b06_terminal_task_cannot_start_but_can_close_its_recorded_segment(tmp_path, monkeypatch, terminal):
+    _, db, tdir, tid = make_runtime(tmp_path, monkeypatch)
+    assert _b06_work(db, tid, 'start', '--agent', 'worker-a')[0] == 0
+    if terminal == 'complete':
+        assert run_cli(task_args(db, tdir, tid, 'checkpoint', '--actor', 'tp-development-engineer',
+            '--phase', 'development', '--summary', 'synthetic work complete'))[0] == 0
+    rc, out, err = run_cli(task_args(db, tdir, tid, terminal, '--actor',
+        'human_owner' if terminal == 'cancel' else 'tp-development-engineer',
+        '--reason' if terminal == 'cancel' else '--summary', 'terminal fixture'))
+    assert rc == 0, (out, err)
+    assert _b06_work(db, tid, 'end', '--agent', 'worker-a', '--reason', 'interrupted')[0] == 0
+    rc, out, err = _b06_work(db, tid, 'start', '--agent', 'worker-a')
+    assert rc != 0 and 'TASK_NOT_CURRENT' in err, (out, err)
+
+
+def test_b06_work_item_reference_is_checked_and_preserved_on_end(tmp_path, monkeypatch):
+    _, db, _, tid = make_runtime(tmp_path, monkeypatch)
+    rc, out, err = _b06_work(db, tid, 'start', '--item', 'WI-MISSING')
+    assert rc != 0 and 'WORK_ITEM_UNAVAILABLE' in err, (out, err)
+    assert run_cli(['workitem','create','--task',tid,'--id','WI-1','--db',str(db)])[0] == 0
+    assert _b06_work(db, tid, 'start', '--item', 'WI-1')[0] == 0
+    assert _b06_work(db, tid, 'end', '--reason', 'paused')[0] == 0
+    with dbmod.connect_readonly(str(db)) as conn:
+        rows = conn.execute("SELECT work_item_id FROM task_event WHERE event_type LIKE 'WORK_SESSION_%' ORDER BY id").fetchall()
+        assert [r['work_item_id'] for r in rows] == ['WI-1','WI-1']
+        assert conn.execute('SELECT status FROM work_item').fetchone()[0] == 'PENDING'
+
+
+def _b06_session(event_id, kind, *, sid='S1', role='tp-test-engineer', agent='a',
+                 timestamp='2026-09-01T10:00:00+08:00', detail=None):
+    return {'id':event_id,'task_id':'TASK-FIXTURE','event_type':kind,'actor_role':role,
+            'actor_agent':agent,'model_used':'','created_at':timestamp,
+            'detail_json':json.dumps({'session_id':sid} if detail is None else detail)}
+
+
+@pytest.mark.parametrize('bad_end', [
+    {'actor_role':'tp-development-engineer'}, {'actor_agent':'other'},
+    {'detail_json':json.dumps({'session_id':'S1','start_event_id':999})},
+    {'task_id':'OTHER-TASK'},
+])
+def test_b06_pairing_rejects_conflicting_identity_or_start_reference(bad_end):
+    start = _b06_session(1,'WORK_SESSION_STARTED')
+    end = {**_b06_session(2,'WORK_SESSION_ENDED',timestamp='2026-09-01T10:10:00+08:00'), **bad_end}
+    result = report_cmd._pair_work_sessions([start,end])
+    assert result['pairs'] == []
+    assert len(result['unmatched_starts']) == len(result['unmatched_ends']) == 1
+
+
+@pytest.mark.parametrize('sid', ['S1',''])
+def test_b06_duplicate_starts_are_ambiguous_not_latest_wins(sid):
+    result = report_cmd._pair_work_sessions([
+        _b06_session(1,'WORK_SESSION_STARTED',sid=sid),
+        _b06_session(2,'WORK_SESSION_STARTED',sid=sid),
+        _b06_session(3,'WORK_SESSION_ENDED',sid=sid),
+    ])
+    assert result['pairs'] == []
+    assert len(result['unmatched_starts']) == 2
+    assert len(result['unmatched_ends']) == 1
+
+
+def test_b06_corrupt_session_detail_does_not_fall_back_to_legacy_pairing():
+    start = {**_b06_session(1,'WORK_SESSION_STARTED'), 'detail_json':'{broken'}
+    end = _b06_session(2,'WORK_SESSION_ENDED',sid='')
+    result = report_cmd._pair_work_sessions([start,end])
+    assert result['pairs'] == []
+    assert len(result['unmatched_starts']) == 1
+
+
+@pytest.mark.parametrize('timestamp', ['2026-09-01T10:10:00', 'invalid', '2026-09-01T09:59:00+08:00'])
+def test_b06_bad_clock_is_unknown_not_measured(timestamp):
+    result = report_cmd._pair_work_sessions([
+        _b06_session(1,'WORK_SESSION_STARTED'),
+        _b06_session(2,'WORK_SESSION_ENDED',timestamp=timestamp),
+    ])
+    assert len(result['pairs']) == 1
+    assert result['pairs'][0]['duration'] is None
+
+
+@pytest.mark.parametrize('operation', ['start','end'])
+def test_b06_work_guard_rechecks_at_transaction_boundary(tmp_path, monkeypatch, operation):
+    from contextlib import contextmanager
+    _,db,_,tid = make_runtime(tmp_path,monkeypatch)
+    args = ('--agent','a') if operation == 'start' else ('--agent','a','--reason','paused')
+    if operation == 'end':
+        assert _b06_work(db,tid,'start','--agent','a')[0] == 0
+    original = dbmod.transactional
+    inserted = False
+    @contextmanager
+    def interleave(conn):
+        nonlocal inserted
+        if not inserted:
+            inserted = True
+            rc,out,err = _b06_work(db,tid,operation,*args)
+            assert rc == 0,(out,err)
+        with original(conn) as tx:
+            yield tx
+    monkeypatch.setattr(dbmod,'transactional',interleave)
+    rc,out,err = _b06_work(db,tid,operation,*args)
+    assert rc != 0,(out,err)
+    with dbmod.connect_readonly(str(db)) as conn:
+        kind = 'WORK_SESSION_STARTED' if operation == 'start' else 'WORK_SESSION_ENDED'
+        assert conn.execute('SELECT COUNT(*) FROM task_event WHERE event_type=?',(kind,)).fetchone()[0] == 1
+
+
+@pytest.mark.parametrize('reason', ['completed','paused','waiting_human','waiting_agent','blocked','handed_off','interrupted','cancelled'])
+def test_b06_end_reason_is_work_record_not_task_state_or_pass(tmp_path,monkeypatch,reason):
+    _,db,_,tid = make_runtime(tmp_path,monkeypatch)
+    with dbmod.connect_readonly(str(db)) as conn:
+        state = conn.execute('SELECT current_state FROM task').fetchone()[0]
+    assert _b06_work(db,tid,'start')[0] == 0
+    assert _b06_work(db,tid,'end','--reason',reason)[0] == 0
+    with dbmod.connect_readonly(str(db)) as conn:
+        assert conn.execute('SELECT current_state FROM task').fetchone()[0] == state
+        assert conn.execute("SELECT COUNT(*) FROM task_event WHERE event_type='VERIFICATION_COMPLETED'").fetchone()[0] == 0
+    rc,out,err = run_cli(['report','task-summary','--task',tid,'--db',str(db)])
+    assert rc == 0 and '运行状态未知' in out,(out,err)
+    assert '未闭合 START 0 条' in out
+
+
+def test_b06_stage_time_missing_observations_stay_unknown(tmp_path,monkeypatch):
+    _,db,_,tid = make_runtime(tmp_path,monkeypatch)
+    rc,out,err = run_cli(['report','stage-time','--task',tid,'--db',str(db)])
+    assert rc == 0,(out,err)
+    # Table cells are unobserved, not falsely measured as zero seconds.
+    line = next(line for line in out.splitlines() if line.startswith('NEW '))
+    assert line.split()[-3:-1] == ['-', '-'], line
+    assert 'normal_wait' in out and '运行状态未知' in out
+
+
+def test_b06_stage_time_splits_recorded_span_at_state_boundary(tmp_path,monkeypatch):
+    _,db,_,tid = make_runtime(tmp_path,monkeypatch)
+    with dbmod.connect(str(db)) as conn:
+        with dbmod.transactional(conn):
+            conn.execute("UPDATE task_event SET created_at='2026-09-01T09:00:00+08:00' WHERE event_type='STATE'")
+            conn.execute("INSERT INTO task_event(task_id,event_type,to_state,actor_role,detail_json,created_at) VALUES (?, 'STATE','ACTIVE','tp-test-engineer','{}','2026-09-01T10:05:00+08:00')",(tid,))
+            for e in [_b06_session(50,'WORK_SESSION_STARTED'),_b06_session(51,'WORK_SESSION_ENDED',timestamp='2026-09-01T10:10:00+08:00')]:
+                conn.execute('INSERT INTO task_event(task_id,event_type,actor_role,actor_agent,detail_json,created_at) VALUES (?,?,?,?,?,?)',
+                             (tid,e['event_type'],e['actor_role'],e['actor_agent'],e['detail_json'],e['created_at']))
+    rc,out,err = run_cli(['report','stage-time','--task',tid,'--db',str(db)])
+    assert rc == 0,(out,err)
+    state_lines = [line for line in out.splitlines() if line.startswith(('NEW ','ACTIVE '))]
+    assert len(state_lines) == 2
+    assert all('5.0m' in line for line in state_lines),state_lines
+
+
+def test_b06_legacy_explicit_start_reference_is_preserved():
+    rows = [_b06_session(1,'WORK_SESSION_STARTED',sid=''),
+            _b06_session(2,'WORK_SESSION_STARTED',sid=''),
+            _b06_session(3,'WORK_SESSION_ENDED',detail={'session_id':'','start_event_id':1})]
+    result = report_cmd._pair_work_sessions(rows)
+    assert result['pairs'][0]['start_event_id'] == 1
+    assert [row['id'] for row in result['unmatched_starts']] == [2]
+
+
+def test_b06_concurrent_production_processes_never_duplicate_start_or_end(tmp_path,monkeypatch):
+    import sys
+    _,db,_,tid = make_runtime(tmp_path,monkeypatch)
+    base = Path(__file__).resolve().parents[2]
+    def invoke(operation):
+        args=[sys.executable,'-m','cli.main','work',operation,'--task',tid,
+              '--role','tp-test-engineer','--agent','worker-a','--db',str(db)]
+        if operation=='end':
+            args += ['--reason','paused']
+        return subprocess.run(args,cwd=base,capture_output=True,text=True,timeout=30)
+    for operation,kind in [('start','WORK_SESSION_STARTED'),('end','WORK_SESSION_ENDED')]:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results=list(pool.map(invoke,[operation,operation]))
+        assert sum(r.returncode==0 for r in results)==1,[(r.returncode,r.stdout,r.stderr) for r in results]
+        with dbmod.connect_readonly(str(db)) as conn:
+            assert conn.execute('SELECT COUNT(*) FROM task_event WHERE event_type=?',(kind,)).fetchone()[0]==1
+
+
+def test_b06_stage_time_without_state_events_still_reports_open_records(tmp_path,monkeypatch):
+    _,db,_,tid = make_runtime(tmp_path,monkeypatch)
+    assert _b06_work(db,tid,'start')[0]==0
+    # Only a synthetic legacy/corrupt fixture loses its STATE records.
+    with dbmod.connect(str(db)) as conn:
+        with dbmod.transactional(conn):
+            conn.execute("DELETE FROM task_event WHERE event_type='STATE'")
+    rc,out,err = run_cli(['report','stage-time','--task',tid,'--db',str(db)])
+    assert rc==0 and 'unmatched starts: 1' in out and '运行状态未知' in out,(out,err)
+
+
+def test_b06_work_summary_exposes_uncountable_history_without_repair():
+    from cli.work_session_cmd import summarize_work_sessions
+    start = {'id': 1, 'task_id': 'TASK-1', 'event_type': 'WORK_SESSION_STARTED',
+             'actor_role': 'tp-development-engineer', 'actor_agent': 'worker-a',
+             'created_at': '2026-09-08T10:00:00', 'detail_json': '{"session_id":"one"}'}
+    end = dict(start, id=2, event_type='WORK_SESSION_ENDED', created_at='2026-09-08T11:00:00')
+    broken = dict(start, id=3, detail_json='{broken')
+    orphan = dict(end, id=4, detail_json='{"session_id":"missing"}')
+    facts = summarize_work_sessions([start, end, broken, orphan])
+    assert facts['invalid_event_count'] == facts['unmatched_end_count'] == facts['unknown_duration_count'] == 1
+    assert '待核对' in facts['summary'] and '无法计时 1' in facts['summary']
+    assert facts['runtime_status'] == 'UNKNOWN' and facts['open_count'] == 1
+
+
+
+def test_b14_work_recovery_detail_is_reachable_without_unconditional_cleanup_commands():
+    BASE = Path(__file__).resolve().parents[2]
+    from scripts.check_document_navigation import iter_markdown_links, resolve_document_link
+    for rel in ('agents/tp-software-lifecycle/SKILL.md', 'skills/roles/tp-test-engineer/SKILL.md'):
+        source = BASE / rel
+        targets = [resolve_document_link(source, target, base=BASE)
+                   for _, target in iter_markdown_links(source)]
+        guide = BASE / 'docs/agents/tp-software-lifecycle.md'
+        assert guide in targets
+        text = source.read_text(encoding='utf-8')
+        assert '未知' in text and 'ownership' in text and 'CLEANUP_PENDING' in text
+        assert '持久' in text and '临时' in text
+        assert 'task artifact-path --kind execution-temp --task' not in text
+    guide_text = guide.read_text(encoding='utf-8')
+    for token in ('work end --reason interrupted', 'temp orphan-check --db <DB>',
+                  'task artifact-path --kind execution-temp', '不得自动删除', 'session_id'):
+        assert token in guide_text
+    tester = (BASE / 'skills/roles/tp-test-engineer/SKILL.md').read_text(encoding='utf-8')
+    assert '强制中断' in tester and '补造' in tester

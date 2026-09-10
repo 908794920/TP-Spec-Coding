@@ -15,6 +15,7 @@
 """
 
 from __future__ import annotations
+from . import command_context
 
 import json
 import os
@@ -72,6 +73,7 @@ _TYPE_MAP = {
 
 # V5.3.2 新工件（AI-B 模板定义；AI-C 可继续追加）：存在才纳入 source digest。
 _V511_SOURCE_NAMES = (
+    "requirement.md",
     "requirement-knowledge.md",
     "requirement-clarifications.md",
     "requirement-decisions.md",
@@ -266,6 +268,9 @@ def _build_events_jsonl(events: List[Dict[str, Any]], task_id: str) -> Tuple[str
                 obj["flush_id"] = detail["flush_id"]
             if "subject_digest" in detail:
                 obj["subject_digest"] = detail["subject_digest"]
+            for key in ("verification_scope", "checks"):
+                if key in detail:
+                    obj[key] = detail[key]
 
         # evidence
         evidence_list: List[str] = []
@@ -278,7 +283,7 @@ def _build_events_jsonl(events: List[Dict[str, Any]], task_id: str) -> Tuple[str
 
 
 
-def _extract_blockers(conn, task_id: str, current_state: str) -> List[str]:
+def _extract_blockers(conn, task_id: str, current_state: str, waiting_fact: Optional[dict] = None) -> List[str]:
     """投影当前仍有效的公开 blocker 与 Delivery blocker。"""
     blockers: List[str] = []
     if current_state == "BLOCKED":
@@ -293,17 +298,26 @@ def _extract_blockers(conn, task_id: str, current_state: str) -> List[str]:
         if row and row["summary"]:
             blockers.append(str(row["summary"]))
 
-    from . import event_policies
-    delivery = event_policies.load_trusted_governance_event(
-        conn, task_id, event_type="DELIVERY_RESULT",
-    )
-    if delivery is not None and str(delivery.detail.get("delivery_status") or "").upper() == "BLOCKED":
-        reason = str(delivery.detail.get("reason") or delivery.row["summary"] or "delivery blocked").strip()
-        kind = str(delivery.detail.get("blocker_kind") or "").strip().upper()
-        item = f"{kind}: {reason}" if kind else reason
-        if item and item not in blockers:
-            blockers.append(item)
+    if waiting_fact:
+        reason = str(waiting_fact.get("reason") or "").strip()
+        if reason and reason not in blockers:
+            blockers.append(reason)
+        blockers.append(f"等待类型：{waiting_fact['kind']}；恢复条件：{waiting_fact['condition']}")
+        dependencies = waiting_fact.get("requires_tasks") or []
+        if dependencies:
+            blockers.append("等待依赖：" + ", ".join(dependencies))
     return blockers
+
+
+def _latest_code_review_fact(conn, task_id: str):
+    """CODE aliases are one chronological lane, not three independent reviews."""
+    from . import event_policies
+
+    candidates = event_policies.load_trusted_governance_events(
+        conn, task_id, event_type="REVIEW_COMPLETED", actor="tp-code-reviewer",
+    )
+    return next((item for item in candidates
+                 if str(item.detail.get("review_kind") or "").upper() in {"CODE", "IMPLEMENTATION", "ULTRA_REVIEW"}), None)
 
 
 def _extract_findings(conn, task_id: str) -> List[str]:
@@ -316,16 +330,14 @@ def _extract_findings(conn, task_id: str) -> List[str]:
     )
     if verification is not None:
         decision = str(verification.detail.get("decision") or "").upper()
-        if decision in {"FAIL", "NEEDS_FIX", "BLOCKED"}:
+        if decision in {"FAIL", "NEEDS_FIX"}:
             summary = str(verification.detail.get("summary") or verification.row["summary"] or "").strip()
             findings.append(summary or f"verification {decision}")
 
-    review = event_policies.load_trusted_governance_event(
-        conn, task_id, event_type="REVIEW_COMPLETED", actor="tp-code-reviewer", review_kind="CODE",
-    )
+    review = _latest_code_review_fact(conn, task_id)
     if review is not None:
         decision = str(review.detail.get("decision") or "").upper()
-        if decision in {"NEEDS_FIX", "REVISE", "FAIL", "BLOCKED"}:
+        if decision in {"NEEDS_FIX", "REVISE", "FAIL"}:
             summary = str(review.detail.get("summary") or review.row["summary"] or "").strip()
             findings.append(summary or f"review {decision}")
     return findings
@@ -373,7 +385,7 @@ def _latest_development_fact(conn, task_id: str) -> Dict[str, Any]:
         change_set_id = str(detail.get("change_set_id") or "").strip()
         roots = [str(value).strip() for value in (detail.get("repo_roots") or []) if str(value).strip()]
         if change_set_id:
-            return {"event_id": int(row["id"]), "change_set_id": change_set_id, "repo_roots": roots}
+            return {"event_id": int(row["id"]), "change_set_id": change_set_id, "repo_roots": roots, "detail": detail}
     return {}
 
 
@@ -386,11 +398,13 @@ def _current_change_set(development: Dict[str, Any]) -> tuple[str, str]:
     if not roots:
         return recorded, "UNKNOWN"
     try:
-        from .change_set import capture_change_set
-        current = str(capture_change_set(roots).get("content_digest") or "")
+        from .change_set import capture_change_set, same_bound_product_content
+        snapshot = capture_change_set(roots)
+        current = str(snapshot.get("content_digest") or "")
+        matches = same_bound_product_content(development["detail"], snapshot)
     except Exception:
         return recorded, "UNKNOWN"
-    return current, "CURRENT" if current == recorded else "STALE"
+    return current, "CURRENT" if matches else "STALE"
 
 
 def _stale_value(value: str, *, stale: bool) -> str:
@@ -415,11 +429,16 @@ def _extract_quality_facts(conn, task_id: str) -> Dict[str, str]:
         # Task 7 会把这一占位投影替换为 typed Knowledge convergence 事实。
         "knowledge": "NOT_RECORDED",
     }
+    location = conn.execute(
+        "SELECT p.root_path FROM task t JOIN project p ON p.project_id=t.project_id WHERE t.task_id=?",
+        (task_id,),
+    ).fetchone()
+    task_dir = Path(location[0]) / ".tp-spec" / "tasks" / task_id if location and location[0] else None
     dev_event_id = int(development.get("event_id") or 0)
     dev_stale = development_status != "CURRENT"
 
     verification = event_policies.load_trusted_governance_event(
-        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer",
+        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer", latest_only=True,
     )
     verification_current = False
     if verification is not None:
@@ -429,39 +448,58 @@ def _extract_quality_facts(conn, task_id: str) -> Dict[str, str]:
             and int(verification.row["id"]) > dev_event_id
             and bool(current_digest)
             and v_change == current_digest
+            and task_dir is not None
+            and event_policies.verification_subject_matches(verification.detail, task_dir)
+            and (verification.detail.get("decision") != "PASS"
+                 or event_policies.load_current_verification(conn, task_id, task_dir) is not None)
         )
         out["verification"] = _stale_value(
-            str(verification.detail.get("decision") or "NOT_RECORDED"),
+            str(verification.detail.get("decision") or "NOT_RECORDED")
+            + ("_TECHNICAL" if verification.detail.get("verification_scope") == "technical" else ""),
             stale=not verification_current,
         )
 
-    review = event_policies.load_trusted_governance_event(
-        conn, task_id, event_type="REVIEW_COMPLETED", actor="tp-code-reviewer", review_kind="CODE",
-    )
+    review = _latest_code_review_fact(conn, task_id)
     review_current = False
     if review is not None:
         r_change = str(review.detail.get("change_set_id") or "")
-        bound_verification = int(review.detail.get("verification_event_id") or 0)
         current_verification_id = int(verification.row["id"]) if verification is not None else 0
-        review_current = (
-            verification_current
-            and r_change == current_digest
-            and bound_verification == current_verification_id
-        )
+        review_current = False
+        if verification_current and r_change == current_digest and task_dir is not None:
+            from .workflow_records import _latest_trusted_code_review
+            try:
+                current_review = _latest_trusted_code_review(
+                    conn, task_id, task_dir=task_dir,
+                    subject_digest=str(verification.detail.get("subject_digest") or ""),
+                    change_set_id=current_digest, verification_event_id=current_verification_id,
+                )
+                review_current = int(current_review.row["id"]) == int(review.row["id"])
+            except ValueError:
+                pass
         out["review"] = _stale_value(
             str(review.detail.get("decision") or "NOT_RECORDED"),
             stale=not review_current,
         )
 
     delivery = event_policies.load_trusted_governance_event(
-        conn, task_id, event_type="DELIVERY_RESULT",
+        conn, task_id, event_type="DELIVERY_RESULT", latest_only=True,
     )
     delivery_current = False
     if delivery is not None:
         d_change = str(delivery.detail.get("change_set_id") or "")
         bound_review = int(delivery.detail.get("review_event_id") or 0)
         current_review_id = int(review.row["id"]) if review is not None else 0
-        delivery_current = review_current and d_change == current_digest and bound_review == current_review_id
+        from .delivery_contract import delivery_result_matches_verification, delivery_evidence_matches
+        delivery_current = bool(
+            review_current and d_change == current_digest and bound_review == current_review_id
+            and verification_current and verification is not None
+            and event_policies.verification_scope(verification.detail) == "full"
+            and task_dir is not None and delivery_evidence_matches(delivery.detail, task_dir)
+            and delivery_result_matches_verification(
+                delivery.detail, int(verification.row["id"]),
+                str(verification.detail.get("subject_digest") or ""), current_digest,
+            )
+        )
         out["delivery"] = _stale_value(
             str(delivery.detail.get("delivery_status") or "NOT_RECORDED"),
             stale=not delivery_current,
@@ -505,26 +543,21 @@ def _extract_quality_facts(conn, task_id: str) -> Dict[str, str]:
     return out
 
 
-def _extract_next_responsibility(conn, task_id: str, current_owner: str) -> str:
+def _extract_next_responsibility(conn, task_id: str, current_owner: str, waiting_fact: Optional[dict] = None) -> str:
     """投影当前最明确的下一责任方，不创建新的 workflow state。"""
-    from . import event_policies
+    from . import event_policies, waiting
 
-    delivery = event_policies.load_trusted_governance_event(conn, task_id, event_type="DELIVERY_RESULT")
-    if delivery is not None and str(delivery.detail.get("delivery_status") or "").upper() == "BLOCKED":
-        responsibility = str(delivery.detail.get("responsibility") or "").strip()
-        if responsibility:
-            return responsibility
-
-    review = event_policies.load_trusted_governance_event(
-        conn, task_id, event_type="REVIEW_COMPLETED", actor="tp-code-reviewer", review_kind="CODE",
-    )
-    if review is not None and str(review.detail.get("decision") or "").upper() in {"NEEDS_FIX", "REVISE", "FAIL", "BLOCKED"}:
+    waiting_fact = waiting_fact or waiting.load_wait(conn, task_id)
+    if waiting_fact:
+        return str(waiting_fact["responsibility"])
+    review = _latest_code_review_fact(conn, task_id)
+    if review is not None and str(review.detail.get("decision") or "").upper() in {"NEEDS_FIX", "REVISE", "FAIL"}:
         return "tp-development-engineer"
 
     verification = event_policies.load_trusted_governance_event(
         conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer",
     )
-    if verification is not None and str(verification.detail.get("decision") or "").upper() in {"NEEDS_FIX", "FAIL", "BLOCKED"}:
+    if verification is not None and str(verification.detail.get("decision") or "").upper() in {"NEEDS_FIX", "FAIL"}:
         return "tp-development-engineer"
     return current_owner or DEFAULT_OWNER_ROLE
 
@@ -544,6 +577,7 @@ def _atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+@command_context.measured("projection")
 def render_projection(conn, task) -> Tuple[str, str, List[str]]:
     """从 DB 渲染 status.yaml 与 events.jsonl 文本（不落盘）。
 
@@ -562,7 +596,12 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
         "SELECT * FROM task_event WHERE task_id = ? ORDER BY id",
         (task_id,),
     ).fetchall()
-    blockers = _extract_blockers(conn, task_id, task["current_state"] or "")
+    from . import waiting
+    state = str(task["current_state"] or "")
+    waiting_fact = waiting.active_wait(events, state)
+    if state in {"NEW", "ACTIVE"}:
+        waiting_fact = waiting.result_wait(conn, task_id, events)
+    blockers = _extract_blockers(conn, task_id, state, waiting_fact)
     created_date = ""
     if task["created_at"]:
         created_date = task["created_at"][:10]
@@ -581,7 +620,7 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
         scope_changes=_extract_scope_changes(conn, task_id),
         quality_facts=_extract_quality_facts(conn, task_id),
         next_responsibility=_extract_next_responsibility(
-            conn, task_id, task["owner_role"] or DEFAULT_OWNER_ROLE
+            conn, task_id, task["owner_role"] or DEFAULT_OWNER_ROLE, waiting_fact
         ),
     )
     events_jsonl, warnings = _build_events_jsonl(events, task_id)
@@ -606,6 +645,12 @@ def cmd_projection_rebuild(args) -> int:
         if task is None:
             print(f"ERROR: task not found: {task_id}", file=sys.stderr)
             return 4
+        if getattr(args, "view_only", False):
+            from .transaction_commit import refresh_current_view
+            task_dir = _resolve_task_dir(args.task_dir, task_id, conn)
+            result = refresh_current_view(conn, task_dir, task_id)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0 if result["view_status"] in {"CURRENT", "SEALED"} else 5
         try:
             status_yaml, events_jsonl, warnings = render_projection(conn, task)
         except ValueError as e:
@@ -717,6 +762,7 @@ def add_projection_subparsers(projection_parser) -> None:
     p_rebuild.add_argument("--task", required=True, help="task id")
     p_rebuild.add_argument("--task-dir", required=False, default=None, help="task directory path")
     p_rebuild.add_argument("--db", required=False, default=None)
+    p_rebuild.add_argument("--view-only", action="store_true", help="rebuild unsealed continuation only; never change facts")
     p_rebuild.set_defaults(func=cmd_projection_rebuild)
 
     # projection validate

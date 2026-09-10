@@ -196,3 +196,18 @@ def test_template_readme_preserves_record_first_and_conditional_use():
         "blocking_open",
         "全部未解决",
     )
+
+
+def test_b05_templates_offer_one_optional_current_region_and_keep_history_separate():
+    # The template is the user-facing editing contract; behavior lives in the
+    # production CLI tests, not in these literal assertions.
+    for name in ('task.md', 'requirement.md'):
+        text = _read(TEMPLATE_ROOT / name)
+        assert text.count('<!-- tp-spec:current:start -->') == 1
+        assert text.count('<!-- tp-spec:current:end -->') == 1
+        assert text.index('<!-- tp-spec:current:start -->') < text.index('<!-- tp-spec:current:end -->')
+        assert 'SUPERSEDED' in text[text.index('<!-- tp-spec:current:end -->'):]
+    capability = _read(CAPABILITY)
+    assert '当前有效范围与决策' in capability
+    assert '单一维护位置' in capability
+    assert '技术事实' in capability and '不授予' in capability

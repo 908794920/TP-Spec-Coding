@@ -100,8 +100,23 @@ def disposition_allows_pipeline_completion(detail: Dict[str, Any], *, deferred_a
     return not validate_delivery_result(detail) and str(detail.get("delivery_status") or "").upper() == "READY"
 
 
+def delivery_evidence_matches(detail: Dict[str, Any], task_dir) -> bool:
+    """Recheck the original optional delivery attachments, never just their receipt."""
+    from .evidence import validate_evidence_path
+    paths, items = detail.get("evidence", []), detail.get("evidence_items", [])
+    if not isinstance(paths, list) or not isinstance(items, list) or len(paths) != len(items):
+        return False
+    for path, item in zip(paths, items):
+        if not isinstance(path, str) or not isinstance(item, dict) or item.get("path") != path or not item.get("sha256"):
+            return False
+        checked = validate_evidence_path(task_dir, item, require_evidence_dir=True)
+        if not checked.ok or checked.sha256 != item["sha256"]:
+            return False
+    return True
+
+
 def find_delivery_completion_event(events: List[Dict[str, Any]], *, verification_event: Dict[str, Any],
-                                   current_subject_digest: str) -> Dict[str, Any] | None:
+                                   current_subject_digest: str, task_dir=None) -> Dict[str, Any] | None:
     from .workflow_controls import trusted_event_detail
 
     verification_detail = trusted_event_detail(
@@ -116,15 +131,113 @@ def find_delivery_completion_event(events: List[Dict[str, Any]], *, verification
     if not verification_id or not change_set_id:
         return None
     for event in reversed(events):
+        if event.get("event_type") != "DELIVERY_RESULT" or event.get("actor_role") != "tp-integration-engineer":
+            continue
         detail = trusted_event_detail(
             event, event_type="DELIVERY_RESULT", producer="delivery_converge", actor="tp-integration-engineer"
         )
         if detail is None or validate_delivery_result(detail):
-            continue
+            return None
         if not delivery_result_matches_verification(detail, verification_id, current_subject_digest, change_set_id):
-            continue
+            return None
+        if task_dir is not None and not delivery_evidence_matches(detail, task_dir):
+            return None
         return event if str(detail.get("delivery_status") or "").upper() == "READY" else None
     return None
+
+
+def repository_scope(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Known task scope, not a natural-language inference or an operation grant.
+
+    Local checkpoints add known repositories. Only an explicit owner repository
+    list on the existing SCOPE_CHANGE command replaces the current set. A plain
+    scope note, public event or AC waiver must never erase repository history.
+    """
+    import json
+    from pathlib import Path
+    from .path_identity import canonical_path, path_identity_key
+    from .workflow_controls import trusted_event_detail
+    from . import event_contract
+
+    roots: Dict[str, str] = {}
+    scope_event_id = 0
+    for event in events:
+        essential = (event.get("event_type") == "SCOPE_CHANGE"
+                     or (event.get("event_type") == "FACT" and event.get("actor_role") == "tp-development-engineer"))
+        try:
+            detail = json.loads(event.get("detail_json") or "{}")
+        except (TypeError, ValueError) as exc:
+            if essential:
+                raise ValueError("DELIVERY_SCOPE_INVALID: unreadable scope record") from exc
+            continue
+        if not isinstance(detail, dict):
+            if essential:
+                raise ValueError("DELIVERY_SCOPE_INVALID: scope record is not an object")
+            continue
+        is_scope = event.get("event_type") == "SCOPE_CHANGE" and "repo_roots" in detail
+        if is_scope:
+            if trusted_event_detail(event, event_type="SCOPE_CHANGE", producer="task_scope_change", actor="human_owner") is None:
+                raise ValueError("DELIVERY_SCOPE_INVALID: invalid owner repository scope identity")
+            if not detail.get("scope_id") or not detail.get("summary"):
+                raise ValueError("DELIVERY_SCOPE_INVALID: owner repository scope lacks its reason/source")
+            values = detail.get("repo_roots")
+        elif (event.get("event_type") == "FACT" and event.get("actor_role") == "tp-development-engineer"
+              and detail.get("producer") == "record-first" and detail.get("transaction_id")
+              and detail.get("schema_version") and detail.get("operation") == "CHECKPOINT"
+              and detail.get("phase") == "development"
+              and event_contract.normalize_event_semantics("FACT", detail)["result_status"] == "COMPLETED"):
+            # Prefer canonical locators actually captured by Git, not caller aliases.
+            snapshot = detail.get("change_set") or {}
+            if not isinstance(snapshot, dict):
+                raise ValueError("DELIVERY_SCOPE_INVALID: development snapshot is not an object")
+            repos = snapshot.get("repositories") or []
+            if not isinstance(repos, list) or any(not isinstance(r, dict) for r in repos):
+                raise ValueError("DELIVERY_SCOPE_INVALID: development repositories are invalid")
+            values = [r.get("root_locator") for r in repos] or detail.get("repo_roots") or []
+            if not values:
+                continue  # Existing legacy/no-ChangeSet gate remains responsible.
+        else:
+            continue
+        if not isinstance(values, list) or not values or any(
+            not isinstance(r, str) or not r.strip() or not Path(r).is_absolute() for r in values
+        ):
+            raise ValueError("DELIVERY_SCOPE_INVALID: repository scope needs non-empty absolute locators")
+        if is_scope:
+            roots = {}
+            scope_event_id = int(event["id"])
+        if not is_scope and scope_event_id and any(path_identity_key(value) not in roots for value in values):
+            raise ValueError("REPOSITORY_SCOPE_MISMATCH: a development record exceeds the owner repository scope")
+        for value in values:
+            roots[path_identity_key(value)] = str(canonical_path(value))
+    return {"repo_roots": [roots[key] for key in sorted(roots)], "scope_event_id": scope_event_id}
+
+
+def load_repository_scope(conn, task_id: str) -> Dict[str, Any]:
+    events = [dict(row) for row in conn.execute(
+        "SELECT * FROM task_event WHERE task_id=? AND event_type IN ('FACT','SCOPE_CHANGE') ORDER BY id", (task_id,)
+    )]
+    return repository_scope(events)
+
+
+def full_scope_matches(scope: Dict[str, Any], detail: Dict[str, Any], *, development_event_id: int) -> bool:
+    from .change_set import repository_keys
+    roots = detail.get("repo_roots")
+    return bool(isinstance(roots, list) and roots and all(isinstance(r, str) and r.strip() for r in roots)
+                and repository_keys(roots) == repository_keys(scope["repo_roots"])
+                and development_event_id > int(scope["scope_event_id"]))
+
+
+def require_full_scope(conn, task_id: str, detail: Dict[str, Any], *, development_event_id: int) -> None:
+    if not full_scope_matches(load_repository_scope(conn, task_id), detail, development_event_id=development_event_id):
+        raise ValueError("FULL_SCOPE_CHECKPOINT_REQUIRED: record the complete effective repository scope before full verification/delivery; a local checkpoint is not whole-task coverage")
+
+
+def require_scope_checkpoint(conn, task_id: str, *, development_event_id: int) -> None:
+    scope = load_repository_scope(conn, task_id)
+    if development_event_id <= scope["scope_event_id"]:
+        raise ValueError("SCOPE_CHECKPOINT_REQUIRED: owner repository scope changed; record current development before verification")
+
+
 
 def validate_canonical_binding(frontmatter: Dict[str, Any], *, task_id: str,
                                evidence_paths: List[str], source_refs: List[str]) -> List[str]:

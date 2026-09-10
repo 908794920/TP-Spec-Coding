@@ -6,7 +6,7 @@ task/decisions/test-guide/acceptance，篡改 requirement-knowledge.md 或
 requirement-clarifications.md 不会使旧架构 PASS 失效。
 
 本函数为唯一权威实现（review record、transition gate、测试共同使用）：
-- 输入工件：task.md / requirement-knowledge.md / requirement-clarifications.md /
+- 输入工件：task.md / requirement.md / requirement-knowledge.md / requirement-clarifications.md /
   requirement-decisions.md / requirement-test-guide.md / acceptance.md
 - 排除：implementation.md（开发阶段工件，架构评审发生在 DEVELOPING 之前）、
   architecture-review.md（评审产物，PASS 写入后 front matter 更新不应使刚记录
@@ -21,6 +21,7 @@ from typing import Union
 # Subject digest 输入工件（按固定顺序拼接，保持确定性）
 SUBJECT_DIGEST_PARTS = (
     "task.md",
+    "requirement.md",
     "requirement-knowledge.md",
     "requirement-clarifications.md",
     "requirement-decisions.md",
@@ -132,30 +133,51 @@ def compute_architecture_subject_digest(task_dir: Union[str, Path]) -> str:
 # ---- Fourth Hardening（P0-4）：Verification subject digest ----
 
 # Verification subject digest 输入工件（固定顺序）：
+# - task.md / requirement.md：完整 canonical 范围/决定（不只绑定摘要）
 # - acceptance.md：验收标准（含 AC 行/证据声明）
 # - implementation.md：实现说明
 # - requirement-test-guide.md：tester-facing 测试指南；Runtime 自管生命周期元数据不参与 subject digest
 # 排除 codex-review.md（评审产物，使用独立 artifact_digest 绑定）。
 VERIFICATION_SUBJECT_DIGEST_PARTS = (
+    "task.md",
+    "requirement.md",
     "acceptance.md",
     "implementation.md",
     "requirement-test-guide.md",
 )
 
 
-def compute_verification_subject_digest(task_dir: Union[str, Path]) -> str:
+def compute_verification_subject_digest(task_dir: Union[str, Path], *, scope: str = "full") -> str:
     """计算 verification review subject digest（当前受评审技术内容指纹）。
 
-    覆盖 acceptance criteria / implementation.md / requirement-test-guide.md；
+    覆盖 canonical task/requirement、acceptance criteria / implementation.md / requirement-test-guide.md；
     排除可后置的 human test outcome、整目录 evidence 变化与 codex-review.md。
     正式 review evidence 由 REVIEW_COMPLETED.evidence_items 独立绑定。
     """
+    if scope not in {"full", "technical"}:
+        raise ValueError("unknown verification scope")
     base = Path(task_dir)
     parts: list[str] = []
     for name in VERIFICATION_SUBJECT_DIGEST_PARTS:
         p = base / name
         if p.is_file():
-            parts.append(name + "\n" + _normalize_subject_part(name, _read(p)))
+            text = _normalize_subject_part(name, _read(p))
+            if scope == "technical" and name == "acceptance.md":
+                # Only execution evidence/verdict cells may be supplemented after
+                # review. Criteria, method, witness policy and visual config remain
+                # part of the subject; actual technical evidence is hashed separately.
+                import re
+                lines = []
+                for line in text.split("\n"):
+                    if re.match(r"^\s*\|\s*AC-[^|\s]+\s*\|", line):
+                        cells = line.split("|")
+                        if len(cells) > 9:
+                            cells[6] = " <execution-evidence> "
+                            cells[8] = " <execution-verdict> "
+                            line = "|".join(cells)
+                    lines.append(line)
+                text = "\n".join(lines)
+            parts.append(name + "\n" + text)
     # Review evidence identity is bound explicitly in REVIEW_COMPLETED.evidence_items;
     # hashing the entire evidence/ directory made later human-test evidence additions
     # invalidate an otherwise valid technical PASS.

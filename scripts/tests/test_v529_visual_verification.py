@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from cli import db as dbmod
 from scripts.tests.runtime_testutil import run
 
@@ -172,9 +174,11 @@ class VisualCase:
         return self.call(*args)
 
     def review(self, task_id: str, td: Path):
+        (td / "evidence/code-review.txt").write_text("Synthetic reviewer evidence for the current subject.\n", encoding="utf-8")
         return self.call(
             "review", "record", "--task", task_id, "--task-dir", str(td),
             "--actor", "tp-code-reviewer", "--kind", "CODE", "--decision", "PASS", "--summary", "reviewed",
+            "--evidence", "evidence/code-review.txt",
         )
 
 
@@ -378,3 +382,594 @@ def test_visual_qa_guidance_and_template_are_explicit():
     assert "visual:" in acceptance and "evidence_manifest" in acceptance
     assert "Change Set / Diff 影响页面" in guide
     assert visual_reference.is_file()
+
+
+# B03 uses the production main, not the cached/parser-skipping test entry.
+
+
+@pytest.fixture
+def b03_case(monkeypatch):
+    from scripts.tests.v532_testutil import run_cli
+    monkeypatch.setitem(globals(), "run", run_cli)
+    case = VisualCase(level="L2")
+    tid = "TASK-B03-EVIDENCE"
+    td = case.create_task(tid, visual=False)
+    (td / "acceptance.md").write_text(
+        '```yaml\nno_acceptance_required:\n  declared: true\n'
+        '  reason: Isolated evidence identity regression, not business acceptance.\n'
+        'deferred_acceptance: []\nowner_waivers: []\ndatabase_operations: []\n```\n',
+        encoding="utf-8",
+    )
+    case.prepare_development(tid, td)
+    (td / "evidence/technical.txt").write_text("synthetic technical result\n", encoding="utf-8")
+    (td / "evidence/code-review.txt").write_text(
+        "Synthetic independent-review fixture; human/visual acceptance is not claimed.\n", encoding="utf-8"
+    )
+    rc, out, err = case.verify(tid, td, "evidence/technical.txt")
+    assert rc == 0, (out, err)
+    try:
+        yield case, tid, td
+    finally:
+        case.close()
+
+
+def _b03_review(case, tid, td, *, decision="PASS", kind="CODE", evidence=True, count=0):
+    return case.call(
+        "review", "record", "--task", tid, "--task-dir", str(td),
+        "--actor", "tp-code-reviewer", "--kind", kind, "--decision", decision,
+        "--findings-count", str(count), "--summary", "Synthetic review result",
+        *(["--evidence", "evidence/code-review.txt"] if evidence else []),
+    )
+
+
+def _b03_delivery(case, tid, td):
+    return case.call("task", "delivery-converge", "--task", tid, "--task-dir", str(td),
+                     "--delivery-status", "READY", "--reason", "Synthetic delivery with independently bound evidence.")
+
+
+def _b03_event_rows(case, tid):
+    with dbmod.connect_readonly(str(case.db)) as conn:
+        return [dict(row) for row in conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (tid,))]
+
+
+def test_b03_code_pass_requires_review_evidence_not_a_generated_receipt(b03_case):
+    case, tid, td = b03_case
+    before = _b03_event_rows(case, tid)
+    rc, out, err = _b03_review(case, tid, td, evidence=False)
+    assert rc != 0, "a Runtime receipt alone must not constitute a CODE PASS"
+    assert "CODE_REVIEW_EVIDENCE_REQUIRED" in out + err
+    assert _b03_event_rows(case, tid) == before
+
+
+def test_b03_code_pass_rejects_negative_findings(b03_case):
+    count = -1
+    case, tid, td = b03_case
+    before = _b03_event_rows(case, tid)
+    rc, out, err = _b03_review(case, tid, td, count=count)
+    assert rc != 0, "A negative findings count is invalid"
+    assert "findings" in (out + err).lower()
+    assert _b03_event_rows(case, tid) == before
+
+
+def test_b03_positive_findings_count_does_not_invent_a_blocking_severity(b03_case):
+    case, tid, td = b03_case
+    (td / "evidence/code-review.txt").write_text(
+        "Synthetic reviewer PASS with one non-blocking maintenance recommendation.\n", encoding="utf-8"
+    )
+    rc, out, err = _b03_review(case, tid, td, count=1)
+    assert rc == 0, (out, err)
+    rc, out, err = _b03_delivery(case, tid, td)
+    assert rc == 0, (out, err)
+
+
+@pytest.mark.parametrize("decision", ["FAIL", "NEEDS_FIX"])
+def test_b03_newer_failed_verification_does_not_revive_older_pass(b03_case, decision):
+    case, tid, td = b03_case
+    rc, out, err = case.call("task", "verify", "--task", tid, "--task-dir", str(td),
+                             "--actor", "tp-test-engineer", "--decision", decision,
+                             "--summary", "New technical evidence disproves the earlier pass")
+    assert rc == 0, (out, err)
+    before = _b03_event_rows(case, tid)
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc != 0, "Review must not search past a newer negative result for an older PASS"
+    assert "VERIFICATION_STALE" in out + err
+    assert _b03_event_rows(case, tid) == before
+
+
+def test_b03_invalid_latest_verification_evidence_does_not_fall_back(b03_case):
+    case, tid, td = b03_case
+    new = td / "evidence/new-technical.txt"
+    new.write_text("new synthetic result\n", encoding="utf-8")
+    rc, out, err = case.verify(tid, td, "evidence/new-technical.txt")
+    assert rc == 0, (out, err)
+    new.unlink()
+    before = _b03_event_rows(case, tid)
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc != 0, "damaged latest evidence must not silently select an older event"
+    assert "VERIFICATION_STALE" in out + err
+    assert _b03_event_rows(case, tid) == before
+
+
+@pytest.mark.parametrize("target", ["evidence", "receipt"])
+def test_b03_delivery_revalidates_review_evidence_and_receipt(b03_case, target):
+    case, tid, td = b03_case
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc == 0, (out, err)
+    review = _b03_event_rows(case, tid)[-1]
+    detail = json.loads(review["detail_json"])
+    path = td / ("evidence/code-review.txt" if target == "evidence" else detail["artifact"])
+    path.write_text("corrupted after the formal review\n", encoding="utf-8")
+    before = _b03_event_rows(case, tid)
+    rc, out, err = _b03_delivery(case, tid, td)
+    assert rc != 0, "Delivery must validate the evidence and artifact it relies on"
+    assert "REVIEW" in (out + err).upper()
+    assert _b03_event_rows(case, tid) == before
+
+
+@pytest.mark.parametrize("kind,decision", [("CODE", "NEEDS_FIX"), ("IMPLEMENTATION", "FAIL"), ("ULTRA_REVIEW", "BLOCKED")])
+def test_b03_delivery_cannot_ignore_newer_review_across_aliases(b03_case, kind, decision):
+    case, tid, td = b03_case
+    for new_kind, verdict in [("CODE", "PASS"), (kind, decision)]:
+        rc, out, err = _b03_review(case, tid, td, kind=new_kind, decision=verdict)
+        assert rc == 0, (out, err)
+    before = _b03_event_rows(case, tid)
+    rc, out, err = _b03_delivery(case, tid, td)
+    assert rc != 0, "a newer finding/BLOCKED must not be bypassed using an older alias PASS"
+    assert "REVIEW" in (out + err).upper()
+    assert _b03_event_rows(case, tid) == before
+
+
+def test_b03_review_rechecks_bound_evidence_at_transaction_boundary(b03_case, monkeypatch):
+    from cli import review_cmd
+    case, tid, td = b03_case
+    real_commit = review_cmd._commit_with_recovery
+    def mutate_then_commit(*args, **kwargs):
+        (td / "evidence/code-review.txt").write_text("changed after preflight\n", encoding="utf-8")
+        return real_commit(*args, **kwargs)
+    monkeypatch.setattr(review_cmd, "_commit_with_recovery", mutate_then_commit)
+    before = _b03_event_rows(case, tid)
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc != 0, "Review must not commit evidence hashes computed before a concurrent modification"
+    assert _b03_event_rows(case, tid) == before
+
+
+def test_b03_complete_cannot_reuse_ready_after_review_evidence_is_corrupted(b03_case):
+    case, tid, td = b03_case
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc == 0, (out, err)
+    rc, out, err = _b03_delivery(case, tid, td)
+    assert rc == 0, (out, err)
+    (td / "evidence/code-review.txt").write_text("modified after READY\n", encoding="utf-8")
+    before = _b03_event_rows(case, tid)
+    rc, out, err = case.call("task", "complete", "--task", tid, "--task-dir", str(td),
+                            "--actor", "tp-integration-engineer", "--summary", "Must not pass corrupted evidence")
+    assert rc != 0, "READY is not an exemption from current evidence integrity"
+    assert _b03_event_rows(case, tid) == before
+
+
+@pytest.mark.parametrize("target", ["technical", "product", "subject"])
+def test_b03_review_rechecks_technical_binding_before_write(b03_case, monkeypatch, target):
+    from cli import review_cmd
+    case, tid, td = b03_case
+    real_commit = review_cmd._commit_with_recovery
+    def mutate_then_commit(*args, **kwargs):
+        path = {"technical": td / "evidence/technical.txt",
+                "product": case.project / "src/app.txt", "subject": td / "acceptance.md"}[target]
+        assert path.is_file()
+        path.write_text(path.read_text(encoding="utf-8") + "\nconcurrent change\n", encoding="utf-8")
+        return real_commit(*args, **kwargs)
+    monkeypatch.setattr(review_cmd, "_commit_with_recovery", mutate_then_commit)
+    before = _b03_event_rows(case, tid)
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc != 0, "Review must be bound to the technical evidence/subject actually committed"
+    assert _b03_event_rows(case, tid) == before
+
+
+@pytest.mark.parametrize("target", ["technical.txt", "code-review.txt", "delivery.txt"])
+def test_b03_delivery_rechecks_bound_results_before_write(b03_case, monkeypatch, target):
+    from cli import record_first
+    case, tid, td = b03_case
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc == 0, (out, err)
+    (td / "evidence/delivery.txt").write_text("Synthetic delivery observation\n", encoding="utf-8")
+    real_write = record_first._write_with_projection
+    def mutate_then_write(*args, **kwargs):
+        (td / "evidence" / target).write_text("changed after delivery preflight\n", encoding="utf-8")
+        return real_write(*args, **kwargs)
+    monkeypatch.setattr(record_first, "_write_with_projection", mutate_then_write)
+    before = _b03_event_rows(case, tid)
+    rc, out, err = case.call("task", "delivery-converge", "--task", tid, "--task-dir", str(td),
+                            "--delivery-status", "READY", "--reason", "Boundary validation",
+                            "--evidence", "evidence/delivery.txt")
+    assert rc != 0, "READY must not bind evidence that changed before the transaction"
+    assert _b03_event_rows(case, tid) == before
+
+
+@pytest.mark.parametrize("human_verdict", ["PENDING", "BLOCKED"])
+def test_b03_human_pending_can_keep_technical_and_review_facts_but_not_complete(b03_case, human_verdict):
+    from cli.digest import compute_verification_subject_digest
+    case, tid, td = b03_case
+    acceptance = td / "acceptance.md"
+    acceptance.write_text(
+        "| 编号 | 验收条件 | 来源 | 风险等级 | 验证方式 | 证据路径 | 见证等级 | 结论 |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        f"| AC-HUMAN-01 | 用户确认交互行为 | task.md | L1 | 人工操作 | | human | {human_verdict} |\n"
+        '```yaml\npage_verification:\n  mode: human\n  human_witness: pending\n'
+        '  witness_evidence: ""\ndeferred_acceptance: []\nowner_waivers: []\ndatabase_operations: []\n```\n',
+        encoding="utf-8",
+    )
+    rc, out, err = case.verify(tid, td, "evidence/technical.txt")
+    assert rc == 0, (out, err)
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc == 0, (out, err)
+    subject = compute_verification_subject_digest(td)
+    # Adding an external screenshot/result alone neither changes a technical subject
+    # nor manufactures a witness, a verification or a new review event.
+    before = _b03_event_rows(case, tid)
+    (td / "evidence/external-result.txt").write_text("External declaration; execution and witness unknown.\n", encoding="utf-8")
+    assert compute_verification_subject_digest(td) == subject
+    assert _b03_event_rows(case, tid) == before
+    rc, out, err = _b03_delivery(case, tid, td)
+    assert rc != 0 and "INTEGRITY_ACCEPTANCE" in out + err
+    assert _b03_event_rows(case, tid) == before
+    rc, out, err = case.call("task", "complete", "--task", tid, "--task-dir", str(td),
+                            "--actor", "tp-integration-engineer", "--summary", "Human still pending")
+    assert rc != 0
+    assert "human_witness: pending" in acceptance.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("actor", ["tp-development-engineer", "tp-software-architect"])
+def test_b03_non_reviewer_cannot_sign_code_pass(b03_case, actor):
+    case, tid, td = b03_case
+    before = _b03_event_rows(case, tid)
+    rc, out, err = case.call("review", "record", "--task", tid, "--task-dir", str(td),
+        "--actor", actor, "--kind", "CODE", "--decision", "PASS", "--evidence", "evidence/code-review.txt")
+    assert rc != 0
+    assert _b03_event_rows(case, tid) == before
+
+
+def test_b03_visual_required_missing_evidence_still_blocks_full_verify_and_review(b03_case):
+    case, tid, td = b03_case
+    case.write_visual_acceptance(td)
+    acceptance = td / "acceptance.md"
+    acceptance.write_text(acceptance.read_text(encoding="utf-8").replace("| verification | PASS |", "| verification | PENDING |"), encoding="utf-8")
+    before = _b03_event_rows(case, tid)
+    rc, out, err = case.verify(tid, td, "evidence/technical.txt")
+    assert rc != 0 and "VISUAL_VERIFICATION_INVALID" in out + err
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc != 0 and "VERIFICATION_STALE" in out + err
+    assert _b03_event_rows(case, tid) == before
+
+
+@pytest.mark.parametrize("mode,verdict", [("waive", "OWNER_WAIVED"), ("defer", "DEFERRED_ACCEPTED")])
+def test_b03_legal_owner_disposition_preserves_unrun_fact_at_ready_and_complete(b03_case, mode, verdict):
+    from scripts.tests.test_v529_acceptance_database import _write_acceptance
+    case, tid, td = b03_case
+    _write_acceptance(td, "PENDING")
+    path = td / "acceptance.md"
+    path.write_text(path.read_text(encoding="utf-8").replace("| verification |", "| human |")
+                    .replace("mode: NOT_REQUIRED", "mode: human"), encoding="utf-8")
+    rc, out, err = case.call(
+        "task", "acceptance-override", "--task", tid, "--task-dir", str(td),
+        "--actor", "human_owner", "--mode", mode, "--ac", "AC-01",
+        "--reason", "Synthetic owner decision", "--residual-risk", "User operation remains unrun",
+        *(["--reverify-owner", "human_owner", "--trigger", "Authorized test window"] if mode == "defer" else []),
+    )
+    assert rc == 0, (out, err)
+    assert verdict in path.read_text(encoding="utf-8")
+    rc, out, err = case.verify(tid, td, "evidence/technical.txt")
+    assert rc == 0, (out, err)
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc == 0, (out, err)
+    rc, out, err = _b03_delivery(case, tid, td)
+    assert rc == 0, (out, err)
+    rc, out, err = case.call("task", "complete", "--task", tid, "--task-dir", str(td),
+                            "--actor", "tp-integration-engineer", "--summary", "Owner disposition is not PASS")
+    assert rc == 0, (out, err)
+    assert "| PASS |" not in path.read_text(encoding="utf-8")
+    assert "human_witness: pending" in path.read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def b03b_case(monkeypatch):
+    """Real CLI with isolated visual/technical evidence, not a browser run."""
+    from scripts.tests.v532_testutil import run_cli
+    monkeypatch.setitem(globals(), "run", run_cli)
+    case = VisualCase(level="L2")
+    try:
+        tid = "TASK-B03B-SCOPED"
+        td = case.create_task(tid)
+        acceptance = td / "acceptance.md"
+        acceptance.write_text(acceptance.read_text(encoding="utf-8").replace("| PASS |", "| PENDING |"), encoding="utf-8")
+        development = case.prepare_development(tid, td)
+        (td / "evidence/technical.txt").write_text("Synthetic unit check: replacement preserves one selection.\n", encoding="utf-8")
+        (td / "evidence/code-review.txt").write_text("Synthetic CODE review evidence; no actual reviewer/model invoked.\n", encoding="utf-8")
+        yield case, tid, td, development
+    finally:
+        case.close()
+
+
+def _b03b_verify(case, tid, td, *, scope="technical", decision="PASS", check=True, evidence=True):
+    args = ["task", "verify", "--task", tid, "--task-dir", str(td), "--scope", scope,
+            "--decision", decision, "--summary", "Selected technical check only; visual acceptance pending"]
+    if check:
+        args += ["--check", "replacement preserves one selection"]
+    if evidence:
+        args += ["--evidence", "evidence/technical.txt"]
+    return case.call(*args)
+
+
+def _b03b_full(case, tid, td, development):
+    case.write_manifest(td, development["change_set_id"])
+    acceptance = td / "acceptance.md"
+    acceptance.write_text(acceptance.read_text(encoding="utf-8").replace("| PENDING |", "| PASS |"), encoding="utf-8")
+    rc, out, err = case.verify(tid, td, "evidence/technical.txt")
+    assert rc == 0, (out, err)
+    return json.loads(out)
+
+
+def test_b03b_explicit_technical_pass_records_scope_without_visual_pass(b03b_case):
+    case, tid, td, development = b03b_case
+    before = (td / "acceptance.md").read_bytes()
+    rc, out, err = _b03b_verify(case, tid, td)
+    assert rc == 0, (out, err)
+    result = json.loads(out)
+    assert result["verification_scope"] == "technical"
+    assert result["checks"] == ["replacement preserves one selection"]
+    detail = json.loads(_b03_event_rows(case, tid)[-1]["detail_json"])
+    assert detail["change_set_id"] == development["change_set_id"]
+    assert detail["verification_scope"] == "technical" and "visual_verification" not in detail
+    assert (td / "acceptance.md").read_bytes() == before
+    assert not (td / "evidence/visual/manifest.json").exists()
+    assert "PASS_TECHNICAL" in (td / "status.yaml").read_text(encoding="utf-8")
+    assert "PASS_TECHNICAL" in (td / "generated/continuation.md").read_text(encoding="utf-8")
+
+
+def test_b03b_default_verify_still_requires_visual_evidence(b03b_case):
+    case, tid, td, _ = b03b_case
+    rc, out, err = case.verify(tid, td, "evidence/technical.txt")
+    assert rc != 0 and "VISUAL_VERIFICATION" in out + err
+
+
+@pytest.mark.parametrize("missing", ["check", "evidence"])
+def test_b03b_scoped_pass_rejects_missing_scope_or_real_evidence(b03b_case, missing):
+    case, tid, td, _ = b03b_case
+    before = _b03_event_rows(case, tid)
+    rc, out, err = _b03b_verify(case, tid, td, check=missing != "check", evidence=missing != "evidence")
+    assert rc != 0
+    assert ("check" if missing == "check" else "evidence") in (out + err).lower()
+    assert _b03_event_rows(case, tid) == before
+
+
+def test_b03b_review_before_visual_then_wait_without_repeated_delivery(b03b_case):
+    case, tid, td, _ = b03b_case
+    rc, out, err = _b03b_verify(case, tid, td)
+    assert rc == 0, (out, err)
+    rc, out, err = case.call("workflow", "next", "--task", tid, "--json")
+    assert rc == 0, (out, err)
+    assert json.loads(out)["next_stage"] == "review"
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc == 0, (out, err)
+    assert 'review: "PASS"' in (td / "status.yaml").read_text(encoding="utf-8")
+    before = _b03_event_rows(case, tid)
+    for _ in range(2):
+        rc, out, err = case.call("workflow", "next", "--task", tid, "--json")
+        assert rc == 0, (out, err)
+        route = json.loads(out)
+        assert route["recommended_action"] == "none", route
+        assert "FULL_VERIFICATION_REQUIRED" in route["reason_codes"]
+    rc, out, err = _b03_delivery(case, tid, td)
+    assert rc != 0 and "VERIFICATION" in out + err
+    assert _b03_event_rows(case, tid) == before
+
+
+def test_b03b_full_verification_reuses_unchanged_technical_review(b03b_case):
+    case, tid, td, development = b03b_case
+    assert _b03b_verify(case, tid, td)[0] == 0
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc == 0, (out, err)
+    reviewed = [r for r in _b03_event_rows(case, tid) if r["event_type"] == "REVIEW_COMPLETED"]
+    _b03b_full(case, tid, td, development)
+    rc, out, err = case.call("workflow", "next", "--task", tid, "--json")
+    assert rc == 0, (out, err)
+    assert json.loads(out)["next_stage"] == "delivery", out
+    rc, out, err = _b03_delivery(case, tid, td)
+    assert rc == 0, (out, err)
+    assert reviewed == [r for r in _b03_event_rows(case, tid) if r["event_type"] == "REVIEW_COMPLETED"]
+
+
+@pytest.mark.parametrize("target", ["product", "criteria", "evidence"])
+def test_b03b_technical_review_rejects_changed_subject_or_evidence(b03b_case, target):
+    case, tid, td, _ = b03b_case
+    assert _b03b_verify(case, tid, td)[0] == 0
+    path = {"product": case.project / "src/app.txt", "criteria": td / "acceptance.md",
+            "evidence": td / "evidence/technical.txt"}[target]
+    path.write_text(path.read_text(encoding="utf-8") + "\nsubstantive change\n", encoding="utf-8")
+    before = _b03_event_rows(case, tid)
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc != 0 and "VERIFICATION_STALE" in out + err
+    assert _b03_event_rows(case, tid) == before
+
+
+def test_b03b_new_failure_requires_review_again_even_after_full_pass(b03b_case):
+    case, tid, td, development = b03b_case
+    assert _b03b_verify(case, tid, td)[0] == 0
+    assert _b03_review(case, tid, td)[0] == 0
+    assert _b03b_verify(case, tid, td, decision="FAIL")[0] == 0
+    _b03b_full(case, tid, td, development)
+    rc, out, err = _b03_delivery(case, tid, td)
+    assert rc != 0 and "review" in (out + err).lower()
+
+
+def test_b03b_full_pass_does_not_hide_destroyed_original_technical_evidence(b03b_case):
+    case, tid, td, development = b03b_case
+    assert _b03b_verify(case, tid, td)[0] == 0
+    assert _b03_review(case, tid, td)[0] == 0
+    (td / "evidence/technical.txt").write_text("new run overwrote original evidence\n", encoding="utf-8")
+    _b03b_full(case, tid, td, development)
+    rc, out, err = _b03_delivery(case, tid, td)
+    assert rc != 0 and "review" in (out + err).lower()
+
+
+def test_b03b_blocked_review_stays_blocked_with_unchanged_technical_prerequisite(b03b_case):
+    case, tid, td, _ = b03b_case
+    assert _b03b_verify(case, tid, td)[0] == 0
+    rc, out, err = _b03_review(case, tid, td, decision="BLOCKED")
+    assert rc == 0, (out, err)
+    for _ in range(2):
+        rc, out, err = case.call("workflow", "next", "--task", tid, "--json")
+        assert rc == 0, (out, err)
+        route = json.loads(out)
+        assert route["recommended_action"] == "none", route
+        assert route["reason_codes"] == ["REVIEW_BLOCKED"], route
+
+
+@pytest.mark.parametrize("target", ["product", "criteria"])
+def test_b03b_verify_rechecks_subject_at_commit_boundary(b03b_case, monkeypatch, target):
+    from cli import record_first
+    case, tid, td, _ = b03b_case
+    original = record_first._write_with_projection
+    def change_before_transaction(*args, **kwargs):
+        path = case.project / "src/app.txt" if target == "product" else td / "acceptance.md"
+        path.write_text(path.read_text(encoding="utf-8") + "\nchanged during verify\n", encoding="utf-8")
+        return original(*args, **kwargs)
+    monkeypatch.setattr(record_first, "_write_with_projection", change_before_transaction)
+    before = _b03_event_rows(case, tid)
+    rc, out, err = _b03b_verify(case, tid, td)
+    assert rc != 0, "PASS must bind the actual subject at its commit boundary"
+    assert _b03_event_rows(case, tid) == before
+
+
+def test_b03b_scope_and_checks_participate_in_logical_request_identity(b03b_case):
+    case, tid, td, _ = b03b_case
+    args = ["task", "verify", "--task", tid, "--task-dir", str(td), "--scope", "technical",
+            "--decision", "PASS", "--summary", "same logical request", "--evidence", "evidence/technical.txt",
+            "--request-id", "b03b-same-request", "--check", "actual targeted check"]
+    rc, out, err = case.call(*args)
+    assert rc == 0, (out, err)
+    before = _b03_event_rows(case, tid)
+    rc, out, err = case.call(*args)
+    assert rc == 0 and json.loads(out)["replayed"] is True, (out, err)
+    changed = list(args)
+    changed[-1] = "different check"
+    assert case.call(*changed)[0] != 0
+    changed = list(args)
+    changed[changed.index("technical")] = "full"
+    assert case.call(*changed)[0] != 0
+    assert _b03_event_rows(case, tid) == before
+
+
+def test_b03b_l0_cannot_complete_on_only_technical_result(monkeypatch, tmp_path):
+    from scripts.tests.v532_testutil import make_runtime, run_cli, task_args
+    project, db, td, tid = make_runtime(tmp_path, monkeypatch, task_id="TASK-B03B-L0")
+    rc, out, err = run_cli(task_args(db, td, tid, "checkpoint", "--actor", "tp-development-engineer",
+                                    "--phase", "development", "--summary", "done", "--repo-root", str(project)))
+    assert rc == 0, (out, err)
+    rc, out, err = run_cli(task_args(db, td, tid, "verify", "--decision", "PASS", "--scope", "technical",
+                                    "--check", "targeted unit", "--summary", "technical only", "--evidence", "evidence/check.txt"))
+    assert rc == 0, (out, err)
+    rc, out, err = run_cli(task_args(db, td, tid, "complete", "--actor", "tp-development-engineer", "--summary", "not full"))
+    assert rc != 0 and "INTEGRITY_PIPELINE_PENDING" in out + err
+
+
+@pytest.mark.parametrize("field,value", [("verification_scope", "unknown"), ("verification_scope", None), ("checks", []), ("checks", [""])])
+def test_b03b_unknown_or_incomplete_scope_never_grants_current_pass(b03b_case, field, value):
+    from cli import event_policies
+    case, tid, td, _ = b03b_case
+    assert _b03b_verify(case, tid, td)[0] == 0
+    detail = json.loads(_b03_event_rows(case, tid)[-1]["detail_json"])
+    detail[field] = value
+    assert not event_policies.verification_subject_matches(detail, td)
+
+
+def test_b03b_legacy_absent_scope_retains_full_subject_semantics(b03b_case):
+    from cli import event_policies
+    from cli.digest import compute_verification_subject_digest
+    _, _, td, _ = b03b_case
+    detail = {"decision": "PASS", "subject_digest": compute_verification_subject_digest(td)}
+    assert event_policies.verification_scope(detail) == "full"
+    assert event_policies.verification_subject_matches(detail, td)
+
+
+def test_b03b_projection_marks_changed_criteria_stale(b03b_case):
+    from cli import projection_cmd
+    case, tid, td, _ = b03b_case
+    assert _b03b_verify(case, tid, td)[0] == 0
+    assert _b03_review(case, tid, td)[0] == 0
+    acceptance = td / "acceptance.md"
+    acceptance.write_text(acceptance.read_text(encoding="utf-8").replace("375px", "430px"), encoding="utf-8")
+    with dbmod.connect_readonly(str(case.db)) as conn:
+        quality = projection_cmd._extract_quality_facts(conn, tid)
+    assert quality["verification"] == "PASS_TECHNICAL_STALE"
+    assert quality["review"] == "PASS_STALE"
+
+
+def test_b03b_later_technical_result_invalidates_ready_projection(b03b_case):
+    from cli import projection_cmd
+    case, tid, td, development = b03b_case
+    assert _b03b_verify(case, tid, td)[0] == 0
+    assert _b03_review(case, tid, td)[0] == 0
+    _b03b_full(case, tid, td, development)
+    assert _b03_delivery(case, tid, td)[0] == 0
+    assert _b03b_verify(case, tid, td)[0] == 0
+    with dbmod.connect_readonly(str(case.db)) as conn:
+        quality = projection_cmd._extract_quality_facts(conn, tid)
+    assert quality["delivery"] == "READY_STALE"
+    assert quality["verification"] == "PASS_TECHNICAL"
+
+
+@pytest.mark.parametrize("target", ["criteria", "product"])
+def test_b03b_complete_rechecks_full_subject_at_commit_boundary(b03b_case, monkeypatch, target):
+    from cli import record_first
+    case, tid, td, development = b03b_case
+    assert _b03b_verify(case, tid, td)[0] == 0
+    assert _b03_review(case, tid, td)[0] == 0
+    _b03b_full(case, tid, td, development)
+    assert _b03_delivery(case, tid, td)[0] == 0
+    before = _b03_event_rows(case, tid)
+    original = record_first._write_with_projection
+    def changed_before_complete(*args, **kwargs):
+        path = td / "acceptance.md" if target == "criteria" else case.project / "src/app.txt"
+        path.write_text(path.read_text(encoding="utf-8") + "\nchanged after preflight\n", encoding="utf-8")
+        return original(*args, **kwargs)
+    monkeypatch.setattr(record_first, "_write_with_projection", changed_before_complete)
+    rc, out, err = case.call("task", "complete", "--task", tid, "--task-dir", str(td),
+                            "--actor", "tp-integration-engineer", "--summary", "must not close stale subject")
+    assert rc != 0, "Complete must not use validation of a different final subject"
+    assert _b03_event_rows(case, tid) == before
+
+
+def test_b03b_wait_exposes_existing_condition_field(b03b_case):
+    case, tid, td, _ = b03b_case
+    assert _b03b_verify(case, tid, td)[0] == 0
+    assert _b03_review(case, tid, td)[0] == 0
+    rc, out, err = case.call("workflow", "next", "--task", tid, "--json")
+    assert rc == 0, (out, err)
+    wait = json.loads(out)["context"]["waiting"]
+    assert wait.get("condition"), "Existing wait consumers need the recovery condition, not a new parallel field"
+
+
+def test_b03b_projection_failure_rolls_back_staged_review_receipt(b03b_case, monkeypatch):
+    from cli import projection_cmd
+    case, tid, td, _ = b03b_case
+    assert _b03b_verify(case, tid, td)[0] == 0
+    before = _b03_event_rows(case, tid)
+    receipts = set(td.glob(".execution/*/review/result-*.json"))
+    def fail_projection(*args, **kwargs):
+        raise OSError("synthetic required projection failure")
+    monkeypatch.setattr(projection_cmd, "render_projection", fail_projection)
+    rc, out, err = _b03_review(case, tid, td)
+    assert rc != 0
+    assert _b03_event_rows(case, tid) == before
+    assert set(td.glob(".execution/*/review/result-*.json")) == receipts
+
+
+def test_b03b_explicit_card_preserves_technical_scope(b03b_case):
+    from cli.cards.snapshot import build_task_snapshot
+    case, tid, td, _ = b03b_case
+    assert _b03b_verify(case, tid, td)[0] == 0
+    before = _b03_event_rows(case, tid)
+    snapshot = build_task_snapshot(tid, db_path=case.db, registry_path=str(case.registry))
+    assert snapshot["verification"]["status"] == "PASS_TECHNICAL"
+    assert snapshot["verification"]["checks"] == ["replacement preserves one selection"]
+    assert _b03_event_rows(case, tid) == before

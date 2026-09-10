@@ -45,3 +45,10 @@ The following projects were used as architecture/design references only; their s
 - `BloopAI/vibe-kanban` — deterministic repository before/after Git identity facts.
 
 These references do not create runtime dependencies or change TP-Spec-Coding's license.
+
+## Browser Report Interface References (Not Vendored)
+
+- Microsoft Playwright, Apache License 2.0: public JSON reporter and result types inspected at tag `v1.63.0`. The native report's per-test outcomes and attachment references inform `cli/browser_reports.py`; no upstream engine/reporter source is copied into the runtime. Source: https://github.com/microsoft/playwright/tree/v1.63.0 .
+- Midscene (`web-infra-dev/midscene`), MIT: package exports and license inspected at tag `v1.12.3`; official Playwright fixture/reporter and caching documentation inform the optional integration guidance. Original HTML is retained as opaque evidence, not parsed into a signed AI judgment. Source: https://github.com/web-infra-dev/midscene/tree/v1.12.3 .
+
+These references are not Python/Base runtime dependencies and do not imply an installed or runtime-validated Playwright/Midscene/browser/model combination. Authorized business projects own their native dependencies, lockfiles, test assets and upgrade verification. No browser binaries, model credentials or upstream source packages are distributed in this repository.

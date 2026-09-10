@@ -70,7 +70,7 @@ Workspace Inventory 默认：
 
 与当前项目绑定、由 TP-Spec-Coding 生成、非产品源码且无需独立外部存储的本地产物，默认收敛到 `<workspace>/.tp-spec/<feature>/`，不得为单一功能在项目根新增 `.tp-spec-*`、`.xxx-preview`、`.tmp` 等兄弟隐藏目录。当前固定卡片 Web Artifact 为 `.tp-spec/card/index.html`。
 
-`.tp-spec/card` 仅属于 **presentation-only / rebuildable / non-authoritative** 展示产物：删除后可由正式 `tp-spec card ...` 或 Runtime refresh 重建，不写 Runtime/Task truth，不成为任务账本或产品内容。高频、短生命周期 execution scratch（测试工作区、ZIP 解压、中间渲染等）继续使用受 ownership 管理的 **system Temp**，不得为了目录统一迁回 `.tp-spec`。用户级/机器级状态继续使用 `~/.tp-spec/`。
+`.tp-spec/card` 仅属于 **presentation-only / rebuildable / non-authoritative** 展示产物：删除后仅在用户显式请求卡片时由正式 `tp-spec card ...` 重建，不写 Runtime/Task truth，不成为任务账本或产品内容。高频、短生命周期 execution scratch（测试工作区、ZIP 解压、中间渲染等）继续使用受 ownership 管理的 **system Temp**，不得为了目录统一迁回 `.tp-spec`。用户级/机器级状态继续使用 `~/.tp-spec/`。
 
 ## 2. Project Scope 不得丢失
 
@@ -95,7 +95,7 @@ tp-spec base sync-project
 tp-spec base migrate
 ```
 
-推荐多项目收敛：
+默认只操作明确指定的单项目；只有获准批量对象清单和对应副作用时，才使用以下多项目收敛方式：
 
 ```text
 base inventory --write
@@ -130,13 +130,15 @@ Runtime `project.root_path` 与 Runtime Registry 是 machine-local locator/cache
 
 CLI 可输出 `PASS/FAIL/READY/BLOCKED` 作为确定性执行状态，两者不要混淆。
 
-检查至少覆盖：Base VERSION/关键文件、Installation lifecycle、Project Binding、Workspace Inventory、Wiki workspace mapping、Knowledge project mapping、Runtime DB/任务状态、Runtime root portability、ACTIVE formal artifact legacy references、legacy link mismatch。若 Runtime project contract 仍是旧版本，结论必须是 `SYNC_REQUIRED`，先走官方 `project upgrade-contract`，不得只改 binding 伪装完成同步。
+检查至少覆盖：Base VERSION/关键文件、Installation lifecycle、Project Binding、Workspace Inventory、Wiki workspace mapping、Knowledge project mapping、Runtime DB/任务状态、Runtime root portability、ACTIVE formal artifact legacy references、legacy link mismatch。若 Runtime project contract 仍是旧版本，结论必须是 `SYNC_REQUIRED`，先走官方 `project upgrade-contract`，不得只改 binding 伪装完成同步。Project 切换不迁移 Task；需先检查计划并取得具体对象/备份授权，不把升级 Base 或同步模板当成迁移授权。
 
 缺失可选 Junction 不是故障。
 
 
 
 ## 6. 按需 Context Pointers
+
+- 读取条件：兼容升级、配置来源或旧 Task 契约不匹配；内容：只读计划、有限迁移政策、备份、提交/缓存失败与恢复边界；路径：[兼容与迁移操作](../../docs/agents/tp-base-maintenance.md#兼容更新与显式契约迁移)
 
 - 读取条件：执行 legacy Junction/symlink 迁移或移除；内容：迁移顺序阻塞条件一次性binding seed与link删除边界；路径：[Junction 迁移](references/junction-migration.md)
 - 读取条件：执行 base sync-project 或检查 active task portability；内容：项目入口surfaceportable override与active formal artifact规则；路径：[项目接入与可移植性](references/project-integration.md)

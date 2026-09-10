@@ -17,12 +17,15 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import stat
+import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from cli.path_identity import canonical_path, same_path
+from . import command_context
 
 # 模块基目录（cli/db.py 所在目录）
 _MODULE_DIR = Path(__file__).resolve().parent
@@ -231,9 +234,17 @@ def _registry_mutation_paths(registry_path: Optional[str] = None) -> Tuple[Path,
 
 def _write_registry_payload(path: Path, data: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
-    os.replace(tmp, path)
+    tmp = None
+    try:
+        mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".tp-spec-registry-", delete=False) as handle:
+            tmp = Path(handle.name)
+            handle.write((json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
 
 
 def _finish_registry_copy_on_write(source: Path, target: Path, remove_source: bool) -> None:
@@ -341,13 +352,7 @@ def register_project(
     data: Dict[str, Any] = {"projects": []}
     seed_path = reg_path if reg_path.exists() else (registry_read_path() if registry_path is None else reg_path)
     if seed_path.exists():
-        try:
-            with open(seed_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if not isinstance(data, dict) or not isinstance(data.get("projects"), list):
-                data = {"projects": []}
-        except (json.JSONDecodeError, OSError):
-            data = {"projects": []}
+        data = _read_registry_payload(seed_path)
     projects = [p for p in data.get("projects", []) if p.get("project_id") != project_id]
     db_path_abs = str(canonical_path(db_path))
     root_path_abs = str(canonical_path(root_path))
@@ -362,10 +367,8 @@ def register_project(
         }
     )
     data["projects"] = projects
-    # UTF-8 无 BOM
-    with open(reg_path, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-        f.write("\n")
+    # Publish atomically: a failed cache write must not truncate other projects.
+    _write_registry_payload(reg_path, data)
     return reg_path
 
 
@@ -393,6 +396,8 @@ def update_registered_project_contract(
     found = False
     for proj in data["projects"]:
         if isinstance(proj, dict) and proj.get("project_id") == project_id:
+            if proj.get("base_version") == base_version and read_path == write_path:
+                return True
             proj["base_version"] = base_version
             found = True
             break
@@ -586,10 +591,14 @@ def transactional(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     嵌套调用时内层 BEGIN 会失败（SQLite 不支持嵌套事务）——M0 不嵌套。
     """
     conn.execute("BEGIN")
+    command_context.count("deferred_transactions")
     try:
-        yield conn
+        # Deferred BEGIN does not acquire a writer lock; any wait is part of this body.
+        with command_context.span("db_write"):
+            yield conn
     except Exception:
         conn.execute("ROLLBACK")
         raise
     else:
-        conn.execute("COMMIT")
+        with command_context.span("db_commit"):
+            conn.execute("COMMIT")

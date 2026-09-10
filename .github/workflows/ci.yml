@@ -10,6 +10,9 @@ permissions:
 env:
   PYTHONUTF8: "1"
   PYTHONIOENCODING: "utf-8"
+  # The base has no declared third-party pytest plugins.  Keep CI deterministic
+  # and do not let machine-installed entry points change test semantics.
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
 
 jobs:
   python-fast:

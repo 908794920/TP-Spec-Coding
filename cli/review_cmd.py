@@ -41,6 +41,7 @@ from .transaction_commit import (
     _finalize_texts,
     _probe_writable,
     _rebuild_current_view_text,
+    _stage_and_replace,
 )
 from .frontmatter import FrontMatterError
 from .version import active_version
@@ -265,20 +266,16 @@ def _check_pass_content_gate(task_dir: Path, artifact_text: str, args, task) -> 
 
 
 
-def _code_review_subject_digest(task_dir: Path) -> str:
+def _code_review_subject_digest(task_dir: Path, scope: str = "full") -> str:
     from .digest import compute_verification_subject_digest
-    return compute_verification_subject_digest(task_dir)
+    return compute_verification_subject_digest(task_dir, scope=scope)
 
 
 def _verified_change_set_for_code_review(conn, task_id: str, task_dir: Path) -> tuple[Any, str, list[str], Dict[str, Any]]:
     """加载当前 Test PASS，并确认它仍绑定当前产品内容。"""
     from .change_set import capture_change_set
 
-    subject_digest = _code_review_subject_digest(task_dir)
-    verification = event_policies.load_trusted_governance_event(
-        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer",
-        decision="PASS", expected_subject_digest=subject_digest, evidence_dir=task_dir,
-    )
+    verification = event_policies.load_current_verification(conn, task_id, task_dir)
     if verification is None:
         raise ValueError("VERIFICATION_STALE")
     detail = dict(verification.detail or {})
@@ -287,7 +284,8 @@ def _verified_change_set_for_code_review(conn, task_id: str, task_dir: Path) -> 
     if not change_set_id or not repo_roots:
         raise ValueError("VERIFICATION_CHANGE_SET_REQUIRED")
     current = capture_change_set(repo_roots)
-    if str(current.get("content_digest") or "") != change_set_id:
+    from .change_set import same_bound_product_content
+    if not same_bound_product_content(detail, current):
         raise ValueError("VERIFICATION_STALE")
     return verification, change_set_id, repo_roots, current
 
@@ -316,6 +314,10 @@ def _cmd_code_review_record(args) -> int:
         print(f"ERROR: unsupported code review decision: {args.decision}", file=sys.stderr)
         return 8
 
+    findings_count = int(args.findings_count or 0)
+    if findings_count < 0:
+        print("ERROR: code review findings_count cannot be negative", file=sys.stderr)
+        return 8
     status_text = _read(status_path)
     m = re.search(r"(?ms)^artifact_contract:\s*\n\s+version:\s*[\"']?([^\"'\n#]+)", status_text)
     contract_version = m.group(1).strip() if m else ""
@@ -348,13 +350,17 @@ def _cmd_code_review_record(args) -> int:
 
         timestamp = dbmod.now_iso()
         flush_id = f"REVIEW-{uuid.uuid4().hex}"
-        subject_digest = _code_review_subject_digest(task_dir)
         try:
             verification, change_set_id, repo_roots, current_change_set = _verified_change_set_for_code_review(
                 conn, task_id, task_dir
             )
         except ValueError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
+            return 8
+        scope = event_policies.verification_scope(verification.detail)
+        subject_digest = _code_review_subject_digest(task_dir, scope)
+        if str(args.decision).upper() == "PASS" and not args.evidence:
+            print("ERROR: CODE_REVIEW_EVIDENCE_REQUIRED: PASS requires a real evidence/* review result", file=sys.stderr)
             return 8
         evidence = list(args.evidence or [])
         evidence_items: List[Dict[str, str]] = []
@@ -379,6 +385,7 @@ def _cmd_code_review_record(args) -> int:
             "subject_digest": subject_digest,
             "change_set_id": change_set_id,
             "verification_event_id": int(verification.row["id"]),
+            "verification_scope": scope,
             "evidence": evidence,
             "recorded_at": timestamp,
         }
@@ -401,13 +408,13 @@ def _cmd_code_review_record(args) -> int:
             "subject_digest": subject_digest,
             "change_set_id": change_set_id,
             "verification_event_id": int(verification.row["id"]),
+            "verification_scope": scope,
             "repo_roots": repo_roots,
             "change_set_snapshot_digest": str(current_change_set.get("snapshot_digest") or ""),
             "findings_count": int(args.findings_count or 0),
             "decision": str(args.decision).upper(),
-            # REVIEW_COMPLETED keeps an evidence identity field.  When the
-            # reviewer has no separate evidence file, the machine review result
-            # itself is the durable review evidence.
+            # A non-PASS observation may refer to its machine receipt. PASS
+            # always binds a separate, actual review result in evidence/.
             "evidence": evidence or [artifact_rel],
             "evidence_items": evidence_items,
             "summary": str(args.summary or ""),
@@ -418,6 +425,17 @@ def _cmd_code_review_record(args) -> int:
         view_rel = _current_view_rel(task["current_state"])
 
         def db_and_render(conn, transaction_id=""):
+            from .recording import validate_bound_items
+            validate_bound_items(task_dir, evidence_items)
+            # Preflight happened outside the write lock. Bind the result only if
+            # the same technical event, evidence and product subject still hold.
+            checked_verification, checked_change_set, _, _ = _verified_change_set_for_code_review(
+                conn, task_id, task_dir
+            )
+            if (int(checked_verification.row["id"]) != int(verification.row["id"])
+                    or checked_change_set != change_set_id
+                    or _code_review_subject_digest(task_dir, scope) != subject_digest):
+                raise ValueError("VERIFICATION_STALE: review prerequisite changed before write")
             detail["transaction_id"] = transaction_id
             conn.execute(
                 "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,evidence_path,created_at) VALUES (?,?,?,?,?,?,?)",
@@ -432,6 +450,7 @@ def _cmd_code_review_record(args) -> int:
                 ),
             )
             conn.execute("UPDATE task SET updated_at=? WHERE task_id=?", (timestamp, task_id))
+            _stage_and_replace(task_dir, {artifact_rel: artifact_text}, [artifact_rel])
             refreshed = conn.execute("SELECT * FROM task WHERE task_id = ?", (task_id,)).fetchone()
             status_yaml, events_jsonl, warnings = projection_cmd.render_projection(conn, refreshed)
             for warning in warnings:
@@ -636,7 +655,7 @@ def add_review_subparsers(subparsers) -> None:
     pr.add_argument("--artifact", required=False, default=None, help="architecture review artifact; CODE results use a Runtime-generated machine artifact")
     pr.add_argument("--round", type=int, required=False, default=1, help="review round number")
     pr.add_argument("--findings-count", type=int, required=False, default=0, help="findings count")
-    pr.add_argument("--evidence", action="append", help="evidence path(s)")
+    pr.add_argument("--evidence", action="append", help="real evidence/* path(s); required for PASS, not a generated receipt")
     pr.add_argument("--summary", required=False, default="architecture review", help="review summary")
     pr.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks review record")
     pr.add_argument("--context-policy", default="isolated", choices=["isolated"], help="formal architecture review context policy")

@@ -82,8 +82,8 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         )
         return task_dir
 
-    def call(self, *args, refresh_card: bool = False):
-        return run(list(args) + ['--db', str(self.db)], refresh_card=refresh_card)
+    def call(self, *args):
+        return run(list(args) + ['--db', str(self.db)])
 
     def checkpoint(self, task_id: str, task_dir: Path, actor: str, phase: str, summary: str = 'done'):
         rc, out, err = self.call(
@@ -109,10 +109,11 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         self.assertEqual(rc, 0, (out, err))
 
     def code_review(self, task_id: str, task_dir: Path, decision: str = 'PASS'):
+        (task_dir / 'evidence/code-review.txt').write_text('Synthetic reviewer result\n', encoding='utf-8')
         rc, out, err = self.call(
             'review', 'record', '--task', task_id, '--task-dir', str(task_dir),
             '--actor', 'tp-code-reviewer', '--kind', 'CODE', '--decision', decision,
-            '--summary', f'code review {decision}',
+            '--summary', f'code review {decision}', '--evidence', 'evidence/code-review.txt',
         )
         self.assertEqual(rc, 0, (out, err))
 
@@ -175,6 +176,9 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         self.assertEqual(first['recommended_action'], 'dispatch_role')
         self.checkpoint(task_id, task_dir, 'tp-product-manager', 'requirement')
 
+        from scripts.tests.v514_orchestration_testutil import add_decision
+        add_decision(str(self.db), task_id, 'workflow:include-stage:architecture')
+
         pending = orchestration.resolve_route(task_id, db_path=str(self.db))
         self.assertEqual(pending['recommended_action'], 'await_confirmation')
         self.assertIsNone(pending['skill_path'])
@@ -226,21 +230,21 @@ class V522WorkflowDeliveryCase(unittest.TestCase):
         material_events = [dict(x) for x in self.events(task_id) if x['event_type'] == 'WORKFLOW_CONFIRMATION']
         self.assertEqual(json.loads(material_events[-1]['detail_json'])['confirmation_kind'], 'material')
 
-    def test_json_workflow_confirm_keeps_stdout_machine_parseable_and_card_display_on_stderr(self):
+    def test_json_workflow_confirm_keeps_stdout_machine_parseable_without_card_side_effects(self):
         task_id = 'TASK-V527-CARD-JSON'
         task_dir = self.create_task(task_id, 'L1')
         self.checkpoint(task_id, task_dir, 'tp-product-manager', 'requirement')
 
         rc, out, err = self.call(
             'workflow', 'confirm', '--task', task_id, '--task-dir', str(task_dir),
-            '--confirmation-policy', 'each_stage', '--json', refresh_card=True,
+            '--confirmation-policy', 'each_stage', '--json',
         )
 
         self.assertEqual(rc, 0, (out, err))
         payload = json.loads(out)
         self.assertEqual(payload['recommended_action'], 'dispatch_role')
         self.assertNotIn('CARD_DISPLAY:', out)
-        self.assertIn('CARD_DISPLAY:', err)
+        self.assertNotIn('CARD_DISPLAY:', err)
 
     def test_each_stage_applies_to_verification_rework_review_and_delivery(self):
         task_id = 'TASK-V522-REWORK'

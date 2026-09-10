@@ -22,6 +22,9 @@ EXIT_CODES (10-15, contract §6).
 from __future__ import annotations
 
 import io
+import copy
+import hashlib
+from . import command_context
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -122,8 +125,6 @@ _DuplicateKeySafeLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping_no_dup
 )
 
-# process-level cache: resolved path -> (mtime_ns, size, data)
-_CACHE: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
 
 
 def default_base_root() -> Path:
@@ -269,6 +270,7 @@ def validate_against_schema(
             )
 
 
+@command_context.measured("config")
 def load_config(
     file_path: "str | Path",
     *,
@@ -292,14 +294,19 @@ def load_config(
             {"limit_type": "file_size", "actual": stat.st_size, "max": MAX_FILE_SIZE_BYTES},
         )
 
-    cache_key = str(path)
-    data: Optional[Dict[str, Any]] = None
-    if use_cache and cache_key in _CACHE:
-        mtime_ns, size, cached = _CACHE[cache_key]
-        if mtime_ns == stat.st_mtime_ns and size == stat.st_size:
-            data = cached
+    raw = path.read_bytes()
+    if len(raw) > MAX_FILE_SIZE_BYTES:
+        raise ConfigLoadError(ErrorCode.RESOURCE_LIMIT, display, "file grew beyond size limit")
+    context = command_context.current()
+    cache = context.config_cache if context is not None and use_cache else {}
+    cache_key = (str(path), hashlib.sha256(raw).digest(), schema_name, strict_unknown_fields)
+    if cache_key in cache:
+        command_context.count("config_cache_hits")
+        return copy.deepcopy(cache[cache_key])
+    data = None
     if data is None:
-        text = path.read_text(encoding="utf-8")
+        text = raw.decode("utf-8")
+        command_context.count("config_parses")
         _scan_events(text, display)
         try:
             data = yaml.load(text, Loader=_DuplicateKeySafeLoader)
@@ -338,13 +345,13 @@ def load_config(
                 f"top-level document must be a mapping, got {type(data).__name__}",
                 {"field": "$", "expected": "dict", "actual": type(data).__name__},
             )
-        if use_cache:
-            _CACHE[cache_key] = (stat.st_mtime_ns, stat.st_size, data)
 
     if schema_name is not None:
         validate_against_schema(
             data, schema_name, file_path=display, strict=strict_unknown_fields
         )
+    if context is not None and use_cache:
+        cache[cache_key] = copy.deepcopy(data)
     return data
 
 

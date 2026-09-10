@@ -7,7 +7,6 @@ Human summaries are intentionally absent from this API.
 """
 from __future__ import annotations
 
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -20,11 +19,10 @@ def _upper(value: object) -> str:
     return str(value or "").strip().upper()
 
 
-@lru_cache(maxsize=1)
 def load_event_semantics_contract() -> Dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
     data = config_loader.load_config(
-        "governance/event-semantics.yaml", schema_name="event-semantics", base_root=root
+        "governance/event-semantics.yaml", schema_name="event-semantics", base_root=root, use_cache=True
     )
     if data.get("event_schema") != EVENT_SCHEMA:
         raise ValueError("event semantics schema mismatch")

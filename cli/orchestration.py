@@ -15,6 +15,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import yaml
 
 from . import config_loader
+from . import orchestration_policy
 from . import db as dbmod
 from . import delivery_contract
 from . import environment
@@ -50,13 +51,16 @@ def resolve_effective_level(risk_level: Optional[str], flow_level: Optional[str]
 
 
 def load_contract(base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
-    return config_loader.load_config(
+    data = config_loader.load_config(
         "governance/orchestration.yaml",
         schema_name="orchestration",
         base_root=base_root,
         strict_unknown_fields=True,
-        use_cache=False,
+        use_cache=True,
     )
+
+    orchestration_policy.validate(data, load_role_catalog(base_root))
+    return data
 
 
 def load_role_catalog(base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
@@ -65,7 +69,7 @@ def load_role_catalog(base_root: Optional["str | Path"] = None) -> Dict[str, Any
         schema_name="role-catalog",
         base_root=base_root,
         strict_unknown_fields=True,
-        use_cache=False,
+        use_cache=True,
     )
 
 
@@ -200,12 +204,12 @@ def validate_contract(base_root: Optional["str | Path"] = None) -> List[str]:
     if contract.get("execution", {}).get("concurrent_workflow_stages") is not False:
         errors.append("dependent workflow stages must remain sequential")
     if contract.get("execution", {}).get("prefer_parallel_isolated_subagents") is not True:
-        errors.append("orchestration must prefer isolated parallel subagents when supported")
+        errors.append("planning/review must prefer isolated parallel subagents")
     if contract.get("execution", {}).get("sequential_isolation_fallback") is not True:
         errors.append("orchestration must retain isolated sequential fallback")
     delivery_fast = (contract.get("execution") or {}).get("delivery_fast_path") or {}
-    if int(delivery_fast.get("max_incremental_ai_overhead_percent") or -1) != 5:
-        errors.append("delivery fast-path AI overhead budget must be exactly 5 percent")
+    if not 1 <= int(delivery_fast.get("max_incremental_ai_overhead_percent") or -1) <= 5:
+        errors.append("delivery fast-path AI overhead budget must be within 1..5 percent")
     if delivery_fast.get("allow_default_subagents") is not False:
         errors.append("delivery fast path must forbid default subagents")
     if delivery_fast.get("allow_full_task_reread") is not False or delivery_fast.get("allow_full_knowledge_scan") is not False:
@@ -253,7 +257,7 @@ def validate_contract(base_root: Optional["str | Path"] = None) -> List[str]:
 
     workflow = config_loader.load_config(
         "governance/workflow.yaml", schema_name="workflow", base_root=root,
-        strict_unknown_fields=True, use_cache=False,
+        strict_unknown_fields=True, use_cache=True,
     )
     phases = set(((workflow.get("rules") or {}).get("phases") or {}).get("values") or [])
 
@@ -364,12 +368,13 @@ def _parse_detail(raw: Any) -> Dict[str, Any]:
         return {}
 
 
-def _load_task_facts(task_id: str, db_path: Optional[str] = None) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_progress: bool = False) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     path = dbmod.resolve_db_path(db_path, task_id=task_id)
     if not Path(path).is_file():
         raise OrchestrationError(f"database not found: {path}")
     conn = dbmod.connect_readonly(path)
     try:
+        conn.execute("BEGIN")
         row = conn.execute(
             "SELECT t.*, p.root_path AS project_root_path FROM task t "
             "LEFT JOIN project p ON p.project_id=t.project_id WHERE t.task_id=?",
@@ -378,15 +383,46 @@ def _load_task_facts(task_id: str, db_path: Optional[str] = None) -> Tuple[Dict[
         if row is None:
             raise OrchestrationError(f"task not found: {task_id}")
         events = conn.execute(
-            "SELECT id,task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,reason_code,summary,detail_json,workflow_version,created_at "
+            "SELECT id,task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,actor_agent,model_used,work_item_id,reason_code,summary,detail_json,workflow_version,created_at "
             "FROM task_event WHERE task_id=? ORDER BY id", (task_id,),
         ).fetchall()
-        return dict(row), [dict(e) for e in events]
+        task, facts = dict(row), [dict(e) for e in events]
+        task["_orchestration_overrides"] = orchestration_policy.read_rows(conn)
+        from . import event_policies
+        task["_retired"] = event_policies.is_task_retired(conn, task_id)
+        if include_progress:
+            from .report_cmd import task_progress_facts
+            task["_progress_facts"] = task_progress_facts(conn, task, events=facts, retired=task["_retired"])
+        if not task["_retired"] and task.get("current_state") in {"NEW", "ACTIVE"}:
+            from . import waiting
+            from . import event_policies
+            project_root = str(task.get("project_root_path") or "").strip()
+            task_dir = Path(project_root) / ".tp-spec" / "tasks" / task_id if project_root else None
+            task["_result_wait"] = waiting.result_wait(conn, task_id, facts, task_dir=task_dir)
+            if task_dir is not None:
+                current = event_policies.load_current_verification(conn, task_id, task_dir)
+                task["_current_verification"] = ({**current.detail, "event_id": int(current.row["id"])}
+                                                 if current else {})
+                task["_current_code_review"] = {}
+                if current:
+                    from .workflow_records import _latest_trusted_code_review
+                    try:
+                        reviewed = _latest_trusted_code_review(
+                            conn, task_id, task_dir=task_dir,
+                            subject_digest=str(current.detail.get("subject_digest") or ""),
+                            change_set_id=str(current.detail.get("change_set_id") or ""),
+                            verification_event_id=int(current.row["id"]),
+                        )
+                    except ValueError:
+                        pass  # No usable current review: route its prerequisite, not delivery.
+                    else:
+                        task["_current_code_review"] = {"event_id": int(reviewed.row["id"])}
+        return task, facts
     finally:
         conn.close()
 
 
-def _decision_signal_ids(events: Iterable[Dict[str, Any]]) -> Dict[str, int]:
+def _decision_signal_ids(events: Iterable[Dict[str, Any]], contract: Optional[Dict[str, Any]] = None) -> Dict[str, int]:
     """Return explicit machine workflow signals only.
 
     Historical DECISION summaries remain readable audit text but never drive
@@ -406,12 +442,14 @@ def _decision_signal_ids(events: Iterable[Dict[str, Any]]) -> Dict[str, int]:
             if value:
                 values.append(value)
         for value in values:
+            if contract is not None:
+                value = orchestration_policy.normalize_signal(value, contract["signals"])
             result[value] = max(result.get(value, 0), int(e.get("id") or 0))
     return result
 
 
-def _decision_signals(events: Iterable[Dict[str, Any]]) -> set[str]:
-    return set(_decision_signal_ids(events))
+def _decision_signals(events: Iterable[Dict[str, Any]], contract: Optional[Dict[str, Any]] = None) -> set[str]:
+    return set(_decision_signal_ids(events, contract))
 
 
 def _latest_verification(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -544,29 +582,67 @@ def _stage_included(step: Dict[str, Any], level: str, task: Dict[str, Any], even
     include = f"workflow:include-stage:{stage}"
     skip = f"workflow:skip-stage:{stage}"
     if skip in signals:
+        if stage in orchestration_policy.protected_stages(level):
+            raise OrchestrationError(f"PROTECTED_STAGE: {level}.{stage} cannot be skipped by a routing signal")
+        if include in signals:
+            raise OrchestrationError(f"CONFLICTING_STAGE_SIGNALS: {stage}")
         return False
-    if bool(step.get("required")) or include in signals or _stage_has_activity(stage, events):
+    if step["required"] or include in signals or _stage_has_activity(stage, events):
         return True
-    # A phase can contain more than one workflow stage (for example architecture
-    # and architecture_review).  Current phase alone is therefore only a safe
-    # resume hint when the stage name itself is the phase name.
     if stage == str(step.get("phase") or "") and str(task.get("current_stage") or "") == stage:
         return True
     trigger = step.get("trigger")
+    if trigger == "unresolved_scope":
+        # 无范围事实的新工作需要澄清；已有下游工作不要求倒补虚构前置事件。
+        return not any(_stage_has_activity(name, events) for name in
+                       ("requirement", "architecture", "planning", "development", "verification", "review"))
     if trigger == "architecture_risk":
-        return level == "L3"
+        return bool(task.get("_risk_signals") or signals & {
+            "workflow:security-risk", "workflow:database-risk", "workflow:multiple-feasible-routes"})
     if trigger == "behavioral_change":
-        return "workflow:behavioral-change" in signals
-    if trigger == "contextual":
-        return include in signals
+        snapshot = task.get("_current_change_set") or {}
+        empty_patch = "sha256:" + hashlib.sha256(b"").hexdigest()
+        changed = any(repo.get("untracked") or repo.get("tracked_patch_sha256") not in {None, empty_patch}
+                      for repo in snapshot.get("repositories", []))
+        return "workflow:behavioral-change" in signals or changed
     if trigger == "deep_review":
         return "workflow:deep-review" in signals
+    if trigger == "contextual" and stage == "planning":
+        development = _stage_completion_event("development", events) or {}
+        return _reassessment_id(events) > int(development.get("id") or 0)
     return False
+
+
+def _reassessment_id(events: List[Dict[str, Any]]) -> int:
+    """真实上游返修才使旧实现重评，普通新备注不等于需要重做。
+
+    工件和 ChangeSet 的新鲜度仍由原有独立校验保护。
+    """
+    latest = 0
+    failed_verification = 0
+    for event in events:
+        detail = _parse_detail(event.get("detail_json"))
+        if event.get("event_type") == "VERIFICATION_COMPLETED" and event.get("actor_role") == "tp-test-engineer":
+            decision = event_contract.normalize_event_semantics("VERIFICATION_COMPLETED", detail)["decision"]
+            failed_verification = int(event["id"]) if decision == "FAIL" else 0
+        # 已失败验证之后的真实需求/架构重评不能被当成普通备注跳过。
+        if failed_verification:
+            for stage in ("requirement", "architecture"):
+                completion = _stage_completion_event(stage, [event])
+                if completion is not None:
+                    latest = max(latest, failed_verification)
+        if (event.get("event_type") == "REVIEW_COMPLETED"
+                and event.get("actor_role") == "tp-software-architect"
+                and detail.get("review_kind") == "ARCHITECTURE"
+                and event_contract.normalize_event_semantics("REVIEW_COMPLETED", detail)["decision"] in {"REVISE", "FAIL", "NEEDS_FIX"}):
+            latest = max(latest, int(event["id"]))
+    return latest
 
 
 def _current_verification_for_delivery(events: List[Dict[str, Any]], task_dir: Optional[Path]) -> Optional[Dict[str, Any]]:
     verification = _latest_verification(events)
-    if not verification or verification["decision"] != "PASS":
+    if (not verification or verification["decision"] != "PASS"
+            or verification["detail"].get("verification_scope", "full") != "full"):
         return None
     subject_digest = str((verification.get("detail") or {}).get("subject_digest") or "")
     if not subject_digest:
@@ -585,7 +661,7 @@ def _delivery_completion_event(events: List[Dict[str, Any]], task_dir: Optional[
     return delivery_contract.find_delivery_completion_event(
         events,
         verification_event=verification["event"],
-        current_subject_digest=subject_digest,
+        current_subject_digest=subject_digest, task_dir=task_dir,
     )
 
 
@@ -692,7 +768,7 @@ def _knowledge_result_for_request(events: List[Dict[str, Any]], request: Dict[st
     return None
 
 
-def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]], contract: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Build compact deterministic input so delivery can do targeted convergence only."""
     facts: Dict[str, Dict[str, Any]] = {}
     knowledge_signals: List[Dict[str, Any]] = []
@@ -751,7 +827,7 @@ def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]]) -> D
             }
     return {
         "mode": "FAST_PATH",
-        "max_incremental_ai_overhead_percent": 5,
+        "max_incremental_ai_overhead_percent": (contract or load_contract())["execution"]["delivery_fast_path"]["max_incremental_ai_overhead_percent"],
         "task": {
             "task_id": task.get("task_id"),
             "risk_level": task.get("risk_level"),
@@ -832,6 +908,47 @@ def _decision_for_action(action: Optional[str]) -> str:
     }.get(str(action or ""), "NO_ACTION")
 
 
+def _validation_advice(task: Dict[str, Any]) -> Dict[str, Any]:
+    """Bounded inputs for impact selection, never a test result or authorization.
+
+    Reuse the captured product subject. Git paths and declared AC methods narrow
+    the investigation; they do not prove callers, coverage or server deployment.
+    """
+    snapshot = task.get("_current_change_set") or {}
+    changed: List[Dict[str, Any]] = []
+    paths_status = "unavailable" if not snapshot else "observed"
+    from .change_set import _run_git, _nul_paths, _is_product_path, ChangeSetError
+    for repo in snapshot.get("repositories", []):
+        root = Path(repo["root_locator"])
+        try:
+            raw = _run_git(root, "diff", "--no-ext-diff", "--no-textconv", "--name-only", "--no-renames", "-z", "HEAD", "--", ".", text=False)
+            paths = set(_nul_paths(raw)) | {str(row["path"]) for row in repo.get("untracked", [])}
+            changed.extend({"repo_root": str(root), "path": path} for path in sorted(paths) if _is_product_path(path))
+        except (OSError, ChangeSetError):
+            paths_status = "unavailable"
+    candidates = []
+    task_dir = task.get("_task_dir")
+    if task_dir is not None:
+        path = task_dir / "acceptance.md"
+        if path.is_file():
+            from .task_cmd import _acceptance_table_rows
+            for aid, row in _acceptance_table_rows(path.read_text(encoding="utf-8-sig")).items():
+                candidates.append({"id": aid, "method": row["cells"][5].strip(),
+                                   "witness": row["witness"], "declared_verdict": row["verdict"]})
+    return {
+        "scope": "affected", "coverage_complete": False, "authorization_granted": False,
+        "verification_scope": "technical" if task.get("_full_repository_scope") is False else "full",
+        "change_set_id": snapshot.get("content_digest"),
+        "diff_basis": "each bound repository HEAD to current worktree; not the complete task history",
+        "changed_paths_status": paths_status,
+        "changed_files": changed[:64], "changed_file_count": len(changed),
+        "acceptance_source": "acceptance.md", "acceptance_candidates": candidates[:12],
+        "acceptance_candidate_count": len(candidates),
+        "usage_mapping": "requires_actual_callers", "risk_signals": task.get("_risk_signals", []),
+        "instructions": "先复用相关测试，核对实际调用方/当前AC/风险再选检查；不按Diff行数降风险。候选不是必跑清单；未确定影响不默认全量。编译、浏览器和副作用沿用既有授权，未运行不记PASS。",
+    }
+
+
 def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], role_id: Optional[str],
                 skill_path: Optional[str], execution_mode: str = "DIRECT", confirmation_required: bool = False,
                 confirmation_reason: Optional[str] = None, blocker: Optional[str] = None,
@@ -872,11 +989,24 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
         "recommended_action": action,
         "reason_codes": reason_codes or [],
         "risk_escalation_signals": list(task.get("_risk_escalation_signals") or []),
-        "recommended_roles": recommended_roles or [],
+        "recommended_roles": recommended_roles if recommended_roles is not None else (task.get("_role_recommendations") or {}).get(next_stage, []),
+        "policy_sources": task.get("_policy_sources", {}),
+        "risk_signals": list(task.get("_risk_signals", [])),
         "recommended_skills": sorted({str(x) for x in (recommended_skills or []) if str(x)}),
     }
+    contract = task.get("_effective_contract")
+    if contract is not None:
+        data["included_stages"] = [step["stage"] for step in contract["pipelines"][level]
+            if _stage_included(step, level, task, task["_events"], task["_signals"])]
+    if action == "dispatch_role" and next_stage in {"development", "verification", "review"}:
+        context = dict(context or {})
+        context["validation"] = _validation_advice(task)
+        data["recommended_skills"] = sorted(set(data["recommended_skills"]) | {"testing-strategy"})
     if allowed is not None:
         data["allowed_effects"] = allowed
+    if task.get("_current_effective", {}).get("status", "ABSENT") != "ABSENT":
+        context = dict(context or {})
+        context["current_effective"] = task["_current_effective"]
     if context is not None:
         data["context"] = context
     if confirmation_binding is not None:
@@ -899,6 +1029,18 @@ def _route_role_boundary(task: Dict[str, Any], level: str, events: List[Dict[str
                          required_effects: Optional[Iterable[str]] = None,
                          allowed_effects: Optional[Iterable[str]] = None,
                          recommended_roles: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    # 返修早返回与常规流水段使用同一执行边界；角色名不授予写权限。
+    required_effects = list(required_effects) if required_effects is not None else (["repo_mutation"] if next_stage == "development" else [])
+    if allowed_effects is not None:
+        missing = sorted(set(required_effects) - set(allowed_effects))
+        if missing:
+            return _route_dict(
+                task, level, next_stage=next_stage, role_id=None, skill_path=None,
+                execution_mode=execution_mode, reason_codes=["EXECUTION_BOUNDARY_REACHED"],
+                action="await_effect_approval", context=context, transition_from_role=source_role,
+                confirmation_policy=policy, required_effects=missing, allowed_effects=allowed_effects,
+                decision_reason="effect_not_allowed", recommended_roles=recommended_roles,
+            )
     binding: Optional[Dict[str, Any]] = None
     wake_prompt: Optional[str] = None
     transition = bool(source_event and source_role and source_role != role_id)
@@ -958,6 +1100,9 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
         if unknown_allowed:
             raise OrchestrationError(f"unknown allowed effects: {unknown_allowed}")
     task, events = _load_task_facts(task_id, db_path)
+    contract = orchestration_policy.resolve(contract, catalog, task["_orchestration_overrides"],
+                                            project_id=str(task["project_id"]), task_id=task_id)
+    task["_policy_sources"] = contract["_policy_sources"]
     try:
         policy = workflow_controls.resolve_confirmation_policy(
             confirmation_policy,
@@ -984,25 +1129,66 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
         if _rank(floor) > _rank(level):
             level = floor
     task["_risk_escalation_signals"] = list(risk_scan.get("signals") or []) if _rank(str(risk_scan.get("floor") or "")) > _rank(resolve_effective_level(task.get("risk_level"), task.get("flow_level"))) else []
+    task["_task_dir"] = task_dir
+    from . import current_context
+    task["_current_effective"] = current_context.read_current(task_dir, task_id=task_id)
+    task["_risk_signals"] = list(risk_scan.get("signals") or [])
     role_map = {str(r["workflow_role"]): r for r in catalog.get("roles") or []}
-    signal_ids = _decision_signal_ids(events)
+    signal_ids = _decision_signal_ids(events, contract)
     signals = set(signal_ids)
+    task["_effective_contract"], task["_events"], task["_signals"] = contract, events, signals
+    task["_role_recommendations"] = {
+        stage: _conditional_role_recommendations(contract, catalog, phase=phase,
+                 signals=signals, risk_signals=task["_risk_signals"])
+        for stage, (_, phase) in orchestration_policy.STAGES.items()
+    }
 
+    if task.get("_retired"):
+        return _route_dict(task, level, next_stage=None, role_id=None, skill_path=None,
+                           reason_codes=["TASK_RETIRED"], action="none", confirmation_policy=policy)
     if state in TERMINAL:
         return _route_dict(task, level, next_stage=None, role_id=None, skill_path=None,
                            reason_codes=["TASK_TERMINAL"], action="none", confirmation_policy=policy)
     if state == "BLOCKED":
         blocker = next((str(e.get("summary") or "") for e in reversed(events) if e.get("event_type") == "BLOCKER"), "task is BLOCKED")
-        return _route_dict(task, level, next_stage=None, role_id=None, skill_path=None,
+        from .waiting import active_wait
+        waiting_fact = active_wait(events, state)
+        result = _route_dict(task, level, next_stage=None, role_id=None, skill_path=None,
                            blocker=blocker, reason_codes=["TASK_BLOCKED"], action="task_resume_after_resolution",
-                           confirmation_policy=policy)
+                           confirmation_policy=policy, context={"waiting": waiting_fact} if waiting_fact else None)
+        if waiting_fact:
+            result["next_responsibility"] = waiting_fact["responsibility"]
+            result["requires_human"] = waiting_fact["responsibility"] == "human_owner"
+        return result
+
+    pending_wait = task.get("_result_wait") or {}
+    if pending_wait:
+        result = _route_dict(
+            task, level, next_stage=pending_wait["source_stage"], role_id=None, skill_path=None,
+            blocker=pending_wait["reason"], reason_codes=[pending_wait["reason_code"]],
+            action="none", confirmation_policy=policy, context={"waiting": pending_wait},
+            decision_reason="prerequisite_unchanged",
+        )
+        result["next_responsibility"] = pending_wait["responsibility"]
+        result["requires_human"] = pending_wait["responsibility"] == "human_owner"
+        return result
+
+    if task["_current_effective"]["status"] in current_context.UNUSABLE:
+        result = _route_dict(
+            task, level, next_stage=None, role_id=None, skill_path=None,
+            action="none", reason_codes=["CURRENT_CONTEXT_UNRESOLVED"],
+            blocker=current_context.RECOVERY, confirmation_policy=policy,
+            decision_reason="current_context_unresolved",
+        )
+        result["next_responsibility"] = "tp-software-lifecycle"
+        return result
 
     review = _latest_arch_review(events)
-    if review and review["decision"] in {"REVISE", "BLOCKED"}:
+    if review and review["decision"] == "REVISE":
         architecture_after_review = _stage_completion_event("architecture", events)
         if not architecture_after_review or int(architecture_after_review.get("id") or 0) <= int(review["event"].get("id") or 0):
             role = role_map["tp-software-architect"]
-            code = "ARCHITECTURE_REVIEW_REVISE" if review["decision"] == "REVISE" else "ARCHITECTURE_REVIEW_BLOCKED_REWORK"
+            code = "ARCHITECTURE_REVIEW_REVISE"
             mode = "COMPARATIVE" if "workflow:multiple-feasible-routes" in signals else "DIRECT"
             return _route_role_boundary(
                 task, level, events, policy=policy, next_stage="architecture",
@@ -1012,7 +1198,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             )
 
     code_review = _latest_code_review(events)
-    if code_review and code_review["decision"] in {"NEEDS_FIX", "REVISE", "FAIL", "BLOCKED"}:
+    if code_review and code_review["decision"] in {"NEEDS_FIX", "REVISE", "FAIL"}:
         development_after_review = _stage_completion_event("development", events)
         if not development_after_review or int(development_after_review.get("id") or 0) <= int(code_review["event"].get("id") or 0):
             return _route_role_boundary(
@@ -1051,6 +1237,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                 skill_path=str(role_map[rid]["skill_path"]), execution_mode=mode,
                 reason_codes=[code], source_event=verification["event"],
                 source_stage="verification", source_role="tp-test-engineer",
+                allowed_effects=allowed_set,
             )
 
     development_activity = _latest_checkpoint_activity(
@@ -1069,13 +1256,25 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                 allowed_effects=allowed_set,
             )
 
+    current_verification_required = False
+    current_review_required = False
     development_binding = _development_change_set_binding(events)
+    # Final scope checks also run for legacy bindings without repository locators.
+    known_scope = delivery_contract.repository_scope(events)
     if development_binding and development_binding.get("change_set_id") and development_binding.get("repo_roots"):
+        if int(development_binding["event"]["id"]) <= known_scope["scope_event_id"]:
+            return _full_repository_scope_wait(task, level, policy)
         try:
             current_change_set = _current_bound_change_set(development_binding)
         except Exception as exc:
             raise OrchestrationError(f"CHANGE_SET_UNAVAILABLE: {exc}") from exc
-        if current_change_set and str(current_change_set.get("content_digest") or "") != development_binding["change_set_id"]:
+        task["_current_change_set"] = current_change_set
+        task["_full_repository_scope"] = delivery_contract.full_scope_matches(
+            known_scope, development_binding["detail"],
+            development_event_id=int(development_binding["event"]["id"]),
+        )
+        from .change_set import same_bound_product_content
+        if current_change_set and not same_bound_product_content(development_binding["detail"], current_change_set):
             source = code_review["event"] if code_review else development_binding["event"]
             source_stage = "review" if code_review else "development"
             source_role = "tp-code-reviewer" if code_review else "tp-development-engineer"
@@ -1088,30 +1287,64 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                 required_effects=["repo_mutation"], allowed_effects=allowed_set,
             )
 
+        if current_change_set and task_dir is not None:
+            # Reuse the same captured product subject. Routing must not repeatedly
+            # dispatch review/delivery against a PASS their normal preflight rejects.
+            current_pass = task.get("_current_verification") or {}
+            current_verification_required = (
+                current_pass.get("change_set_id") != current_change_set.get("content_digest")
+                or not verification
+                or current_pass.get("event_id") != int(verification["event"]["id"])
+            )
+            current_review_required = (
+                not code_review or (task.get("_current_code_review") or {}).get("event_id")
+                != int(code_review["event"]["id"])
+            )
+
     pipeline = (contract.get("pipelines") or {}).get(level) or []
     included = [s for s in pipeline if _stage_included(s, level, task, events, signals)]
     upstream_completion_id = 0
+    reassessment_id = _reassessment_id(events)
     previous_role: Optional[str] = None
     previous_stage: Optional[str] = None
     previous_completion: Optional[Dict[str, Any]] = None
     for step in included:
         stage = str(step["stage"])
         completion = _delivery_completion_event(events, task_dir) if stage == "delivery" else _stage_completion_event(stage, events)
-        if completion is not None and int(completion.get("id") or 0) > upstream_completion_id:
-            upstream_completion_id = int(completion.get("id") or 0)
+        if ((stage == "verification" and current_verification_required)
+                or (stage == "review" and current_review_required)):
+            completion = None
+        reusable_review = (stage == "review" and completion is not None
+                           and (task.get("_current_code_review") or {}).get("event_id") == int(completion["id"]))
+        if stage in {"verification", "review", "delivery"}:
+            dependency_id = upstream_completion_id
+        elif stage in {"architecture", "architecture_review", "planning", "development"}:
+            dependency_id = reassessment_id
+        else:
+            dependency_id = 0
+        if completion is not None and (int(completion.get("id") or 0) > dependency_id or reusable_review):
+            if stage in {"development", "verification", "review", "delivery"}:
+                upstream_completion_id = max(upstream_completion_id, int(completion.get("id") or 0))
             previous_role = str(step.get("role") or "") or None
             previous_stage = stage
             previous_completion = completion
             continue
+        if stage == "delivery" and development_binding and not delivery_contract.full_scope_matches(
+            known_scope, development_binding["detail"],
+            development_event_id=int(development_binding["event"]["id"]),
+        ):
+            return _full_repository_scope_wait(task, level, policy)
+        if stage == "delivery" and verification and verification["detail"].get("verification_scope") == "technical":
+            return _full_verification_wait(task, level, policy)
         rid = str(step["role"])
         role = role_map.get(rid)
         if role is None:
             raise OrchestrationError(f"pipeline references unknown role: {rid}")
         mode = _execution_mode(step, level, signals)
-        context = _delivery_fact_pack(task, events) if stage == "delivery" else None
+        context = _delivery_fact_pack(task, events, contract) if stage == "delivery" else None
         recommended_roles = _conditional_role_recommendations(
             contract, catalog, phase=str(step.get("phase") or stage), signals=signals,
-            risk_signals=task.get("_risk_escalation_signals") or [],
+            risk_signals=task.get("_risk_signals") or [],
         )
         step_effects = [str(x) for x in (step.get("effects") or [])]
         if allowed_set is not None:
@@ -1162,7 +1395,8 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
         return _route_role_boundary(
             task, level, events, policy=policy, next_stage=stage, role_id=rid,
             skill_path=str(role["skill_path"]), execution_mode=mode,
-            reason_codes=["NEXT_STAGE_RESOLVED"], source_event=previous_completion,
+            reason_codes=["CURRENT_VERIFICATION_REQUIRED" if stage == "verification" and current_verification_required
+                          else "NEXT_STAGE_RESOLVED"], source_event=previous_completion,
             source_stage=previous_stage, source_role=previous_role, context=context,
             human_confirmation_already_satisfied=material_satisfied,
             required_effects=step_effects, allowed_effects=allowed_set,
@@ -1187,9 +1421,40 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             },
         )
 
+    if development_binding and not delivery_contract.full_scope_matches(
+        known_scope, development_binding["detail"],
+        development_event_id=int(development_binding["event"]["id"]),
+    ):
+        return _full_repository_scope_wait(task, level, policy)
+    if verification and verification["detail"].get("verification_scope") == "technical":
+        return _full_verification_wait(task, level, policy)
     return _route_dict(task, level, next_stage="complete", role_id=None, skill_path=None,
                        reason_codes=["PIPELINE_COMPLETE"], action="task_complete",
                        confirmation_policy=policy)
+
+
+def _full_repository_scope_wait(task: Dict[str, Any], level: str, policy: str) -> Dict[str, Any]:
+    reason = "当前开发记录仅覆盖局部仓库或早于有效范围决定，不能据此授予整任务PASS。"
+    waiting = {"reason": reason, "reason_code": "FULL_SCOPE_CHECKPOINT_REQUIRED",
+               "responsibility": "tp-software-lifecycle",
+               "condition": "在已有授权内用默认development checkpoint绑定已登记完整范围，再按影响取得完整验收证据；不要求重做代码或自动全量回归。"}
+    result = _route_dict(task, level, next_stage="verification", role_id=None, skill_path=None,
+                        action="none", blocker=reason, reason_codes=["FULL_SCOPE_CHECKPOINT_REQUIRED"],
+                        confirmation_policy=policy, context={"waiting": waiting})
+    result["next_responsibility"] = waiting["responsibility"]
+    return result
+
+
+def _full_verification_wait(task: Dict[str, Any], level: str, policy: str) -> Dict[str, Any]:
+    reason = "技术限定验证仅证明已列明检查；完整验证及必要视觉/人验尚未汇合。"
+    waiting = {"reason": reason, "reason_code": "FULL_VERIFICATION_REQUIRED",
+               "source_stage": "verification", "responsibility": "tp-test-engineer",
+               "condition": "取得当前主体的完整验证证据及必要验收处置后，执行默认 task verify 并重新查询 workflow next。"}
+    result = _route_dict(task, level, next_stage="verification", role_id=None, skill_path=None,
+                        reason_codes=["FULL_VERIFICATION_REQUIRED"], action="none", blocker=reason,
+                        context={"waiting": waiting}, confirmation_policy=policy)
+    result["next_responsibility"] = "tp-test-engineer"
+    return result
 
 
 def resolve_progress(
@@ -1216,17 +1481,24 @@ def resolve_progress(
         for item in (catalog.get("roles") or [])
         if isinstance(item, dict) and item.get("workflow_role")
     }
-    task, events = _load_task_facts(task_id, db_path)
+    task, events = _load_task_facts(task_id, db_path, include_progress=True)
+    contract = orchestration_policy.resolve(contract, catalog, task["_orchestration_overrides"],
+                                            project_id=str(task["project_id"]), task_id=task_id)
     route = resolve_route(task_id, db_path=db_path, base_root=root)
+    task["_risk_signals"] = route.get("risk_signals", [])
     level = str(route.get("effective_level") or resolve_effective_level(task.get("risk_level"), task.get("flow_level")))
-    signals = _decision_signals(events)
+    signals = _decision_signals(events, contract)
     pipeline = (contract.get("pipelines") or {}).get(level) or []
-    included = [step for step in pipeline if _stage_included(step, level, task, events, signals)]
+    selected = route.get("included_stages")
+    included = [step for step in pipeline if (step["stage"] in selected if selected is not None
+                else _stage_included(step, level, task, events, signals))]
 
     project_root = str(task.get("project_root_path") or "").strip()
     task_dir = Path(project_root) / ".tp-spec" / "tasks" / task_id if project_root else None
     current_phase = str(task.get("current_stage") or "")
     task_state = str(task.get("current_state") or "")
+    waiting_fact = (route.get("context") or {}).get("waiting") or {}
+    waiting_stage = str(waiting_fact.get("source_stage") or current_phase) if waiting_fact else ""
     steps: List[Dict[str, Any]] = []
     completed_steps: List[Dict[str, Any]] = []
     current_step: Dict[str, Any] = {}
@@ -1238,7 +1510,19 @@ def resolve_progress(
         completion_source = ""
         completion_event_id = 0
         undeclared_completion = False
-        if completion is not None:
+        if task.get("_retired") or task_state in TERMINAL:
+            if completion is not None:
+                status = "已完成" if stage != "verification" or _parse_detail(completion.get("detail_json")).get("verification_scope") != "technical" else "技术检查通过（限定范围）"
+                completion_source = "runtime_event"
+                completion_event_id = int(completion.get("id") or 0)
+            else:
+                status = "已停止（历史阶段）"
+        elif waiting_fact and stage == waiting_stage:
+            status = "已阻塞"
+        elif (stage == "verification" and completion is not None
+              and _parse_detail(completion.get("detail_json")).get("verification_scope") == "technical"):
+            status = "技术检查通过（限定范围）"
+        elif completion is not None:
             status = "已完成"
             completion_source = "runtime_event"
             completion_event_id = int(completion.get("id") or 0)
@@ -1302,11 +1586,11 @@ def resolve_progress(
             "definition_source": "workflow.conditional_roles",
         })
 
-    next_stage = str(route.get("next_stage") or "")
+    next_stage = str(route.get("next_stage") or waiting_stage or "")
     next_step: Dict[str, Any] = {}
     if next_stage and next_stage != "complete":
         pipeline_step = next((item for item in steps if item["stage"] == next_stage), None)
-        next_role = str(route.get("role_id") or (pipeline_step or {}).get("role") or "")
+        next_role = str(waiting_fact.get("responsibility") or route.get("role_id") or (pipeline_step or {}).get("role") or "")
         next_action = str(route.get("recommended_action") or "")
         confirmation_reason = str(route.get("confirmation_reason") or "")
         next_step = {
@@ -1336,11 +1620,17 @@ def resolve_progress(
             "reason_codes": list(route.get("reason_codes") or []),
         }
 
+    if waiting_fact and next_step:
+        next_step["waiting"] = waiting_fact
     return {
         "effective_level": level,
+        **task["_progress_facts"],
+        "retired": bool(task.get("_retired")),
+        **({"current_effective": route["context"]["current_effective"]}
+           if "current_effective" in route.get("context", {}) else {}),
         "completed_steps": completed_steps,
         "current_step": current_step,
-        "current_step_source": "task.current_stage" if current_step else "unresolved",
+        "current_step_source": ("runtime_waiting" if waiting_fact else "task.current_stage") if current_step else "unresolved",
         "next_step": next_step,
         "next_step_source": "workflow_contract" if next_step else "none",
         "steps": steps,

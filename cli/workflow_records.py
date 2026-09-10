@@ -102,10 +102,7 @@ def _latest_trusted_verification(conn, task_id: str, task_dir: Path):
     from .digest import compute_verification_subject_digest
 
     current_subject = compute_verification_subject_digest(task_dir)
-    trusted = event_policies.load_trusted_governance_event(
-        conn, task_id, event_type='VERIFICATION_COMPLETED', actor='tp-test-engineer',
-        decision='PASS', expected_subject_digest=current_subject, evidence_dir=task_dir,
-    )
+    trusted = event_policies.load_current_verification(conn, task_id, task_dir, require_full=True)
     if trusted is None:
         raise ValueError('DELIVERY_REQUIRES_CURRENT_VERIFICATION_PASS')
     detail = dict(trusted.detail or {})
@@ -114,36 +111,72 @@ def _latest_trusted_verification(conn, task_id: str, task_dir: Path):
     if not change_set_id or not repo_roots:
         raise ValueError('DELIVERY_CHANGE_SET_MISMATCH: verification is not bound to a product change set')
     current_change_set = capture_change_set(repo_roots)
-    if str(current_change_set.get('content_digest') or '') != change_set_id:
+    from .change_set import same_bound_product_content
+    if not same_bound_product_content(detail, current_change_set):
         raise ValueError('DELIVERY_CHANGE_SET_MISMATCH: current product content differs from verification')
     return trusted, current_subject, current_change_set, repo_roots
 
 
 def _latest_trusted_code_review(conn, task_id: str, *, subject_digest: str,
-                                change_set_id: str, verification_event_id: int):
+                                change_set_id: str, verification_event_id: int, task_dir: Path):
     from . import event_policies
+    from .digest import compute_text_artifact_file_digest
+    from .evidence import validate_evidence_path
 
-    candidates = []
-    for kind in ('CODE', 'IMPLEMENTATION', 'ULTRA_REVIEW'):
-        trusted = event_policies.load_trusted_governance_event(
-            conn, task_id, event_type='REVIEW_COMPLETED', actor='tp-code-reviewer',
-            decision='PASS', review_kind=kind, expected_subject_digest=subject_digest,
-        )
-        if trusted is not None:
-            candidates.append(trusted)
-    candidates.sort(key=lambda item: int(item.row['id']), reverse=True)
-    for trusted in candidates:
-        detail = dict(trusted.detail or {})
-        if str(detail.get('change_set_id') or '') != change_set_id:
-            continue
+    # CODE aliases share one outcome history. Filtering for PASS/kind first would
+    # revive an older approval after a new finding or BLOCKED result.
+    trusted = event_policies.load_trusted_governance_event(
+        conn, task_id, event_type='REVIEW_COMPLETED', actor='tp-code-reviewer',
+        decision='PASS', evidence_dir=task_dir, latest_only=True,
+    )
+    if trusted is not None:
+        detail = trusted.detail
+        count = detail.get('findings_count')
+        checked = validate_evidence_path(task_dir, detail.get('artifact'))
+        artifact_ok = checked.ok and compute_text_artifact_file_digest(task_dir / checked.path) == detail.get('artifact_digest')
         try:
-            bound_verification_id = int(detail.get('verification_event_id') or 0)
+            bound_id = int(detail.get('verification_event_id') or 0)
+            # A later full result can supplement an unchanged technical review.
+            # Revalidate its original evidence; a newer failure/changed subject
+            # cannot be erased by recording PASS again.
+            history = event_policies.load_trusted_governance_events(
+                conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer",
+                decision="PASS", evidence_dir=task_dir,
+            )
+            original = next((item for item in history if int(item.row["id"]) == bound_id), None)
+            scope = detail.get("verification_scope", "full")
+            from .change_set import same_bound_product_content
+            from .delivery_contract import load_repository_scope
+            scope_event_id = load_repository_scope(conn, task_id)["scope_event_id"]
+            current_verification = next((item for item in history if int(item.row["id"]) == int(verification_event_id)), None)
+            current_snapshot = (current_verification.detail.get("change_set") or {}) if current_verification else {}
+            valid_ids = {int(item.row["id"]) for item in history
+                         if event_policies.verification_subject_matches(item.detail, task_dir)
+                         and item.detail.get("change_set_id") == change_set_id
+                         and int(item.row["id"]) > scope_event_id
+                         and same_bound_product_content(item.detail, current_snapshot)}
+            later_ids = {int(row[0]) for row in conn.execute(
+                "SELECT id FROM task_event WHERE task_id=? AND event_type='VERIFICATION_COMPLETED' "
+                "AND actor_role='tp-test-engineer' AND id>? AND id<=?",
+                (task_id, bound_id, int(verification_event_id)),
+            )}
+            verification_matches = bool(
+                original and 0 < bound_id <= int(verification_event_id)
+                # Q02 permits supplementing an explicitly technical review, not
+                # changing the existing review policy for ordinary full results.
+                and (bound_id == int(verification_event_id) or scope == "technical")
+                and bound_id in valid_ids and int(verification_event_id) in valid_ids
+                and later_ids.issubset(valid_ids)
+                and scope == event_policies.verification_scope(original.detail)
+                and detail.get("subject_digest") == original.detail.get("subject_digest")
+            )
         except (TypeError, ValueError):
-            continue
-        if bound_verification_id != int(verification_event_id):
-            continue
-        return trusted
-    raise ValueError('DELIVERY_CHANGE_SET_MISMATCH: current code review PASS is missing or stale')
+            verification_matches = False
+        if (str(detail.get('review_kind') or '').upper() in {'CODE', 'IMPLEMENTATION', 'ULTRA_REVIEW'}
+                and type(count) is int and count >= 0 and artifact_ok
+                and str(detail.get('change_set_id') or '') == change_set_id and verification_matches):
+            return trusted
+    raise ValueError('DELIVERY_CHANGE_SET_MISMATCH: current code review PASS is missing, invalid or stale')
 
 
 def confirm_boundary(*, task_id: str, task_dir: str, db: Optional[str] = None,
@@ -400,9 +433,11 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
         change_set_id = str(verification_detail.get('change_set_id') or '')
         review = _latest_trusted_code_review(
             conn, task_id, subject_digest=subject_digest, change_set_id=change_set_id,
-            verification_event_id=int(verification.row['id']),
+            verification_event_id=int(verification.row['id']), task_dir=tdir,
         )
         review_detail = dict(review.detail or {})
+        if str(delivery_status or '').upper() == 'READY':
+            record_first.validate_final_acceptance(conn, task_id, tdir)
         evidence_paths, evidence_items = _checked_evidence_items(tdir, evidence)
         residual_risk_list = list(residual_risks or [])
         now = dbmod.now_iso()
@@ -451,6 +486,25 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
         written: Dict[str, Any] = {}
 
         def writer(dbconn, transaction_id=''):
+            from .recording import validate_bound_items
+            validate_bound_items(tdir, evidence_items)
+            # The result must bind the prerequisites checked under the write lock,
+            # not an earlier preflight that another caller/file edit invalidated.
+            checked_verification, checked_subject, checked_change_set, _ = _latest_trusted_verification(
+                dbconn, task_id, tdir
+            )
+            checked_review = _latest_trusted_code_review(
+                dbconn, task_id, task_dir=tdir, subject_digest=checked_subject,
+                change_set_id=str(checked_change_set.get('content_digest') or ''),
+                verification_event_id=int(checked_verification.row['id']),
+            )
+            if (int(checked_verification.row['id']) != verification_id
+                    or int(checked_review.row['id']) != review_id
+                    or checked_subject != subject_digest
+                    or str(checked_change_set.get('content_digest') or '') != change_set_id):
+                raise ValueError('DELIVERY_CHANGE_SET_MISMATCH: prerequisites changed before write')
+            if str(delivery_status or '').upper() == 'READY':
+                record_first.validate_final_acceptance(dbconn, task_id, tdir)
             detail = build_delivery_detail(transaction_id=transaction_id, **detail_args)
             status = str(detail['delivery_status']).upper()
             cursor = dbconn.execute(

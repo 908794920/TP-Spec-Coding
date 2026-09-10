@@ -92,7 +92,7 @@ base_version: 5.1.3
         self.assertEqual(result["status"], "BLOCKED")
         self.assertIn("broken", (self.workspace / "AGENTS.md").read_text(encoding="utf-8"))
 
-    def test_redundant_machine_roots_are_removed_and_empty_override_deleted(self):
+    def test_redundant_machine_roots_are_removed_but_explicit_enabled_overrides_remain(self):
         write(self.workspace / ".tp-spec/config/content-systems.yaml", yaml.safe_dump({
             "schema": "tp-spec.content-systems/v1",
             "paths": {"tp_spec_root": ""},
@@ -103,7 +103,9 @@ base_version: 5.1.3
         }, sort_keys=False))
         result = normalize_project_portability(self.workspace, installation_config=self.install, apply=True)
         self.assertEqual(result["status"], "CURRENT")
-        self.assertFalse((self.workspace / ".tp-spec/config/content-systems.yaml").exists())
+        data = yaml.safe_load((self.workspace / ".tp-spec/config/content-systems.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(data["systems"], {"wiki": {"enabled": True}, "knowledge": {"enabled": True}})
+        self.assertNotIn("paths", data)
 
     def test_project_semantic_override_survives_machine_root_cleanup(self):
         write(self.workspace / ".tp-spec/config/content-systems.yaml", yaml.safe_dump({

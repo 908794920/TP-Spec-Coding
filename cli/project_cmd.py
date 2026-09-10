@@ -292,18 +292,39 @@ def cmd_project_upgrade_contract(args) -> int:
     if not os.path.isfile(db_path):
         print(f"ERROR: database not found: {db_path}", file=sys.stderr)
         return 4
-    conn = dbmod.connect(db_path)
+    conn = dbmod.connect_readonly(db_path)
     try:
+        schema_ok, schema_issues = dbmod.verify_schema(conn)
+        if not schema_ok:
+            print(f"ERROR: SCHEMA_MISMATCH: {schema_issues}; contract switch is not a database schema migration", file=sys.stderr)
+            return 6
         row = conn.execute("SELECT * FROM project WHERE project_id=?", (project_id,)).fetchone()
         if row is None:
             print(f"ERROR: project not found in DB: {project_id}", file=sys.stderr)
             return 4
         old = str(row["base_version"] or "")
+        from .migrations import contract_migration_policy
+        policy = contract_migration_policy(old, target)
+        if not policy["migration_supported"]:
+            print(f"ERROR: UNSUPPORTED_MIGRATION_SOURCE: project contract {old!r} -> {target}; no changes", file=sys.stderr)
+            return 6
+
+        def sync_registry() -> str:
+            try:
+                return str(dbmod.update_registered_project_contract(
+                    project_id, target, getattr(args, "registry", None))).lower()
+            except Exception as exc:
+                # The resolver cache is not the committed Project contract.
+                print(f"WARN: project contract committed; registry=PENDING: {type(exc).__name__}: {exc}; "
+                      "repeat project upgrade-contract for the same project to repair the cache; task rows unchanged",
+                      file=sys.stderr)
+                return "pending"
+
         if args.dry_run:
             print(f"project upgrade-contract dry-run: {project_id} {old or '<empty>'} -> {target}; task rows unchanged")
             return 0
         if old == target:
-            updated_registry = dbmod.update_registered_project_contract(project_id, target, getattr(args, "registry", None))
+            updated_registry = sync_registry()
             print(f"project upgrade-contract: already current ({project_id} -> {target}); registry_updated={str(updated_registry).lower()}")
             return 0
         now = dbmod.now_iso()
@@ -315,7 +336,12 @@ def cmd_project_upgrade_contract(args) -> int:
             "policy": "project_contract_switch_only; active tasks require explicit task migrate",
         }
         import json
+        conn.close()
+        conn = dbmod.connect(db_path)
         with dbmod.transactional(conn):
+            latest = conn.execute("SELECT * FROM project WHERE project_id=?", (project_id,)).fetchone()
+            if latest is None or dict(latest) != dict(row) or not dbmod.verify_schema(conn)[0]:
+                raise ValueError("PROJECT_CONTRACT_CHANGED: replan before switching project contract")
             conn.execute("UPDATE project SET base_version=?, updated_at=? WHERE project_id=?", (target, now, project_id))
             conn.execute("""
                 INSERT INTO config (key, scope, scope_id, value_json, description, updated_at)
@@ -323,7 +349,7 @@ def cmd_project_upgrade_contract(args) -> int:
                 ON CONFLICT(key, scope, scope_id) DO UPDATE SET
                   value_json=excluded.value_json, description=excluded.description, updated_at=excluded.updated_at
             """, (project_id, json.dumps(audit, ensure_ascii=False), now))
-        updated_registry = dbmod.update_registered_project_contract(project_id, target, getattr(args, "registry", None))
+        updated_registry = sync_registry()
         print(
             f"project upgrade-contract: {project_id} {old or '<empty>'} -> {target}; "
             f"task rows unchanged; registry_updated={str(updated_registry).lower()}"

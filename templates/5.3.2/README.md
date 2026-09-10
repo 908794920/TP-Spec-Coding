@@ -17,6 +17,12 @@
 
 其他模板均是**按需工件**：有内容价值才创建，不存在不阻塞任务。没有真实澄清、决策或架构内容时不创建空工件。
 
+## 当前有效区（按需）
+
+Task 与 canonical Requirement 中只有一处维护 `tp-spec:current` 标记之间的必要业务内容：当前目标、范围/非范围、有效决定和来源、验收与操作边界。已有 Requirement 承担需求时优先沿用它，Task 留短指针；没有 Requirement 的局部任务直接使用 Task。不新增文件、不为填写标记补问卷。模板只有空标题/注释时视为没有当前区。
+
+旧决定留在标记外的历史区或已有 `requirement-decisions.md`，保留 `SUPERSEDED`、继任及依据；不得为精简删除唯一授权来源。接续和路由只摘取当前区并标明来源，不解析自然语言来授予权限。具体读取/限制见现有 [生命周期说明](../../docs/agents/tp-software-lifecycle.md)。
+
 ## Requirement Frontier（条件方法）
 
 Requirement Frontier 只用于复杂 L2/L3 且多个关键决策存在前置依赖的需求；L0/L1、单一问题和无依赖决策仍走最小澄清路径，不增加固定问卷。它只复用 `requirement.md`、`requirement-clarifications.md` 和 `requirement-decisions.md`，不新增 Runtime state、workflow stage、Task Event、数据库或固定工件。

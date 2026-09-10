@@ -13,11 +13,11 @@ BASE = Path(__file__).resolve().parents[2]
 PROJECT_ID = "p-test"
 
 
-def run(argv: list[str], *, refresh_card: bool = False):
+def run(argv: list[str]):
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         try:
-            rc = invoke_main(argv, refresh_card=refresh_card)
+            rc = invoke_main(argv)
         except SystemExit as exc:
             rc = exc.code if isinstance(exc.code, int) else 1
     return rc, out.getvalue(), err.getvalue()

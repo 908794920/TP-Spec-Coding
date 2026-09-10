@@ -83,7 +83,7 @@ Task 6 已逐项审计原 19 个 `REVIEW` 文件：Git/SQLite 均位于 test-loc
 | `scripts/tests/test_c5_s1_validator.py` | 15 | `integration` | `base` | `KEEP_REGRESSION` | Y | - | Y | - | - | - | - | - | `YES` | c5 s1 validator regression/compatibility contract |
 | `scripts/tests/test_card_workflow_semantics.py` | 9 | `integration` | `cards`, `workflow` | `KEEP_INDEPENDENT_CONTRACT` | - | Y | - | - | - | - | Y | - | `YES` | workflow step, execution-role, conditional-role, terminal and rework presentation semantics |
 | `scripts/tests/test_config_loader.py` | 16 | `contract` | `base` | `KEEP_REGRESSION` | - | - | - | - | - | - | - | - | `YES` | governance/config parser validation, error codes, and supported success paths |
-| `scripts/tests/test_test_suite_governance.py` | 18 | `contract` | `release`, `base` | `KEEP_INDEPENDENT_CONTRACT` | - | - | - | - | - | - | - | - | `YES` | pytest catalog completeness, marker taxonomy, fail-closed classification, and coverage mapping |
+| `scripts/tests/test_test_suite_governance.py` | 19 | `contract` | `release`, `base` | `KEEP_INDEPENDENT_CONTRACT` | - | - | - | - | - | - | - | - | `YES` | pytest catalog completeness, marker taxonomy, fail-closed classification, and coverage mapping |
 | `scripts/tests/test_v510_active_contract.py` | 10 | `integration` | `base` | `KEEP_REGRESSION` | - | Y | - | - | - | - | - | - | `YES` | v510 active contract regression/compatibility contract |
 | `scripts/tests/test_v510_runtime_defaults.py` | 4 | `contract` | `runtime` | `KEEP_REGRESSION` | - | - | - | - | - | - | - | - | `YES` | v510 runtime defaults regression/compatibility contract |
 | `scripts/tests/test_v510_version_purity.py` | 6 | `contract` | `release` | `KEEP_REGRESSION` | Y | - | - | - | - | - | - | - | `YES` | v510 version purity regression/compatibility contract |
@@ -261,7 +261,7 @@ python -m pytest -q --durations=50
 | `-m "cards and not slow"` | 105 / 985 | 105 passed，880 deselected，27.17s |
 | `-m "workflow and not slow"` | 191 / 985 | collection 正确；pytest 9.0.2 在既有 `test_v522_workflow_delivery_hardening.py` 组合执行上挂起，未得到正式 PASS/FAIL 总结 |
 
-`workflow` 的挂起不通过把该文件误标为 `slow` 或 `serial` 来规避。使用 Task 3 commit `bb62f31` 的未修改代码在同一 pytest 9.0.2 环境运行该问题文件也会组合挂起，因此该现象不是 Task 4/5 marker 改造引入。仓库正式开发依赖仍为 `pytest>=8,<9`；Task 6/7 将继续从隔离与真实 duration 两侧调查。
+`workflow` 的挂起不通过把该文件误标为 `slow` 或 `serial` 来规避。使用 Task 3 commit `bb62f31` 的未修改代码在同一 pytest 9.0.2 环境运行该问题文件也会组合挂起，因此该现象不是 Task 4/5 marker 改造引入。当时仓库正式开发依赖为 `pytest>=8,<9`；这是历史环境记录，当前候选口径见第 14.12 节。
 
 ## 8. Fail-closed 规则
 
@@ -273,7 +273,7 @@ python -m pytest -q --durations=50
 
 ## 9. 已知限制与后续 Task
 
-- 当前容器安装 pytest 9.0.2，而仓库 `requirements-dev.txt` 约束 `pytest>=8,<9`；本阶段 collection/定向 marker 验证可执行，但正式全量性能结论不得以 pytest 9 代替项目支持环境。
+- 历史环境记录：当时容器安装 pytest 9.0.2，而仓库 `requirements-dev.txt` 约束 `pytest>=8,<9`；该阶段 collection/定向 marker 验证可执行，但正式全量性能结论不得以 pytest 9 代替当时项目支持环境。当前候选口径见第 14.12 节。
 - Task 6：已完成 helper 收敛、function-scoped env/CWD 边界与并行候选审计。
 - Task 7：已完成真实 duration profiling；Knowledge immutable-template 因收益不足不实施，并补齐 evidence-based `slow`。
 - Task 8：只有固定 worker pilot 证明收益才考虑 xdist；不默认引入依赖。
@@ -304,7 +304,7 @@ python -m pytest -q --durations=50
 
 ## 11. Task 7：duration profiling 与性能决策
 
-当前容器仍是 pytest 9.0.2，正式依赖要求 `pytest>=8,<9`，因此这些数据用于**相对热点和是否值得优化**，不替代最终正式 Release timing。
+Task 7 的历史测量使用 pytest 9.0.2，正式依赖当时要求 `pytest>=8,<9`，因此这些数据用于**相对热点和是否值得优化**，不替代当时正式 Release timing；当前候选口径见第 14.12 节。
 
 ### 11.1 Knowledge fixture 结论
 
@@ -396,9 +396,9 @@ Task 9 当前 collection 为 995 tests；快速 Gate 实测 514 passed / 481 des
 ### 14.1 最终环境与执行边界
 
 - 当前代码版本保持 `v5.3.0`；本次治理没有发布所有者授权，不额外提升版本号。
-- 当前容器为 Python 3.13.5 / pytest 9.0.2，而仓库正式约束仍是 `pytest>=8,<9`。容器离线，无法安装受支持的 pytest 8.x。
-- 容器全局存在仓库未声明的 pytest 插件（如 ddtrace/asyncio/cov/jsonreport）。这些插件会导致部分 subprocess-heavy 测试在 pytest 已输出 PASS 后进程不退出，因此最终测试统一使用 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`，以接近 CI 仅安装 `requirements-dev.txt` 的受控插件面。
-- 当前环境没有 `pwsh`/Windows runner，因此 Windows Full Gate 明确记录为 **NOT RUN**，不能宣称跨平台 Release Gate 完整通过。
+- 历史环境记录：当时容器为 Python 3.13.5 / pytest 9.0.2，而仓库正式约束为 `pytest>=8,<9`；容器离线，无法安装受支持的 pytest 8.x。当前候选口径见第 14.12 节。
+- 历史环境记录：容器全局存在仓库未声明的 pytest 插件（如 ddtrace/asyncio/cov/jsonreport）。这些插件会导致部分 subprocess-heavy 测试在 pytest 已输出 PASS 后进程不退出，因此当时测试统一使用 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`，以接近 CI 仅安装 `requirements-dev.txt` 的受控插件面。
+- 历史环境记录：当时没有 `pwsh`/Windows runner，因此 Windows Full Gate 记录为 **NOT RUN**；不能用该历史记录宣称跨平台 Release Gate 完整通过。
 
 ### 14.2 最终完整 pytest
 
@@ -504,8 +504,8 @@ Task 3 已使用真实 Chromium 对任务卡进行桌面 1440px 与移动 390px 
 
 ### 14.9 未解决限制
 
-1. Windows Full Gate：当前无 `pwsh`，未执行。
-2. pytest 版本：当前容器为 9.0.2，不是仓库声明的 `<9` 支持面；通过关闭非项目 plugin autoload 获得可重复完整回归，但 CI/Windows 仍需在正式依赖环境继续验证。
+1. Windows Full Gate：历史记录中当时无 `pwsh`，未执行；当前候选的 Windows Full Gate 结果见 B17b 接续记录。
+2. pytest 版本：历史容器为 9.0.2，不是当时仓库声明的 `<9` 支持面；通过关闭非项目 plugin autoload 获得可重复完整回归。当前候选已固定 `pytest==9.1.1`，其本机证据见第 14.12 节。
 3. `test_v522_workflow_delivery_hardening.py` 等 subprocess-heavy 测试在容器全局 plugin autoload 打开时存在进程退出异常；仓库不为此引入 skip/xfail 或生产代码变更。
 4. xdist 未采用；若后续具备 Linux/Windows runner，可重新执行固定 `-n 2 --dist loadfile` pilot。
 
@@ -542,10 +542,10 @@ Task 3 已使用真实 Chromium 对任务卡进行桌面 1440px 与移动 390px 
 - Git fixture 不是主要瓶颈：`autonomy_testutil.git_repo` 单次初始化约 21ms，因此不引入 immutable Git template/cache。
 - `config_loader` / `workflow_loader` cache teardown A/B 未改善长进程退化，因此没有加入“每 test 清缓存”的无效复杂度。
 
-**test-only 执行优化：**
+**历史 test-only 执行优化（v5.3.2 实施前，不是当前生产契约）：**
 
-- 新增 `scripts/tests/cli_testutil.py`，只服务测试：复用静态 argparse parser；默认抑制不属于当前契约的 Card 自动刷新。
-- `runtime_testutil.run()` / `autonomy_testutil.run()` 统一使用该 executor；需要验证真实 Card 自动刷新时必须显式 `refresh_card=True`，Card 专门测试仍走真实自动刷新路径。
+- 当时 `scripts/tests/cli_testutil.py` 复用静态 argparse parser，并在测试中抑制 Card 自动刷新。当前已删除抑制逻辑，生产入口自身就是显式卡片策略。
+- 当前 executor 仅保留 parser 复用；不存在 `refresh_card` 测试开关。`test_v532_cli_contract.py` 直接调用生产入口，观察真实卡片调用与旧 HTML 的内容、修改时间；显式卡片测试单独验证渲染。
 - 多个遗留 direct `climain.main()` 调用迁移到统一 executor，避免同一套测试框架出现两种成本模型。
 - 生产 `cli.main`、Runtime、Task 状态、Card 生成逻辑均未为测试提速而修改。
 
@@ -568,12 +568,25 @@ Task 3 已使用真实 Chromium 对任务卡进行桌面 1440px 与移动 390px 
 
 - `smoke or ((unit or contract) and not slow)`：493 passed / 475 deselected；最终复测 pytest 12.49s、外层 wall 14.29s（前一轮曾测得 9.19s / 10.53s，存在环境波动）。
 - 本轮没有引入 xdist，也没有修改正式 Release 全量门禁语义。
-- 当前容器仍是 pytest 9.x，而项目声明 `<9`；长单进程全集在该环境存在顺序/进程退出抖动，最终发布验证应同时报告稳定的文件隔离结果，不能把工具超时当成功能失败。
+- 历史回归说明：当时容器为 pytest 9.x，而项目声明 `<9`；长单进程全集在该环境存在顺序/进程退出抖动。当前候选的依赖口径与本机证据见第 14.12 节。
 
 **最终稳定回归（文件隔离口径）：**
 
-- 86/86 个行为测试文件通过；968 collected 对应 967 passed、1 个既有 Windows-only skipped、2 subtests passed、0 failed。
+- 历史稳定回归：86/86 个行为测试文件通过；968 collected 对应 967 passed、1 个既有 Windows-only skipped、2 subtests passed、0 failed。
 - 每个文件使用独立 pytest 进程；pytest 主进程退出后清理同一进程组残留子进程，避免 subprocess-heavy 历史测试污染下一文件。该清理只存在于验证驱动，不进入产品或正式测试代码。
 - 86 个文件的 pytest 报告时间合计 95.53s。该数值是逐文件 pytest 内部时间之和，不等于单一进程 full wall，也不包含外层调度工具开销，因此只作为稳定文件隔离口径。
 - 当前 Top 文件：workflow-delivery 10.40s、Knowledge convergence 7.93s、Autonomy integration 7.58s、HTML Cards 5.45s、Integrated upgrade 3.64s、Delivery rework 3.58s。
 - 与历史 168.24s 单进程结果执行模式不同，不能把 95.53s 直接解释成 43.2% 的严格 full-wall 提升；可直接比较的代表文件 A/B 和 fast gate 才是本轮性能收益证据。
+
+### 14.12 B17b 当前候选：Windows 产物采集与 pytest 9.1.1 口径
+
+本节是 B17b 当前候选的增量记录；前文的历史环境记录不改写为本机当前结果。
+
+- `requirements-dev.txt` 当前固定为 `pytest==9.1.1`。本机实际核验环境为 Python 3.13.5 / pytest 9.1.1；这只证明该锁定组合，不把未运行的 pytest 8.x 或其他 9.x 版本写成已支持。
+- 基座没有声明必须加载的第三方 pytest 插件。CI 和 `Test-TpSpecBase.ps1 -Mode Full` 对 pytest 调用统一设置 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`，仅使用 pytest 内建插件；调用结束后 PowerShell 恢复原环境变量。`PYTEST_PLUGINS`、`PYTEST_ADDOPTS` 和 `-p` 未被用于注入额外插件。
+- pytest 9.1.1 的真实 JUnit 接收回归覆盖全成功 subTest、全失败 subTest、混合 subTest 和 teardown error；报告接收只验证 producer 声明统计与实际 failure/error/skipped 节点的一致性，不把声明统计扩展为虚构 testcase，也不将报告来源认证为真实执行。
+- 当前候选 `collect-only` 实测为 **1451 tests collected**；本轮新增的 4 个回归均在 47 项浏览器报告集合中。
+- B17b 受影响集合采用外部父进程记录命令、Python/pytest 版本、stdout、stderr、退出码和终态。本轮最新候选实测：`test_v532_browser_reports.py` **47 passed / exit 0**；`test_v532_recording.py` **87 passed / exit 0 / 132.17s**。证据位于外部 `.tp-spec/docs/B17b/test-runs/20260909-b17b-browser-05/` 与 `20260909-b17b-recording-03/`，不进入发布包。
+- Windows 采集在任务目录句柄上逐层相对创建 `evidence/collected/<request>/<attempt>`，拒绝 reparse point；attempt 和文件均独占创建。写入、`fsync`、大小及 SHA 校验针对同一打开对象；目录替换反例不会在外部目录生成文件。已知未提交采集失败只通过同一文件句柄标记删除；提交状态未知的 attempt 不做无条件清理。
+- WIP-4 之前的 Windows Full Gate 记录为 `1445 passed / 2 skipped / 2 subtests passed`；本轮四项修复后只重跑了 Static 和受影响集合，没有把该历史结果写成当前候选 Full Gate。真实 MarkItDown `0.1.7` 的既有本地转换证据仍可复用，但不代表所有格式和业务流程均已验收。
+- 本轮独立审查已实际执行：四个代码 Finding 均已复核关闭；当前仅保留“多文件采集失败资产清理”和“PowerShell 极端位置异常后的环境恢复”两个建议项。原始 35 个失败没有伪造逐项销账，B11/B12/B13/B15 仍未完成，因此当前候选仍不是完整 B17b 通过。

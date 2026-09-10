@@ -924,6 +924,7 @@ function renderProject() {
   ]);
   append(contentScroll, contentCard);
 
+  append(contentScroll, node('div', 'notice', data.summary || '任务登记不代表项目验收或进程存活。'));
   metrics(stats, 'project-stats', contentScroll);
   append(contentScroll, taskTable('在途任务', data.in_progress_tasks || [], 'project-active'), taskTable('任务归档', data.archived_tasks || data.completed_tasks || [], 'project-completed'));
 }
@@ -1122,6 +1123,9 @@ function renderTask() {
     ['负责人', projectedLabel(((workflow.current_step || {}).role === task.owner ? (workflow.current_step || {}).role_display : ((nextStep || {}).role === task.owner ? nextStep.role_display : null)), displayRole(task.owner))],
     ['风险 / 流程', `${task.risk_level || '未记录'} / ${task.flow_level || '未记录'}`],
     ['更新时间', formatDateTime(task.updated_at)],
+    ['执行观察', (workflow.work_sessions || {}).summary || '运行状态未知'],
+    ['业务里程碑', (workflow.work_items || {}).summary || '未记录'],
+    ['当前有效范围（声明）', (workflow.current_effective || {}).content || '未声明'],
     ['运行时数据库', task.runtime_db, true],
   ]);
   append(taskContent, taskCard);

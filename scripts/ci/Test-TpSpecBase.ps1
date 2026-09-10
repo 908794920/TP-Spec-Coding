@@ -237,6 +237,8 @@ if ($Mode -eq 'Full') {
         $py = Get-Command python -ErrorAction SilentlyContinue
         if (-not $py) { throw 'python not found; offline prerequisite missing' }
         $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        $prevPluginAutoload = $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD
+        $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = '1'
         Push-Location $base
         try {
             $out = & python -m pytest -q 2>&1
@@ -244,6 +246,11 @@ if ($Mode -eq 'Full') {
         }
         finally {
             Pop-Location
+            if ($null -eq $prevPluginAutoload) {
+                Remove-Item Env:PYTEST_DISABLE_PLUGIN_AUTOLOAD -ErrorAction SilentlyContinue
+            } else {
+                $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = $prevPluginAutoload
+            }
             $ErrorActionPreference = $prevEap
         }
         Get-ChildItem -LiteralPath @((Join-Path $base 'cli'), (Join-Path $base 'scripts')) -Recurse -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue |

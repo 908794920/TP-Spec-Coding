@@ -65,8 +65,9 @@ def test_workflow_doctor_detects_conditional_role_phase_outside_catalog():
         )
 
 
-@pytest.mark.parametrize("decision", ["NEEDS_FIX", "REVISE", "FAIL", "BLOCKED"])
-def test_code_review_non_pass_routes_to_development(decision: str):
+# BLOCKED is a prerequisite wait, covered through real CLI fixtures in test_v532_waiting.
+@pytest.mark.parametrize("decision", ["NEEDS_FIX", "REVISE", "FAIL"])
+def test_code_review_defect_decisions_route_to_development(decision: str):
     with tempfile.TemporaryDirectory() as td:
         db = make_db(Path(td) / "x.db", risk="L1", flow="L1")
         task = "TASK-V514"

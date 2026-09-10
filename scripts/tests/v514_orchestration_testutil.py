@@ -118,3 +118,55 @@ def add_code_review(db: str, task: str, decision='PASS'):
         conn.execute('INSERT INTO task_event(task_id,event_type,to_stage,actor_role,summary,detail_json,created_at) VALUES(?,?,?,?,?,?,?)',(task,'REVIEW_COMPLETED','review','tp-code-reviewer',decision,detail,now))
         conn.execute("UPDATE task SET current_state='ACTIVE',current_stage='review',owner_role='tp-code-reviewer',updated_at=? WHERE task_id=?",(now,task))
     conn.close()
+
+
+def make_bound_runtime(root: Path, *, level="L2", with_review=True):
+    """Build positive delivery fixtures through real writers, not legacy bare IDs.
+
+    Evidence is explicitly synthetic. This establishes machine contracts only,
+    not real business testing or an independently running reviewer.
+    """
+    from scripts.tests.test_v529_change_set_binding import make_repo
+    from scripts.tests.v532_testutil import run_cli, task_args
+
+    project = make_repo(root, "project")
+    registry = root / "registry.json"
+    registry.write_text('{"projects": []}\n', encoding="utf-8")
+    rc, out, err = run_cli(["project", "bootstrap", "--id", "demo", "--root", str(project),
+                            "--registry", str(registry)])
+    assert rc == 0, (out, err)
+    db = project / ".tp-spec/db/demo.db"
+    task_dir = project / ".tp-spec/tasks/TASK-V514"
+    rc, out, err = run_cli(["task", "create", "--id", "TASK-V514", "--project", "demo",
+                            "--risk", level, "--flow", level, "--db", str(db),
+                            "--scaffold", "--task-dir", str(task_dir)])
+    assert rc == 0, (out, err)
+    (task_dir / "acceptance.md").write_text(
+        '# Isolated routing fixture\n\n```yaml\nno_acceptance_required:\n'
+        '  declared: true\n  reason: No business acceptance claims in this fixture.\n```\n',
+        encoding="utf-8",
+    )
+    rc, out, err = run_cli(task_args(db, task_dir, "TASK-V514", "checkpoint",
+        "--actor", "tp-development-engineer", "--phase", "development", "--summary", "fixture scope",
+        "--repo-root", str(project)))
+    assert rc == 0, (out, err)
+    evidence = task_dir / "evidence/verification.txt"
+    evidence.parent.mkdir(exist_ok=True)
+    evidence.write_text("Synthetic verification evidence for routing contract.\n", encoding="utf-8")
+    rc, out, err = run_cli(task_args(db, task_dir, "TASK-V514", "verify",
+        "--actor", "tp-test-engineer", "--decision", "PASS", "--summary", "fixture verification",
+        "--evidence", "evidence/verification.txt"))
+    assert rc == 0, (out, err)
+    if with_review:
+        add_bound_code_review(str(db), task_dir)
+    return str(db), task_dir
+
+
+def add_bound_code_review(db: str, task_dir: Path):
+    from scripts.tests.v532_testutil import run_cli
+    (task_dir / "evidence/code-review.txt").write_text(
+        "Synthetic reviewer report for routing contract.\n", encoding="utf-8")
+    rc, out, err = run_cli(["review", "record", "--task", "TASK-V514", "--task-dir", str(task_dir),
+        "--db", db, "--actor", "tp-code-reviewer", "--kind", "CODE", "--decision", "PASS",
+        "--summary", "fixture review", "--evidence", "evidence/code-review.txt"])
+    assert rc == 0, (out, err)

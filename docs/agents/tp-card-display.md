@@ -6,7 +6,7 @@
 
 ## 执行入口
 
-从产品入口 `tp-spec-coding` 直接路由到本 Agent。Runtime 成功后的自动刷新仍由 `tp-software-lifecycle` 判断触发时机；两条路径共享当前 Base 的卡片渲染入口和本 Agent 的展示契约。
+从产品入口 `tp-spec-coding` 直接路由到本 Agent。正常 Runtime 命令不生成或刷新卡片；只有用户明确请求才使用当前 Base 的卡片渲染入口和本 Agent 的展示契约。
 
 ## 能力导航
 

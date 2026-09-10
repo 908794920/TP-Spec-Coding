@@ -26,6 +26,7 @@ inline_digest / none / 裸 hash / ``sha256:`` 前缀字符串）一律拒绝（f
 deferred/admin recovery）统一走本模块，禁止各自实现"跳过 none"类旁路。
 """
 from __future__ import annotations
+from . import command_context
 
 import hashlib
 import re
@@ -100,6 +101,7 @@ def _validate_local_file(raw: str, original: str) -> EvidenceResult:
     return EvidenceResult(ok=True, path=raw, type="local_file", item={"type": "local_file", "path": raw})
 
 
+@command_context.measured("evidence")
 def validate_evidence_path(task_dir: Union[str, Path], evidence_path: Optional[str], *, require_evidence_dir: bool = False) -> EvidenceResult:
     """校验单个证据路径（local_file，强制真实文件）。返回 EvidenceResult。
 

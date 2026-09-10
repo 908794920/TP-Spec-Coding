@@ -19,6 +19,14 @@ description: Use when a requirement is ambiguous, incomplete, conflicts with pro
 4. 未知技术事实优先定向读取 Wiki、Knowledge、Memory、代码、配置或文档并执行只读调查，不把用户当作代码检索工具。
 5. 用户确认后记录稳定 decision；不得把 AI 推荐或假设静默升级为 human decision。
 
+## 当前有效范围与决策
+
+沿用现有 canonical Task/Requirement 的**单一维护位置**：已有 Requirement 承担需求就更新它的当前区，Task 只引用；简单返修直接用 Task。不新建平行计划，不把临时基线、等待或本轮验收决定写成长期项目规则。`tp-spec:current` 标记仅用于程序摘取短业务段；无内容时不填表、不增问卷，写法与读取边界按需见 `docs/agents/tp-software-lifecycle.md`。
+
+每次真实反馈区分缺陷修复、局部细化、新增范围与旧假设失效；当前区保留必要目标/非目标、有效决定、适用范围、验收/操作边界及来源，不复制全历史。技术事实先调查；已获准决定不重复审批，真正改变业务取舍、关键契约、权限或风险才请求用户。
+
+新证据推翻旧假设时保留原结论并标记 `SUPERSEDED`、继任及替代依据，再把当前区改为有效结论；未核实冲突仍标未知，不以“最后一句话”或相同实现/测试/审查结论当作证据。用户决定的来源与适用权限必须成立；本区**不授予**操作权限或 PASS，控制仍走既有正式 CLI/Execution Envelope。
+
 ## Requirement Frontier 的条件启用
 
 默认仅在以下条件同时成立时启用：

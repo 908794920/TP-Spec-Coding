@@ -9,6 +9,7 @@ import stat
 import subprocess
 from pathlib import Path
 from typing import Any, Iterable
+from . import command_context
 
 SCHEMA = "tp-spec.change-set/v1"
 _EXCLUDED_ROOTS = {".tp-spec", ".execution"}
@@ -19,6 +20,7 @@ class ChangeSetError(RuntimeError):
 
 
 def _run_git(root: Path, *args: str, text: bool = True) -> str | bytes:
+    command_context.count("git_subprocesses")
     try:
         cp = subprocess.run(
             ["git", *args],
@@ -56,6 +58,7 @@ def _is_product_path(rel: str) -> bool:
 
 
 def _sha256_file(path: Path) -> str:
+    command_context.count("content_files_hashed")
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -156,6 +159,7 @@ def _capture_repo(root: Path) -> tuple[dict[str, Any], str]:
     return repo, product_digest
 
 
+@command_context.measured("changeset")
 def capture_change_set(repo_roots: Iterable[str | Path]) -> dict[str, Any]:
     roots = sorted({_git_root(value) for value in repo_roots}, key=lambda value: str(value))
     if not roots:
@@ -187,3 +191,46 @@ def current_content_digest(repo_roots: Iterable[str | Path]) -> str:
 
 def same_product_content(expected_id: str, current: dict[str, Any]) -> bool:
     return bool(expected_id) and str(current.get("content_digest") or "") == str(expected_id)
+
+
+def repository_keys(values: Iterable[str | Path]) -> set[str]:
+    from .path_identity import path_identity_key
+    return {path_identity_key(value) for value in values}
+
+
+def same_bound_product_content(detail: dict[str, Any], current: dict[str, Any]) -> bool:
+    """Keep history-only commits valid, but never swap content between repositories.
+
+    Legacy single-repo facts can use their original content ID. A multi-repo fact
+    without per-repository product digests must be re-recorded, never backfilled.
+    """
+    if not same_product_content(str(detail.get("change_set_id") or ""), current):
+        return False
+    bound = detail.get("change_set") or {}
+    if not isinstance(bound, dict):
+        return False
+    expected, actual = bound.get("repositories"), current.get("repositories")
+    if not isinstance(expected, list) or not expected or not isinstance(actual, list):
+        return False
+    from .path_identity import path_identity_key
+    def mapping(repositories):
+        result = {}
+        for repo in repositories:
+            if not isinstance(repo, dict) or not isinstance(repo.get("root_locator"), str) or not repo["root_locator"]:
+                return None
+            key = path_identity_key(repo["root_locator"])
+            if key in result:
+                return None
+            result[key] = repo.get("product_digest")
+        return result
+    left, right = mapping(expected), mapping(actual)
+    if left is None or right is None or left.keys() != right.keys():
+        return False
+    roots = detail.get("repo_roots")
+    if not isinstance(roots, list) or any(not isinstance(r, str) or not r.strip() for r in roots):
+        return False
+    if repository_keys(roots) != set(right):
+        return False
+    if len(left) == 1 and next(iter(left.values())) is None:
+        return True
+    return all(isinstance(v, str) and v.startswith("sha256:") and v == right[k] for k, v in left.items())

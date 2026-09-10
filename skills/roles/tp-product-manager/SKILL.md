@@ -30,7 +30,7 @@ description: tp-产品经理：TP-Spec-Coding v5.3.2 正式软件工程角色，
 - 只有会改变产品体验、业务含义或验收方式的选择才请求 human_owner；技术实现细节不能伪装成产品问题。
 - 复杂 L2/L3 且多个关键决策存在前置依赖时，条件加载 `requirement-clarification` 的 Requirement Frontier：先调查事实，只向用户提出 Current Frontier 中当前可决定的 blocking 问题；依赖本轮答案的下游问题延后。
 - L0/L1、单一问题和无依赖决策继续使用最小澄清路径，不增加固定问卷；Frontier 复用按需 Requirement 工件，不新增 Runtime state、workflow stage 或数据库结构。
-- 用户已确认的决定作为稳定事实；新证据冲突时指出冲突并请求重新决策，不自行覆盖。
+- 当前有效范围与决定只维护在既有 canonical Task/Requirement 的一处当前区；技术事实冲突先调查，真实业务决定改变才请求用户。保留 `SUPERSEDED` 及替代依据，不把最新文本或 AI 假设升级为授权。按需读取 `requirement-clarification`，不全读历史或搬入长期项目规则。
 
 ## 输出
 简单需求允许只形成短 canonical Requirement；复杂需求才按需形成正式 requirement/product artifact。没有真实澄清或决策就不创建空文档。
@@ -53,10 +53,10 @@ description: tp-产品经理：TP-Spec-Coding v5.3.2 正式软件工程角色，
 Task 已存在且形成一次有意义需求/产品事实时，最多记录一次 `task checkpoint --phase requirement|product`。只有真实关键事实或 human decision 缺失才 `task block`。
 
 ## Knowledge / Memory
-存在业务历史知识缺口时优先最小范围 `tp-spec knowledge search`，必要时再追 source/evidence。不得为了“更完整”扫描全 Knowledge/Task History。只有工作自然出现高价值项目记忆信号时才按需触发 Project Memory；Memory 缺失不构成 blocker。
+存在业务历史知识缺口时优先最小范围 `tp-spec knowledge search`，必要时再追 source/evidence。不得为了“更完整”扫描全 Knowledge/Task History。项目规则与可选经验使用下方按需入口，Memory 缺失不构成 blocker。
 
 ## Project Memory（按需）
-只有工作自然出现 Evidence-backed、Non-volatile、Reusable 且 costly-to-rediscover 的项目经验时，才按需调用 `tp-memory-capture`。未触碰 Memory：0 动作；只检查 touched fragment，不扫描整个 PROJECT、全部 Skills 或历史任务；Memory 缺失/候选沉淀不得阻塞当前研发。
+遵守业务项目根 `AGENTS.md` 自有规则及当前 Task 授权；临时决定留 Task。已确认稳定 Rule 不受重发现成本限制，根规则写失败说明未持久化。Rule 或高价值经验触发沉淀时先读 [tp-memory-capture](../../capabilities/tp-memory-capture/SKILL.md) 的相关段；未触碰 Memory：0 动作，已知目标直达、无关 Memory 不读，可选缓存失败不阻塞研发。
 
 ## 边界
 不决定技术架构，不替 Architect 做系统设计，不替 Tech Lead 做工程执行计划；不自行发明业务规则；不直接修改业务代码、数据库或授权边界；不替 human_owner 接受业务范围变化和高风险决策。

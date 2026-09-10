@@ -7,7 +7,7 @@
 - transitions: {STATE: [next states]}
 
 提供：
-- load_workflow(base_root) -> WorkflowDef（带缓存）
+- load_workflow(base_root) -> WorkflowDef（仅同次调用内复用解析）
 - WorkflowDef.is_valid_transition(from, to)
 - WorkflowDef.get_state_owner(state)
 - WorkflowDef.get_state_stage(state)
@@ -16,6 +16,10 @@
 """
 
 from __future__ import annotations
+
+import copy
+import hashlib
+from . import command_context
 
 from pathlib import Path
 from typing import Dict, Optional
@@ -279,23 +283,25 @@ class WorkflowDef:
         return state in ("COMPLETED", "CANCELLED")
 
 
-# 模块级缓存
-_WORKFLOW_CACHE: Dict[str, WorkflowDef] = {}
-
-
 def load_workflow(base_root=None) -> WorkflowDef:
-    """加载 workflow.yaml，结果缓存。"""
-    cache_key = str(base_root) if base_root else "_default"
-    if cache_key in _WORKFLOW_CACHE:
-        return _WORKFLOW_CACHE[cache_key]
+    """Read current bytes; reuse parsed content only within one CLI invocation."""
     root = Path(base_root) if base_root else _BASE_ROOT
     wf_path = root / "governance" / "workflow.yaml"
     if not wf_path.exists():
         raise WorkflowLoadError(f"workflow.yaml not found: {wf_path}")
     try:
-        with open(wf_path, "r", encoding="utf-8") as f:
-            text = f.read()
-        data = _parse_workflow_yaml(text)
+        raw = wf_path.read_bytes()
+        key = ("workflow-parsed", str(wf_path.resolve()), hashlib.sha256(raw).hexdigest())
+        context = command_context.current()
+        if context is not None and key in context.config_cache:
+            data = copy.deepcopy(context.config_cache[key])
+            command_context.count("config_cache_hits")
+        else:
+            with command_context.span("config"):
+                data = _parse_workflow_yaml(raw.decode("utf-8"))
+            command_context.count("config_parses")
+            if context is not None:
+                context.config_cache[key] = copy.deepcopy(data)
     except WorkflowLoadError:
         raise
     except Exception as e:
@@ -314,5 +320,4 @@ def load_workflow(base_root=None) -> WorkflowDef:
         raise WorkflowLoadError("workflow.yaml: states block empty or missing")
     if not wf.transitions:
         raise WorkflowLoadError("workflow.yaml: transitions block empty or missing")
-    _WORKFLOW_CACHE[cache_key] = wf
     return wf

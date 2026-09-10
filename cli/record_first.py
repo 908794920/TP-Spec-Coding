@@ -16,6 +16,8 @@ from typing import Any, Dict, Iterable, List, Optional
 from . import db as dbmod
 from . import projection_cmd
 from . import event_contract
+from . import command_context
+from . import recording
 from .version import active_version
 
 PHASES = (
@@ -41,7 +43,10 @@ def _task_dir(value: str) -> Path:
 
 
 def _load(conn, task_id: str):
-    task = conn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
+    task = conn.execute(
+        "SELECT task.*, (SELECT COUNT(*) FROM task_event WHERE task_event.task_id=task.task_id) AS _loaded_revision "
+        "FROM task WHERE task_id=?", (task_id,)
+    ).fetchone()
     if task is None:
         raise ValueError(f"task not found: {task_id}")
     if str(task["base_version"] or "") != active_version():
@@ -58,6 +63,7 @@ def _detail(operation: str, flush_id: str, **extra) -> str:
         "flush_id": flush_id,
         "producer": "record-first",
         "schema_version": active_version(),
+        "cli_invocation_id": command_context.invocation_id(),
     }
     data.update({k: v for k, v in extra.items() if v not in (None, [], "")})
     return json.dumps(data, ensure_ascii=False)
@@ -75,18 +81,31 @@ def _semantic_detail(event_type: str, operation: str, flush_id: str, result_stat
 
 def _write_with_projection(conn, task_dir: Path, task, *, operation: str,
                            target_state: str, owner_after: str, flush_id: str,
-                           writer, summary: str) -> None:
+                           writer, summary: str, logical_request=None) -> Dict[str, Any]:
     """Reuse the durable journal without exposing commit/handoff semantics."""
     from . import transaction_commit
 
     current = str(task["current_state"] or "")
     view_rel = transaction_commit._current_view_rel(target_state)
+    terminal = target_state == "COMPLETED"
+    revision_after = 0
 
     def db_and_render(dbconn, transaction_id=""):
-        writer(dbconn, transaction_id)
+        nonlocal revision_after
+        if "_loaded_revision" in task.keys():
+            actual_revision = transaction_commit.transaction_journal.current_revision(dbconn, str(task["task_id"]))
+            if actual_revision != task["_loaded_revision"]:
+                raise ValueError("TASK_FACTS_CHANGED: re-read current facts before retrying")
+        with command_context.span("db_write"):
+            writer(dbconn, transaction_id)
         refreshed = dbconn.execute("SELECT * FROM task WHERE task_id=?", (task["task_id"],)).fetchone()
         status_yaml, events_jsonl, warnings = projection_cmd.render_projection(dbconn, refreshed)
         transaction_commit._warn_projection(warnings)
+        revision_after = transaction_commit.transaction_journal.current_revision(dbconn, str(task["task_id"]))
+        if not terminal:
+            # Continuation is a rebuildable view, not part of the recovery boundary.
+            # Required projections still commit atomically with their DB facts.
+            return {"status.yaml": status_yaml, "events.jsonl": events_jsonl}
         return transaction_commit._finalize_texts(
             task_dir,
             {"status.yaml": status_yaml, "events.jsonl": events_jsonl},
@@ -94,13 +113,29 @@ def _write_with_projection(conn, task_dir: Path, task, *, operation: str,
             lambda: transaction_commit._rebuild_current_view_text(task_dir, refreshed, summary, flush_id),
         )
 
-    transaction_commit._commit_with_recovery(
-        task_dir, conn, ["status.yaml", "events.jsonl", view_rel], db_and_render,
-        task_id=str(task["task_id"]), operation=operation,
-        db_state_before=current, target_state=target_state,
-        owner_before=str(task["owner_role"] or ""), owner_after=owner_after,
-        flush_id=flush_id,
-    )
+    try:
+        transaction_commit._commit_with_recovery(
+            task_dir, conn, ["status.yaml", "events.jsonl"] + ([view_rel] if terminal else []), db_and_render,
+            task_id=str(task["task_id"]), operation=operation,
+            db_state_before=current, target_state=target_state,
+            owner_before=str(task["owner_role"] or ""), owner_after=owner_after,
+            flush_id=flush_id,
+            before_prepare=logical_request.reject_duplicate if logical_request else None,
+        )
+    except recording.RequestReplay as replay:
+        return replay.result
+    result = {"facts_committed": True, "fact_revision": revision_after, "view_status": "CURRENT"}
+    context = command_context.current()
+    if context is not None:
+        context.bindings.update(result)
+    if not terminal:
+        result.update(transaction_commit.refresh_current_view(
+            conn, task_dir, str(task["task_id"]), summary=summary, flush_id=flush_id,
+            expected_revision=revision_after,
+        ))
+    if context is not None:
+        context.bindings.update(result)
+    return result
 
 
 def _normalize_knowledge_signals(values: Optional[Iterable[Dict[str, Any]]]) -> List[Dict[str, Any]]:
@@ -129,8 +164,17 @@ def _normalize_delivery_signals(values: Optional[Iterable[str]]) -> List[str]:
 
 def _change_set_roots(conn, task, explicit: Optional[Iterable[str]]) -> List[str]:
     roots = [str(value).strip() for value in (explicit or []) if str(value).strip()]
+    from .delivery_contract import load_repository_scope
+    known = load_repository_scope(conn, str(task["task_id"]))
     if roots:
+        if known["scope_event_id"]:
+            from .change_set import _git_root, repository_keys
+            roots = sorted({str(_git_root(value)) for value in roots})
+            if not repository_keys(roots).issubset(repository_keys(known["repo_roots"])):
+                raise ValueError("REPOSITORY_SCOPE_MISMATCH: development cannot expand the explicit owner repository scope")
         return roots
+    if known["repo_roots"]:
+        return known["repo_roots"]
     row = conn.execute("SELECT root_path FROM project WHERE project_id=?", (task["project_id"],)).fetchone()
     root = str(row["root_path"] or "").strip() if row is not None else ""
     if not root:
@@ -172,7 +216,7 @@ def _compact_change_set(change_set: Dict[str, Any]) -> Dict[str, Any]:
         "repositories": [
             {
                 key: repo.get(key)
-                for key in ("root_locator", "head", "head_tree", "tracked_patch_sha256")
+                for key in ("root_locator", "head", "head_tree", "tracked_patch_sha256", "product_digest")
                 if repo.get(key) not in (None, "")
             }
             for repo in (change_set.get("repositories") or [])
@@ -187,16 +231,47 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
                delivery_signals: Optional[Iterable[str]] = None,
                context_usage: Optional[Iterable[Dict[str, Any]]] = None,
                repo_roots: Optional[Iterable[str]] = None,
+               request_id: Optional[str] = None, collect: Optional[Iterable[str]] = None,
+               result_reports: Optional[Iterable[str]] = None,
+               report_artifact_root: Optional[str] = None,
+               recorded_result_ids: Optional[Iterable[int]] = None,
                db: Optional[str] = None) -> Dict[str, Any]:
     if phase not in PHASES:
         raise ValueError(f"invalid phase {phase!r}; choose one of: {', '.join(PHASES)}")
     if actor not in ACTORS:
         raise ValueError(f"invalid actor: {actor}")
     tdir = _task_dir(task_dir)
+    evidence = list(evidence or [])
+    knowledge_signals = list(knowledge_signals or [])
+    delivery_signals = list(delivery_signals or [])
+    from . import context_usage as context_usage_mod
+    usage, context_warnings = context_usage_mod.normalize_context_usage(context_usage)
+    context_usage_mod.emit_warnings(context_warnings)
+    repo_roots = list(repo_roots or [])
+    collect = [str(Path(value).expanduser().resolve()) for value in collect or []]
+    result_reports = [str(Path(value).expanduser().resolve()) for value in result_reports or []]
+    recorded_result_ids = list(recorded_result_ids or [])
+    if report_artifact_root is not None:
+        if not result_reports:
+            raise ValueError("RESULT_REPORT_REQUIRED: --report-artifact-root requires --result-report")
+        report_artifact_root = str(Path(report_artifact_root).expanduser().absolute())
+    if len(set(result_reports)) != len(result_reports):
+        raise ValueError("RESULT_REPORT_INVALID: duplicate report paths in one batch")
+    request = recording.checkpoint_request(task_id, tdir, request_id,
+        actor=actor, phase=phase, summary=summary, evidence=evidence,
+        knowledge_signals=knowledge_signals, delivery_signals=delivery_signals,
+        repo_roots=repo_roots, collect=collect, context_usage=usage,
+        result_reports=result_reports, recorded_result_ids=recorded_result_ids,
+        report_artifact_root=report_artifact_root)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
     conn = dbmod.connect(db_path)
     try:
         task = _load(conn, task_id)
+        from . import transaction_commit
+        transaction_commit._assert_task_workspace_identity(conn, tdir, task_id)
+        replay = request.replay(conn)
+        if replay is not None:
+            return replay
         current = str(task["current_state"] or "")
         if current in TERMINAL_STATES:
             raise ValueError(f"terminal task cannot accept checkpoint: {current}")
@@ -205,12 +280,20 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
         target = "ACTIVE"
         now = dbmod.now_iso()
         flush_id = f"CHECKPOINT-{uuid.uuid4().hex}"
-        ev = list(evidence or [])
+        references = recording.recorded_results(conn, task_id, tdir, recorded_result_ids)
+        collected = recording.collect_artifacts(tdir, request.request_id, collect + result_reports)
+        observations = []
+        if result_reports:
+            from .execution_reports import read_report
+            observations = [read_report(tdir, item, task_id=task_id) for item in collected[len(collect):]]
+        if report_artifact_root is not None:
+            from .browser_reports import collect_attachments, bind_attachments
+            collected += collect_attachments(tdir, request.request_id, report_artifact_root,
+                                             observations, existing_count=len(collected))
+            observations = [bind_attachments(tdir, obs, collected) for obs in observations]
+        ev = list(evidence or []) + [item["path"] for item in collected]
         knowledge = _normalize_knowledge_signals(knowledge_signals)
         delivery = _normalize_delivery_signals(delivery_signals)
-        from . import context_usage as context_usage_mod
-        usage, context_warnings = context_usage_mod.normalize_context_usage(context_usage)
-        context_usage_mod.emit_warnings(context_warnings)
         risk_escalation = None
         effective_risk = str(task["risk_level"] or "L1")
         if actor == "tp-software-architect" and phase == "architecture":
@@ -235,20 +318,46 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
             transaction_commit._assert_task_workspace_identity(conn, tdir, task_id)
             roots = _change_set_roots(conn, task, repo_roots)
             change_set = capture_change_set(roots)
+            roots = [str(repo["root_locator"]) for repo in change_set["repositories"]]
+
+        result = {"task_id": task_id, "state": target, "phase": phase, "actor": actor,
+                  "risk_level": effective_risk, "flush_id": flush_id, "summary": summary,
+                  "request_id": request.request_id, "replayed": False, "collected_artifacts": collected}
+        if observations:
+            result["result_observations"] = []
+        if references:
+            result["recorded_results"] = references
+        if change_set:
+            result["change_set_id"] = str(change_set["content_digest"])
+            result["change_set_snapshot_digest"] = str(change_set["snapshot_digest"])
 
         def writer(dbconn, transaction_id=""):
+            recording.validate_bound_items(tdir, collected)
+            if recording.recorded_results(dbconn, task_id, tdir, recorded_result_ids) != references:
+                raise ValueError("RECORDED_RESULT_CHANGED: original result changed before batch commit")
             if current != "ACTIVE":
                 dbconn.execute(
                     "INSERT INTO task_event (task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (task_id, "STATE", current or None, "ACTIVE", task["current_stage"], phase,
                      actor, "task activated", _detail("ACTIVATE", flush_id, transaction_id=transaction_id, phase=phase), active_version(), now),
                 )
+            for observation in observations:
+                cursor = dbconn.execute(
+                    "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,evidence_path,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (task_id, "OBSERVATION", actor, "accepted external result: " + observation["format"],
+                     _semantic_detail("OBSERVATION", "RECORD", flush_id, "RECORDED",
+                         task_id=task_id, actor_role=actor, transaction_id=transaction_id,
+                         execution_report=observation),
+                     observation["evidence"]["path"], active_version(), now),
+                )
+                result["result_observations"].append({**observation, "event_id": int(cursor.lastrowid)})
             dbconn.execute(
                 "INSERT INTO task_event (task_id,event_type,from_stage,to_stage,actor_role,summary,detail_json,evidence_path,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (task_id, "FACT", task["current_stage"], phase, actor, summary,
                  _semantic_detail(
                      "FACT", "CHECKPOINT", flush_id, "COMPLETED",
                      transaction_id=transaction_id, phase=phase, evidence=ev,
+                     evidence_items=collected, logical_request=request.detail(result), recorded_results=references,
                      risk_escalation=risk_escalation, knowledge_signals=knowledge,
                      delivery_signals=delivery, context_usage=usage,
                      change_set_id=(change_set or {}).get("content_digest"),
@@ -262,20 +371,22 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
                 (phase, actor, effective_risk, now, task_id),
             )
 
-        _write_with_projection(conn, tdir, task, operation="checkpoint", target_state=target,
-                               owner_after=actor, flush_id=flush_id, writer=writer, summary=summary)
-        result = {"task_id": task_id, "state": target, "phase": phase, "actor": actor,
-                  "risk_level": effective_risk, "flush_id": flush_id, "summary": summary}
-        if change_set:
-            result["change_set_id"] = str(change_set["content_digest"])
-            result["change_set_snapshot_digest"] = str(change_set["snapshot_digest"])
-        return result
+        projection = _write_with_projection(conn, tdir, task, operation="checkpoint", target_state=target,
+                               owner_after=actor, flush_id=flush_id, writer=writer, summary=summary,
+                               logical_request=request)
+        if projection.get("replayed"):
+            return projection
+        return {**result, **projection}
     finally:
         conn.close()
 
 
 def block(*, task_id: str, task_dir: str, actor: str, reason: str,
-          phase: Optional[str] = None, db: Optional[str] = None) -> Dict[str, Any]:
+          phase: Optional[str] = None, kind: Optional[str] = None,
+          responsibility: Optional[str] = None, condition: Optional[str] = None,
+          requires_tasks: Optional[Iterable[str]] = None,
+          prerequisite_evidence: Optional[Iterable[str]] = None,
+          db: Optional[str] = None) -> Dict[str, Any]:
     if actor not in ACTORS:
         raise ValueError(f"invalid actor: {actor}")
     if phase is not None and phase not in PHASES:
@@ -293,10 +404,18 @@ def block(*, task_id: str, task_dir: str, actor: str, reason: str,
         phase0 = phase or str(task["current_stage"] or "other")
         if phase0 not in PHASES:
             phase0 = "other"
+        from . import waiting
+        wait_args = dict(kind=kind, responsibility=responsibility or (actor if kind in {"environment", "dependency"} else None), condition=condition,
+                         requires_tasks=list(requires_tasks or []), prerequisite_evidence=list(prerequisite_evidence or []))
+        waiting_fact = waiting.build_wait(conn, task, tdir, **wait_args)
         now = dbmod.now_iso(); flush_id = f"BLOCK-{uuid.uuid4().hex}"
 
         def writer(dbconn, transaction_id=""):
-            detail = _semantic_detail("BLOCKER", "BLOCK", flush_id, "BLOCKED", transaction_id=transaction_id, phase=phase0, reason=reason, reason_code="BLOCKED")
+            # Dependencies/evidence must still satisfy the declaration after lock acquisition.
+            current_wait = waiting.build_wait(dbconn, task, tdir, **wait_args)
+            if current_wait != waiting_fact:
+                raise ValueError("WAIT_PREREQUISITE_CHANGED: reread before blocking")
+            detail = _semantic_detail("BLOCKER", "BLOCK", flush_id, "BLOCKED", transaction_id=transaction_id, phase=phase0, reason=reason, reason_code="BLOCKED", waiting=waiting_fact or None)
             dbconn.execute(
                 "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?)",
                 (task_id, "BLOCKER", actor, reason, detail, active_version(), now),
@@ -310,15 +429,16 @@ def block(*, task_id: str, task_dir: str, actor: str, reason: str,
                 (phase0, actor, now, task_id),
             )
 
-        _write_with_projection(conn, tdir, task, operation="block", target_state="BLOCKED",
+        projection = _write_with_projection(conn, tdir, task, operation="block", target_state="BLOCKED",
                                owner_after=actor, flush_id=flush_id, writer=writer, summary=reason)
-        return {"task_id": task_id, "state": "BLOCKED", "phase": phase0, "reason": reason, "flush_id": flush_id}
+        return {**projection, "task_id": task_id, "state": "BLOCKED", "phase": phase0, "reason": reason, "flush_id": flush_id, "waiting": waiting_fact}
     finally:
         conn.close()
 
 
 def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
-           phase: Optional[str] = None, db: Optional[str] = None) -> Dict[str, Any]:
+           phase: Optional[str] = None, resolution_evidence: Optional[Iterable[str]] = None,
+           db: Optional[str] = None) -> Dict[str, Any]:
     if actor not in ACTORS:
         raise ValueError(f"invalid actor: {actor}")
     tdir = _task_dir(task_dir)
@@ -331,10 +451,16 @@ def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
         phase0 = phase or str(task["current_stage"] or "other")
         if phase0 not in PHASES:
             raise ValueError(f"invalid phase: {phase0}")
+        from . import waiting
+        resolution_paths = list(resolution_evidence or [])
+        resolution = waiting.validate_resolution(conn, task_id, tdir, actor=actor, resolution_evidence=resolution_paths)
         now = dbmod.now_iso(); flush_id = f"RESUME-{uuid.uuid4().hex}"
 
         def writer(dbconn, transaction_id=""):
-            detail = _detail("RESUME", flush_id, transaction_id=transaction_id, phase=phase0)
+            rechecked = waiting.validate_resolution(dbconn, task_id, tdir, actor=actor, resolution_evidence=resolution_paths)
+            if rechecked != resolution:
+                raise ValueError("WAIT_PREREQUISITE_CHANGED: reread before resuming")
+            detail = _detail("RESUME", flush_id, transaction_id=transaction_id, phase=phase0, resolution=resolution or None)
             dbconn.execute(
                 "INSERT INTO task_event (task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (task_id, "STATE", "BLOCKED", "ACTIVE", task["current_stage"], phase0, actor, summary, detail, active_version(), now),
@@ -344,9 +470,9 @@ def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
                 (phase0, actor, now, task_id),
             )
 
-        _write_with_projection(conn, tdir, task, operation="resume", target_state="ACTIVE",
+        projection = _write_with_projection(conn, tdir, task, operation="resume", target_state="ACTIVE",
                                owner_after=actor, flush_id=flush_id, writer=writer, summary=summary)
-        return {"task_id": task_id, "state": "ACTIVE", "phase": phase0, "summary": summary, "flush_id": flush_id}
+        return {**projection, "task_id": task_id, "state": "ACTIVE", "phase": phase0, "summary": summary, "flush_id": flush_id}
     finally:
         conn.close()
 
@@ -421,35 +547,70 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
            knowledge_signals: Optional[Iterable[Dict[str, Any]]] = None,
            delivery_signals: Optional[Iterable[str]] = None,
            context_usage: Optional[Iterable[Dict[str, Any]]] = None,
+           request_id: Optional[str] = None,
+           scope: str = "full", checks: Optional[Iterable[str]] = None,
            db: Optional[str] = None) -> Dict[str, Any]:
     """Record an actual technical verification result without adding a workflow gate."""
     if actor != "tp-test-engineer":
         raise ValueError("technical verification must be recorded by tp-test-engineer")
+    if scope not in {"full", "technical"}:
+        raise ValueError("verification scope must be full or technical")
+    if isinstance(checks, str):
+        raise ValueError("checks must be a list of actual checks")
+    checks = list(checks or [])
+    if any(not isinstance(item, str) or not item.strip() for item in checks):
+        raise ValueError("checks must contain non-empty descriptions")
+    checks = list(dict.fromkeys(item.strip() for item in checks))
+    if scope == "technical" and not checks:
+        raise ValueError("technical scope requires at least one explicit --check")
     decision0 = str(decision or "").upper()
     if decision0 not in {"PASS", "FAIL", "NEEDS_FIX"}:
         raise ValueError("decision must be PASS, FAIL or NEEDS_FIX")
     tdir = _task_dir(task_dir)
     from .evidence import validate_evidence_path
     from .digest import compute_verification_subject_digest
-    items = []
-    for raw in evidence or []:
-        checked = validate_evidence_path(tdir, raw, require_evidence_dir=True)
-        if not checked.ok:
-            raise ValueError(f"verification evidence invalid: {checked.error}")
-        items.append(checked.item)
+    evidence = list(evidence or [])
+    knowledge_signals = list(knowledge_signals or [])
+    delivery_signals = list(delivery_signals or [])
+    from . import context_usage as context_usage_mod
+    usage, context_warnings = context_usage_mod.normalize_context_usage(context_usage)
+    context_usage_mod.emit_warnings(context_warnings)
+    request = recording.LogicalRequest(task_id, tdir, "verify", {
+        "actor": actor, "decision": decision0, "summary": summary, "evidence": evidence,
+        "verification_scope": scope, "checks": checks,
+        "knowledge_signals": knowledge_signals, "delivery_signals": delivery_signals,
+        "context_usage": usage,
+    }, request_id)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
     conn = dbmod.connect(db_path)
     try:
         task = _load(conn, task_id)
+        from . import transaction_commit
+        transaction_commit._assert_task_workspace_identity(conn, tdir, task_id)
+        replay = request.replay(conn)
+        if replay is not None:
+            return replay
+        items = []
+        for raw in evidence or []:
+            checked = validate_evidence_path(tdir, raw, require_evidence_dir=True)
+            if not checked.ok:
+                raise ValueError(f"verification evidence invalid: {checked.error}")
+            items.append(checked.item)
         current = str(task["current_state"] or "")
         if current in TERMINAL_STATES:
             raise ValueError(f"terminal task cannot accept verification: {current}")
         if current == "BLOCKED":
             raise ValueError("task is BLOCKED; resolve the blocker before verification")
         now = dbmod.now_iso(); flush_id = f"VERIFY-{uuid.uuid4().hex}"
-        subject_digest = compute_verification_subject_digest(tdir)
+        subject_digest = compute_verification_subject_digest(tdir, scope=scope)
         development = _latest_development_change_set(conn, task_id)
         current_change_set = None
+        if decision0 == "PASS" and development:
+            from .delivery_contract import require_full_scope, require_scope_checkpoint
+            if scope == "full":
+                require_full_scope(conn, task_id, development["detail"], development_event_id=development["event_id"])
+            else:
+                require_scope_checkpoint(conn, task_id, development_event_id=development["event_id"])
         if development and development.get("repo_roots"):
             from .change_set import capture_change_set
             current_change_set = capture_change_set(development["repo_roots"])
@@ -457,11 +618,12 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         if decision0 == "PASS":
             if not development or not development.get("change_set_id") or not development.get("repo_roots"):
                 raise ValueError("DEVELOPMENT_CHANGE_SET_REQUIRED")
-            if not current_change_set or str(current_change_set.get("content_digest") or "") != development["change_set_id"]:
+            from .change_set import same_bound_product_content
+            if not current_change_set or not same_bound_product_content(development["detail"], current_change_set):
                 raise ValueError("DEVELOPMENT_CHANGE_SET_STALE")
 
             acceptance_path = tdir / "acceptance.md"
-            if acceptance_path.is_file():
+            if scope == "full" and acceptance_path.is_file():
                 from . import yaml_checks, artifact_validation
                 acceptance = yaml_checks.check_acceptance_yaml(
                     acceptance_path.read_text(encoding="utf-8-sig"),
@@ -504,11 +666,28 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                 raise ValueError("verification PASS requires at least one real evidence/* file")
         knowledge = _normalize_knowledge_signals(knowledge_signals)
         delivery = _normalize_delivery_signals(delivery_signals)
-        from . import context_usage as context_usage_mod
-        usage, context_warnings = context_usage_mod.normalize_context_usage(context_usage)
-        context_usage_mod.emit_warnings(context_warnings)
+
+        result = {"task_id": task_id, "state": "ACTIVE", "phase": "verification",
+                  "decision": decision0, "verification_scope": scope, "checks": checks,
+                  "evidence_count": len(items), "flush_id": flush_id,
+                  "summary": summary, "request_id": request.request_id, "replayed": False}
+        if current_change_set:
+            result["change_set_id"] = str(current_change_set["content_digest"])
+            result["change_set_snapshot_digest"] = str(current_change_set["snapshot_digest"])
 
         def writer(dbconn, transaction_id=""):
+            recording.validate_bound_items(tdir, items)
+            if decision0 == "PASS":
+                from .change_set import capture_change_set
+                latest_development = _latest_development_change_set(dbconn, task_id)
+                if (not latest_development or latest_development["event_id"] != development["event_id"]
+                        or compute_verification_subject_digest(tdir, scope=scope) != subject_digest
+                        or not same_bound_product_content(development["detail"], capture_change_set(development["repo_roots"]))):
+                    raise ValueError("VERIFICATION_STALE: subject changed before write")
+                if scope == "full":
+                    require_full_scope(dbconn, task_id, development["detail"], development_event_id=development["event_id"])
+                else:
+                    require_scope_checkpoint(dbconn, task_id, development_event_id=development["event_id"])
             if current != "ACTIVE":
                 dbconn.execute(
                     "INSERT INTO task_event (task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -519,12 +698,15 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
             detail_obj = {
                 "schema": event_contract.EVENT_SCHEMA,
                 "operation": "VERIFY", "result_status": "COMPLETED",
+                "cli_invocation_id": command_context.invocation_id(),
                 "flush_id": flush_id, "transaction_id": transaction_id,
                 "producer": "record-first", "schema_version": active_version(),
                 "task_id": task_id, "actor_role": actor, "created_at": now,
                 "decision": decision0, "review_kind": "VERIFICATION",
+                "verification_scope": scope, "checks": checks,
                 "subject_digest": subject_digest, "evidence": [i["path"] for i in items],
                 "evidence_items": items, "knowledge_signals": knowledge, "delivery_signals": delivery,
+                "logical_request": request.detail(result),
             }
             if development and current_change_set:
                 detail_obj["development_event_id"] = int(development["event_id"])
@@ -546,15 +728,12 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                 (actor, now, task_id),
             )
 
-        _write_with_projection(conn, tdir, task, operation="verify", target_state="ACTIVE",
-                               owner_after=actor, flush_id=flush_id, writer=writer, summary=summary)
-        result = {"task_id": task_id, "state": "ACTIVE", "phase": "verification",
-                  "decision": decision0, "evidence_count": len(items), "flush_id": flush_id,
-                  "summary": summary}
-        if current_change_set:
-            result["change_set_id"] = str(current_change_set["content_digest"])
-            result["change_set_snapshot_digest"] = str(current_change_set["snapshot_digest"])
-        return result
+        projection = _write_with_projection(conn, tdir, task, operation="verify", target_state="ACTIVE",
+                               owner_after=actor, flush_id=flush_id, writer=writer, summary=summary,
+                               logical_request=request)
+        if projection.get("replayed"):
+            return projection
+        return {**result, **projection}
     finally:
         conn.close()
 
@@ -618,6 +797,22 @@ def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
                 issues.append(f"{ac} OWNER_WAIVED lacks trusted human_owner decision")
     return issues
 
+def validate_final_acceptance(conn, task_id: str, task_dir: Path) -> None:
+    """READY and Complete share the same required acceptance/owner-authority checks."""
+    path = task_dir / "acceptance.md"
+    if path.is_file():
+        from . import yaml_checks
+        checked = yaml_checks.check_acceptance_yaml(
+            path.read_text(encoding="utf-8-sig"),
+            enforce_completion=True, allow_human_pending=False,
+        )
+        if not checked.ok:
+            raise ValueError("INTEGRITY_ACCEPTANCE: " + "; ".join(checked.issues))
+    issues = acceptance_truth_issues(conn, task_id, task_dir)
+    if issues:
+        raise ValueError("INTEGRITY_ACCEPTANCE: " + "; ".join(issues))
+
+
 def _cleanup_terminal_temp_artifacts(task) -> Dict[str, Any]:
     """终态写入成功后做机器本地临时工件清理；失败只进入清理摘要。"""
     from . import temp_artifacts
@@ -661,25 +856,19 @@ def complete(*, task_id: str, task_dir: str, actor: Optional[str], summary: str,
                 f"next_stage={route.get('next_stage')} role={route.get('role_id')} "
                 f"reason={','.join(route.get('reason_codes') or [])}"
             )
-        # 结单前先验证所有 AC 均有明确处置；未执行项必须保持真实并由 human_owner defer/waive。
-        acceptance_path = tdir / "acceptance.md"
-        if acceptance_path.is_file():
-            from . import yaml_checks
-            completion_check = yaml_checks.check_acceptance_yaml(
-                acceptance_path.read_text(encoding="utf-8-sig"),
-                enforce_completion=True,
-                allow_human_pending=False,
-            )
-            if not completion_check.ok:
-                raise ValueError("INTEGRITY_ACCEPTANCE: " + "; ".join(completion_check.issues))
-        truth_issues = acceptance_truth_issues(conn, task_id, tdir)
-        if truth_issues:
-            raise ValueError("INTEGRITY_ACCEPTANCE: " + "; ".join(truth_issues))
+        validate_final_acceptance(conn, task_id, tdir)
         verification = _latest_verification(conn, task_id, tdir)
         now = dbmod.now_iso(); flush_id = f"COMPLETE-{uuid.uuid4().hex}"
         phase0 = str(task["current_stage"] or "delivery")
 
         def writer(dbconn, transaction_id=""):
+            # Files/evidence may change after preflight. Recheck the final gate
+            # under the existing write boundary, not only its earlier route.
+            checked_route = orchestration.resolve_route(task_id, db_path=db_path)
+            if (checked_route.get("recommended_action") != "task_complete"
+                    or checked_route.get("next_stage") != "complete"):
+                raise ValueError("INTEGRITY_PIPELINE_PENDING: final prerequisites changed before write")
+            validate_final_acceptance(dbconn, task_id, tdir)
             detail = _detail(
                 "COMPLETE", flush_id, transaction_id=transaction_id, phase=phase0,
                 verification=verification,
@@ -694,10 +883,10 @@ def complete(*, task_id: str, task_dir: str, actor: Optional[str], summary: str,
                 (actor0, now, now, task_id),
             )
 
-        _write_with_projection(conn, tdir, task, operation="complete", target_state="COMPLETED",
+        projection = _write_with_projection(conn, tdir, task, operation="complete", target_state="COMPLETED",
                                owner_after=actor0, flush_id=flush_id, writer=writer, summary=summary)
         temp_summary = _cleanup_terminal_temp_artifacts(task)
-        return {"task_id": task_id, "state": "COMPLETED", "phase": phase0,
+        return {**projection, "task_id": task_id, "state": "COMPLETED", "phase": phase0,
                 "verification": verification["decision"], "flush_id": flush_id, "summary": summary,
                 "temp_artifacts": temp_summary}
     finally:
@@ -729,10 +918,10 @@ def cancel(*, task_id: str, task_dir: str, actor: str, reason: str,
                 (actor, now, task_id),
             )
 
-        _write_with_projection(conn, tdir, task, operation="cancel", target_state="CANCELLED",
+        projection = _write_with_projection(conn, tdir, task, operation="cancel", target_state="CANCELLED",
                                owner_after=actor, flush_id=flush_id, writer=writer, summary=reason)
         temp_summary = _cleanup_terminal_temp_artifacts(task)
-        return {"task_id": task_id, "state": "CANCELLED", "reason": reason, "flush_id": flush_id,
+        return {**projection, "task_id": task_id, "state": "CANCELLED", "reason": reason, "flush_id": flush_id,
                 "temp_artifacts": temp_summary}
     finally:
         conn.close()

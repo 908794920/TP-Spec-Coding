@@ -39,10 +39,16 @@ def _transient_files(db_path: Path) -> List[Dict[str, Any]]:
 
 
 def _registry_entry(project_id: str, registry_path: Optional[str]) -> Optional[Dict[str, Any]]:
-    for item in dbmod.list_projects(registry_path=registry_path):
-        if str(item.get("project_id") or "") == project_id:
-            return dict(item)
-    return None
+    path = dbmod.registry_read_path(registry_path)
+    if path.exists() and not path.is_file():
+        raise ValueError(f"runtime registry is not a file: {path}")
+    items = dbmod._read_registry_payload(path)["projects"]
+    if any(not isinstance(item, dict) or not item.get("project_id") for item in items):
+        raise ValueError(f"runtime registry contains an invalid project entry: {path}")
+    identities = [str(item["project_id"]) for item in items]
+    if len(set(identities)) != len(identities):
+        raise ValueError(f"runtime registry contains duplicate project identities: {path}")
+    return next((dict(item) for item in items if str(item["project_id"]) == project_id), None)
 
 
 def runtime_rebind_plan(
@@ -102,17 +108,11 @@ def runtime_rebind_plan(
         "schema_version": row["schema_version"],
         "previous_root": previous or None,
     })
-    if previous:
-        try:
-            if same_path(Path(previous), workspace):
-                result["status"] = "CURRENT"
-                return result
-        except Exception:
-            pass
+    root_current = bool(previous and same_path(Path(previous), workspace))
 
     # A still-existing former workspace is ambiguous: it may be a second live
     # clone rather than a move.  Never steal its Runtime identity automatically.
-    if previous and os.path.isabs(previous):
+    if not root_current and previous and os.path.isabs(previous):
         old = Path(previous)
         try:
             if old.exists():
@@ -122,7 +122,12 @@ def runtime_rebind_plan(
         except OSError:
             result["blockers"].append(f"previous Runtime root cannot be inspected: {previous}")
 
-    reg = _registry_entry(project_id, registry_path)
+    try:
+        reg = _registry_entry(project_id, registry_path)
+    except (OSError, ValueError) as exc:
+        result["status"] = "BLOCKED"
+        result["blockers"].append(f"Runtime registry unreadable: {exc}")
+        return result
     if reg:
         result["registry_entry"] = reg
         reg_root = str(reg.get("root_path") or "").strip()
@@ -140,11 +145,28 @@ def runtime_rebind_plan(
                 except OSError:
                     result["blockers"].append(f"runtime registry root cannot be inspected: {reg_root}")
 
+        reg_db = str(reg.get("db_path") or "").strip()
+        if reg_db and os.path.isabs(reg_db) and not same_path(Path(reg_db), db_path):
+            try:
+                if Path(reg_db).exists():
+                    result["blockers"].append(
+                        f"runtime registry maps {project_id} to another existing database ({reg_db})"
+                    )
+            except OSError:
+                result["blockers"].append(f"runtime registry database cannot be inspected: {reg_db}")
+
     if result["blockers"]:
         result["status"] = "BLOCKED"
         return result
-    result["status"] = "REBIND_AVAILABLE"
-    result["rebind_required"] = True
+    registry_current = bool(reg and str(reg.get("root_path") or "")
+                            and same_path(Path(reg["root_path"]), workspace)
+                            and str(reg.get("db_path") or "")
+                            and same_path(Path(reg["db_path"]), db_path)
+                            and str(reg.get("base_version") or "") == result["base_version"]
+                            and reg.get("schema_version") == result["schema_version"])
+    result["status"] = "CURRENT" if root_current and registry_current else "REBIND_AVAILABLE"
+    result["rebind_required"] = not root_current
+    result["registry_sync_required"] = not registry_current
     return result
 
 
@@ -162,29 +184,52 @@ def apply_runtime_rebind(
 
     workspace = canonical_path(workspace_root)
     db_path = Path(plan["db_path"])
-    conn = dbmod.connect(str(db_path))
-    try:
-        with dbmod.transactional(conn):
-            conn.execute(
-                "UPDATE project SET root_path=?, updated_at=? WHERE project_id=?",
-                (str(workspace), dbmod.now_iso(), project_id),
-            )
-    finally:
-        conn.close()
+    if plan["rebind_required"]:
+        conn = dbmod.connect(str(db_path))
+        try:
+            with dbmod.transactional(conn):
+                latest_plan = runtime_rebind_plan(workspace, project_id, registry_path=registry_path)
+                if latest_plan["status"] == "BLOCKED":
+                    return latest_plan
+                current = conn.execute("SELECT root_path, base_version, schema_version FROM project WHERE project_id=?",
+                                       (project_id,)).fetchone()
+                if (current is None or str(current["root_path"] or "") != str(plan["previous_root"] or "")
+                        or str(current["base_version"] or "") != plan["base_version"]
+                        or current["schema_version"] != plan["schema_version"]):
+                    return {**plan, "status": "BLOCKED", "blockers": ["RUNTIME_BINDING_CHANGED: replan before rebind"]}
+                conn.execute(
+                    "UPDATE project SET root_path=?, updated_at=? WHERE project_id=?",
+                    (str(workspace), dbmod.now_iso(), project_id),
+                )
+        finally:
+            conn.close()
 
-    # The registry is a machine-local resolver cache.  Re-registering writes to
-    # the modern machine-local path by default and keeps project identity stable.
-    registry_written = dbmod.register_project(
-        project_id=project_id,
-        project_name=str(plan.get("project_name") or project_id),
-        db_path=str(db_path),
-        root_path=str(workspace),
-        base_version=str(plan.get("base_version") or ""),
-        schema_version=int(plan.get("schema_version") or dbmod.EXPECTED_SCHEMA_VERSION),
-        registry_path=registry_path,
-    )
+    # The cache can be repaired after a committed root update without updating
+    # the ledger again. A CURRENT DB root alone never proves cache convergence.
+    try:
+        latest_plan = runtime_rebind_plan(workspace, project_id, registry_path=registry_path)
+        if (latest_plan["status"] not in {"CURRENT", "REBIND_AVAILABLE"}
+                or latest_plan.get("rebind_required")
+                or latest_plan.get("base_version") != plan.get("base_version")
+                or latest_plan.get("schema_version") != plan.get("schema_version")):
+            return {**latest_plan, "status": "BLOCKED", "facts_committed": bool(plan["rebind_required"]),
+                    "blockers": latest_plan.get("blockers") or ["RUNTIME_BINDING_CHANGED: replan before cache update"]}
+        registry_written = dbmod.register_project(
+            project_id=project_id,
+            project_name=str(plan.get("project_name") or project_id),
+            db_path=str(db_path),
+            root_path=str(workspace),
+            base_version=str(plan.get("base_version") or ""),
+            schema_version=int(plan.get("schema_version") or dbmod.EXPECTED_SCHEMA_VERSION),
+            registry_path=registry_path,
+        )
+    except Exception as exc:
+        return {**plan, "status": "SYNC_REQUIRED", "facts_committed": True,
+                "rebind_required": False, "registry_sync_required": True,
+                "warnings": [f"Registry update failed: {type(exc).__name__}: {exc}"],
+                "recovery": "Repeat base sync-project --apply for the same workspace; do not repeat business work."}
     final = runtime_rebind_plan(workspace, project_id, registry_path=str(registry_written))
-    final["action"] = "REBIND_RUNTIME_ROOT"
+    final["action"] = "REBIND_RUNTIME_ROOT" if plan["rebind_required"] else "RECONCILE_RUNTIME_REGISTRY"
     final["registry_written"] = str(registry_written)
     final["previous_root"] = plan.get("previous_root")
     return final

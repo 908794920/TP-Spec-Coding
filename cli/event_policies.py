@@ -237,8 +237,13 @@ def load_trusted_governance_events(
     artifact_path: Optional[Union[str, Path]] = None,
     expected_subject_digest: Optional[str] = None,
     evidence_dir: Optional[Union[str, Path]] = None,
+    latest_only: bool = False,
 ) -> list[TrustedEvent]:
-    """返回全部可信治理事件，按事件 id 从新到旧排列。"""
+    """返回可信事件；latest_only 在结果校验前选定最新同角色/种类记录。
+
+    当前门禁不能跳过较新的失败、损坏证据或失效主体去复用历史 PASS。
+    默认保留历史检索语义，审计调用不因当前门禁策略而丢失旧事实。
+    """
     policy = EVENT_POLICIES.get(event_type)
     if not policy or policy["authority"] != "governance":
         return []
@@ -246,6 +251,11 @@ def load_trusted_governance_events(
         "SELECT * FROM task_event WHERE task_id=? AND event_type=? ORDER BY id DESC",
         (task_id, event_type),
     ).fetchall()
+    if latest_only:
+        rows = [row for row in rows
+                if (actor is None or (row["actor_role"] or "") == actor)
+                and (review_kind is None or str(_event_detail(row).get("review_kind") or "").upper()
+                     == str(review_kind).upper())][:1]
     fields = tuple(detail_required) if detail_required is not None else policy["required_fields"]
     trusted: list[TrustedEvent] = []
     for row in rows:
@@ -316,12 +326,14 @@ def load_trusted_governance_event(
     artifact_path: Optional[Union[str, Path]] = None,
     expected_subject_digest: Optional[str] = None,
     evidence_dir: Optional[Union[str, Path]] = None,
+    latest_only: bool = False,
 ) -> Optional[TrustedEvent]:
     """加载最新一条可信治理事件。"""
     events = load_trusted_governance_events(
         conn, task_id, event_type=event_type, actor=actor, decision=decision,
         detail_required=detail_required, review_kind=review_kind, artifact_path=artifact_path,
         expected_subject_digest=expected_subject_digest, evidence_dir=evidence_dir,
+        latest_only=latest_only,
     )
     return events[0] if events else None
 
@@ -351,3 +363,56 @@ def load_task_retirement(conn, task_id: str) -> Optional[TrustedEvent]:
 def is_task_retired(conn, task_id: str) -> bool:
     """Whether a task is an administratively retired historical instance."""
     return load_task_retirement(conn, task_id) is not None
+
+
+def verification_scope(detail: Dict[str, Any]) -> str:
+    """Interpret only explicit supported scopes; old events retain full semantics."""
+    scope = detail.get("verification_scope", "full")
+    if scope not in ("full", "technical"):
+        raise ValueError("invalid verification scope")
+    if scope == "technical":
+        checks = detail.get("checks")
+        if not isinstance(checks, list) or not checks or any(
+            not isinstance(item, str) or not item.strip() for item in checks
+        ):
+            raise ValueError("technical verification requires explicit checks")
+    return scope
+
+
+def verification_subject_matches(detail: Dict[str, Any], task_dir: Union[str, Path]) -> bool:
+    from .digest import compute_verification_subject_digest
+    try:
+        scope = verification_scope(detail)
+        return detail.get("subject_digest") == compute_verification_subject_digest(task_dir, scope=scope)
+    except (ValueError, OSError, UnicodeError):
+        return False
+
+
+def load_current_verification(conn, task_id: str, task_dir: Union[str, Path], *, require_full: bool = False) -> Optional[TrustedEvent]:
+    """Latest actual PASS, with its own scope, current subject and original evidence.
+
+    Product ChangeSet freshness is checked by callers against their captured snapshot.
+    Never search past a newer failure, unknown scope, or damaged evidence for a PASS.
+    """
+    current = load_trusted_governance_event(
+        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer",
+        decision="PASS", evidence_dir=task_dir, latest_only=True,
+    )
+    if current is None or not verification_subject_matches(current.detail, task_dir):
+        return None
+    scope = verification_scope(current.detail)
+    from .delivery_contract import load_repository_scope, full_scope_matches
+    known = load_repository_scope(conn, task_id)
+    try:
+        development_event_id = int(current.detail.get("development_event_id") or 0)
+    except (ValueError, TypeError):
+        return None
+    if int(current.row["id"]) <= known["scope_event_id"] or development_event_id <= known["scope_event_id"]:
+        return None
+    if scope == "full" and not full_scope_matches(
+        known, current.detail, development_event_id=development_event_id
+    ):
+        return None
+    if require_full and scope != "full":
+        return None
+    return current

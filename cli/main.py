@@ -25,7 +25,7 @@ from cli import project_cmd
 from cli import product_cmd
 from cli import document_cmd
 from cli.cards import commands as card_commands
-from cli.cards import trigger as card_trigger
+from cli import command_context
 from cli import base_maintenance
 from cli import task_cmd
 from cli import work_session_cmd
@@ -184,35 +184,34 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[List[str]] = None) -> int:
     _ensure_utf8_stdio()
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    func = getattr(args, "func", None)
-    if func is None:
-        parser.print_help()
-        return 2
-    try:
-        autonomy_context.guard_content_cli(args)
-        rc = int(func(args) or 0)
-        if rc == 0:
-            try:
-                card_trigger.refresh_after_success(args)
-            except Exception as card_exc:
-                # Preview generation is presentation-only and must never rewrite
-                # a successful Runtime command into failure.
-                print(f"CARD_RENDER_WARNING: {type(card_exc).__name__}: {card_exc}", file=sys.stderr)
-        return rc
-    except SystemExit:
-        raise
-    except BaselineBlockedError as e:
-        # V5.3.2 A-06：基座阻塞标准语义；业务角色必须停止任务，不得自行修复基座。
-        print(f"BASELINE_BLOCKED: {e}", file=sys.stderr)
-        return 1
-    except EncodingValidationError as e:
-        # V5.3.2 A-05：UTF-8 输入拒绝；数据库与投影必须零变化。
-        print(f"ENCODING_VALIDATION_FAILED: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)
+    with command_context.command() as context:
+        try:
+            with command_context.span("parse"):
+                parser = build_parser()
+                args = parser.parse_args(argv)
+            context.bind(args)
+            func = getattr(args, "func", None)
+            if func is None:
+                parser.print_help()
+                context.exit_code = 2
+                return 2
+            autonomy_context.guard_content_cli(args)
+            if getattr(args, "group", None) == "card":
+                with command_context.span("card"):
+                    context.exit_code = int(func(args) or 0)
+            else:
+                context.exit_code = int(func(args) or 0)
+            return context.exit_code
+        except SystemExit as exc:
+            context.exit_code = exc.code if isinstance(exc.code, int) else 1
+            raise
+        except BaselineBlockedError as exc:
+            print(f"BASELINE_BLOCKED: {exc}", file=sys.stderr)
+        except EncodingValidationError as exc:
+            print(f"ENCODING_VALIDATION_FAILED: {exc}", file=sys.stderr)
+        except Exception as exc:
+            print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
+        context.exit_code = 1
         return 1
 
 

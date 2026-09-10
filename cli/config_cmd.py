@@ -43,6 +43,8 @@ def _resolve_db(args) -> str:
 
 
 def cmd_config_get(args) -> int:
+    if getattr(args, "effective", False):
+        return _get_effective_orchestration(args)
     key = args.key
     scope = args.scope or _DEFAULT_SCOPE
     scope_id = args.scope_id
@@ -75,6 +77,32 @@ def cmd_config_get(args) -> int:
         conn.close()
 
 
+def _get_effective_orchestration(args) -> int:
+    from . import orchestration, orchestration_policy
+    project_id = args.scope_id or getattr(args, "project", None)
+    if args.key != "orchestration" or (args.scope or _DEFAULT_SCOPE) != "project" or not project_id:
+        print("ORCHESTRATION_POLICY_INVALID: --effective requires --key orchestration and an explicit project scope-id", file=sys.stderr)
+        return 4
+    try:
+        conn = dbmod.connect_readonly(_resolve_db(args))
+        try:
+            if conn.execute("SELECT 1 FROM project WHERE project_id=?", (project_id,)).fetchone() is None:
+                raise ValueError("ORCHESTRATION_POLICY_INVALID: project is not registered in this database")
+            data = orchestration_policy.resolve(
+                orchestration.load_contract(), orchestration.load_role_catalog(),
+                orchestration_policy.read_rows(conn), project_id=project_id,
+            )
+        finally:
+            conn.close()
+    except (ValueError, OSError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
+    sources = data.pop("_policy_sources")
+    print(json.dumps({"status": "ok", "project_id": project_id, "sources": sources,
+                      "data": data}, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_config_set(args) -> int:
     key = args.key
     scope = args.scope or _DEFAULT_SCOPE
@@ -94,6 +122,16 @@ def cmd_config_set(args) -> int:
     try:
         now = dbmod.now_iso()
         with dbmod.transactional(conn):
+            if key == "orchestration" or key.startswith("orchestration."):
+                from . import orchestration, orchestration_policy
+                try:
+                    orchestration_policy.validate_write(
+                        conn, orchestration.load_contract(), orchestration.load_role_catalog(),
+                        key=key, value_json=value_json, scope=scope, project_id=scope_id,
+                    )
+                except ValueError as exc:
+                    print(str(exc), file=sys.stderr)
+                    return 4
             conn.execute(
                 """
                 INSERT INTO config (key, scope, scope_id, value_json, description, updated_at)
@@ -259,6 +297,7 @@ def add_config_subparsers(config_parser) -> None:
     p_get.add_argument("--scope-id", required=False, default=None, help="scope id (e.g. project_id)")
     p_get.add_argument("--project", required=False, default=None, help="resolve db via registry by project_id")
     p_get.add_argument("--db", required=False, default=None)
+    p_get.add_argument("--effective", action="store_true", help="show validated effective orchestration policy and Base/project sources as JSON")
     p_get.set_defaults(func=cmd_config_get)
 
     # config set

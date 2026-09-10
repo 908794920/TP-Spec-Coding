@@ -126,3 +126,39 @@ def test_card_display_skill_declares_read_only_host_routing_boundaries():
         assert required in text
     for forbidden in ("新增 MCP", "写 Runtime", "后台服务", "自行编造 HTML"):
         assert forbidden in text
+
+
+# 按来源文件解析相对指针，避免只在某个工作目录下碰巧有效。
+def test_b14_selected_skill_pointers_resolve_without_index_or_card_preload():
+    from scripts.check_document_navigation import iter_markdown_links, resolve_document_link
+    targets = {
+        'entry/tp-spec-coding/SKILL.md': {
+            'agents/tp-software-lifecycle/SKILL.md', 'agents/tp-card-display/SKILL.md'},
+        'agents/tp-software-lifecycle/SKILL.md': {
+            'agents/tp-card-display/SKILL.md', 'docs/agents/tp-software-lifecycle.md'},
+        'skills/roles/tp-test-engineer/SKILL.md': {
+            'skills/capabilities/testing-strategy/references/visual-qa.md',
+            'skills/capabilities/testing-strategy/references/test-value.md',
+            'docs/agents/tp-software-lifecycle.md'},
+        'skills/capabilities/testing-strategy/SKILL.md': {
+            'skills/capabilities/testing-strategy/references/visual-qa.md'},
+    }
+    for rel, expected in targets.items():
+        source = BASE / rel
+        resolved = {p.relative_to(BASE).as_posix() for _, target in iter_markdown_links(source)
+                    if (p := resolve_document_link(source, target, base=BASE)) is not None}
+        assert expected <= resolved, (rel, expected - resolved)
+        for target in resolved:
+            assert (BASE / target).is_file(), (rel, target)
+    entry = (BASE / 'entry/tp-spec-coding/SKILL.md').read_text(encoding='utf-8')
+    assert '只读命中' in entry and '显式' in entry
+    assert 'INLINE_CAPABILITY_UNAVAILABLE' not in entry
+    assert 'CARD_DISPLAY.inline' not in entry and 'Web Artifact' not in entry
+
+
+def test_b14_display_contract_has_no_runtime_success_refresh_owner():
+    text = (BASE / 'agents/tp-card-display/SKILL.md').read_text(encoding='utf-8')
+    assert '生命周期不拥有自动刷新触发策略' in text
+    assert 'Runtime 成功后的刷新触发策略' not in text
+    assert '用户显式请求' in text and 'inline.status=generated' in text
+    assert 'actual host render' in text and '实际桥接调用成功' in text

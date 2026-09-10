@@ -12,9 +12,9 @@ description: 独立只读卡片 Domain Agent；仅在用户明确要求查看 TP
 # tp-card-display
 
 ## 定位
-这是由 `tp-spec-coding` 直接路由的**只读卡片 Domain Agent**。它不成为产品入口，不读取或改写 Runtime 状态，不维护后台状态；唯一职责是把用户明确要求“显示卡片”的意图路由到现有权威卡片命令，并根据命令返回的 `CARD_DISPLAY` 选择真实可用的展示层。
+这是由 `tp-spec-coding` 直接路由的**只读卡片 Domain Agent**。它不成为产品入口，只通过权威卡片命令读取当前 Runtime 事实，不改写业务状态、不维护后台状态；唯一职责是把用户明确要求“显示卡片”的意图路由到现有权威卡片命令，并根据命令返回的 `CARD_DISPLAY` 选择真实可用的展示层。
 
-`tp-software-lifecycle` 只拥有 Runtime 成功后的刷新触发策略；触发后产生的 `CARD_DISPLAY` 必须遵循本 Agent 的展示契约。两者共用当前 Base 的 `cli/cards` 渲染入口，任何一方不得复制卡片模板、渲染器或 Host bridge。
+生命周期不拥有自动刷新触发策略；仅用户显式请求卡片时转交本 Agent。共用当前 Base 的 `cli/cards` 权威入口，不复制卡片模板、渲染器或 Host bridge；普通 Runtime 成功不能触发展示。
 
 ## Trigger
 只在用户明确要求查看以下信息时使用：
@@ -65,8 +65,10 @@ description: 独立只读卡片 Domain Agent；仅在用户明确要求查看 TP
 
 任何降级都必须说明实际采用的展示层和对应原因；不得把候选物“已生成”误报为宿主“已展示”。
 
+Web Artifact 默认使用工作区固定 `.tp-spec/card/index.html`，实际路径以 `CARD_DISPLAY.web_artifact` 为准。宿主有可用展示能力时不得只返回裸路径；没有可靠能力则如实提供离线 HTML，不猜测已经显示。
+
 ## 展示流程
-1. 先检查当前宿主能力。若满足“Codex 宿主桥接”条件，为**当前单次子进程**传入 `--inline-output <THREAD-VISUALIZATION-DIR>/<ascii-name>.html`；仅在正式 Runtime 自动刷新场景设置 `TP_SPEC_CARD_INLINE_OUTPUT`。其他宿主只有在其自身正式 bridge 已确认时才传入绝对 fragment 路径；能力未确认则不猜测，记录解释原因 `INLINE_CAPABILITY_UNAVAILABLE` 并准备 Web Artifact 降级。
+1. 先检查当前宿主能力。若满足“Codex 宿主桥接”条件，为**当前单次子进程**传入 `--inline-output <THREAD-VISUALIZATION-DIR>/<ascii-name>.html`；普通 Runtime 命令不读取卡片环境参数、不生成卡片。其他宿主只有在其自身正式 bridge 已确认时才传入绝对 fragment 路径；能力未确认则不猜测，记录解释原因 `INLINE_CAPABILITY_UNAVAILABLE` 并准备 Web Artifact 降级。
 2. 执行官方 `tp-spec card ...`，不得自行编造 HTML，不得用通用可视化指令替代权威 snapshot。
 3. 读取命令输出中的 `CARD_DISPLAY`。`inline.status=generated` 只证明 `fragment generated`；`inline.status=failed` 使用 `INLINE_GENERATION_FAILED` 降级。
 4. 仅当 inline capability 已确认且 fragment 已生成时，调用当前宿主正式 bridge 消费 `CARD_DISPLAY.inline.path`。Codex 必须在同一最终回复输出 `visualize{"path":"<CARD_DISPLAY.inline.path>"}`；其他宿主使用其已确认的正式 bridge。只有**实际桥接调用成功**后才可声称“会话内已展示”；实际桥接失败使用 `INLINE_RENDER_FAILED` 降级。
@@ -78,7 +80,7 @@ description: 独立只读卡片 Domain Agent；仅在用户明确要求查看 TP
 - 不新增 MCP、MCP App、HTTP/WebSocket 或其他宿主服务。
 - 不写 Runtime、Wiki、Knowledge，不新增 public state、数据库对象或后台服务。
 - 不新增 `host_capability`、`rendered` 一类 Base 无法证明的 `CARD_DISPLAY` 字段；Host capability/render outcome 只属于当前 Agent/Host 的一次性展示事实。
-- 不自行编造 HTML、卡片数据或第二份 snapshot；只消费现有 `tp-spec card` / Runtime 自动刷新生成的展示结果。
+- 不自行编造 HTML、卡片数据或第二份 snapshot；只消费用户明确请求后的 `tp-spec card` 展示结果。
 - 不把裸 HTML、Markdown code fence 或临时手写可视化冒充正式 inline bridge；仅在本 Skill 已确认的 Codex 条件下，允许使用上述 `visualize` 内容引用挂载官方 fragment。
 - 不因为生成了 `INLINE_VISUALIZATION` 或 `inline.status=generated` 就声称“已经在对话中显示”；必须以宿主本次实际采用且成功的展示层为准。
-- 自动刷新触发时机继续只由 `tp-software-lifecycle` 现有 Runtime 白名单负责，本 Skill 不新增触发时机。
+- 不存在 Runtime 自动刷新白名单；本 Skill 仅由用户显式卡片请求触发，不能在普通流转中预生成或静默刷新。

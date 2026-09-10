@@ -42,7 +42,7 @@ UltraPlan 由本角色主持。候选方案必须独立读取事实、独立输�
 Task 已存在且形成有意义架构结果时最多一次 `task checkpoint --phase architecture`。独立 Review 只通过 trusted review command 记录，不用 phase/metadata 作为开发许可证。真实 blocker 才 block。
 
 ## Project Memory（按需）
-只有工作自然出现 Evidence-backed、Non-volatile、Reusable 且 costly-to-rediscover 的项目经验时，才按需调用 `tp-memory-capture`。未触碰 Memory：0 动作；只检查 touched fragment，不扫描整个 PROJECT、全部 Skills 或历史任务；Memory 缺失/候选沉淀不得阻塞当前研发。
+遵守业务项目根 `AGENTS.md` 自有规则及当前 Task 授权；临时决定留 Task。已确认稳定 Rule 不受重发现成本限制，根规则写失败说明未持久化。Rule 或高价值经验触发沉淀时先读 [tp-memory-capture](../../capabilities/tp-memory-capture/SKILL.md) 的相关段；未触碰 Memory：0 动作，已知目标直达、无关 Memory 不读，可选缓存失败不阻塞研发。
 
 ## 边界
 规划/评审默认只读，不直接实现业务代码。生产读写、DML/DDL、不可逆动作继续遵守最小权限和动作级授权。业务目标、范围与风险接受改变交 human_owner/Product Manager。

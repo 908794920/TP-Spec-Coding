@@ -22,6 +22,7 @@ from cli.content_systems import load_content_systems, same_path
 from cli.path_identity import canonical_path, path_identity_key
 from cli.environment import (
     BINDING_SCHEMA,
+    current_base_root,
     INSTALLATION_SCHEMA,
     INVENTORY_SCHEMA,
     default_binding_path,
@@ -191,6 +192,11 @@ def resolve_workspace(workspace_root: "str | Path", *, installation_config: "str
     binding = load_project_binding(workspace)
     base_root = resolve_base_root(workspace, installation_path=installation_config)
     base_health = validate_base_root(base_root)
+    base_health["source"] = (
+        "environment:TP_SPEC_BASE_ROOT" if os.environ.get("TP_SPEC_BASE_ROOT") else
+        "project-binding:base.root" if binding.base_root_override else
+        "installation:base.root" if installation.base_root else "executing-base"
+    )
 
     wiki_identity: Dict[str, Any]
     wiki_workspace_root: Optional[Path]
@@ -218,6 +224,12 @@ def resolve_workspace(workspace_root: "str | Path", *, installation_config: "str
         candidate = re.sub(r"[^a-z0-9-]+", "-", workspace.name.casefold()).strip("-")
         project_id = candidate if PROJECT_ID_RE.match(candidate or "") else ""
     runtime = _runtime_project_status(workspace, project_id)
+    from .migrations import contract_migration_policy
+    runtime_contract = contract_migration_policy(str(runtime.get("base_version") or ""), active_version())
+    runtime_contract["source"] = runtime.get("db_path")
+    runtime_contract["automatic_task_migration"] = False
+    runtime_contract["scope"] = "project"
+    runtime_contract["task_contracts"] = "not_evaluated; use task migration-plan for individual task bindings"
     runtime_portability = runtime_rebind_plan(workspace, project_id)
     active_task_portability = scan_active_task_portability(workspace)
 
@@ -226,6 +238,9 @@ def resolve_workspace(workspace_root: "str | Path", *, installation_config: "str
         "workspace_root": str(workspace),
         "project_id": project_id,
         "base": base_health,
+        "executing_base": {"root": str(current_base_root()), "version": active_version(),
+                           "matches_resolved_root": same_path(current_base_root(), base_root)},
+        "runtime_contract": runtime_contract,
         "installation": {
             "path": str(installation.path),
             "exists": installation.exists,
@@ -616,6 +631,8 @@ def _migrate_one(workspace: Path, args) -> Dict[str, Any]:
     project_id=str(r.get("project_id") or "")
     if not PROJECT_ID_RE.match(project_id):
         return {"workspace_root":str(workspace),"status":"BLOCKED","blockers":[f"cannot infer valid project id: {project_id!r}"],"changes":[]}
+    binding_target = Path(r["binding"]["path"])
+    binding_before = binding_target.read_bytes() if binding_target.is_file() else None
     binding_path=write_project_binding(
         workspace,
         project_id=project_id,
@@ -623,7 +640,8 @@ def _migrate_one(workspace: Path, args) -> Dict[str, Any]:
         knowledge_id=str(r["knowledge"].get("project_id") or ""),
         base_version=active_version(),
     )
-    changes.append({"action":"WRITE_PROJECT_BINDING","path":str(binding_path)})
+    if binding_path.read_bytes() != binding_before:
+        changes.append({"action":"WRITE_PROJECT_BINDING","path":str(binding_path)})
     # Re-resolve after binding write; this is the safety boundary before link removal.
     after=resolve_workspace(workspace,installation_config=args.installation_config)
     if not after["base"]["valid"] or not after["wiki"]["workspace_root"]:
@@ -631,6 +649,9 @@ def _migrate_one(workspace: Path, args) -> Dict[str, Any]:
     runtime_rebind = apply_runtime_rebind(workspace, project_id)
     if runtime_rebind.get("status") == "BLOCKED":
         return {"workspace_root":str(workspace),"status":"BLOCKED_AFTER_BINDING","blockers":runtime_rebind.get("blockers") or ["Runtime rebind blocked"],"changes":changes}
+    if runtime_rebind.get("status") == "SYNC_REQUIRED":
+        return {"workspace_root": str(workspace), "status": "SYNC_REQUIRED", "changes": changes,
+                "runtime_portability": runtime_rebind, "blockers": []}
     if runtime_rebind.get("action") == "REBIND_RUNTIME_ROOT":
         changes.append({"action":"REBIND_RUNTIME_ROOT","db_path":runtime_rebind.get("db_path"),"from":runtime_rebind.get("previous_root"),"to":runtime_rebind.get("current_root"),"registry":runtime_rebind.get("registry_written")})
         inv_path = reconcile_inventory_project(project_id, workspace, getattr(args,"inventory",None))
@@ -650,9 +671,9 @@ def _migrate_one(workspace: Path, args) -> Dict[str, Any]:
     if portability.get("applied_action"):
         changes.append({"action":portability["applied_action"],"path":portability["config_path"]})
     surface = sync_project_surface(workspace, project_id=project_id, apply=True)
-    if surface.get("status") == "BLOCKED":
-        return {"workspace_root":str(workspace),"status":"BLOCKED_AFTER_BINDING","blockers":surface.get("blockers") or ["project entry surface sync blocked"],"changes":changes}
     changes.extend({"action":row["action"],"path":row["path"]} for row in surface.get("changes") or [])
+    if surface.get("status") == "BLOCKED":
+        return {"workspace_root":str(workspace),"status":"BLOCKED_AFTER_BINDING","blockers":surface.get("blockers") or ["project entry surface sync blocked"],"changes":changes,"surface":surface}
     final=workspace_doctor(workspace,installation_config=args.installation_config)
     return {"workspace_root":str(workspace),"status":"PASS" if final["status"]=="PASS" else "WARN","changes":changes,"post_doctor":final}
 
@@ -661,7 +682,8 @@ def cmd_migrate(args) -> int:
     try:
         rows=[_migrate_one(p,args) for p in _all_workspaces(args)]
         bad=[r for r in rows if r["status"].startswith("BLOCKED")]
-        status="BLOCKED" if bad else ("DRY_RUN" if not args.apply else "PASS")
+        status="BLOCKED" if bad else ("DRY_RUN" if not args.apply else (
+            "SYNC_REQUIRED" if any(r["status"] in {"SYNC_REQUIRED", "WARN"} for r in rows) else "PASS"))
         _emit({"schema":"tp-spec.base-migration/v1","status":status,"apply":bool(args.apply),"projects":len(rows),"results":rows}); return 1 if bad else 0
     except Exception as exc: _emit({"schema":"tp-spec.base-migration/v1","status":"BLOCKED","error":f"{type(exc).__name__}: {exc}"}); return 1
 
@@ -693,14 +715,16 @@ def cmd_sync_project(args) -> int:
                 active=scan_active_task_portability(workspace)
                 pending_runtime = (runtime_result.get("status")=="REBIND_AVAILABLE")
                 pending_surface = surface.get("status")!="CURRENT" or portability.get("status")!="CURRENT"
-                if active.get("status")=="REVIEW_REQUIRED":
+                if (active.get("status")=="REVIEW_REQUIRED" or runtime_result.get("status")=="SYNC_REQUIRED"
+                        or (resolution.get("runtime", {}).get("exists")
+                            and not resolution.get("runtime_contract", {}).get("runtime_compatible"))):
                     status="SYNC_REQUIRED"
                 elif pending_runtime or pending_surface:
                     status="SYNC_AVAILABLE"
                 else:
                     status="PASS" if args.apply else "CURRENT"
                 resolution["active_task_portability"]=active
-            results.append({"workspace_root":str(workspace),"status":status,"runtime_portability":runtime_result,"portability":portability,"surface":surface,"active_task_portability":resolution.get("active_task_portability")})
+            results.append({"workspace_root":str(workspace),"status":status,"runtime_portability":runtime_result,"runtime_contract":resolution.get("runtime_contract"),"executing_base":resolution.get("executing_base"),"portability":portability,"surface":surface,"active_task_portability":resolution.get("active_task_portability")})
         bad=[r for r in results if r["status"]=="BLOCKED"]
         if bad:
             overall="BLOCKED"
