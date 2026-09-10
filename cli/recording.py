@@ -304,6 +304,11 @@ def _open_posix_collection_temp(directory_handle: int) -> tuple[str, int]:
             return name, os.open(name, flags, 0o600, dir_fd=directory_handle)
         except FileExistsError:
             continue
+        except FileNotFoundError as exc:
+            # The pinned directory may have been removed after preflight.  Keep
+            # the failure closed and expose the stable collection-boundary error
+            # instead of leaking a platform-specific errno.
+            raise ValueError("ARTIFACT_COLLECTION_PATH_ESCAPE") from exc
     raise ValueError("ARTIFACT_COLLECTION_TEMP_CONFLICT")
 
 
