@@ -44,4 +44,4 @@ L0～L3 继续作为风险/查询标签，但不决定一条固定昂贵链路�
 
 ## 真实性边界
 
-Runtime 只对以下事项 fail-closed：账本/状态完整性、明确未解决 blocker、高风险动作授权、以及验证事实造假。未测试不能写 PASS；human 测试可由 human_owner defer/waive，但不得伪装成 PASS。knowledge DEFERRED 默认不阻止 COMPLETED。
+Runtime 只对以下事项 fail-closed：账本/状态完整性、明确未解决 blocker、高风险动作授权、以及验证事实造假。未测试不能写 PASS；human_owner 可对已按声明范围实际核验的人工/视觉项通过官方 `acceptance-override --mode accept` 留证，也可对未执行项 defer/waive，但不得伪装成 PASS。Owner 决策不解除无关 blocker。knowledge DEFERRED 默认不阻止 COMPLETED。

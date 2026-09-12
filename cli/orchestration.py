@@ -393,11 +393,15 @@ def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_pro
         if include_progress:
             from .report_cmd import task_progress_facts
             task["_progress_facts"] = task_progress_facts(conn, task, events=facts, retired=task["_retired"])
+        project_root = str(task.get("project_root_path") or "").strip()
+        task_dir = Path(project_root) / ".tp-spec" / "tasks" / task_id if project_root else None
+        from . import event_policies
+        if task_dir is not None:
+            task["_owner_acceptance"] = event_policies.effective_owner_acceptance(
+                conn, task_id, task_dir=task_dir,
+            )
         if not task["_retired"] and task.get("current_state") in {"NEW", "ACTIVE"}:
             from . import waiting
-            from . import event_policies
-            project_root = str(task.get("project_root_path") or "").strip()
-            task_dir = Path(project_root) / ".tp-spec" / "tasks" / task_id if project_root else None
             task["_result_wait"] = waiting.result_wait(conn, task_id, facts, task_dir=task_dir)
             if task_dir is not None:
                 current = event_policies.load_current_verification(conn, task_id, task_dir)
@@ -944,6 +948,10 @@ def _validation_advice(task: Dict[str, Any]) -> Dict[str, Any]:
         "changed_files": changed[:64], "changed_file_count": len(changed),
         "acceptance_source": "acceptance.md", "acceptance_candidates": candidates[:12],
         "acceptance_candidate_count": len(candidates),
+        "effective_owner_acceptance": {
+            "accepted_acs": list((task.get("_owner_acceptance") or {}).get("accepted_acs") or []),
+            "visual_acs": list((task.get("_owner_acceptance") or {}).get("visual_acs") or []),
+        },
         "usage_mapping": "requires_actual_callers", "risk_signals": task.get("_risk_signals", []),
         "instructions": "先复用相关测试，核对实际调用方/当前AC/风险再选检查；不按Diff行数降风险。候选不是必跑清单；未确定影响不默认全量。编译、浏览器和副作用沿用既有授权，未运行不记PASS。",
     }
@@ -998,10 +1006,11 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
     if contract is not None:
         data["included_stages"] = [step["stage"] for step in contract["pipelines"][level]
             if _stage_included(step, level, task, task["_events"], task["_signals"])]
-    if action == "dispatch_role" and next_stage in {"development", "verification", "review"}:
+    if action in {"dispatch_role", "task_complete"} and task.get("_task_dir") is not None:
         context = dict(context or {})
         context["validation"] = _validation_advice(task)
-        data["recommended_skills"] = sorted(set(data["recommended_skills"]) | {"testing-strategy"})
+        if action == "dispatch_role" and next_stage in {"development", "verification", "review"}:
+            data["recommended_skills"] = sorted(set(data["recommended_skills"]) | {"testing-strategy"})
     if allowed is not None:
         data["allowed_effects"] = allowed
     if task.get("_current_effective", {}).get("status", "ABSENT") != "ABSENT":

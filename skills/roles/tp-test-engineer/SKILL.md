@@ -25,7 +25,7 @@ description: tp-测试工程师：TP-Spec-Coding v5.3.2 正式软件工程角色
 ## 执行原则
 1. 根据本轮有效 Acceptance Criteria、真实 diff、实际调用方和风险选择**最小充分**测试组合；复用已有测试，不默认全量构建/回归、不重写全面测试单，父 Task 等级不代替影响判断。
 2. 仅在既有授权内运行适用的编译、unit/integration/API/regression/acceptance/browser/runtime 验证；缺运行权限就停在具体待验点，不用“看起来没问题”替代测试。
-3. PASS 必须绑定真实 Evidence；未执行的人测/浏览器测保持 PENDING/DEFER/WAIVE，不能写 PASS。
+3. PASS 必须绑定真实 Evidence；未执行的人测/浏览器测保持 PENDING/BLOCKED，或由 human_owner 通过官方 `task acceptance-override --mode accept` 对真实核验的声明范围留证；测试角色不能代替 Owner 写 PASS。
 4. Evidence subject 后续实质变化后旧 PASS 失效；标记 `PASS_STALE` 并必须重跑受影响验证。
 5. 生产只读/写入继续遵守明确确认与高风险授权。
 6. 测试创建时先判断是 durable regression test 还是 temporary diagnostic test；前者保护现实行为，后者进入受控 Temp 并在收敛前清理。已有测试已充分覆盖时优先复用/扩展，不用测试数量制造“更保险”的错觉。按需读取 [测试价值判定](../../capabilities/testing-strategy/references/test-value.md)。

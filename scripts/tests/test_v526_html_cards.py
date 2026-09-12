@@ -479,6 +479,66 @@ def test_renderer_contains_core_fields_interactions_and_snapshot_notice(tmp_path
     assert "<script>alert(1)</script>" not in text
 
 
+def test_renderer_notice_spans_content_grid(tmp_path):
+    from cli.cards.render import render_card
+
+    output = tmp_path / "project.html"
+    render_card(
+        {
+            "card_type": "current_project",
+            "title": "当前项目概况",
+            "generated_at": "2026-09-11T13:54:27+08:00",
+            "health": "healthy",
+            "project": {},
+            "wiki": {},
+            "knowledge": {},
+            "registry": {},
+            "task_statistics": {},
+            "in_progress_tasks": [],
+            "archived_tasks": [],
+            "summary": "项目共有 30 个任务",
+            "problems": [],
+        },
+        output,
+    )
+    text = output.read_text(encoding="utf-8")
+
+    notice_rule = re.search(r"\.notice\s*\{([^}]*)\}", text)
+    assert notice_rule, "card template must define the notice style"
+    assert re.search(r"grid-column\s*:\s*1\s*/\s*-1", notice_rule.group(1)), (
+        "project summary notice must occupy the full content grid"
+    )
+
+
+def test_project_summary_notice_is_scoped_to_task_statistics(tmp_path):
+    from cli.cards.render import render_card
+
+    output = tmp_path / "project.html"
+    render_card(
+        {
+            "card_type": "current_project",
+            "title": "当前项目概况",
+            "generated_at": "2026-09-11T13:54:27+08:00",
+            "health": "healthy",
+            "project": {},
+            "wiki": {},
+            "knowledge": {},
+            "registry": {},
+            "task_statistics": {},
+            "in_progress_tasks": [],
+            "archived_tasks": [],
+            "summary": "项目共有 30 个任务",
+            "problems": [],
+        },
+        output,
+    )
+    text = output.read_text(encoding="utf-8")
+
+    assert "const statsRow = metrics(stats, 'project-stats', contentScroll);" in text
+    assert "statsRow.insertBefore(node('div', 'notice', data.summary" in text
+    assert "append(contentScroll, node('div', 'notice', data.summary" not in text
+
+
 def test_renderer_formats_iso_timestamps_for_human_display(tmp_path):
     from cli.cards.render import render_card
 

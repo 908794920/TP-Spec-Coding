@@ -1732,6 +1732,7 @@ def _acceptance_table_rows(text: str) -> Dict[str, Dict[str, Any]]:
         rows[m.group(1)] = {
             "index": idx,
             "cells": cells,
+            "evidence": cells[6].strip(),
             "witness": cells[7].strip().lower(),
             "verdict": normalize_verdict(cells[8]),
         }
@@ -1774,11 +1775,141 @@ def _upsert_acceptance_yaml_list(text: str, key: str, entries: List[Dict[str, An
     return text.rstrip() + heading + "```yaml\n" + block + "```\n"
 
 
-def cmd_task_acceptance_override(args) -> int:
-    """Record an explicit human_owner defer/waive decision for pending acceptance.
+def _owner_acceptance_source_path(request_id: str) -> str:
+    """Return a safe, deterministic task-local receipt path for an owner statement."""
+    # LogicalRequest permits ``:`` in request ids. Percent-encode every other
+    # character outside the Windows-safe set instead of collapsing distinct ids
+    # (for example ``owner:a`` and ``owner_a``) to one receipt path.
+    safe = re.sub(
+        r"[^A-Za-z0-9._-]",
+        lambda match: f"%{ord(match.group(0)):02X}",
+        request_id,
+    )
+    return f"evidence/owner-acceptance/{safe}.md"
 
-    This is an audited Runtime write, not a manual SQLite/artifact edit. It never
-    turns unexecuted tests into PASS: defer => DEFERRED_ACCEPTED, waive => OWNER_WAIVED.
+
+def _owner_acceptance_source_document(source: str) -> str:
+    """Keep the supplied owner statement as a clearly labelled, non-automated receipt."""
+    return (
+        "# Owner acceptance source\n\n"
+        "This file records the owner-provided statement verbatim. It is a human "
+        "acceptance declaration, not automated execution or visual evidence.\n\n"
+        f"{source.rstrip()}\n"
+    )
+
+
+def _stale_owner_acceptance_pass(conn, task_id: str, task_dir: Path, ac: str, row: Dict[str, Any]) -> bool:
+    """Return whether a human Owner PASS is stale and may be renewed."""
+    if row.get("witness") != "human" or not str(row.get("evidence") or "").startswith("evidence/owner-acceptance/"):
+        return False
+    from . import event_policies
+    matching = [
+        item for item in event_policies.load_owner_acceptance_decisions(conn, task_id)
+        if str(item.get("mode") or "").lower() == "accept"
+        and ac in {str(value).strip() for value in item.get("acs") or []}
+        and str(item.get("source_evidence") or "").strip() == str(row.get("evidence") or "").strip()
+    ]
+    if not matching:
+        return False
+    effective = event_policies.effective_owner_acceptance(conn, task_id, task_dir=task_dir)
+    current = (effective.get("by_ac") or {}).get(ac)
+    # A current valid Owner result, including a later disposition, is not a
+    # stale PASS. An older defer/waive is superseded by the accept it preceded;
+    # only a later disposition keeps the stale row protected.
+    if current is None:
+        return True
+    current_event_id = current.get("_event_id")
+    latest_accept_id = max(int(item.get("_event_id") or 0) for item in matching)
+    return isinstance(current_event_id, int) and current_event_id < latest_accept_id
+
+
+def _set_owner_acceptance_result(text: str, selected: Iterable[str], evidence_path: str) -> str:
+    """Mark only selected human criteria as PASS and bind the owner receipt."""
+    lines = text.splitlines()
+    rows = _acceptance_table_rows(text)
+    for ac in selected:
+        row = rows[ac]
+        if row["witness"] != "human":
+            raise ValueError(f"accept requires human witness criteria: {ac}")
+        cells = list(row["cells"])
+        cells[6] = f" {evidence_path} "
+        cells[8] = " PASS "
+        lines[row["index"]] = "|".join(cells)
+    updated = "\n".join(lines) + ("\n" if text.endswith(("\n", "\r\n")) else "")
+    witness = re.search(r"(?m)^\s*human_witness\s*:", updated)
+    if witness is None:
+        raise ValueError("accept requires page_verification.human_witness")
+    updated = re.sub(r"(?m)^(\s*human_witness\s*:\s*).*$", r"\1confirmed", updated, count=1)
+    quoted = json.dumps(evidence_path, ensure_ascii=False)
+    if re.search(r"(?m)^\s*witness_evidence\s*:", updated):
+        updated = re.sub(r"(?m)^(\s*witness_evidence\s*:\s*).*$", rf"\1{quoted}", updated, count=1)
+    else:
+        updated = re.sub(
+            r"(?m)^(\s*human_witness\s*:\s*confirmed\s*\n)",
+            rf"\1  witness_evidence: {quoted}\n",
+            updated,
+            count=1,
+        )
+    return updated
+
+
+def _owner_acceptance_replay(conn, task_id: str, request) -> Optional[Dict[str, Any]]:
+    """Replay one explicit owner request without reselecting mutated acceptance rows."""
+    if not request.explicit:
+        return None
+    rows = conn.execute(
+        "SELECT * FROM task_event WHERE event_type='OWNER_ACCEPTANCE_DECISION' ORDER BY id"
+    ).fetchall()
+    found = None
+    for row in rows:
+        try:
+            detail = json.loads(row["detail_json"] or "{}")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(detail, dict):
+            continue
+        logical = detail.get("logical_request")
+        request_value = detail.get("request_id")
+        if not request_value and isinstance(logical, dict):
+            request_value = logical.get("request_id")
+        if request_value != request.request_id:
+            continue
+        if str(row["task_id"] or "") != str(task_id):
+            raise ValueError("REQUEST_ID_CONFLICT: request id already belongs to another task")
+        if (not isinstance(logical, dict)
+                or logical.get("operation") != "acceptance-override"
+                or logical.get("payload_sha256") != request.payload_sha256
+                or not isinstance(logical.get("response"), dict)):
+            raise ValueError("REQUEST_ID_CONFLICT: the ID belongs to different semantics; use a new ID for new work")
+        if found is not None:
+            raise ValueError("REQUEST_RECORD_INVALID: duplicate owner acceptance receipt; reconcile before retrying")
+        found = dict(logical["response"])
+    if found is not None:
+        if (found.get("task_id") != task_id
+                or found.get("request_id") != request.request_id
+                or found.get("payload_sha256") != request.payload_sha256):
+            raise ValueError("REQUEST_RECORD_INVALID: owner acceptance receipt does not match its request")
+        found["replayed"] = True
+    return found
+
+
+def _owner_acceptance_replay_serialized(conn, task_id: str, request) -> Optional[Dict[str, Any]]:
+    """Recheck an explicit request after a mutable preflight observation."""
+    if not request.explicit:
+        return None
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        return _owner_acceptance_replay(conn, task_id, request)
+    finally:
+        conn.execute("ROLLBACK")
+
+
+def cmd_task_acceptance_override(args) -> int:
+    """Record an explicit human_owner acceptance/defer/waive decision.
+
+    This is an audited Runtime write, not a manual SQLite/artifact edit. ``accept``
+    records a human result and its source receipt; it never fabricates automated
+    execution or visual evidence.
     """
     if args.actor != "human_owner":
         print("ERROR: acceptance-override requires --actor human_owner", file=sys.stderr)
@@ -1792,11 +1923,36 @@ def cmd_task_acceptance_override(args) -> int:
     if not os.path.isfile(db_path):
         print(f"ERROR: database not found: {db_path}", file=sys.stderr)
         return 4
-    text = acceptance_path.read_text(encoding="utf-8-sig")
-    rows = _acceptance_table_rows(text)
     conn = dbmod.connect(db_path)
     try:
         from . import transaction_commit, projection_cmd, event_policies
+        from . import recording, command_context
+        source = str(getattr(args, "source", "") or "").strip()
+        if args.mode == "accept" and not source:
+            print("ERROR: accept requires --source with the owner-provided acceptance statement", file=sys.stderr)
+            return 6
+        if args.mode in {"defer", "waive"} and (not args.reason or not args.residual_risk):
+            print(f"ERROR: {args.mode} requires --reason and --residual-risk", file=sys.stderr)
+            return 6
+        request_payload = {
+            "mode": args.mode,
+            "scope": args.scope or "",
+            "acs": sorted(dict.fromkeys(args.ac or [])),
+            "source": source,
+            "reason": args.reason or "",
+            "residual_risk": args.residual_risk or "",
+            "reverify_owner": args.reverify_owner or "",
+            "trigger": args.trigger or "",
+        }
+        request = recording.LogicalRequest(
+            args.task, task_dir, "acceptance-override", request_payload,
+            getattr(args, "request_id", None),
+        )
+        replay = _owner_acceptance_replay(conn, args.task, request)
+        if replay is not None:
+            print(json.dumps(replay, ensure_ascii=False))
+            return 0
+
         task = conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
         if task is None:
             print(f"ERROR: task not found: {args.task}", file=sys.stderr)
@@ -1805,34 +1961,129 @@ def cmd_task_acceptance_override(args) -> int:
             print("ERROR: retired historical tasks are immutable archives", file=sys.stderr)
             return 5
         state = str(task["current_state"] or "")
-        if state not in {"ACTIVE", "VERIFYING", "BROWSER_VERIFYING", "REVIEWING"}:
-            print("ERROR: acceptance-override requires ACTIVE work or a legacy verification state", file=sys.stderr)
+        if state not in {"ACTIVE", "VERIFYING", "BROWSER_VERIFYING", "REVIEWING", "BLOCKED"}:
+            print("ERROR: acceptance-override requires non-terminal active work or BLOCKED state", file=sys.stderr)
             return 5
 
+        text = acceptance_path.read_text(encoding="utf-8-sig")
+        acceptance_before = hashlib.sha256(acceptance_path.read_bytes()).hexdigest()
+        rows = _acceptance_table_rows(text)
         selected: List[str] = []
-        if args.scope == "human-pending":
-            selected.extend(ac for ac, row in rows.items() if row["witness"] == "human" and row["verdict"] == "PENDING")
-        selected.extend(args.ac or [])
+        explicit_acs = list(args.ac or [])
+        visual_scope = None
+        if args.scope == "visual":
+            from .yaml_checks import check_acceptance_yaml
+            visual_check = check_acceptance_yaml(
+                text, enforce_completion=False, allow_human_pending=True,
+            )
+            if not visual_check.ok:
+                print(
+                    "ERROR: acceptance-override visual scope is invalid: "
+                    + "; ".join(visual_check.issues),
+                    file=sys.stderr,
+                )
+                return 7
+            visual = (visual_check.page_verification or {}).get("visual")
+            refs = visual.get("acceptance_refs") if isinstance(visual, dict) else None
+            if not isinstance(refs, list) or not refs or any(
+                    not isinstance(value, str) or not value.strip()
+                    for value in refs
+            ):
+                print(
+                    "ERROR: visual acceptance-override requires non-empty "
+                    "page_verification.visual.acceptance_refs",
+                    file=sys.stderr,
+                )
+                return 6
+            visual_scope = {str(value).strip() for value in refs}
+            outside = [ac for ac in explicit_acs if ac not in visual_scope]
+            if outside:
+                print(
+                    "ERROR: visual acceptance-override ACs must be declared in "
+                    "page_verification.visual.acceptance_refs: " + ", ".join(outside),
+                    file=sys.stderr,
+                )
+                return 6
+        if args.scope in {"human-pending", "visual"}:
+            selected.extend(
+                ac for ac, row in rows.items()
+                if row["witness"] == "human" and row["verdict"] == "PENDING"
+                and (visual_scope is None or ac in visual_scope)
+            )
+        selected.extend(explicit_acs)
         selected = list(dict.fromkeys(selected))
         if not selected:
+            replay = _owner_acceptance_replay_serialized(conn, args.task, request)
+            if replay is not None:
+                print(json.dumps(replay, ensure_ascii=False))
+                return 0
             print("ERROR: no acceptance criteria selected", file=sys.stderr)
             return 6
         missing = [ac for ac in selected if ac not in rows]
         if missing:
             print("ERROR: unknown acceptance criteria: " + ", ".join(missing), file=sys.stderr)
             return 6
-        illegal = [ac for ac in selected if rows[ac]["verdict"] not in {"PENDING", "BLOCKED", "DEFERRED_ACCEPTED", "OWNER_WAIVED"}]
+        stale_owner_passes = {
+            ac for ac in selected
+            if args.mode == "accept"
+            and rows[ac]["verdict"] == "PASS"
+            and _stale_owner_acceptance_pass(conn, args.task, task_dir, ac, rows[ac])
+        }
+        illegal = [
+            ac for ac in selected
+            if rows[ac]["verdict"] not in {"PENDING", "BLOCKED", "DEFERRED_ACCEPTED", "OWNER_WAIVED"}
+            and ac not in stale_owner_passes
+        ]
         if illegal:
+            replay = _owner_acceptance_replay_serialized(conn, args.task, request)
+            if replay is not None:
+                print(json.dumps(replay, ensure_ascii=False))
+                return 0
             print("ERROR: acceptance-override only applies to pending/blocked/deferred/waived rows: " + ", ".join(illegal), file=sys.stderr)
+            return 6
+        if args.mode == "accept" and any(rows[ac]["witness"] != "human" for ac in selected):
+            print("ERROR: accept only applies to acceptance criteria witnessed by human", file=sys.stderr)
+            return 6
+        if args.scope == "visual" and args.mode != "accept":
+            print("ERROR: --scope visual is only valid with --mode accept", file=sys.stderr)
             return 6
         if args.mode == "defer" and (not args.reverify_owner or not args.trigger):
             print("ERROR: defer requires --reverify-owner and --trigger", file=sys.stderr)
             return 6
 
+        development = None
+        current_change_set = None
+        subject_digest = ""
+        source_rel = ""
+        source_text = ""
+        if args.mode == "accept":
+            from . import record_first
+            from .change_set import capture_change_set, same_bound_product_content
+            development = record_first._latest_development_change_set(conn, args.task)
+            if (not development or not development.get("change_set_id")
+                    or not development.get("repo_roots")):
+                print("ERROR: accept requires a bound current Development ChangeSet", file=sys.stderr)
+                return 7
+            current_change_set = capture_change_set(development["repo_roots"])
+            if not same_bound_product_content(development["detail"], current_change_set):
+                print("ERROR: DEVELOPMENT_CHANGE_SET_STALE: product changed before owner acceptance", file=sys.stderr)
+                return 7
+            from .digest import compute_verification_subject_digest
+            subject_digest = compute_verification_subject_digest(task_dir)
+            source_rel = _owner_acceptance_source_path(request.request_id)
+            source_text = _owner_acceptance_source_document(source)
+            source_path = task_dir / source_rel
+            if source_path.is_file() and source_path.read_text(encoding="utf-8") != source_text:
+                print("ERROR: REQUEST_ID_CONFLICT: owner source receipt already has different content", file=sys.stderr)
+                return 6
+
         target_verdict = "DEFERRED_ACCEPTED" if args.mode == "defer" else "OWNER_WAIVED"
         timestamp = dbmod.now_iso()
-        verdicts = {ac: target_verdict for ac in selected}
-        updated = _set_acceptance_verdicts(text, verdicts)
+        if args.mode == "accept":
+            updated = _set_owner_acceptance_result(text, selected, source_rel)
+        else:
+            verdicts = {ac: target_verdict for ac in selected}
+            updated = _set_acceptance_verdicts(text, verdicts)
         if args.mode == "defer":
             entries = [{
                 "ac": ac,
@@ -1843,7 +2094,7 @@ def cmd_task_acceptance_override(args) -> int:
                 "trigger": args.trigger,
             } for ac in selected]
             updated = _upsert_acceptance_yaml_list(updated, "deferred_acceptance", entries)
-        else:
+        elif args.mode == "waive":
             entries = [{
                 "ac": ac,
                 "recorded_at": timestamp,
@@ -1863,8 +2114,55 @@ def cmd_task_acceptance_override(args) -> int:
         flush_id = f"OWNER-ACCEPT-{uuid.uuid4().hex}"
         view_rel = transaction_commit._current_view_rel(state)
         owner = str(task["owner_role"] or "")
+        waiting_fact = {}
+        if state == "BLOCKED":
+            from . import waiting
+            waiting_fact = waiting.load_wait(conn, args.task)
+        human_pending_before = {
+            ac for ac, row in rows.items()
+            if row["witness"] == "human"
+            and row["verdict"] in {"PENDING", "BLOCKED", "DEFERRED_ACCEPTED", "OWNER_WAIVED"}
+        }
+        resume_wait = bool(
+            args.mode == "accept" and state == "BLOCKED"
+            and waiting_fact.get("kind") == "human_acceptance"
+            and human_pending_before.issubset(set(selected))
+        )
+        reason = args.reason or source or "Owner acceptance decision"
+        residual_risk = args.residual_risk or (
+            "Automated visual execution remains unrun; this record covers only the declared owner scope."
+            if args.scope == "visual" else "No additional residual risk was stated by the owner."
+        )
+        response = {
+            "task_id": args.task,
+            "request_id": request.request_id,
+            "payload_sha256": request.payload_sha256,
+            "mode": args.mode,
+            "acs": selected,
+            "state_before": state,
+            "source_evidence": source_rel or None,
+            "visual_scope": args.scope == "visual",
+            "facts_committed": True,
+            "replayed": False,
+        }
 
         def db_and_render(tx_conn, transaction_id=""):
+            fresh_task = tx_conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
+            if fresh_task is None or str(fresh_task["current_state"] or "") != state:
+                raise ValueError("TASK_FACTS_CHANGED: task state changed before owner decision")
+            if hashlib.sha256(acceptance_path.read_bytes()).hexdigest() != acceptance_before:
+                raise ValueError("ACCEPTANCE_CHANGED_BEFORE_COMMIT: reread the current acceptance declaration")
+            if args.mode == "accept":
+                from . import record_first
+                from .change_set import capture_change_set, same_bound_product_content
+                from .digest import compute_verification_subject_digest
+                latest = record_first._latest_development_change_set(tx_conn, args.task)
+                if (not latest or latest.get("event_id") != development.get("event_id")
+                        or not latest.get("repo_roots")
+                        or not same_bound_product_content(latest["detail"], capture_change_set(latest["repo_roots"]))
+                        or latest.get("change_set_id") != development.get("change_set_id")
+                        or compute_verification_subject_digest(task_dir) != subject_digest):
+                    raise ValueError("OWNER_ACCEPTANCE_STALE: subject or product changed before commit")
             detail = {
                 "transaction_id": transaction_id,
                 "producer": "task_acceptance_override",
@@ -1875,11 +2173,29 @@ def cmd_task_acceptance_override(args) -> int:
                 "flush_id": flush_id,
                 "mode": args.mode,
                 "acs": selected,
-                "reason": args.reason,
-                "residual_risk": args.residual_risk,
+                "reason": reason,
+                "residual_risk": residual_risk,
                 "reverify_owner": args.reverify_owner or "",
                 "trigger": args.trigger or "",
             }
+            if args.mode == "accept":
+                detail.update({
+                    "request_id": request.request_id,
+                    "payload_sha256": request.payload_sha256,
+                    "decision_source": {
+                        "kind": "human_owner_statement",
+                        "reference": source,
+                        "invocation_id": command_context.invocation_id(),
+                    },
+                    "change_set_id": str(current_change_set.get("content_digest") or ""),
+                    "change_set_snapshot_digest": str(current_change_set.get("snapshot_digest") or ""),
+                    "subject_digest": subject_digest,
+                    "repo_roots": list(development["repo_roots"]),
+                    "source_evidence": source_rel,
+                    "source_evidence_sha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+                    "visual_scope": {"kind": "selected_acceptance", "acs": selected} if args.scope == "visual" else None,
+                })
+            detail["logical_request"] = request.detail(response)
             tx_conn.execute(
                 "INSERT INTO task_event (task_id,event_type,actor_role,reason_code,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?)",
                 (args.task, "OWNER_ACCEPTANCE_DECISION", "human_owner", args.mode.upper(),
@@ -1893,20 +2209,53 @@ def cmd_task_acceptance_override(args) -> int:
                 print(f"WARN: {warning}", file=sys.stderr)
             return transaction_commit._finalize_texts(
                 task_dir,
-                {"acceptance.md": updated, "status.yaml": status_yaml, "events.jsonl": events_jsonl},
+                {"acceptance.md": updated, "status.yaml": status_yaml, "events.jsonl": events_jsonl,
+                 **({source_rel: source_text} if source_rel else {})},
                 view_rel,
                 lambda: transaction_commit._rebuild_current_view_text(
                     task_dir, refreshed, f"human_owner acceptance {args.mode}: {', '.join(selected)}", flush_id
                 ),
             )
 
-        transaction_commit._commit_with_recovery(
-            task_dir, conn, ["acceptance.md", "status.yaml", "events.jsonl", view_rel], db_and_render,
-            task_id=args.task, operation="owner_acceptance_override",
-            db_state_before=state, target_state=state,
-            owner_before=owner, owner_after=owner, flush_id=flush_id,
-        )
-        print(f"acceptance-override: mode={args.mode}; acs={','.join(selected)}; state={state}; flush_id={flush_id}")
+        def replay_under_writer_lock(tx_conn):
+            replayed = _owner_acceptance_replay(tx_conn, args.task, request)
+            if replayed is not None:
+                raise recording.RequestReplay(replayed)
+
+        try:
+            transaction_commit._commit_with_recovery(
+                task_dir, conn, ["acceptance.md", "status.yaml", "events.jsonl", view_rel] + ([source_rel] if source_rel else []), db_and_render,
+                task_id=args.task, operation="owner_acceptance_override",
+                db_state_before=state, target_state=state,
+                owner_before=owner, owner_after=owner, flush_id=flush_id,
+                before_prepare=replay_under_writer_lock,
+            )
+        except recording.RequestReplay as replay:
+            print(json.dumps(replay.result, ensure_ascii=False))
+            return 0
+        resumed = False
+        resume_error = None
+        if resume_wait:
+            from . import record_first
+            try:
+                record_first.resume(
+                    task_id=args.task, task_dir=str(task_dir), actor="human_owner",
+                    summary="Owner acceptance resolved the human acceptance wait",
+                    phase=str(task["current_stage"] or "other"),
+                    resolution_evidence=[source_rel], db=db_path,
+                    expected_block_event_id=waiting_fact.get("block_event_id"),
+                    expected_wait_kind=waiting_fact.get("kind"),
+                )
+                resumed = True
+            except ValueError as exc:
+                resume_error = str(exc)
+        if args.mode == "accept":
+            response["resumed"] = resumed
+            if resume_error:
+                response["resume_error"] = resume_error
+            print(json.dumps(response, ensure_ascii=False))
+        else:
+            print(f"acceptance-override: mode={args.mode}; acs={','.join(selected)}; state={state}; flush_id={flush_id}")
         return 0
     finally:
         conn.close()
@@ -2010,6 +2359,14 @@ def cmd_task_delivery_converge(args) -> int:
 
 def cmd_task_complete(args) -> int:
     from . import record_first
+    if args.check:
+        result = record_first.completion_check(
+            task_id=args.task, task_dir=args.task_dir, db=args.db,
+        )
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result.get("ready") else 1
+    if not args.summary:
+        raise ValueError("complete requires --summary unless --check is used")
     result = record_first.complete(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
         summary=args.summary, db=args.db,
@@ -2222,11 +2579,12 @@ def add_task_subparsers(task_parser) -> None:
     p_delivery.add_argument("--db", default=None)
     p_delivery.set_defaults(func=cmd_task_delivery_converge)
 
-    p_complete = sub.add_parser("complete", help="Record terminal completion and expose actual verification facts; no CLOSING phase")
+    p_complete = sub.add_parser("complete", help="Record terminal completion or run a read-only completion preflight")
     p_complete.add_argument("--task", required=True)
     p_complete.add_argument("--task-dir", required=True)
     p_complete.add_argument("--actor", required=False, default=None, choices=record_first.ACTORS, help="optional; defaults to current task owner")
-    p_complete.add_argument("--summary", required=True)
+    p_complete.add_argument("--summary", required=False, default="")
+    p_complete.add_argument("--check", action="store_true", help="read-only preflight; does not write task facts or projections")
     p_complete.add_argument("--db", default=None)
     p_complete.set_defaults(func=cmd_task_complete)
 
@@ -2297,16 +2655,18 @@ def add_task_subparsers(task_parser) -> None:
     p_retire.add_argument("--db", required=False, default=None)
     p_retire.set_defaults(func=cmd_task_retire)
 
-    # task acceptance-override (human_owner audited defer/waive; no false PASS)
-    p_accept = sub.add_parser("acceptance-override", help="human_owner: defer or waive selected acceptance criteria without forging PASS")
+    # task acceptance-override (human_owner audited accept/defer/waive)
+    p_accept = sub.add_parser("acceptance-override", help="human_owner: record a scoped acceptance, defer, or waive decision")
     p_accept.add_argument("--task", required=True)
     p_accept.add_argument("--task-dir", required=True)
     p_accept.add_argument("--actor", default="human_owner", choices=["human_owner"])
-    p_accept.add_argument("--mode", required=True, choices=["defer", "waive"])
-    p_accept.add_argument("--scope", choices=["human-pending"], default=None)
+    p_accept.add_argument("--mode", required=True, choices=["accept", "defer", "waive"])
+    p_accept.add_argument("--scope", choices=["human-pending", "visual"], default=None)
     p_accept.add_argument("--ac", action="append", help="acceptance criterion id; repeatable")
-    p_accept.add_argument("--reason", required=True)
-    p_accept.add_argument("--residual-risk", required=True)
+    p_accept.add_argument("--source", default=None, help="owner-provided acceptance statement; required for --mode accept")
+    p_accept.add_argument("--request-id", default=None, help="stable logical request id for safe replay")
+    p_accept.add_argument("--reason", default=None)
+    p_accept.add_argument("--residual-risk", default=None)
     p_accept.add_argument("--reverify-owner", default=None)
     p_accept.add_argument("--trigger", default=None)
     p_accept.add_argument("--db", default=None)

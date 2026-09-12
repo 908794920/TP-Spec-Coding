@@ -1,6 +1,6 @@
 catalog_version: "5.3.2"
 base_version: "5.3.2"
-generated_utc: 20260908T092319Z
+generated_utc: 20260912T134323Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -160,7 +160,7 @@ roles:
     - {id: testing-strategy, path: skills/capabilities/testing-strategy/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 5C9935C5067E57DB403B22F795BD93F9E38252E4DE7D152B7C24A5EB83FD2CDF
+  content_sha256: FD4503D9C01DD023C826DA646992E31A83EB5B10B1F17036DBA6777CF4B27B5E
 - workflow_role: tp-code-reviewer
   display_name: tp-代码审查员
   type: workflow-role

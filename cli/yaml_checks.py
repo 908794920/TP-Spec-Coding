@@ -232,6 +232,23 @@ def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_h
                 if not isinstance(required, bool):
                     result.ok = False
                     result.issues.append("page_verification.visual.required must be boolean")
+                if "acceptance_refs" in visual:
+                    refs = visual.get("acceptance_refs")
+                    if not isinstance(refs, list) or any(
+                            not isinstance(value, str) or not value.strip()
+                            for value in refs
+                    ):
+                        result.ok = False
+                        result.issues.append("page_verification.visual.acceptance_refs must be a list of non-empty strings")
+                    else:
+                        refs0 = [str(value).strip() for value in refs]
+                        unknown_refs = [value for value in refs0 if value not in ac_verdicts]
+                        if unknown_refs:
+                            result.ok = False
+                            result.issues.append(
+                                "page_verification.visual unknown acceptance_refs: "
+                                + ", ".join(unknown_refs)
+                            )
                 if required is True and not str(visual.get("evidence_manifest") or "").strip():
                     result.ok = False
                     result.issues.append("page_verification.visual required=true needs evidence_manifest")

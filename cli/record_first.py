@@ -438,7 +438,8 @@ def block(*, task_id: str, task_dir: str, actor: str, reason: str,
 
 def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
            phase: Optional[str] = None, resolution_evidence: Optional[Iterable[str]] = None,
-           db: Optional[str] = None) -> Dict[str, Any]:
+           db: Optional[str] = None, expected_block_event_id: Optional[int] = None,
+           expected_wait_kind: Optional[str] = None) -> Dict[str, Any]:
     if actor not in ACTORS:
         raise ValueError(f"invalid actor: {actor}")
     tdir = _task_dir(task_dir)
@@ -454,12 +455,24 @@ def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
         from . import waiting
         resolution_paths = list(resolution_evidence or [])
         resolution = waiting.validate_resolution(conn, task_id, tdir, actor=actor, resolution_evidence=resolution_paths)
+        if (expected_block_event_id is not None
+                and resolution.get("block_event_id") != expected_block_event_id) or (
+                    expected_wait_kind is not None
+                    and resolution.get("kind") != expected_wait_kind
+                ):
+            raise ValueError("WAIT_PREREQUISITE_CHANGED: the active wait was replaced before resuming")
         now = dbmod.now_iso(); flush_id = f"RESUME-{uuid.uuid4().hex}"
 
         def writer(dbconn, transaction_id=""):
             rechecked = waiting.validate_resolution(dbconn, task_id, tdir, actor=actor, resolution_evidence=resolution_paths)
             if rechecked != resolution:
                 raise ValueError("WAIT_PREREQUISITE_CHANGED: reread before resuming")
+            if (expected_block_event_id is not None
+                    and rechecked.get("block_event_id") != expected_block_event_id) or (
+                        expected_wait_kind is not None
+                        and rechecked.get("kind") != expected_wait_kind
+                    ):
+                raise ValueError("WAIT_PREREQUISITE_CHANGED: the active wait was replaced before commit")
             detail = _detail("RESUME", flush_id, transaction_id=transaction_id, phase=phase0, resolution=resolution or None)
             dbconn.execute(
                 "INSERT INTO task_event (task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -615,6 +628,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
             from .change_set import capture_change_set
             current_change_set = capture_change_set(development["repo_roots"])
         visual_summary = None
+        owner_visual_items: List[Dict[str, Any]] = []
         if decision0 == "PASS":
             if not development or not development.get("change_set_id") or not development.get("repo_roots"):
                 raise ValueError("DEVELOPMENT_CHANGE_SET_REQUIRED")
@@ -640,28 +654,50 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                 visual = page.get("visual") if isinstance(page, dict) else None
                 if isinstance(visual, dict) and visual.get("required") is True:
                     manifest_path = str(visual.get("evidence_manifest") or "").strip()
-                    checked_visual = artifact_validation.validate_visual_verification_manifest(
-                        tdir, manifest_path,
-                        expected_change_set_id=str(current_change_set.get("content_digest") or ""),
-                        acceptance_ids=set(acceptance.acceptance_ids),
-                    )
-                    if not checked_visual.ok:
-                        raise ValueError("VISUAL_VERIFICATION_INVALID: " + "; ".join(checked_visual.errors))
-                    existing = {str(item.get("path") or "") for item in items}
-                    for path in checked_visual.evidence_paths:
-                        if path in existing:
-                            continue
-                        evidence_checked = validate_evidence_path(tdir, path, require_evidence_dir=True)
-                        if not evidence_checked.ok:
-                            raise ValueError(f"VISUAL_VERIFICATION_INVALID: {evidence_checked.error}")
-                        items.append(evidence_checked.item)
-                        existing.add(path)
-                    auth = checked_visual.manifest.get("auth") or {}
-                    visual_summary = {
-                        "manifest": manifest_path,
-                        "case_count": len(checked_visual.manifest.get("cases") or []),
-                        "temporary_bypass_used": bool(auth.get("temporary_bypass_used")),
-                    }
+                    manifest_candidate = Path(manifest_path)
+                    if manifest_candidate.is_absolute():
+                        manifest_exists = True
+                    else:
+                        manifest_target = (tdir / manifest_candidate).resolve()
+                        manifest_exists = manifest_target.is_relative_to(tdir) and manifest_target.is_file()
+                    owner_visual = False
+                    if not manifest_exists:
+                        owner_visual_items = _owner_visual_acceptance_evidence(
+                            conn, task_id, tdir, acceptance, visual,
+                            change_set_id=str(current_change_set.get("content_digest") or ""),
+                            subject_digest=subject_digest,
+                        )
+                        owner_visual = bool(owner_visual_items)
+                    if not owner_visual:
+                        checked_visual = artifact_validation.validate_visual_verification_manifest(
+                            tdir, manifest_path,
+                            expected_change_set_id=str(current_change_set.get("content_digest") or ""),
+                            acceptance_ids=set(acceptance.acceptance_ids),
+                        )
+                        if not checked_visual.ok:
+                            raise ValueError("VISUAL_VERIFICATION_INVALID: " + "; ".join(checked_visual.errors))
+                        existing = {str(item.get("path") or "") for item in items}
+                        for path in checked_visual.evidence_paths:
+                            if path in existing:
+                                continue
+                            evidence_checked = validate_evidence_path(tdir, path, require_evidence_dir=True)
+                            if not evidence_checked.ok:
+                                raise ValueError(f"VISUAL_VERIFICATION_INVALID: {evidence_checked.error}")
+                            items.append(evidence_checked.item)
+                            existing.add(path)
+                        auth = checked_visual.manifest.get("auth") or {}
+                        visual_summary = {
+                            "manifest": manifest_path,
+                            "case_count": len(checked_visual.manifest.get("cases") or []),
+                            "temporary_bypass_used": bool(auth.get("temporary_bypass_used")),
+                        }
+                    else:
+                        existing = {str(item.get("path") or "") for item in items}
+                        for item in owner_visual_items:
+                            if item["path"] in existing:
+                                continue
+                            items.append(item)
+                            existing.add(item["path"])
             if not items:
                 raise ValueError("verification PASS requires at least one real evidence/* file")
         knowledge = _normalize_knowledge_signals(knowledge_signals)
@@ -688,6 +724,22 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                     require_full_scope(dbconn, task_id, development["detail"], development_event_id=development["event_id"])
                 else:
                     require_scope_checkpoint(dbconn, task_id, development_event_id=development["event_id"])
+                if owner_visual_items:
+                    current_owner_items = _owner_visual_acceptance_evidence(
+                        dbconn, task_id, tdir, acceptance, visual,
+                        change_set_id=str(current_change_set.get("content_digest") or ""),
+                        subject_digest=subject_digest,
+                    )
+                    expected_receipts = sorted(
+                        (str(item.get("path") or ""), str(item.get("sha256") or ""))
+                        for item in owner_visual_items
+                    )
+                    current_receipts = sorted(
+                        (str(item.get("path") or ""), str(item.get("sha256") or ""))
+                        for item in current_owner_items
+                    )
+                    if current_receipts != expected_receipts:
+                        raise ValueError("OWNER_VISUAL_ACCEPTANCE_STALE: owner receipt or visual scope changed before write")
             if current != "ACTIVE":
                 dbconn.execute(
                     "INSERT INTO task_event (task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -764,6 +816,9 @@ def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
         mode = str(item.get("mode") or "").lower()
         for ac in item.get("acs") or []:
             trusted_pairs.add((str(ac), mode))
+    effective_owner = event_policies.effective_owner_acceptance(
+        conn, task_id, task_dir=task_dir,
+    )
 
     witness_confirmed = bool(
         __import__("re").search(r"(?m)^\s*human_witness:\s*[\"']?confirmed[\"']?\s*$", text)
@@ -789,6 +844,10 @@ def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
                     issues.append(f"{ac} PASS evidence invalid: {checked.error}")
             if witness == "human" and not witness_confirmed:
                 issues.append(f"{ac} human PASS requires confirmed human witness")
+            if witness == "human" and evidence.startswith("evidence/owner-acceptance/"):
+                owner_decision = effective_owner.get("by_ac", {}).get(ac) or {}
+                if str(owner_decision.get("mode") or "").lower() != "accept":
+                    issues.append(f"{ac} owner acceptance evidence lacks a current trusted OWNER_ACCEPTANCE_DECISION(accept)")
         elif verdict == "DEFERRED_ACCEPTED":
             if ac not in deferred_entries or (ac, "defer") not in trusted_pairs:
                 issues.append(f"{ac} DEFERRED_ACCEPTED lacks trusted human_owner decision")
@@ -796,6 +855,51 @@ def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
             if ac not in waiver_entries or (ac, "waive") not in trusted_pairs:
                 issues.append(f"{ac} OWNER_WAIVED lacks trusted human_owner decision")
     return issues
+
+
+def _owner_visual_acceptance_evidence(conn, task_id: str, task_dir: Path, acceptance,
+                                      visual: Dict[str, Any], *, change_set_id: str,
+                                      subject_digest: str) -> List[Dict[str, Any]]:
+    """Return current, bound receipt evidence for the declared visual AC scope."""
+    from . import event_policies
+    from .evidence import validate_evidence_path
+
+    refs = visual.get("acceptance_refs")
+    if not isinstance(refs, list) or not refs or any(not str(value).strip() for value in refs):
+        return []
+    required = {str(value).strip() for value in refs}
+    if not required:
+        return []
+    effective = event_policies.effective_owner_acceptance(
+        conn, task_id, task_dir=task_dir, change_set_id=change_set_id,
+        subject_digest=subject_digest,
+    )
+    if not required.issubset(set(effective.get("visual_acs") or [])):
+        return []
+    source_paths = set()
+    for ac in required:
+        decision = (effective.get("by_ac") or {}).get(ac) or {}
+        source_path = str(decision.get("source_evidence") or "").strip()
+        if not source_path:
+            return []
+        source_paths.add(source_path)
+    items: List[Dict[str, Any]] = []
+    for source_path in sorted(source_paths):
+        checked = validate_evidence_path(task_dir, source_path, require_evidence_dir=True)
+        if not checked.ok:
+            return []
+        items.append(checked.item)
+    return items
+
+
+def _owner_visual_acceptance_covers(conn, task_id: str, task_dir: Path, acceptance, visual: Dict[str, Any], *,
+                                    change_set_id: str, subject_digest: str) -> bool:
+    """Return whether a trusted owner result covers the declared visual AC scope."""
+    return bool(_owner_visual_acceptance_evidence(
+        conn, task_id, task_dir, acceptance, visual,
+        change_set_id=change_set_id, subject_digest=subject_digest,
+    ))
+
 
 def validate_final_acceptance(conn, task_id: str, task_dir: Path) -> None:
     """READY and Complete share the same required acceptance/owner-authority checks."""
@@ -811,6 +915,57 @@ def validate_final_acceptance(conn, task_id: str, task_dir: Path) -> None:
     issues = acceptance_truth_issues(conn, task_id, task_dir)
     if issues:
         raise ValueError("INTEGRITY_ACCEPTANCE: " + "; ".join(issues))
+
+
+def completion_check(*, task_id: str, task_dir: str, db: Optional[str] = None) -> Dict[str, Any]:
+    """Read-only completion preflight shared with the terminal write path."""
+    tdir = _task_dir(task_dir)
+    db_path = dbmod.resolve_db_path(db, task_id=task_id)
+    conn = dbmod.connect_readonly(db_path)
+    try:
+        task = _load(conn, task_id)
+        state = str(task["current_state"] or "")
+        result: Dict[str, Any] = {
+            "task_id": task_id,
+            "state": state,
+            "ready": True,
+            "blockers": [],
+            "route": None,
+            "acceptance_issues": [],
+        }
+        if state in TERMINAL_STATES:
+            result["ready"] = False
+            result["blockers"].append(f"TASK_TERMINAL: task is already {state}")
+            return result
+        from . import orchestration
+        try:
+            route = orchestration.resolve_route(task_id, db_path=db_path)
+        except Exception as exc:
+            result["ready"] = False
+            result["blockers"].append(f"ROUTE_CHECK_FAILED: {type(exc).__name__}: {exc}")
+        else:
+            result["route"] = route
+            if (state == "BLOCKED"
+                    or route.get("recommended_action") != "task_complete"
+                    or route.get("next_stage") != "complete"):
+                result["ready"] = False
+                if state == "BLOCKED":
+                    result["blockers"].append("INTEGRITY_BLOCKED: explicit task blocker must be resolved before COMPLETED")
+                else:
+                    result["blockers"].append(
+                        "INTEGRITY_PIPELINE_PENDING: "
+                        f"next_stage={route.get('next_stage')} role={route.get('role_id')} "
+                        f"reason={','.join(route.get('reason_codes') or [])}"
+                    )
+        try:
+            validate_final_acceptance(conn, task_id, tdir)
+        except ValueError as exc:
+            result["ready"] = False
+            result["acceptance_issues"].append(str(exc))
+            result["blockers"].append(str(exc))
+        return result
+    finally:
+        conn.close()
 
 
 def _cleanup_terminal_temp_artifacts(task) -> Dict[str, Any]:

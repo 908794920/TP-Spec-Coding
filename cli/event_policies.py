@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
@@ -129,7 +130,12 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
 
 
 def load_owner_acceptance_decisions(conn, task_id: str) -> list[dict]:
-    """Load trusted human_owner acceptance defer/waive decisions from the ledger."""
+    """Load trusted human_owner acceptance decisions from the ledger.
+
+    ``accept`` is a real owner result, while ``defer`` and ``waive`` retain their
+    historical meanings.  The returned dictionaries contain the event id only as
+    an internal ordering aid; it is never written back into the task artifact.
+    """
     rows = conn.execute(
         "SELECT * FROM task_event WHERE task_id=? AND event_type='OWNER_ACCEPTANCE_DECISION' ORDER BY id",
         (task_id,),
@@ -150,12 +156,117 @@ def load_owner_acceptance_decisions(conn, task_id: str) -> list[dict]:
             continue
         if str(detail.get("actor_role") or "") != "human_owner":
             continue
+        if str(detail.get("task_id") or "") != str(task_id):
+            continue
         mode = str(detail.get("mode") or "").lower()
         acs = detail.get("acs")
-        if mode not in {"defer", "waive"} or not isinstance(acs, list) or not acs:
+        if mode not in {"defer", "waive", "accept"} or not isinstance(acs, list) or not acs:
             continue
-        out.append(detail)
+        if any(not isinstance(ac, str) or not ac.strip() for ac in acs):
+            continue
+        if mode == "accept":
+            source = detail.get("decision_source")
+            logical = detail.get("logical_request")
+            response = logical.get("response") if isinstance(logical, dict) else None
+            if (not isinstance(source, dict)
+                    or source.get("kind") != "human_owner_statement"
+                    or not str(source.get("reference") or "").strip()
+                    or not str(source.get("invocation_id") or "").strip()
+                    or not str(detail.get("request_id") or "").strip()
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(detail.get("payload_sha256") or ""))
+                    or not str(detail.get("subject_digest") or "").strip()
+                    or not str(detail.get("change_set_id") or "").strip()
+                    or not str(detail.get("source_evidence") or "").strip()
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(detail.get("source_evidence_sha256") or ""))
+                    or not isinstance(logical, dict)
+                    or logical.get("operation") != "acceptance-override"
+                    or logical.get("request_id") != detail.get("request_id")
+                    or logical.get("payload_sha256") != detail.get("payload_sha256")
+                    or not isinstance(response, dict)
+                    or response.get("task_id") != task_id
+                    or response.get("request_id") != detail.get("request_id")
+                    or response.get("payload_sha256") != detail.get("payload_sha256")
+                    or response.get("mode") != "accept"
+                    or response.get("acs") != acs):
+                continue
+        item = dict(detail)
+        item["_event_id"] = int(row["id"])
+        out.append(item)
     return out
+
+
+def effective_owner_acceptance(
+    conn,
+    task_id: str,
+    *,
+    task_dir: Optional[Union[str, Path]] = None,
+    change_set_id: Optional[str] = None,
+    subject_digest: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Return the latest trusted owner disposition for each acceptance criterion.
+
+    ``accept`` records are usable only when their current product ChangeSet,
+    acceptance subject and owner-source evidence still match.  Historical
+    ``defer``/``waive`` entries remain readable without retroactive bindings.  A
+    later disposition supersedes an earlier one for the same AC, but no event is
+    deleted or rewritten.
+    """
+    base = Path(task_dir).resolve() if task_dir is not None else None
+    current_change_set = str(change_set_id or "").strip()
+    current_subject = str(subject_digest or "").strip()
+    if base is not None:
+        if not current_subject:
+            from .digest import compute_verification_subject_digest
+            current_subject = compute_verification_subject_digest(base)
+        if not current_change_set:
+            try:
+                from . import record_first
+                development = record_first._latest_development_change_set(conn, task_id)
+                roots = list(development.get("repo_roots") or []) if development else []
+                if development and development.get("change_set_id") and roots:
+                    from .change_set import capture_change_set, same_bound_product_content
+                    current = capture_change_set(roots)
+                    if same_bound_product_content(development["detail"], current):
+                        current_change_set = str(current.get("content_digest") or "")
+            except Exception:
+                current_change_set = ""
+
+    from .evidence import validate_evidence_path
+
+    by_ac: Dict[str, Dict[str, Any]] = {}
+    for item in load_owner_acceptance_decisions(conn, task_id):
+        mode = str(item.get("mode") or "").lower()
+        if mode == "accept":
+            if not base or not current_change_set or not current_subject:
+                continue
+            if str(item.get("change_set_id") or "") != current_change_set:
+                continue
+            if str(item.get("subject_digest") or "") != current_subject:
+                continue
+            source_path = str(item.get("source_evidence") or "").strip()
+            checked = validate_evidence_path(base, source_path, require_evidence_dir=True)
+            if (not checked.ok
+                    or str(item.get("source_evidence_sha256") or "") != checked.sha256):
+                continue
+        for raw_ac in item.get("acs") or []:
+            ac = str(raw_ac).strip()
+            if ac:
+                by_ac[ac] = item
+
+    accepted = sorted(ac for ac, item in by_ac.items() if str(item.get("mode") or "").lower() == "accept")
+    visual = set()
+    for ac in accepted:
+        item = by_ac[ac]
+        scope = item.get("visual_scope")
+        if isinstance(scope, dict) and ac in {str(value).strip() for value in scope.get("acs") or []}:
+            visual.add(ac)
+    return {
+        "by_ac": by_ac,
+        "accepted_acs": accepted,
+        "visual_acs": sorted(visual),
+        "change_set_id": current_change_set,
+        "subject_digest": current_subject,
+    }
 
 
 def is_governance_event(event_type: str) -> bool:

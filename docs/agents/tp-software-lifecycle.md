@@ -264,7 +264,7 @@ tp-spec report timings --invocation <cli_invocation_id> --json
 
 当前门禁只消费最新同角色的适用结果：新的 FAIL/NEEDS_FIX/BLOCKED、失效主体或损坏证据不能被更早的 PASS 覆盖。CODE 的三个名称共用结果序列。审查绑定当前 Verification、ChangeSet 和证据；交付再次校验审查原证据与机器回执。事务写入前会复核已绑定结果，复核失败不追加对应事实，也不撤销已完成的产品修改。
 
-`delivery-converge --delivery-status READY` 与 `task complete` 共用必要 AC 处置及真实证据/owner 授权检查。技术和代码审查通过不授予人验 PASS；必需人验仍 PENDING/BLOCKED 时不得 READY。合法 defer/waive 继续通过既有 `task acceptance-override` 留证，不手改账本或把未运行写为 PASS。
+`delivery-converge --delivery-status READY` 与 `task complete` 共用必要 AC 处置及真实证据/owner 授权检查。技术和代码审查通过不授予人验 PASS；必需人验仍 PENDING/BLOCKED 时不得 READY。human_owner 可通过既有 `task acceptance-override --mode accept` 对当前绑定且实际核验的人工/视觉 AC 留证；在 `BLOCKED` 回执中这只消解所覆盖的人验阻塞，不清除权限、依赖、环境或账本等无关 blocker。合法 defer/waive 继续通过既有 `task acceptance-override` 留证，不手改账本或把未运行写为 PASS。
 
 ### 技术限定结果与完整验收分开
 

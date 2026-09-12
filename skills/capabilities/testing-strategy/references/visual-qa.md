@@ -46,7 +46,7 @@ export default defineConfig({
 
 流程验收使用页面提交与获准角色操作，关联**本次创建的业务标识**、申请人状态、审批待办和获准下一节点。HTTP 200、成功提示、旧单据或确认后取消不是完整流转证据。接口/DB 只在获准时用于隔离数据准备、结果核对和本次自有数据清理，不取代被测页面动作。浏览器移动模拟不代表微信相机、扫码、OAuth、软键盘或 JS-SDK 已实测；真机缺口单列，Airtest 仅在缺口确实需要时再选。
 
-每个 Visual Manifest case 仍绑定真实 AC、route、viewport、actual、report 及当前 `change_set_id`；reference/diff 声明后必须是真实 evidence 内文件。代码变化后旧视觉 PASS 失效，technical-only 不能代替必要视觉/人验。完整门禁、human_owner 的合法 defer/waive 不变，不从报告文本自动编造 Visual Manifest 或 human witness。
+每个 Visual Manifest case 仍绑定真实 AC、route、viewport、actual、report 及当前 `change_set_id`；reference/diff 声明后必须是真实 evidence 内文件。代码变化后旧视觉 PASS 失效，technical-only 不能代替必要视觉/人验。实际 Owner 已按声明范围核验时，human_owner 可通过既有 `task acceptance-override --mode accept --scope visual --ac ...` 留证；该范围必须绑定当前 Subject/ChangeSet，不生成或伪造 Visual Manifest，也不消解无关 blocker。完整门禁、human_owner 的合法 defer/waive 不变，不从报告文本自动编造 Visual Manifest 或 human witness。
 
 ## 4. 按需接入 Midscene
 
