@@ -210,6 +210,12 @@ def effective_owner_acceptance(
     ``defer``/``waive`` entries remain readable without retroactive bindings.  A
     later disposition supersedes an earlier one for the same AC, but no event is
     deleted or rewritten.
+
+    A canonical artifact that cannot be read (for example invalid UTF-8) leaves the
+    subject unconfirmable: no ``accept`` record may be treated as current, because a
+    read-only routing surface must report that state instead of failing as an
+    internal error.  Corruption itself is reported at the closure boundaries by
+    artifact validation (``TEXT_INTEGRITY_INVALID``).
     """
     base = Path(task_dir).resolve() if task_dir is not None else None
     current_change_set = str(change_set_id or "").strip()
@@ -217,7 +223,10 @@ def effective_owner_acceptance(
     if base is not None:
         if not current_subject:
             from .digest import compute_verification_subject_digest
-            current_subject = compute_verification_subject_digest(base)
+            try:
+                current_subject = compute_verification_subject_digest(base)
+            except (OSError, UnicodeError):
+                current_subject = ""
         if not current_change_set:
             try:
                 from . import record_first
