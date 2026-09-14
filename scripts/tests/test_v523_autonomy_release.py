@@ -7,8 +7,8 @@ BASE=Path(__file__).resolve().parents[2]
 
 
 def test_v523_is_single_active_contract_and_autonomy_surface_is_shipped():
-    assert active_version()=="5.3.2"
-    assert (BASE/"templates/5.3.2/status.yaml").is_file()
+    assert active_version()=="5.3.3"
+    assert (BASE/"templates/5.3.3/status.yaml").is_file()
     previous = "5.2." + "2"
     assert not (BASE/"templates"/previous).exists()
     for path in [

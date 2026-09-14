@@ -174,8 +174,8 @@ def test_workflow_config_has_no_process_stale_or_caller_owned_cache(tmp_path):
         assert workflow_loader.load_workflow(tmp_path).states == expected
     stat = path.stat()
     text = path.read_text(encoding='utf-8')
-    assert '5.3.2' in text
-    path.write_text(text.replace('5.3.2','5.3.3'), encoding='utf-8')
+    assert '5.3.3' in text
+    path.write_text(text.replace('5.3.3','5.3.3'), encoding='utf-8')
     os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
     assert workflow_loader.load_workflow(tmp_path).version == '5.3.3'
 
@@ -198,7 +198,7 @@ _CURRENT_END = '<!-- tp-spec:current:end -->'
 
 def _b05_document(tid, body, history='', *, artifact='task'):
     return (f'---\nartifact: {artifact}\ntask_id: "{tid}"\n'
-            'artifact_contract:\n  version: "5.3.2"\n---\n\n'
+            'artifact_contract:\n  version: "5.3.3"\n---\n\n'
             f'# {artifact}\n\n{_CURRENT_START}\n{body}\n{_CURRENT_END}\n\n'
             '## 历史决策 / 备注\n' + history + '\n')
 

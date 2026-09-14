@@ -1,4 +1,4 @@
-"""v5.3.2 Graphify M2 No-Go release-boundary contracts."""
+"""v5.3.3 Graphify M2 No-Go release-boundary contracts."""
 from __future__ import annotations
 
 import re

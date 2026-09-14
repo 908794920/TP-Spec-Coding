@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.3.2 CLI 统一入口。
+"""TP-Spec-Coding V5.3.3 CLI 统一入口。
 
 注册当前活动命令与显式兼容/恢复工具；普通研发角色以 Record-first task API 为日常写入口，
 Wiki 子系统通过独立 ``wiki`` 命令组提供代码理解维护能力。
@@ -97,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Read-only offline HTML previews; cards never become Runtime authority.
     card_commands.add_card_subparsers(subparsers)
 
-    # V5.3.2 Base convergence：安装根、Workspace Inventory、项目绑定与 Junction 收敛。
+    # V5.3.3 Base convergence：安装根、Workspace Inventory、项目绑定与 Junction 收敛。
     base_maintenance.add_base_subparsers(subparsers)
 
     # project 组（M0 实现）
@@ -116,7 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     work_parser = subparsers.add_parser("work", help="Work session management")
     work_session_cmd.add_work_subparsers(work_parser)
 
-    # V5.3.2：机器本地临时工件所有权、清理与 orphan 只读检查。
+    # V5.3.3：机器本地临时工件所有权、清理与 orphan 只读检查。
     temp_cmd.add_temp_subparsers(subparsers)
 
     # rework 组（M2 实现）
@@ -143,22 +143,22 @@ def build_parser() -> argparse.ArgumentParser:
     config_parser = subparsers.add_parser("config", help="Config management")
     config_cmd.add_config_subparsers(config_parser)
 
-    # V5.3.2 legacy commit compatibility/recovery surface; daily roles use task record-first APIs.
+    # V5.3.3 legacy commit compatibility/recovery surface; daily roles use task record-first APIs.
 
     # 高风险动作收据（不改变状态）
     receipt_cmd.add_receipt_subparsers(subparsers)
 
-    # V5.3.2 C1 审查预检（不改变状态；anchor_check 确定性校验 + 封存安全）
+    # V5.3.3 C1 审查预检（不改变状态；anchor_check 确定性校验 + 封存安全）
     review_preflight.add_review_preflight_subparsers(subparsers)
 
-    # V5.3.2 B-14 仅无损的可回溯摘要（不改变状态；分类 + sentinel 保护 + 可逆折叠）
+    # V5.3.3 B-14 仅无损的可回溯摘要（不改变状态；分类 + sentinel 保护 + 可逆折叠）
     lossless_summary.add_lossless_summary_subparsers(subparsers)
 
-    # V5.3.2 B-18 cutover 快照/回滚（非破坏性工具；回滚默认 dry-run 零写入）
+    # V5.3.3 B-18 cutover 快照/回滚（非破坏性工具；回滚默认 dry-run 零写入）
     snapshot_cmd.add_cutover_snapshot_subparsers(subparsers)
     rollback_cmd.add_cutover_rollback_subparsers(subparsers)
 
-    # V5.3.2 B-12 结构化引用校验（纯确定性，不依赖其他模块）
+    # V5.3.3 B-12 结构化引用校验（纯确定性，不依赖其他模块）
     structured_refs.add_refs_validate_subparsers(subparsers)
 
     # A-04 正式 reconciliation（以 DB 为权威重建投影，追加 RECONCILIATION 事件）
@@ -170,13 +170,13 @@ def build_parser() -> argparse.ArgumentParser:
     # Workflow Orchestrator：只读 L0-L3 路由与契约诊断。
     orchestration_cmd.add_workflow_subparsers(subparsers)
 
-    # v5.3.2 Autonomous Maintenance：用户级 Profile 与隔离自治控制面。
+    # v5.3.3 Autonomous Maintenance：用户级 Profile 与隔离自治控制面。
     autonomy_cmd.add_autonomy_subparsers(subparsers)
 
-    # V5.3.2 Wiki 标准化：代码理解层的确定性扫描/规划/质量门/基线提交。
+    # V5.3.3 Wiki 标准化：代码理解层的确定性扫描/规划/质量门/基线提交。
     wiki_commands.add_wiki_subparsers(subparsers)
 
-    # V5.3.2 Knowledge 标准化：长期知识、证据、FTS 投影、外部接入与定时维护。
+    # V5.3.3 Knowledge 标准化：长期知识、证据、FTS 投影、外部接入与定时维护。
     knowledge_commands.add_knowledge_subparsers(subparsers)
 
     return parser

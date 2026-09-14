@@ -1,11 +1,11 @@
 ---
 id: tp-code-reviewer
 name: tp-代码审查员
-version: 5.3.2
+version: 5.3.3
 status: active
 type: workflow-role
 role: tp-code-reviewer
-description: tp-代码审查员：TP-Spec-Coding v5.3.2 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-代码审查员：TP-Spec-Coding v5.3.3 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-代码审查员

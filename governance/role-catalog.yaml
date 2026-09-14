@@ -1,6 +1,6 @@
-catalog_version: "5.3.2"
-base_version: "5.3.2"
-generated_utc: 20260912T134323Z
+catalog_version: "5.3.3"
+base_version: "5.3.3"
+generated_utc: 20260914T100238Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -14,7 +14,7 @@ roles:
   phases: [other]
   capabilities: [domain.routing, status.compact, explain.route]
   owns_states: []
-  content_sha256: EBCF0D1466A334CFB82436F8E2008A11B42C0101D8747EFE3C2F5D84CC884E63
+  content_sha256: A982A7975BE8F2B269070D06D5C17E1099074480C8306B2B0BB45312423E7F35
 - workflow_role: tp-software-lifecycle
   display_name: tp-软件工程生命周期
   type: control-role
@@ -23,7 +23,7 @@ roles:
   phases: [intake, requirement, product, discovery, architecture, planning, development, verification, review, delivery]
   capabilities: [lifecycle.routing, role.resolution, workflow.coordination]
   owns_states: [NEW]
-  content_sha256: 073C70CA1D889A0A915990287CAACE2DDE35F40F62F36EAAB5289094017C97AE
+  content_sha256: B53C1050DBC99CC3F3BFE49B29AA420BFD7B6154E68C632CBB5366992C26075E
 - workflow_role: tp-card-display
   display_name: 卡片展示调度
   type: human-owner-skill
@@ -32,7 +32,7 @@ roles:
   phases: [other]
   capabilities: [card.global, card.project, card.task, card.host-display]
   owns_states: []
-  content_sha256: D6E2BF69E746B5896D763205F22D06D51BF7AC0A6619DB776684E2F7D27F8C9C
+  content_sha256: D605454597C61AC3B732D63B0E57368EB46B9BB3BA6C3EE9AD94AD04089D8FAB
 - workflow_role: tp-project-autonomy
   display_name: tp-项目自治维护
   type: control-role
@@ -46,7 +46,7 @@ roles:
     - {id: tp-autonomy-review, path: skills/autonomy/tp-autonomy-review/SKILL.md, mode: conditional}
     - {id: tp-autonomy-integrate, path: skills/autonomy/tp-autonomy-integrate/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 4380E367CBEAC613C8E0515B6C33792F8F0C756BC26DEC83D23E1DCE36407AAD
+  content_sha256: 51AA2187DBD4104713299321F9063EC2C9F7A95C9613D0436CF8829875BD3F1F
 - workflow_role: tp-base-maintenance
   display_name: tp-基座维护
   type: human-owner-skill
@@ -55,7 +55,7 @@ roles:
   phases: [other]
   capabilities: [base.configure, base.migrate, base.doctor, base.repair]
   owns_states: []
-  content_sha256: 4DD1B49ED6998C744CDA341543EC7784EE1F9C3B1AD756D226363CF5FDD4CBD2
+  content_sha256: FC6A44E6CFA70BFB1DEF1198D464F5B8D8C65671CC220379CE8ECB95D3FF9560
 - workflow_role: tp-knowledge
   display_name: tp-knowledge
   type: human-owner-skill
@@ -64,7 +64,7 @@ roles:
   phases: [other, delivery]
   capabilities: [knowledge.search, knowledge.ingest, knowledge.converge, knowledge.audit]
   owns_states: []
-  content_sha256: FCD5B3794FBD0B8FF0E38C8DC6B2B11F149CFFDA35FE0697B764F9E70B35BD5F
+  content_sha256: 3E28CC54F0B392C3A4C2ABE27B2A02FDF7DCB8D51D5772BA503E158697CBD218
 - workflow_role: tp-wiki
   display_name: tp-wiki
   type: human-owner-skill
@@ -73,7 +73,7 @@ roles:
   phases: [other]
   capabilities: [wiki.plan, wiki.update, wiki.audit, wiki.search]
   owns_states: []
-  content_sha256: 2D1288A4982ED29200809FDBCEF28797C39B6C9E7F4248C6BDF9F1D7994DF1A1
+  content_sha256: 6441DA01AE26C9D9F0E7A19F4D8FA0E2404987BA2B4B2C8B4CF82FF839B85077
 - workflow_role: tp-product-manager
   display_name: tp-产品经理
   type: workflow-role
@@ -86,7 +86,7 @@ roles:
     - {id: assumption-management, path: skills/capabilities/assumption-management/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 8F4DDB3AA9C78C088EAC6D67AC205344ED4EACED528DA6BE29B6BD652298B2D7
+  content_sha256: F9B58A07DBC78D41D487B781391822C32C803D553455C60EEEAF74ACEC257233
 - workflow_role: tp-software-architect
   display_name: tp-软件架构师
   type: workflow-role
@@ -99,7 +99,7 @@ roles:
     - {id: delivery-planning, path: skills/capabilities/delivery-planning/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: D25D240D365CF8FFC1F0B0D3255D3B9485D5D7F33A1CCB5BC3F84FDE48C7735D
+  content_sha256: 9BF648679C8D4E57E5629D4D8EF8D54E0F75170D3428B7659135ADB7DED79367
 - workflow_role: tp-tech-lead
   display_name: tp-技术主管
   type: workflow-role
@@ -113,7 +113,7 @@ roles:
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
     - {id: technical-review, path: skills/capabilities/technical-review/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: C5310EB8D54BE60EF44B8144436439B48D854DFB7DC9BDD7E76C092414C594A9
+  content_sha256: C1F1B6C6CDB08B1AF16D2FCA65FABCD13BEE53BC00BB299FDC7DB45980DBF47E
 - workflow_role: tp-security-engineer
   display_name: tp-安全工程师
   type: workflow-role
@@ -124,7 +124,7 @@ roles:
   subskills:
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: A30BD5C71147537B5D9329DA9FFDDF373F2A982CA710F5F2CC044297662ACCEC
+  content_sha256: 3A8AFA36611FB3B4F6C460D299DA7E4434E19C06E98452E9AC8F3B059D564FF0
 - workflow_role: tp-development-engineer
   display_name: tp-开发工程师
   type: workflow-role
@@ -137,7 +137,7 @@ roles:
     - {id: systematic-debugging, path: skills/capabilities/systematic-debugging/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: EEC431A841B4E91A51D1660138C9A60FD91ACA29AEFEC5F8047E72B6903D2EEB
+  content_sha256: EDB5DA153EA2DF222A328C17287827B266594596F8733A47349FB84ACACBBE0A
 - workflow_role: tp-database-engineer
   display_name: tp-数据库工程师
   type: workflow-role
@@ -148,7 +148,7 @@ roles:
   subskills:
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 16E9A4137775EB120EB465D18A60E85C8FCDAC1D3EB949DB0167F8CFA8B566AA
+  content_sha256: CFEC9EC1B763003856E46479553E74E445E44D0ADEC69C5CC45DC6DE8A82E847
 - workflow_role: tp-test-engineer
   display_name: tp-测试工程师
   type: workflow-role
@@ -160,7 +160,7 @@ roles:
     - {id: testing-strategy, path: skills/capabilities/testing-strategy/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: FD4503D9C01DD023C826DA646992E31A83EB5B10B1F17036DBA6777CF4B27B5E
+  content_sha256: 4EBF42EA0EDF3F4B44248F86E5CD44DCF4DE83406D613B53744303D9386B9B38
 - workflow_role: tp-code-reviewer
   display_name: tp-代码审查员
   type: workflow-role
@@ -173,7 +173,7 @@ roles:
     - {id: technical-review, path: skills/capabilities/technical-review/SKILL.md, mode: default}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 500E212CBDB748A907720D604411973935D25C9074758CCF7997AC8D371B39BE
+  content_sha256: 9498A4D7858628C2043F96EECF8BEA1D73D880AC759CFDBBF6B48F2E83C59A30
 - workflow_role: tp-integration-engineer
   display_name: tp-集成交付工程师
   type: workflow-role
@@ -184,7 +184,7 @@ roles:
   subskills:
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 451A0A1A98A67DA5A046018771FEE77CF79C8358CA79630900F429D774D64030
+  content_sha256: DD2BDD132CC6BB4B80D6867D0E008D1666F153B8C9B9F5146736843F021B2482
 topology:
   schema: tp-spec.role-topology/v1
   generated: true

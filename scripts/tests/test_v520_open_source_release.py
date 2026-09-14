@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding v5.3.2 public-release contract tests."""
+"""TP-Spec-Coding v5.3.3 public-release contract tests."""
 from __future__ import annotations
 
 import importlib.util
@@ -21,11 +21,11 @@ def read(rel: str) -> str:
 
 
 def test_public_brand_and_release_version():
-    assert ACTIVE == "5.3.2"
+    assert ACTIVE == "5.3.3"
     assert read("README.md").startswith("# TP-Spec-Coding\n")
     assert "TP-Spec-Coding" in read("governance/workflow.yaml")
     changelog = read("CHANGELOG.md")
-    for needle in ("## [5.3.2]", "tp-spec-coding", "tp-software-lifecycle", "文档入口"):
+    for needle in ("## [5.3.3]", "tp-spec-coding", "tp-software-lifecycle", "文档入口"):
         assert needle in changelog, needle
 
 
@@ -342,7 +342,7 @@ def test_release_manifest_gate_distinguishes_working_tree_from_git_release(tmp_p
         assert run_git("add", "manifest.sha256").returncode == 0
         assert manifest_tool.verify_release() == 0
 
-        # Reproduce the v5.3.2 publication failure mode: the file is visible and
+        # Reproduce the v5.3.3 publication failure mode: the file is visible and
         # included by the development manifest, but it was never git-added.
         (repo / "release-surface.txt").write_text("untracked\n", encoding="utf-8")
         assert manifest_tool.generate() == 0

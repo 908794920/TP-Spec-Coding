@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.3.2 temporary artifact and work-session hardening regressions."""
+"""V5.3.3 temporary artifact and work-session hardening regressions."""
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor

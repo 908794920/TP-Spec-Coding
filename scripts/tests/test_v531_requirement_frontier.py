@@ -1,4 +1,4 @@
-"""v5.3.2 Requirement Frontier method contracts."""
+"""v5.3.3 Requirement Frontier method contracts."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,7 +8,7 @@ import yaml
 BASE = Path(__file__).resolve().parents[2]
 CAPABILITY = BASE / "skills" / "capabilities" / "requirement-clarification" / "SKILL.md"
 PRODUCT_ROLE = BASE / "skills" / "roles" / "tp-product-manager" / "SKILL.md"
-TEMPLATE_ROOT = BASE / "templates" / "5.3.2"
+TEMPLATE_ROOT = BASE / "templates" / "5.3.3"
 
 
 def _read(path: Path) -> str:

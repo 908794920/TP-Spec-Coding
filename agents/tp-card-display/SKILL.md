@@ -1,7 +1,7 @@
 ---
 name: tp-card-display
 display_name: 卡片展示调度
-version: 5.3.2
+version: 5.3.3
 id: tp-card-display
 status: active
 type: human-owner-skill

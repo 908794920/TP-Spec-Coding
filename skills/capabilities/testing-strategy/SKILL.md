@@ -1,11 +1,11 @@
 ---
 name: testing-strategy
 display_name: 分层测试
-version: 5.3.2
+version: 5.3.3
 description: Use to choose and execute risk-proportionate tests for code changes, mapping acceptance criteria to reproducible evidence without equating test count with confidence.
 ---
 
-# 分层测试 — V5.3.2 Record-first
+# 分层测试 — V5.3.3 Record-first
 
 ## 本轮范围
 `workflow next` 的 `context.validation` 提供当前已绑定仓库的变更路径及 acceptance.md 候选，**不是覆盖证明**，不自动运行检查或授予权限。先从当前有效 AC、Diff、真实调用/引用和已有测试中选择本轮检查；候选列表可被截断，HEAD 到工作区不等于整个任务累计范围，不能因返回路径少就宣称没有其他影响。

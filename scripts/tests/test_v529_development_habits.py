@@ -8,7 +8,7 @@ def read(rel: str) -> str:
 
 
 def test_implementation_template_contains_pre_and_post_change_contract():
-    text = read("templates/5.3.2/implementation.md")
+    text = read("templates/5.3.3/implementation.md")
     for marker in [
         "### Usage Footprint",
         "### 可复用代码",
@@ -131,7 +131,7 @@ def test_capability_references_capture_overdevelopment_and_low_value_tests():
 
 
 def test_test_guide_separates_visual_and_non_visual_validation():
-    guide = read("templates/5.3.2/requirement-test-guide.md")
+    guide = read("templates/5.3.3/requirement-test-guide.md")
     assert "## 非可视化验证" in guide
     assert "## 可视化验证" in guide
     assert "登录策略" in guide
@@ -167,7 +167,7 @@ def test_b14_conditional_methods_keep_risk_evidence_and_stop_conditions():
 
 
 def test_b14_simple_feedback_template_does_not_require_five_line_route():
-    text = read("templates/5.3.2/implementation.md")
+    text = read("templates/5.3.3/implementation.md")
     intro = text.split("## 开发前", 1)[0]
     assert "批次摘要" in intro and "不另建" in intro
     assert "五行" not in intro

@@ -559,7 +559,7 @@ def test_visual_owner_scope_references_must_be_a_known_acceptance_list(tmp_path,
 
 def test_closeout_guidance_describes_owner_acceptance_boundary():
     root = Path(__file__).resolve().parents[2]
-    template = (root / "templates/5.3.2/acceptance.md").read_text(encoding="utf-8")
+    template = (root / "templates/5.3.3/acceptance.md").read_text(encoding="utf-8")
     lifecycle = (root / "docs/agents/tp-software-lifecycle.md").read_text(encoding="utf-8")
     visual_qa = (root / "skills/capabilities/testing-strategy/references/visual-qa.md").read_text(encoding="utf-8")
     test_engineer = (root / "skills/roles/tp-test-engineer/SKILL.md").read_text(encoding="utf-8")

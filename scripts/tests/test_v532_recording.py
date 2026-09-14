@@ -220,7 +220,7 @@ def _junit(path, *, failures=0, skipped=0):
 def _base_report(path):
     path.write_text(json.dumps({
         'version': '1.0.0', 'mode': 'Static', 'passed': 1, 'failed': 0, 'duration': 0.5,
-        'artifact_contract': '5.3.2', 'git_sha': 'a' * 40,
+        'artifact_contract': '5.3.3', 'git_sha': 'a' * 40,
         'items': [{'name': 'static.fixture', 'status': 'PASS', 'exit_code': 0,
                    'duration_ms': 125, 'detail': 'raw trace not copied into summary'}],
         'workdir': 'private-local-path', 'workdir_kept': False, 'artifact_hashes': {},

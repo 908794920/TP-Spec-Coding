@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Neutral durable transaction/projection primitives for V5.3.2 Record-first Runtime.
+"""Neutral durable transaction/projection primitives for V5.3.3 Record-first Runtime.
 
 This module contains no legacy long-state workflow or Action-role policy.  Migration-only
 compatibility remains under :mod:`cli.migrations.v5_2_3`.
@@ -45,7 +45,7 @@ def _continuation_sources(task_dir: Path, state: str) -> List[Path]:
         names.extend(["implementation.md", "codex-review.md"])
     elif state == "VERIFYING":
         names.append("implementation.md")
-    # V5.3.2 §3.8/§10.2：新工件经集中注册表纳入 source digest（存在才纳入）
+    # V5.3.3 §3.8/§10.2：新工件经集中注册表纳入 source digest（存在才纳入）
     names.extend(projection_cmd.projection_source_names())
     return [task_dir / name for name in names if (task_dir / name).is_file()]
 
@@ -369,7 +369,7 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
     elif "TECHNICAL" in verification:
         guidance = "技术限定结果不代表整体验收通过；按 workflow next 完成必要代码审查，保留完整验证及视觉/人验缺口，不直接交付或结单。"
     else:
-        guidance = "V5.3.2：phase 是查询事实，不是流程门禁；继续完成业务工作即可。"
+        guidance = "V5.3.3：phase 是查询事实，不是流程门禁；继续完成业务工作即可。"
 
     body = (
         "# 任务接续区\n\n"
@@ -507,7 +507,7 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
                          db_state_before: str = "", target_state: str = "",
                          owner_before: str = "", owner_after: str = "",
                          flush_id: str = "", before_prepare=None) -> Dict[str, str]:
-    """一致性提交核心（V5.3.2 durable journal 版）：
+    """一致性提交核心（V5.3.3 durable journal 版）：
 
     1. BEGIN IMMEDIATE 获取 SQLite writer serialization；2. 读取 revision 并备份现有投影；
     3. 写 durable journal（PREPARED）；4. db_and_render(conn) 写 DB 并渲染投影；

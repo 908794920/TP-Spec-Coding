@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.3.3] Open Release Line — 2026-09-14
+
+- 从 **5.3.2** 收敛到 **5.3.3** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.3.3`，不再保留 `templates/5.3.2`。
+- v5.3.2 已正式发布（owner acceptance `accept` 模式 + v5.3.2 运行时契约集成 + 卡片渲染修复 + 只读路由在 canonical 工件不可解码时不再崩溃）；本行作为后续功能开发的开放版本线，Role-first 产品形态与各 Formal Role 活动契约不变。
+
 ## [5.3.2] Open Release Line — 2026-09-06
 
 - 从 **5.3.1** 收敛到 **5.3.2** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.3.2`，不再保留 `templates/5.3.1`。
