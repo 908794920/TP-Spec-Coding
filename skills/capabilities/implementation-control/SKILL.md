@@ -1,43 +1,40 @@
 ---
 name: implementation-control
 display_name: 实现过程控制
-version: 5.3.1
+version: 5.3.2
 description: Use while implementing an TP-Spec-Coding task when code changes, refactoring, reuse decisions, debugging, or scope control are required.
 ---
 
-# 实现过程控制 — V5.3.1 Record-first
+# 实现过程控制 — V5.3.2 Record-first
 
 ## 目的
 把“先理解、再最小修改、验证后再继续”变成默认开发习惯。目标不是写更多代码，而是用最小、可读、可验证的改动解决当前真实问题。
 
-## 默认开发内循环
+## 按当前影响选用的方法
 
-### THINK
-1. 找到真实入口、当前实现和主要调用链，明确这一轮可验证成功标准与关键假设。
-2. 检查静态调用、Spring/反射、XML/配置、模板/JSP、消息/定时任务、序列化和外部契约，形成 Usage Footprint；全文搜索无引用不等于可安全删除。
-3. 代码事实与 Requirement/Architecture 冲突时先修正 canonical 文档，不把已证伪前提留给后续 AI。
+这是方法清单，不是每轮必跑步骤；按触发条件选用，不要求逐项回答或生成固定路线。已确认的局部反馈留在原 Task，围绕本轮目标、当前事实、获准范围和完成/停止条件行动；父 Task 为 L2/L3 不改变本轮边界。无需修改是合法结论。
 
-### SIMPLIFY
-4. 当前功能是否真的需要存在？若不修改或删除需求外功能已经足够，明确选择不做。
-5. 当前代码库是否已有可直接复用实现？先搜索相似 helper/service/component/test utility，并优先直接复用。
-6. 是否只需修改现有实现即可满足？继续遵守 `直接复用 → 修改现有实现 → 替换/删除重复实现`，不要为了新需求再造平行路径。
-7. **JDK / 标准库**是否已经提供满足当前需求的能力？优先标准能力而不是手写同类基础设施。
-8. 当前**框架或平台原生能力**是否已经提供？优先项目当前技术栈的正式能力，不额外包一层只转发的 wrapper。
-9. **项目已安装依赖**是否已经提供？先复用现有依赖；不得为了局部便利新增依赖。
-10. 是否可以用**最简单的局部表达**完成？优先清晰局部代码，不为单一 caller/variation 提前增加 interface、factory、config 或扩展点。
-11. 只有以上均不成立时，才**新增满足当前需求的最小实现**。新 abstraction/config/dependency/compatibility path 必须对应当前真实 caller、variation、requirement 或已证明风险；“以后可能用”不是理由。
+### THINK — 事实先于简化
+找到真实入口、当前实现、调用链、可验证目标和关键假设。仅相关事实存在缺口时定向调查，不为凑清单扫描全仓。
 
-Solution Ladder 只能在 THINK 已理解真实入口、调用链、Usage Footprint 和成功标准后执行，不能为了代码少而跳过事实核验。它也不得削弱：**信任边界输入验证**、**防数据丢失的错误处理**、**安全、权限和隐私**、**可访问性**、**事务、一致性、并发、幂等**、Requirement 明确要求的**兼容性**，以及保护非平凡行为的**最小充分验证**。
+| 触发条件 | 必要核对 |
+| --- | --- |
+| 删除、接口、配置驱动或共享行为改动 | 形成必要的 Usage Footprint：真实静态调用及适用的 Spring/反射、XML/配置、模板/JSP、消息/定时任务、序列化、外部契约；全文搜索无引用不等于可安全删除。 |
+| 代码/证据与原方案冲突 | 查明已证伪前提，修正 canonical 当前结论并保留来源；产品错误不反向改成需求，业务取舍或授权变化才交用户决定。 |
+| 共享、安全、数据或关键契约风险 | 核对真实消费方与专项风险；Diff 小不等于低风险，影响不明不盲猜。 |
 
-### SURGICAL CHANGE
-12. 在 `implementation.md`（复杂任务）或五行短路线（简单任务）记录允许修改、明确不做和变更理由映射。
-13. 一轮只做一个 smallest coherent diff；不顺手格式化、重构或清理与 Task 无关的旧代码。
-14. 只清理由本次改动制造的 orphan、失效兼容路径、无调用 helper、重复测试和调试残留。
+### SIMPLIFY — 选择最小合理实现
+事实明确后再选路线：当前功能是否真的需要存在？当前代码库是否已有可直接复用实现，或只需修改现有实现？没有合适现成路径时，再比较 JDK / 标准库、框架或平台原生能力、项目已安装依赖、最简单的局部表达；最后才新增满足当前需求的最小实现。找到充分方案即停止无关比较，不逐层写报告。
 
-### GOAL-DRIVEN VERIFY
-15. 写完后重新阅读完整 Diff，确认每个 changed file 能映射到 AC、Finding、必要 Migration 或本次清理。
-16. 测试保护真实行为，不以测试数量/覆盖率制造信心；正式回归测试与临时诊断测试分开。
-17. 运行与成功标准对应的最小充分验证，记录真实 Evidence；当前轮通过后再进入下一轮或 checkpoint。
+保持 `直接复用 → 修改现有实现 → 替换/删除重复实现`；新 abstraction/config/dependency/compatibility path 必须对应当前真实 caller、variation、requirement 或已证明风险，不为以后可能使用预留。Solution Ladder 不得削弱**信任边界输入验证、防数据丢失的错误处理、安全、权限和隐私、可访问性、事务、一致性、并发、幂等、必要兼容性和最小充分验证**。
+
+### SURGICAL CHANGE — 只改必要范围
+一轮只做 smallest coherent diff，保护用户已有修改，不顺手格式化/重构旧代码。只有确需保存复杂实施约束时才维护 `implementation.md` 的相关段；简单反馈复用批次摘要，不另造路线或空阶段工件。只清理由本次改动制造的 orphan、重复路径、失效兼容、无调用 helper、调试残留和低价值平行测试。
+
+### GOAL-DRIVEN VERIFY — 验证并正确停止
+重新阅读完整 Diff，使 changed file 对应 AC、Finding、必要 Migration 或本次清理。在既有授权内复用/扩展已有测试，按 Diff、调用方、当前 AC 和风险做最小充分验证，不默认全量构建/回归，不用数量或覆盖率替代真实行为。持久回归与临时诊断分开；涉及页面/动效/流程时按需读取 [testing-strategy](../testing-strategy/SKILL.md)，静态契约不等于真实视觉/流程通过。
+
+留真实 Evidence、未运行边界和复验点后停在本批约定位置；只有新问题或有效触发才继续。缺权限/环境保持等待，不用无 Finding 的开发代替验收，也不把局部通过写成整任务 PASS。
 
 ## 文件归属
 - 产品运行、部署、长期维护所需资产：遵循目标仓库既有目录，例如正式 Migration SQL、Mapper XML、长期回归测试、产品 README。

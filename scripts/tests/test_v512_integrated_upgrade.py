@@ -339,7 +339,7 @@ class TestContractUpgradeAndPlanning(unittest.TestCase):
         daily = data.get("daily_api") or {}
         self.assertEqual(
             set(daily),
-            {"task_checkpoint", "task_verify", "task_block", "task_resume", "task_complete", "workflow_confirm", "task_delivery_converge"},
+            {"task_checkpoint", "task_verify", "task_block", "task_resume", "task_complete", "workflow_confirm", "task_delivery_converge", "task_run_pytest"},
         )
         forbidden = data.get("do_not_use_in_normal_role_flow") or []
         self.assertIn("commit --refresh", forbidden)

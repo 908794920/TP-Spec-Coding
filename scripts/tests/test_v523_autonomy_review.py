@@ -4,7 +4,7 @@ import os, subprocess, tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.tests.autonomy_testutil import run, git_repo
+from scripts.tests.autonomy_testutil import run, git_repo, record_fixture_verification
 from cli import autonomy_batch, autonomy_cycle, autonomy_discovery, autonomy_profile, autonomy_records, autonomy_workspace, record_first
 
 
@@ -28,6 +28,7 @@ def create_task(profile, task_id):
 
 def complete(ws, task_id, td):
     record_first.checkpoint(task_id=task_id,task_dir=str(td),actor="tp-development-engineer",phase="development",summary="done",db=ws["db_path"])
+    record_fixture_verification(ws["db_path"], task_id, td)
     record_first.complete(task_id=task_id,task_dir=str(td),actor="tp-development-engineer",summary="complete",db=ws["db_path"])
 
 

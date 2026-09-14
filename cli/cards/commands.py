@@ -8,8 +8,8 @@ import json
 import os
 import sys
 
-from .render import artifact_output_path, default_output_path, render_card, render_inline_card
-from .snapshot import build_global_snapshot, build_project_snapshot, build_task_snapshot
+# Only parser registration is loaded by normal CLI commands. Presentation
+# implementations are imported on explicit use so their failure stays optional.
 
 
 def _error_summary(exc: Exception) -> str:
@@ -40,6 +40,8 @@ def render_display_outputs(
     Runtime facts are never read or mutated here.  Each host-facing artifact is
     best-effort after the canonical offline HTML succeeds.
     """
+    from .render import artifact_output_path, render_card, render_inline_card
+
     stream = result_stream or sys.stdout
     legacy = legacy_stream or stream
     path = render_card(snapshot, output)
@@ -92,6 +94,8 @@ def _emit(
     artifact_root: Optional[str] = None,
     inline_output_arg: Optional[str] = None,
 ) -> int:
+    from .render import default_output_path
+
     output = Path(output_arg).expanduser().resolve(strict=False) if output_arg else default_output_path(snapshot["card_type"], identifier)
     render_display_outputs(
         snapshot,
@@ -103,11 +107,15 @@ def _emit(
 
 
 def cmd_global(args) -> int:
+    from .snapshot import build_global_snapshot
+
     snapshot = build_global_snapshot(home=args.home, installation_path=args.installation, registry_path=args.registry)
     return _emit(snapshot, args.output, artifact_root=args.artifact_root, inline_output_arg=args.inline_output)
 
 
 def cmd_project(args) -> int:
+    from .snapshot import build_project_snapshot
+
     snapshot = build_project_snapshot(args.root, registry_path=args.registry, installation_path=args.installation)
     identifier = str((snapshot.get("project") or {}).get("project_id") or "current-project")
     return _emit(
@@ -120,6 +128,8 @@ def cmd_project(args) -> int:
 
 
 def cmd_task(args) -> int:
+    from .snapshot import build_task_snapshot
+
     snapshot = build_task_snapshot(args.task, db_path=args.db, registry_path=args.registry, base_root=args.base_root)
     identifier = str((snapshot.get("task") or {}).get("task_id") or "current-task")
     return _emit(

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.3.1 installation/project binding resolver.
+"""TP-Spec-Coding V5.3.2 installation/project binding resolver.
 
 This module separates four authorities:
 
@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 import os
+import copy
+import stat
+import tempfile
 
 import yaml
 
@@ -76,7 +79,7 @@ def _as_abs(value: Any, *, anchor: Path) -> Optional[Path]:
 def _read_optional_yaml(path: Path) -> Dict[str, Any]:
     if not path.is_file():
         return {}
-    return load_config(path, use_cache=False)
+    return load_config(path, use_cache=True)
 
 
 def _validate_installation(data: Dict[str, Any], path: Path) -> None:
@@ -272,19 +275,41 @@ def write_project_binding(
 ) -> Path:
     workspace = canonical_path(workspace_root)
     p = canonical_path(path) if path else default_binding_path(workspace)
-    project: Dict[str, Any] = {"id": project_id}
+    from .project_surface import project_path_issue
+    issue = project_path_issue(p, workspace)
+    if issue:
+        raise EnvironmentConfigError(issue)
+    before = p.read_bytes() if p.is_file() else None
+    existing = _read_optional_yaml(p)
+    _validate_binding(existing, p)
+    if (existing.get("project") or {}).get("id") not in {None, "", project_id}:
+        raise EnvironmentConfigError("PROJECT_BINDING_IDENTITY_CONFLICT: existing project id differs; explicit identity review required")
+    payload = copy.deepcopy(existing) if existing else {"schema": BINDING_SCHEMA, "project": {}}
+    project = payload["project"]
+    project["id"] = project_id
     if wiki_id:
         project["wiki_id"] = wiki_id
     if knowledge_id:
         project["knowledge_id"] = knowledge_id
-    payload: Dict[str, Any] = {"schema": BINDING_SCHEMA, "project": project}
     if base_version:
         payload["base_version"] = base_version
+    if existing == payload:
+        return p
     p.parent.mkdir(parents=True, exist_ok=True)
-    text = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8", newline="\n")
-    os.replace(tmp, p)
+    temporary = None
+    try:
+        mode = stat.S_IMODE(p.stat().st_mode) if p.exists() else 0o644
+        with tempfile.NamedTemporaryFile(dir=p.parent, prefix=".tp-spec-binding-", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False).encode("utf-8"))
+        os.chmod(temporary, mode)
+        issue = project_path_issue(p, workspace)
+        if issue or (p.read_bytes() if p.is_file() else None) != before:
+            raise EnvironmentConfigError(issue or "PROJECT_BINDING_CHANGED: replan before replacing binding")
+        os.replace(temporary, p)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return p
 
 

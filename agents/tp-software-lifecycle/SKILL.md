@@ -1,7 +1,7 @@
 ---
 id: tp-software-lifecycle
 name: tp-软件工程生命周期
-version: 5.3.1
+version: 5.3.2
 status: active
 type: control-role
 role: tp-software-lifecycle
@@ -18,9 +18,9 @@ description: 唯一软件工程 Domain Agent；基于 L0~L3、风险、phase、�
 - Task Delivery：Task → Architecture/Planning（按需）→ Development → Verification → Review（按风险/等级）→ Delivery/Integration → Complete。
 
 ## 三层裁剪
-1. L0~L3 决定需要进入哪些 lifecycle areas；不恢复固定全流程。
+1. L0~L3 保留任务总体风险与最终义务；结合当前实际工作、有效事实和风险选择 lifecycle areas，不因父任务等级或空阶段事件恢复固定全流程。
 2. 每个 phase 只选择当前真正需要的 Formal Role；Security/Database 等可按风险跨 phase 参与。
-3. 每个 Role 只加载必要 Skill/Sub-Skill；Skill Pool 很大不等于单 Task 要全跑。
+3. 每个 Role 只加载必要 Skill/Sub-Skill；Skill Pool 很大不等于单 Task 要全跑。`workflow next` 提供只读 `included_stages`、`policy_sources` 和有限 `context.validation`；执行者仍核对实际调用方、AC 和授权后选择验证，不能把建议当成覆盖证明。项目政策及查询方法按需读 [生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)。
 
 ## 外部实现接入
 外部 AI 已完成实现或用户明确说明代码已由其他开发者完成时，默认把现有工作区固定为 Development subject，随后调度 Test Engineer + Code Reviewer，二者 `effects=[]`。Codex/当前 Agent 不因为“还能优化”自动重新进入 Development；只有独立 Test/Review 产生确定 Finding 后，才返回 Development 并把修改范围限制在 Finding 覆盖内容。
@@ -32,24 +32,31 @@ Requirement Ready 后才创建正式 Task；存在 pre-task canonical requiremen
 
 Knowledge 不增加 lifecycle stage：Delivery READY 后若 Runtime 存在可信 `KNOWLEDGE_CONVERGENCE_REQUEST` 且没有同 Request/Change Set 的 Result，`workflow next` 返回 `dispatch_effect → tp-knowledge`；无 Request 时直接保持 `task_complete`。`tp-knowledge` 写入可信 Result 后重新解析路由，不通过自然语言摘要猜测知识是否已收敛。
 
-## 临时工件收口
-正式测试/运行需要临时夹具时，统一使用系统 Temp 下的 TP-Spec owned run root，并把 work session 的 `session_id` 作为 run_id（存在 Work Session 时）。`work end` 在 Runtime END 事实提交后做本 session 幂等清理；`task complete` / `task cancel` 再对该 Task 已登记临时工件做一次兜底清理。
 
-进程崩溃、重启、重新部署或重新登录后，若旧 Work Session 仍在账本中，先以原角色执行 `work end --reason interrupted --task <TASK> --role <ROLE> --db <DB>` 收口，再开始新 session。需要检查残留时使用 `temp orphan-check --db <DB>`（可同时传 `--project/--task/--workspace-root` 收窄范围）；该命令**只报告** owned/unmanaged 候选，**不得自动删除**历史 `.tmp` 或任何没有 ownership manifest 的路径。已登记路径可用 `temp cleanup --project <PROJECT> --task <TASK> --run-id <RUN>` 显式重试。
+同一逻辑批次优先一次 `checkpoint --request-id <ID> --collect <真实输出>`（可重复 --collect）；ID 在重试期间保持不变，新工作/新验收另用 ID。CLI 自动采集、哈希和绑定，不让 AI 重抄结果或拼大段账本 JSON；采集不等于测试/Review PASS。`replayed: true` 是原操作回执，不是本轮新执行。详细参数按需读 [生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)。
 
-`CLEANUP_PENDING` 只表示机器本地临时工件清理尚未完成，不是新的 Task State，不得改变 `NEW / ACTIVE / BLOCKED / COMPLETED / CANCELLED` 五态，也不得阻塞已经成功写入的 Runtime 事实。
+未运行/等待与真实 Finding 分开：用 `block --kind human_acceptance|permission|environment|dependency` 记录条件、下一责任和已声明依赖；恢复通过 `resume --resolution-evidence` 或真实依赖完成校验，前置未变不重复必失败操作。用户返修反馈不是验收 PASS，局部修复留在原 Task，不为补齐空阶段新建任务或默认全量业务回归。`view_status: PENDING` 只重建派生视图，不重跑已提交业务；必要事实/证据/权限门禁不得放宽。
 
-## HTML 任务卡片刷新
-正式 Runtime 步骤成功并产生持久化事实后，可按既有白名单刷新该 task_id 的一次性 HTML 任务快照。刷新白名单保持：`task create / task checkpoint / task verify / task block / task resume / task delivery-converge / task complete`、`work start / work end`、`workflow confirm`。普通文件读取、代码搜索、测试、Shell 命令以及只读 `workflow next`/`task get` 不触发刷新。
+## 当前范围接续
+优先使用 `workflow next` 的 `context.current_effective`（存在时）或接续中的同源当前区；只在 canonical Task/Requirement 一处维护必要语义，历史/来源按需展开。`AVAILABLE` 只表示可读取，不证明决定正确或授予权限；缺当前区不增流程。冲突/损坏时先定向核对来源，不按最后文本选宽松授权；程序摘取与 `SUPERSEDED` 留存细节按需读 [生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)。
 
-自动刷新仍由 Runtime hook 负责，使用明确 task_id 和正式 Runtime/Resolver 事实；不得根据最近执行的任意命令猜测 task_id，也不会扫描或猜测“最近任务”。本 Agent 仅拥有**刷新触发策略**：触发后使用当前 Base 的统一 `cli/cards` 渲染入口，并遵循 `tp-card-display` 的展示契约。不得复制卡片模板、渲染器或 Host bridge，避免手动展示与自动刷新产生版本分叉。只有当前宿主 inline capability 已确认时，才可在**该单个子进程**设置 `TP_SPEC_CARD_INLINE_OUTPUT`；capability 未确认按不可用处理。刷新输出的 `CARD_DISPLAY` 只证明展示候选物生成事实，其中 `inline.status=generated` 不代表 Host 已渲染，只有实际桥接调用成功后才能声称会话内展示成功。每次刷新仍覆盖当前工作区固定 `.tp-spec/card/index.html` Web Artifact。
+## 工作段与临时工件
+工作段用于有意义的执行/暂停边界，不逐工具 start/end。ACTIVE、未闭合 START 和角色名均不证明进程存活或独立 Agent；未知保持待诊断，不补造时间，不自动修历史或杀进程。只在已知中断、原 task/role/agent 与 ownership/授权成立时收口，不冒充执行者；终态/退休任务不得新开工作段。
 
-用户明确要求“显示卡片”时，由产品入口直接路由 `tp-card-display`。该 Agent按“会话内 fragment → Web Artifact → 离线 HTML”选择展示层，并区分 inline generation、Host capability 与实际 render 结果；任何降级只作为当次展示解释，不写入 Runtime/Task 事实。不自行生成第二份卡片数据，也不把通用可视化文本当作固定协议。
+临时诊断使用登记的系统 Temp；持久回归、原始文件和 Evidence 不是清理对象。残留检查只报告，不得自动删除未托管路径；`CLEANUP_PENDING` 不新增 public state，不逆改已提交事实，必要验收仍检查清理证据。
 
-HTML 卡片失败不得改变原命令成功结果；Artifact/fragment 失败同样不得改变原命令成功结果。卡片只是可删除、可重建的只读展示快照，不新增 public state，不写回 Runtime/Wiki/Knowledge。
+- 读取条件：创建临时夹具、工作段收口或诊断残留；内容：只读工作段、临时工件与已知中断恢复；路径：[生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)。只读命中段，不每轮展开命令手册。
+
+## 正常反馈与显式卡片
+开始/继续、有意义里程碑、范围变化和等待/结束边界，复用可信结果简短 Markdown 汇报；箭头只表达本次实际执行段，不伪造完成比例、Token 或运行中状态，不逐命令刷屏，不破坏 CLI JSON/YAML stdout。
+
+所有普通命令（含 checkpoint/verify/block/resume/complete、work start/end、workflow confirm）不自动生成 snapshot、不写 HTML、不输出 CARD_DISPLAY、不调用 Host bridge；不预生成、不静默、延迟或后台刷新。仅用户明确请求卡片时读取 [tp-card-display](../tp-card-display/SKILL.md)，会话内/离线降级细节按该契约处理。不得复制卡片模板、渲染器或 Host bridge；展示失败不改变 Runtime 成功事实，不写回 Runtime/Wiki/Knowledge。
 
 ## 深度模式与安全
 本 Domain Agent 只决定**何时进入深度模式**；UltraPlan/UltraReview 由正式专业角色主持；`mode` 与 `effects` 独立于 Role。任何 `repo_mutation` 都必须继续遵守 Execution Envelope / allowed_effects fail-closed 边界。
 
 ## 用户确认
 只为真实 material decision、高风险授权、外部 blocker 请求用户。不得因可推导 metadata、可选 Skill、推荐工件缺失让任务回退补账。
+
+## 异常解释
+意外暂停、重复确认或验证范围扩大时，只说明一次：实际文件/相关条款或 Runtime 命令错误、适用条件、Agent 的解释、受阻动作及恢复所需事实。区分原文与推断，不捏造宿主隐藏指令，不用提示词绕过 Runtime 门禁；前置未变不反复解释或重试。只停止受影响动作，其余获准工作按依赖继续；复用批次回执，不新建解释报告或逐命令规则扫描。

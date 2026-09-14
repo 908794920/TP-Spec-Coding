@@ -1,11 +1,11 @@
 ---
 id: tp-code-reviewer
 name: tp-代码审查员
-version: 5.3.1
+version: 5.3.2
 status: active
 type: workflow-role
 role: tp-code-reviewer
-description: tp-代码审查员：TP-Spec-Coding v5.3.1 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-代码审查员：TP-Spec-Coding v5.3.2 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-代码审查员
@@ -41,4 +41,4 @@ Test Engineer 的真实测试 Evidence 是输入之一；Code Reviewer 不重新
 ## Runtime
 只通过 trusted review/result contract 写正式 Review 事实；不得因为自己是 Reviewer 直接完成 Task。
 ## Project Memory（按需）
-只有工作自然出现 Evidence-backed、Non-volatile、Reusable 且 costly-to-rediscover 的项目经验时，才按需调用 `tp-memory-capture`。未触碰 Memory：0 动作；只检查 touched fragment，不扫描整个 PROJECT、全部 Skills 或历史任务；Memory 缺失/候选沉淀不得阻塞当前研发。
+遵守业务项目根 `AGENTS.md` 自有规则及当前 Task 授权；临时决定留 Task。已确认稳定 Rule 不受重发现成本限制，根规则写失败说明未持久化。Rule 或高价值经验触发沉淀时先读 [tp-memory-capture](../../capabilities/tp-memory-capture/SKILL.md) 的相关段；未触碰 Memory：0 动作，已知目标直达、无关 Memory 不读，可选缓存失败不阻塞研发。

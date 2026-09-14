@@ -1,17 +1,33 @@
-version: 5.3.1
+version: 5.3.2
 mode: record-first
 principle: business work first; Runtime owns bookkeeping
 daily_api:
   task_checkpoint:
     command: tp-spec task checkpoint --task <TASK> --task-dir <DIR> --actor <ROLE>
-      --phase <PHASE> --summary <TEXT> [--evidence evidence/... ]
+      --phase <PHASE> --summary <TEXT> [--evidence evidence/... ] [--request-id <ID>] [--collect <OUTPUT>] [--result-report <REPORT>] [--recorded-result <EVENT-ID>]
     purpose: Record one meaningful progress milestone. NEW auto-activates; projections
       auto-rebuild.
     notes:
     - Do not checkpoint microsteps.
+    - Repeat --result-report to receive existing pytest JUnit or TP-Spec Base/Code Review reports as observation-only facts; never execute tests or grant PASS.
+    - Reuse a stable --request-id for retries of the same batch. The source report is not authenticated execution, deployment, human acceptance or an independent review.
+    - Format/limits, compact result_observations and recovery semantics are documented in docs/agents/tp-software-lifecycle.md.
+    - Repeat --recorded-result to preserve original actors/scopes/evidence of trusted same-Task development/verification/CODE events; no re-signing or inferred authority.
     - No handoff/frontmatter/refs payload is required.
     - Natural, evidence-backed Delivery/Knowledge hints may be attached with --knowledge-signal-json / --delivery-signal; never scan just to create signals.
     - Task-bound Context Usage may be attached with --context-usage-json; invalid telemetry is WARN+DROP and never changes the operation result.
+  task_run_pytest:
+    command: tp-spec task run-pytest --task <TASK> --task-dir <DIR> --test <FILE.py::NODE>
+      --authorization-evidence <EXISTING-EVIDENCE> --request-id <RUN-ID> --summary <TEXT>
+    purpose: Explicit opt-in selected pytest execution with observed process metadata and automatic evidence intake, not formal PASS.
+    notes:
+    - Never a mandatory lifecycle step; already completed tests use report intake without rerunning.
+    - Caller must have actual approval for selected tests/plugins/effects; the evidence reference is not an authorization grant or sandbox.
+    - No arbitrary command, directory-wide selection or additional pytest arguments; current interpreter with cleared addopts. Project plugins still apply.
+    - Same request never reruns an already reserved execution. Complete receipts retry only accounting; missing/damaged receipts preserve unknown state.
+    - Batch intake can reference already trusted professional results, but cannot sign previously unrecorded independent judgments for other actors.
+    - Commands, output, real exit and timing are local observations; no new Verification/Review/human acceptance is produced.
+    - See docs/agents/tp-software-lifecycle.md for exit codes, control receipts, raw log privacy and recovery limits.
   task_verify:
     command: tp-spec task verify --task <TASK> --task-dir <DIR> --decision PASS|FAIL|NEEDS_FIX
       --summary <TEXT> [--evidence evidence/... ]
@@ -57,7 +73,7 @@ daily_api:
 project_api:
   project_bootstrap_check: tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only
   project_bootstrap: tp-spec project bootstrap --id <PROJECT> --root <ROOT>
-  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.3.1
+  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.3.2
 errors:
   PROJECT_BOOTSTRAP_AVAILABLE: read-only bootstrap check found a pristine project that may be initialized only after explicit human_owner action
   PROJECT_NOT_INITIALIZED: project ledger is not initialized; run project bootstrap/init first
@@ -83,11 +99,11 @@ optional_capabilities:
     are WARN
   work_sessions: available for timing evidence; never a workflow blocker
   acceptance_override: human_owner defer/waive without forging PASS
-  scope_change: human_owner-only typed scope correction via `task scope-change`; it rebuilds projections without creating a new Task state
+  scope_change: human_owner-only typed scope correction via `task scope-change`; optional repeated --repo-root replaces the complete effective repository set, while omission leaves it unchanged; it rebuilds projections without creating a new Task state or granting execution authority
   terminal_integrity: read-only `task terminal-check` compares terminal artifacts with the completion-time manifest and never reopens history
   knowledge_task_convergence: >-
     Conditional typed effect: `tp-spec knowledge task-converge --task <TASK> --task-dir <DIR> --db <DB> --workspace-root <ROOT> --request-event-id <ID> --disposition CREATED|UPDATED|DUPLICATE|NO_DURABLE_INSIGHT --reason-code <CODE> --query <TEXT> --source <TASK-RELATIVE-PATH> [--knowledge-ref <REF>]`. It performs targeted current-project+shared search only; CREATED/UPDATED use exact-canonical lint + single-note incremental index before writing the tp-knowledge Result.
-  legacy_commit: compatibility/recovery surface; not the V5.3.1 daily role API
+  legacy_commit: compatibility/recovery surface; not the V5.3.2 daily role API
   context_effectiveness: >-
     Read-only report over Task-bound Context Usage receipts. It never gates workflow
     and never mutates Context assets.

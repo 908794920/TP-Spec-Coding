@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.3.1 read-only HTML information card regression tests."""
+"""V5.3.2 read-only HTML information card regression tests."""
 from __future__ import annotations
 
 import contextlib
@@ -28,7 +28,7 @@ def _run(argv: list[str]):
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         try:
-            rc = invoke_main(argv, refresh_card=True)
+            rc = invoke_main(argv)
         except SystemExit as exc:
             rc = exc.code if isinstance(exc.code, int) else 1
     return rc, out.getvalue(), err.getvalue()
@@ -479,6 +479,66 @@ def test_renderer_contains_core_fields_interactions_and_snapshot_notice(tmp_path
     assert "<script>alert(1)</script>" not in text
 
 
+def test_renderer_notice_spans_content_grid(tmp_path):
+    from cli.cards.render import render_card
+
+    output = tmp_path / "project.html"
+    render_card(
+        {
+            "card_type": "current_project",
+            "title": "当前项目概况",
+            "generated_at": "2026-09-11T13:54:27+08:00",
+            "health": "healthy",
+            "project": {},
+            "wiki": {},
+            "knowledge": {},
+            "registry": {},
+            "task_statistics": {},
+            "in_progress_tasks": [],
+            "archived_tasks": [],
+            "summary": "项目共有 30 个任务",
+            "problems": [],
+        },
+        output,
+    )
+    text = output.read_text(encoding="utf-8")
+
+    notice_rule = re.search(r"\.notice\s*\{([^}]*)\}", text)
+    assert notice_rule, "card template must define the notice style"
+    assert re.search(r"grid-column\s*:\s*1\s*/\s*-1", notice_rule.group(1)), (
+        "project summary notice must occupy the full content grid"
+    )
+
+
+def test_project_summary_notice_is_scoped_to_task_statistics(tmp_path):
+    from cli.cards.render import render_card
+
+    output = tmp_path / "project.html"
+    render_card(
+        {
+            "card_type": "current_project",
+            "title": "当前项目概况",
+            "generated_at": "2026-09-11T13:54:27+08:00",
+            "health": "healthy",
+            "project": {},
+            "wiki": {},
+            "knowledge": {},
+            "registry": {},
+            "task_statistics": {},
+            "in_progress_tasks": [],
+            "archived_tasks": [],
+            "summary": "项目共有 30 个任务",
+            "problems": [],
+        },
+        output,
+    )
+    text = output.read_text(encoding="utf-8")
+
+    assert "const statsRow = metrics(stats, 'project-stats', contentScroll);" in text
+    assert "statsRow.insertBefore(node('div', 'notice', data.summary" in text
+    assert "append(contentScroll, node('div', 'notice', data.summary" not in text
+
+
 def test_renderer_formats_iso_timestamps_for_human_display(tmp_path):
     from cli.cards.render import render_card
 
@@ -883,51 +943,52 @@ def test_card_cli_is_explicit_and_task_id_is_optional_for_empty_state():
     assert args.task is None
 
 
-def test_trigger_whitelist_excludes_read_only_and_ordinary_operations():
-    from cli.cards.trigger import should_refresh_task_card
-
-    assert should_refresh_task_card(Namespace(group="task", subcommand="get", task="TASK-X")) is False
-    assert should_refresh_task_card(Namespace(group="workflow", subcommand="next", task="TASK-X")) is False
-    assert should_refresh_task_card(Namespace(group="document", document_cmd="convert")) is False
-    assert should_refresh_task_card(Namespace(group="task", subcommand="checkpoint", task="TASK-X")) is True
-    assert should_refresh_task_card(Namespace(group="work", subcommand="start", task="TASK-X")) is True
-    assert should_refresh_task_card(Namespace(group="workflow", subcommand="confirm", task="TASK-X")) is True
+def test_automatic_card_trigger_is_removed_from_production_entry():
+    import inspect
+    assert not (BASE / "cli/cards/trigger.py").exists()
+    assert "refresh_after_success" not in inspect.getsource(climain.main)
 
 
-def test_successful_formal_task_step_refreshes_single_latest_html(tmp_path, monkeypatch):
+def test_task_create_leaves_cards_absent_until_explicit_request(tmp_path, monkeypatch):
     fx = _runtime_fixture(tmp_path, monkeypatch, include_active=False)
     card_root = tmp_path / "cards-out"
     monkeypatch.setenv("TP_SPEC_CARD_OUTPUT_ROOT", str(card_root))
-
+    monkeypatch.chdir(fx["workspace"])
     rc, out, err = _run([
         "task", "create", "--id", "TASK-NEW", "--project", fx["project_id"],
         "--title", "New task", "--risk", "L0", "--flow", "L0", "--db", str(fx["db_path"]),
     ])
-
     assert rc == 0, (out, err)
-    output = card_root / "tasks" / "TASK-NEW.html"
-    assert output.is_file(), err
-    first = output.read_text(encoding="utf-8")
-    assert "TASK-NEW" in first
-    assert list((card_root / "tasks").glob("TASK-NEW*.html")) == [output]
+    assert not card_root.exists()
+    assert not (fx["workspace"] / ".tp-spec/card/index.html").exists()
+    assert "CARD_DISPLAY" not in out + err
+    output = tmp_path / "explicit.html"
+    rc, out, err = _run(["card", "task", "--task", "TASK-NEW", "--db", str(fx["db_path"]), "--output", str(output)])
+    assert rc == 0, (out, err)
+    assert "TASK-NEW" in output.read_text(encoding="utf-8")
 
 
 def test_entry_skill_routes_only_explicit_config_project_and_task_card_requests():
     text = (BASE / "entry" / "tp-spec-coding" / "SKILL.md").read_text(encoding="utf-8")
-    assert "tp-spec card global" in text
-    assert "tp-spec card project" in text
-    assert "tp-spec card task --task" in text
-    assert "普通代码搜索" in text
+    from scripts.check_document_navigation import iter_markdown_links, resolve_document_link
+    source = BASE / "entry/tp-spec-coding/SKILL.md"
+    targets = {label: resolve_document_link(source, target, base=BASE)
+               for label, target in iter_markdown_links(source)}
+    display_path = targets["tp-card-display"]
+    assert display_path == BASE / "agents/tp-card-display/SKILL.md"
+    display = display_path.read_text(encoding="utf-8")
+    assert "tp-spec card global" in display
+    assert "tp-spec card project" in display
+    assert "tp-spec card task --task" in display
+    assert "普通代码搜索" in text and "仅用户显式请求" in text
     assert "不得自动生成" in text
 
 
-def test_lifecycle_skill_defers_task_card_refresh_to_successful_runtime_commands():
-    text = (BASE / "agents" / "tp-software-lifecycle" / "SKILL.md").read_text(encoding="utf-8")
-    assert "task checkpoint" in text
-    assert "work start" in text
-    assert "workflow confirm" in text
-    assert "HTML 卡片失败不得改变原命令成功结果" in text
-    assert "不得根据最近执行的任意命令猜测" in text
+def test_lifecycle_skill_requires_explicit_card_request_and_markdown_feedback():
+    text = (BASE / "agents/tp-software-lifecycle/SKILL.md").read_text(encoding="utf-8")
+    for phrase in ("task checkpoint", "work start", "workflow confirm", "Markdown", "不自动生成", "用户明确"):
+        assert phrase in text
+    assert "刷新白名单保持" not in text
 
 
 def test_explicit_global_card_command_generates_preview_file(tmp_path, monkeypatch):
@@ -998,7 +1059,7 @@ def test_global_registry_summary_and_project_list_share_one_navigation_section()
     assert "append(registryCard, projectTable('已注册工程', data.registered_projects || []));" in text
 
 
-def test_card_render_warning_does_not_change_successful_runtime_command(tmp_path, monkeypatch):
+def test_invalid_legacy_card_output_does_not_enter_renderer(tmp_path, monkeypatch):
     fx = _runtime_fixture(tmp_path, monkeypatch, include_active=False)
     invalid_root = tmp_path / "not-a-directory"
     invalid_root.write_text("file blocks card output directory", encoding="utf-8")
@@ -1010,7 +1071,7 @@ def test_card_render_warning_does_not_change_successful_runtime_command(tmp_path
     ])
 
     assert rc == 0, (out, err)
-    assert "CARD_RENDER_WARNING" in err
+    assert "CARD_RENDER_WARNING" not in err
     conn = dbmod.connect_readonly(str(fx["db_path"]))
     try:
         row = conn.execute("SELECT task_id FROM task WHERE task_id='TASK-CARD-WARN'").fetchone()
@@ -1118,23 +1179,19 @@ def test_artifact_write_failure_keeps_explicit_offline_preview_successful(tmp_pa
     assert "CARD_ARTIFACT_WARNING" in err
 
 
-def test_formal_runtime_refresh_updates_fixed_workspace_artifact(tmp_path, monkeypatch):
+def test_formal_runtime_preserves_existing_fixed_workspace_artifact(tmp_path, monkeypatch):
     fx = _runtime_fixture(tmp_path, monkeypatch, include_active=False)
-    card_root = tmp_path / "cards-out"
-    monkeypatch.setenv("TP_SPEC_CARD_OUTPUT_ROOT", str(card_root))
     monkeypatch.chdir(fx["workspace"])
-
+    artifact = fx["workspace"] / ".tp-spec/card/index.html"
+    _write(artifact, "previous user-requested snapshot")
+    before = (artifact.read_bytes(), artifact.stat().st_mtime_ns)
     rc, out, err = _run([
         "task", "create", "--id", "TASK-ARTIFACT", "--project", fx["project_id"],
-        "--title", "Artifact task", "--risk", "L0", "--flow", "L0", "--db", str(fx["db_path"]),
+        "--title", "No refresh", "--risk", "L0", "--flow", "L0", "--db", str(fx["db_path"]),
     ])
-
-    artifact = fx["workspace"] / ".tp-spec" / "card" / "index.html"
     assert rc == 0, (out, err)
-    assert artifact.is_file(), err
-    text = artifact.read_text(encoding="utf-8")
-    assert "TASK-ARTIFACT" in text
-    assert list(artifact.parent.glob("*.html")) == [artifact]
+    assert (artifact.read_bytes(), artifact.stat().st_mtime_ns) == before
+    assert "CARD_DISPLAY" not in out + err
 
 
 def test_renderer_avoids_navigation_and_expansion_scroll_side_effects():
@@ -1159,17 +1216,18 @@ def test_renderer_avoids_navigation_and_expansion_scroll_side_effects():
 def test_entry_skill_prefers_fixed_web_artifact_with_offline_fallback():
     text = (BASE / "entry" / "tp-spec-coding" / "SKILL.md").read_text(encoding="utf-8")
 
-    assert ".tp-spec/card/index.html" in text
-    assert "Web Artifact" in text or "网站预览" in text
-    assert "离线 HTML" in text
-    assert "不得只返回" in text
+    assert "[tp-card-display](../../agents/tp-card-display/SKILL.md)" in text
+    display = (BASE / "agents/tp-card-display/SKILL.md").read_text(encoding="utf-8")
+    assert ".tp-spec/card/index.html" in display
+    assert "Web Artifact" in display or "网站预览" in display
+    assert "离线 HTML" in display
+    assert "不得只返回" in display
 
 
-def test_lifecycle_skill_refreshes_fixed_artifact_without_new_runtime_semantics():
+def test_lifecycle_skill_keeps_display_non_authoritative_and_explicit_only():
     text = (BASE / "agents" / "tp-software-lifecycle" / "SKILL.md").read_text(encoding="utf-8")
 
-    assert ".tp-spec/card/index.html" in text
-    assert "覆盖" in text
+    assert "不自动生成 snapshot" in text
     assert "不新增 public state" in text
 
 
@@ -1466,30 +1524,25 @@ def test_inline_write_failure_keeps_explicit_offline_preview_successful(tmp_path
     assert "CARD_INLINE_WARNING" in err
 
 
-def test_formal_runtime_step_can_emit_inline_task_fragment(tmp_path, monkeypatch):
+def test_normal_runtime_ignores_legacy_inline_environment(tmp_path, monkeypatch):
     fx = _runtime_fixture(tmp_path, monkeypatch, include_active=False)
     card_root = tmp_path / "cards-out"
-    inline = tmp_path / "conversation" / "task-inline.html"
+    inline = tmp_path / "conversation/task-inline.html"
     monkeypatch.setenv("TP_SPEC_CARD_OUTPUT_ROOT", str(card_root))
     monkeypatch.setenv("TP_SPEC_CARD_INLINE_OUTPUT", str(inline))
     monkeypatch.chdir(fx["workspace"])
-
     rc, out, err = _run([
         "task", "create", "--id", "TASK-INLINE", "--project", fx["project_id"],
-        "--title", "Inline task", "--risk", "L0", "--flow", "L0", "--db", str(fx["db_path"]),
+        "--title", "No automatic inline", "--risk", "L0", "--flow", "L0", "--db", str(fx["db_path"]),
     ])
-
     assert rc == 0, (out, err)
-    assert inline.is_file(), err
-    assert f"INLINE_VISUALIZATION: {inline.resolve()}" in out
-    assert "CARD_DISPLAY:" not in out
-    assert "CARD_DISPLAY:" in err
-    fragment = inline.read_text(encoding="utf-8")
-    assert "TASK-INLINE" in fragment
-    assert "<!doctype" not in fragment.lower()
+    assert not inline.exists()
+    assert not card_root.exists()
+    assert "INLINE_VISUALIZATION" not in out + err
+    assert "CARD_DISPLAY" not in out + err
 
 
-def test_formal_runtime_inline_failure_keeps_runtime_and_other_previews_successful(tmp_path, monkeypatch):
+def test_invalid_legacy_inline_path_has_no_runtime_side_effect(tmp_path, monkeypatch):
     fx = _runtime_fixture(tmp_path, monkeypatch, include_active=False)
     card_root = tmp_path / "cards-out"
     blocked = tmp_path / "blocked-inline-parent"
@@ -1504,9 +1557,9 @@ def test_formal_runtime_inline_failure_keeps_runtime_and_other_previews_successf
     ])
 
     assert rc == 0, (out, err)
-    assert "CARD_INLINE_WARNING" in err
-    assert (card_root / "tasks" / "TASK-INLINE-WARN.html").is_file()
-    assert (fx["workspace"] / ".tp-spec" / "card" / "index.html").is_file()
+    assert "CARD_INLINE_WARNING" not in err
+    assert not (card_root / "tasks" / "TASK-INLINE-WARN.html").exists()
+    assert not (fx["workspace"] / ".tp-spec" / "card" / "index.html").exists()
     conn = dbmod.connect_readonly(str(fx["db_path"]))
     try:
         row = conn.execute("SELECT task_id FROM task WHERE task_id='TASK-INLINE-WARN'").fetchone()
@@ -1515,28 +1568,16 @@ def test_formal_runtime_inline_failure_keeps_runtime_and_other_previews_successf
     assert row is not None
 
 
-def test_formal_refresh_forwards_explicit_base_root_to_task_snapshot(tmp_path, monkeypatch):
-    from cli.cards.trigger import refresh_after_success
-
+def test_explicit_task_card_forwards_base_root_to_snapshot(tmp_path, monkeypatch):
     fx = _runtime_fixture(tmp_path, monkeypatch)
     alternate_base = tmp_path / "alternate-base"
     major, minor, patch = (int(part) for part in active_version().split("."))
     alternate_version = f"{major}.{minor}.{patch + 1}"
     _write(alternate_base / "VERSION", f"{alternate_version}\n")
-    card_root = tmp_path / "cards-out"
-    monkeypatch.setenv("TP_SPEC_CARD_OUTPUT_ROOT", str(card_root))
-    monkeypatch.chdir(fx["workspace"])
-
-    refresh_after_success(Namespace(
-        group="workflow",
-        subcommand="confirm",
-        task="TASK-ACTIVE",
-        db=str(fx["db_path"]),
-        base_root=str(alternate_base),
-    ))
-
-    rendered = (card_root / "tasks" / "TASK-ACTIVE.html").read_text(encoding="utf-8")
-    assert f"任务 Contract {active_version()} 与当前 Base {alternate_version} 不一致" in rendered
+    output = tmp_path / "alternate.html"
+    rc, out, err = _run(["card", "task", "--task", "TASK-ACTIVE", "--db", str(fx["db_path"]), "--base-root", str(alternate_base), "--output", str(output)])
+    assert rc == 0, (out, err)
+    assert f"任务 Contract {active_version()} 与当前 Base {alternate_version} 不一致" in output.read_text(encoding="utf-8")
 
 
 def test_card_skills_use_governed_display_contract_with_host_capability_fallbacks():
@@ -1549,22 +1590,19 @@ def test_card_skills_use_governed_display_contract_with_host_capability_fallback
     assert "visualize" not in entry
     assert "CARD_DISPLAY" in display
     assert "宿主" in display and "Web Artifact" in display and "离线 HTML" in display
-    assert "刷新触发策略" in lifecycle
-    assert "tp-card-display` 的展示契约" in lifecycle
+    assert "用户明确" in lifecycle
+    assert "tp-card-display" in lifecycle
     assert "不得复制卡片模板、渲染器或 Host bridge" in lifecycle
     assert "CARD_DISPLAY" in lifecycle
-    assert "TP_SPEC_CARD_INLINE_OUTPUT" in lifecycle
+    assert "不自动生成" in lifecycle
     assert "会话内" in lifecycle
 
 
-def test_explicit_card_commands_and_runtime_refresh_share_the_canonical_renderer():
-    commands = (BASE / "cli" / "cards" / "commands.py").read_text(encoding="utf-8")
-    trigger = (BASE / "cli" / "cards" / "trigger.py").read_text(encoding="utf-8")
-
+def test_explicit_card_commands_use_one_canonical_renderer_without_runtime_hook():
+    commands = (BASE / "cli/cards/commands.py").read_text(encoding="utf-8")
     assert "def render_display_outputs(" in commands
     assert "render_inline_card(snapshot, inline_output)" in commands
-    assert "from .commands import render_display_outputs" in trigger
-    assert "render_display_outputs(" in trigger
+    assert not (BASE / "cli/cards/trigger.py").exists()
 
 
 def test_global_snapshot_and_renderer_include_skill_topology_with_name_and_id(tmp_path, monkeypatch):
@@ -2060,3 +2098,58 @@ def test_card_display_generation_contract_does_not_claim_host_render_state(tmp_p
     assert payload["inline"]["status"] == "generated"
     assert "rendered" not in payload["inline"]
     assert "host_capability" not in payload["inline"]
+
+
+def test_b06_project_keeps_cancelled_history_and_reports_workitem_drift(tmp_path,monkeypatch):
+    fx = _runtime_fixture(tmp_path,monkeypatch)
+    now = dbmod.now_iso()
+    with dbmod.connect(str(fx['db_path'])) as conn:
+        with dbmod.transactional(conn):
+            conn.execute("UPDATE task SET current_state='CANCELLED' WHERE task_id='TASK-BLOCKED'")
+            conn.execute("INSERT INTO work_item(item_id,task_id,title,status,created_at,updated_at) VALUES ('WI-PENDING','TASK-DONE','WP-0 milestone','PENDING',?,?)",(now,now))
+    from cli.cards.snapshot import build_project_snapshot
+    snap = build_project_snapshot(fx['workspace'])
+    archive = {row['task_id']:row for row in snap['archived_tasks']}
+    assert 'TASK-BLOCKED' in archive
+    assert 'TASK-BLOCKED' not in {row['task_id'] for row in snap['in_progress_tasks']}
+    assert archive['TASK-DONE']['work_items']['consistency'] == 'NEEDS_RECONCILIATION'
+    assert all(row['runtime_status']=='UNKNOWN' for row in snap['in_progress_tasks'])
+    assert '不代表整个项目完成' in snap['summary']
+    assert any(p['code']=='WORKITEM_DRIFT' and 'TASK-DONE' in p['message'] for p in snap['problems'])
+
+
+def test_b06_explicit_task_snapshot_exposes_work_records_not_liveness(tmp_path,monkeypatch):
+    fx = _runtime_fixture(tmp_path,monkeypatch)
+    from scripts.tests.v532_testutil import run_cli
+    rc,out,err = run_cli(['work','start','--task','TASK-ACTIVE','--role','tp-development-engineer','--db',str(fx['db_path'])])
+    assert rc == 0,(out,err)
+    from cli.cards.snapshot import build_task_snapshot
+    snap = build_task_snapshot('TASK-ACTIVE',db_path=str(fx['db_path']))
+    assert snap['workflow']['work_sessions']['runtime_status']=='UNKNOWN'
+    assert snap['workflow']['work_sessions']['open_count']==1
+    from cli.cards.render import render_card
+    target = tmp_path/'explicit-card.html'
+    render_card(snap,target)
+    text = target.read_text(encoding='utf-8')
+    assert "['执行观察'," in text and '运行状态未知' in text
+    assert "['业务里程碑'," in text
+
+
+def test_b06_non_git_preview_freeze_remains_declared_scope_not_software_complete(tmp_path,monkeypatch):
+    import hashlib
+    fx = _runtime_fixture(tmp_path,monkeypatch)
+    from cli import current_context, orchestration
+    tdir = fx['workspace']/'.tp-spec/tasks/TASK-ACTIVE'
+    preview = fx['workspace']/'preview.html'
+    preview.write_text('<main>isolated prototype</main>',encoding='utf-8')
+    digest=hashlib.sha256(preview.read_bytes()).hexdigest()
+    text=f'PREVIEW：非 Git 原型已批准 SHA-256 冻结 {digest}；仅作为共享前置，不代表软件交付完成。'
+    _write(tdir/'task.md',current_context.START+'\n'+text+'\n'+current_context.END+'\n')
+    before=preview.read_bytes()
+    progress=orchestration.resolve_progress('TASK-ACTIVE',db_path=str(fx['db_path']))
+    assert progress['current_effective']['content']==text
+    assert progress['current_effective']['authorization_granted'] is False
+    assert not (fx['workspace']/'.git').exists()
+    assert preview.read_bytes()==before
+    with dbmod.connect_readonly(str(fx['db_path'])) as conn:
+        assert conn.execute("SELECT current_state FROM task WHERE task_id='TASK-ACTIVE'").fetchone()[0]=='ACTIVE'

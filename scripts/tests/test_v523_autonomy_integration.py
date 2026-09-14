@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts.tests.autonomy_testutil import run, git_repo
+from scripts.tests.autonomy_testutil import run, git_repo, record_fixture_verification
 from cli import autonomy_batch, autonomy_cycle, autonomy_discovery, autonomy_profile, autonomy_records, autonomy_workspace, record_first
 
 
@@ -29,6 +29,7 @@ def create_ready_batch(root: Path, profile, ws):
     for rid in (profile["canonical"]["repositories"]["mutable"]):
         repo=auto/rid["path"]; (repo/f"{rid['id']}.txt").write_text(f"{rid['id']} change\n",encoding="utf-8")
     record_first.checkpoint(task_id="TASK-AUTO-1",task_dir=str(td),actor="tp-development-engineer",phase="development",summary="done",db=ws["db_path"])
+    record_fixture_verification(ws["db_path"], "TASK-AUTO-1", td)
     record_first.complete(task_id="TASK-AUTO-1",task_dir=str(td),actor="tp-development-engineer",summary="complete",db=ws["db_path"])
     autonomy_batch.commit_task("demo",b["batch_id"],"TASK-AUTO-1",c1["cycle_id"],c1["generation"]); b=autonomy_batch.finalize_batch("demo",b["batch_id"],c1["cycle_id"],c1["generation"])
     autonomy_cycle.end_cycle("demo",c1["cycle_id"],c1["generation"])

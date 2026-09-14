@@ -416,6 +416,7 @@ def _task_list_row(
     latest: Dict[str, Dict[str, Any]],
     *,
     retired: bool = False,
+    work_items: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     event = latest.get(str(row["task_id"])) or {}
     return {
@@ -423,6 +424,8 @@ def _task_list_row(
         "title": str(row["title"] or ""),
         "state": str(row["current_state"] or ""),
         "retired": retired,
+        "runtime_status": "UNKNOWN",
+        "work_items": work_items or {},
         "phase": str(row["current_stage"] or ""),
         "owner": str(row["owner_role"] or ""),
         "updated_at": str(row["updated_at"] or ""),
@@ -532,6 +535,7 @@ def build_project_snapshot(
             try:
                 conn = dbmod.connect_readonly(str(db_path))
                 try:
+                    conn.execute("BEGIN")
                     rows = conn.execute(
                         "SELECT task_id,title,current_state,current_stage,owner_role,updated_at,completed_at FROM task WHERE project_id=? ORDER BY updated_at DESC, task_id DESC",
                         (project_id,),
@@ -541,6 +545,22 @@ def build_project_snapshot(
                         task_id for task_id in ids
                         if event_policies.is_task_retired(conn, task_id)
                     }
+                    # One WorkItem query for this project; no per-card scans or repairs.
+                    from ..workitem_cmd import summarize_work_items
+                    item_rows = conn.execute(
+                        "SELECT w.* FROM work_item w JOIN task t ON t.task_id=w.task_id "
+                        "WHERE t.project_id=? ORDER BY w.created_at,w.item_id", (project_id,)
+                    ).fetchall()
+                    items_by_task = {}
+                    for item in item_rows:
+                        items_by_task.setdefault(str(item["task_id"]), []).append(item)
+                    milestone_facts = {}
+                    for row in rows:
+                        tid = str(row["task_id"])
+                        facts = summarize_work_items(conn, row, rows=items_by_task.get(tid, []), retired=tid in retired_ids)
+                        milestone_facts[tid] = {key: facts[key] for key in ("counts", "consistency", "summary", "current")}
+                        if facts["issues"]:
+                            problems.append(_problem("WORKITEM_DRIFT", f"{tid}: {facts['summary']}"))
                     latest = _latest_event_summaries(conn, ids)
                     stats["total"] = len(rows)
                     for row in rows:
@@ -553,7 +573,7 @@ def build_project_snapshot(
                     current_ids = [task_id for task_id in ids if task_id not in retired_ids]
                     stats["verification_attention"] = _verification_attention(conn, current_ids)
                     in_progress = [
-                        _task_list_row(row, latest)
+                        _task_list_row(row, latest, work_items=milestone_facts[str(row["task_id"])])
                         for row in rows
                         if str(row["task_id"]) not in retired_ids
                         and str(row["current_state"] or "") in {"NEW", "ACTIVE", "BLOCKED"}
@@ -563,9 +583,10 @@ def build_project_snapshot(
                             row,
                             latest,
                             retired=str(row["task_id"]) in retired_ids,
+                            work_items=milestone_facts[str(row["task_id"])],
                         )
                         for row in rows
-                        if str(row["current_state"] or "") == "COMPLETED"
+                        if str(row["current_state"] or "") in {"COMPLETED", "CANCELLED"}
                         or str(row["task_id"]) in retired_ids
                     ]
                     prow = conn.execute("SELECT project_name,base_version FROM project WHERE project_id=?", (project_id,)).fetchone()
@@ -584,7 +605,7 @@ def build_project_snapshot(
         problems.append(_problem("PROJECT_VERSION_MISMATCH", f"项目 Base 版本 {project['base_version']} 与当前 Contract {active_version()} 不一致"))
 
     summary = (
-        f"项目共有 {stats['total']} 个任务：进行中 {stats['active']}，阻塞 {stats['blocked']}，已完成 {stats['completed']}。"
+        f"项目共有 {stats['total']} 个任务：进行中 {stats['active']}，阻塞 {stats['blocked']}，已完成 {stats['completed']}。任务结单不代表整个项目完成；在途状态不证明执行者正在运行。"
         if project_id else "当前项目身份无法可靠确认，未生成任务统计推断。"
     )
     return {
@@ -770,8 +791,16 @@ def build_task_snapshot(
             }
         if event.get("event_type") == "VERIFICATION_COMPLETED" and str(event.get("actor_role") or "") == "tp-test-engineer":
             semantics = event_contract.normalize_event_semantics("VERIFICATION_COMPLETED", detail)
+            from ..event_policies import verification_scope
+            try:
+                scope = verification_scope(detail)
+                status = (semantics["decision"] or "NOT_RECORDED") + ("_TECHNICAL" if scope == "technical" else "")
+            except ValueError:
+                scope, status = "unknown", "UNKNOWN"
             verification = {
-                "status": semantics["decision"] or "NOT_RECORDED",
+                "status": status,
+                "verification_scope": scope,
+                "checks": detail.get("checks") if isinstance(detail.get("checks"), list) else [],
                 "result_status": semantics["result_status"],
                 "source_kind": semantics["source_kind"],
                 "summary": str(event.get("summary") or ""),

@@ -59,7 +59,7 @@ body {
 .header { flex: 0 0 auto; display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; padding: 14px 18px; margin-bottom: 0; background: var(--tp-panel); border: 1px solid var(--tp-border); border-bottom: 0; border-radius: 16px 16px 0 0; box-shadow: var(--tp-shadow); }
 .title { font-size: var(--tp-font-size-title); font-weight: var(--tp-font-weight-bold); line-height: var(--tp-leading-tight); letter-spacing: -.01em; margin: 0 0 4px; }
 .subtle { color: var(--tp-muted); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); }
-.notice { border: 0; background: transparent; padding: 0; border-radius: 0; color: var(--tp-secondary); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); }
+.notice { grid-column: 1 / -1; min-width: 0; border: 0; background: transparent; padding: 0; border-radius: 0; color: var(--tp-secondary); font-size: var(--tp-font-size-aux); line-height: var(--tp-leading-compact); overflow-wrap: anywhere; }
 .grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; padding: 14px 18px 16px; background: var(--tp-panel); border: 1px solid var(--tp-border); border-top: 0; border-radius: 0 0 16px 16px; box-shadow: var(--tp-shadow); }
 .task-progress-card { max-height: 600px; overflow: hidden; grid-template-rows: auto minmax(0, 1fr); align-content: initial; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .task-progress-card > .card-nav { position: static; }
@@ -585,6 +585,7 @@ function metrics(stats, id, target = app) {
     append(row, metric);
   });
   append(target, row);
+  return row;
 }
 
 function taskTable(title, rows, id) {
@@ -924,7 +925,8 @@ function renderProject() {
   ]);
   append(contentScroll, contentCard);
 
-  metrics(stats, 'project-stats', contentScroll);
+  const statsRow = metrics(stats, 'project-stats', contentScroll);
+  statsRow.insertBefore(node('div', 'notice', data.summary || '任务登记不代表项目验收或进程存活。'), statsRow.firstChild);
   append(contentScroll, taskTable('在途任务', data.in_progress_tasks || [], 'project-active'), taskTable('任务归档', data.archived_tasks || data.completed_tasks || [], 'project-completed'));
 }
 
@@ -1122,6 +1124,9 @@ function renderTask() {
     ['负责人', projectedLabel(((workflow.current_step || {}).role === task.owner ? (workflow.current_step || {}).role_display : ((nextStep || {}).role === task.owner ? nextStep.role_display : null)), displayRole(task.owner))],
     ['风险 / 流程', `${task.risk_level || '未记录'} / ${task.flow_level || '未记录'}`],
     ['更新时间', formatDateTime(task.updated_at)],
+    ['执行观察', (workflow.work_sessions || {}).summary || '运行状态未知'],
+    ['业务里程碑', (workflow.work_items || {}).summary || '未记录'],
+    ['当前有效范围（声明）', (workflow.current_effective || {}).content || '未声明'],
     ['运行时数据库', task.runtime_db, true],
   ]);
   append(taskContent, taskCard);

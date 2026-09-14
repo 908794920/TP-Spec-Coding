@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-V5.3.1 unified offline test entry.
+V5.3.2 unified offline test entry.
 
 .DESCRIPTION
 PowerShell dispatcher for the TP-Spec-Coding local test chain. Fully offline:
@@ -11,7 +11,7 @@ containers or credentials.
     forbidden paths, network-primitive blacklist, Python byte-compile and
     test discovery. Deliberately contains NO YAML semantic checks; those
     join only after the P2 controlled loader lands (ruling P0-3).
--Mode Full   : active V5.3.1 release gate only. Historical compatibility is covered by migration tests, not an active runtime mode.
+-Mode Full   : active V5.3.2 release gate only. Historical compatibility is covered by migration tests, not an active runtime mode.
 -KeepWorkDir : by default the work directory created by THIS run (resolved
     and verified before removal) is cleaned; only this switch keeps it.
     Child scripts' own audit temp dirs are never touched.
@@ -129,7 +129,7 @@ if ($Mode -eq 'Full') {
 
 Invoke-Check 'static.forbidden.paths' {
     $tracked = @(& git -C $base ls-files)
-    # docs/ 已纳入 Git 管理（V5.3.1 发布完整性）；仅禁止运行时产物与本地状态
+    # docs/ 已纳入 Git 管理（V5.3.2 发布完整性）；仅禁止运行时产物与本地状态
     $forbiddenPatterns = @('__pycache__', '\.pyc$', '^db/registry\.local\.json$', '\.db$', '\.flush-journal', '\.local\.', '\.pytest_cache', '^tp-spec-base\.zip$', '^docs/planning/')
     $hits = @()
     foreach ($p in $forbiddenPatterns) {
@@ -237,6 +237,8 @@ if ($Mode -eq 'Full') {
         $py = Get-Command python -ErrorAction SilentlyContinue
         if (-not $py) { throw 'python not found; offline prerequisite missing' }
         $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        $prevPluginAutoload = $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD
+        $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = '1'
         Push-Location $base
         try {
             $out = & python -m pytest -q 2>&1
@@ -244,6 +246,11 @@ if ($Mode -eq 'Full') {
         }
         finally {
             Pop-Location
+            if ($null -eq $prevPluginAutoload) {
+                Remove-Item Env:PYTEST_DISABLE_PLUGIN_AUTOLOAD -ErrorAction SilentlyContinue
+            } else {
+                $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = $prevPluginAutoload
+            }
             $ErrorActionPreference = $prevEap
         }
         Get-ChildItem -LiteralPath @((Join-Path $base 'cli'), (Join-Path $base 'scripts')) -Recurse -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue |

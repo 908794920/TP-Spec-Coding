@@ -5,7 +5,7 @@
 | AC-01 |  | `task.md` / `requirement-test-guide.md` |  |  |  |  | PENDING |
 
 结论列取值：`PASS` / `NOT_REQUIRED` / `N/A` / `PENDING` / `BLOCKED` / `DEFERRED_ACCEPTED` / `OWNER_WAIVED`，可在取值后用“：”补充说明。
-`COMPLETED` 前每个 AC 必须得到明确处置；`PENDING`/`BLOCKED` 不得直接结单。真实未执行项必须保持原事实，或由 human_owner defer/waive。`DEFERRED_ACCEPTED` 表示 human_owner 明确将测试后置，`OWNER_WAIVED` 表示 human_owner 明确跳过该项；两者都不得伪装成 PASS，且必须由官方 `task acceptance-override` 产生可信账本事件。
+`COMPLETED` 前每个 AC 必须得到明确处置；`PENDING`/`BLOCKED` 不得直接结单。真实未执行项必须保持原事实，或由 human_owner 通过官方 `task acceptance-override` 留证。`accept` 仅用于 human_owner 已按声明范围实际核验的人工/视觉 AC，并必须绑定当前 Subject、Development ChangeSet、来源说明和 request receipt；它会将选定 AC 记为可信的人验 PASS，不是 AI 自行改表。`DEFERRED_ACCEPTED` 表示 human_owner 明确将测试后置，`OWNER_WAIVED` 表示 human_owner 明确跳过该项；两者都不得伪装成 PASS。
 
 ## 测试指南对照（requirement-test-guide.md）
 
@@ -20,6 +20,7 @@ page_verification:
   witness_evidence: ""
   visual:
     required: false
+    acceptance_refs: [] # 可选；填写时只能引用上方验收表已有的 AC
     viewports: [] # 例："375x812"
     routes: []
     reference_assets: []
@@ -28,9 +29,9 @@ page_verification:
 ```
 
 `mode: human` 时，见证等级为 human 的验收项在 `human_witness: confirmed` 前不得 `PASS`；
-需要带风险结单时，human_owner 可通过官方 `task acceptance-override --mode defer|waive` 将人工项记为 `DEFERRED_ACCEPTED` 或 `OWNER_WAIVED`；不得由 AI 自行改写。
+需要记录真实 Owner 人验时，human_owner 可通过官方 `task acceptance-override --mode accept --scope visual --ac AC-XX`（或不带 `--scope visual` 的人工范围）留证；`accept` 只覆盖选定且当前绑定的 AC。需要带风险结单时，human_owner 仍可通过 `task acceptance-override --mode defer|waive` 将人工项记为 `DEFERRED_ACCEPTED` 或 `OWNER_WAIVED`；不得由 AI 自行改写。
 
-`visual.required: true` 时，Verification PASS 必须提供绑定当前 `change_set_id` 的真实 Visual Manifest；静态 DOM/CSS/源码结构契约不能单独满足视觉 AC。Visual Evidence 统一放在 `evidence/visual/`，可通过 `task artifact-path --kind visual-evidence --ensure` 获取规范目录。
+`visual.acceptance_refs` 可选；填写时只能引用本表已有的 AC。要使用 Owner 视觉处置时必须填写非空的 `acceptance_refs`；缺少范围不扩大旧决定。`visual.required: true` 时，Verification PASS 通常必须提供绑定当前 `change_set_id` 的真实 Visual Manifest；若可信的 Owner `accept` 已覆盖声明的视觉 AC 范围，则不会生成或伪造 Visual Manifest，不解除其他 blocker。静态 DOM/CSS/源码结构契约不能单独满足视觉 AC。Visual Evidence 统一放在 `evidence/visual/`，可通过 `task artifact-path --kind visual-evidence --ensure` 获取规范目录。
 
 ## 延期验收记录
 

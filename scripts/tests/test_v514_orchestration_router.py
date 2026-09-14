@@ -8,12 +8,15 @@ def test_effective_level_never_downgrades():
     assert orchestration.resolve_effective_level('L3','L1')=='L3'
     assert orchestration.resolve_effective_level('L1','L2')=='L2'
 
-def test_l1_standard_route():
+def test_l1_on_demand_route_and_explicit_architecture():
     with tempfile.TemporaryDirectory() as td:
         db=make_db(Path(td)/'a.db',risk='L1',flow='L1')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='requirement'
         add_checkpoint(db,'TASK-V514','tp-product-manager','requirement')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='development'
+        add_decision(db,'TASK-V514','workflow:include-stage:architecture')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='architecture' and r['execution_mode']=='DIRECT'
         assert r['transition_notice_required'] is True and r['transition_from_role']=='tp-product-manager'
@@ -27,6 +30,9 @@ def test_l3_ultraplan_only_on_multiple_route_signal():
         db=make_db(Path(td)/'a.db',risk='L3',flow='L3')
         add_checkpoint(db,'TASK-V514','tp-product-manager','requirement')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
+        assert r['next_stage']=='development'
+        add_decision(db,'TASK-V514','workflow:include-stage:architecture')
+        r=orchestration.resolve_route('TASK-V514',db_path=db)
         assert r['next_stage']=='architecture' and r['execution_mode']=='DIRECT'
         add_decision(db,'TASK-V514','workflow:multiple-feasible-routes')
         r=orchestration.resolve_route('TASK-V514',db_path=db)
@@ -35,6 +41,8 @@ def test_l3_ultraplan_only_on_multiple_route_signal():
 def test_l3_architecture_review_then_material_confirmation():
     with tempfile.TemporaryDirectory() as td:
         db=make_db(Path(td)/'a.db',risk='L3',flow='L3')
+        add_decision(db,'TASK-V514','workflow:include-stage:architecture_review')
+        add_decision(db,'TASK-V514','workflow:include-stage:planning')
         add_checkpoint(db,'TASK-V514','tp-product-manager','requirement')
         add_checkpoint(db,'TASK-V514','tp-software-architect','architecture')
         r=orchestration.resolve_route('TASK-V514',db_path=db)

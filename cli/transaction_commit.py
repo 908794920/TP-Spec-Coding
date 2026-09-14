@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Neutral durable transaction/projection primitives for V5.3.1 Record-first Runtime.
+"""Neutral durable transaction/projection primitives for V5.3.2 Record-first Runtime.
 
 This module contains no legacy long-state workflow or Action-role policy.  Migration-only
 compatibility remains under :mod:`cli.migrations.v5_2_3`.
 """
 from __future__ import annotations
+from . import command_context
 
+import contextlib
 import hashlib
 import json
 import os
@@ -43,20 +45,23 @@ def _continuation_sources(task_dir: Path, state: str) -> List[Path]:
         names.extend(["implementation.md", "codex-review.md"])
     elif state == "VERIFYING":
         names.append("implementation.md")
-    # V5.3.1 §3.8/§10.2：新工件经集中注册表纳入 source digest（存在才纳入）
+    # V5.3.2 §3.8/§10.2：新工件经集中注册表纳入 source digest（存在才纳入）
     names.extend(projection_cmd.projection_source_names())
     return [task_dir / name for name in names if (task_dir / name).is_file()]
 
-def _source_digest(paths: List[Path], task_dir: Path) -> str:
+def _source_digest(paths: List[Path], task_dir: Path, source_digests: Optional[Dict[str, str]] = None) -> str:
     parts: List[str] = []
     for path in sorted(paths):
         rel = path.relative_to(task_dir).as_posix()
-        parts.append(rel + "\n" + hashlib.sha256(_read(path).encode("utf-8")).hexdigest() + "\n")
+        captured = (source_digests or {}).get(rel)
+        digest = captured if captured is not None else hashlib.sha256(_read(path).encode("utf-8")).hexdigest()
+        parts.append(rel + "\n" + digest + "\n")
     return hashlib.sha256("".join(parts).encode("utf-8")).hexdigest()
 
-def _generated_view_text(task_dir: Path, name: str, body: str, sources: List[Path], flush_id: str) -> str:
+def _generated_view_text(task_dir: Path, name: str, body: str, sources: List[Path], flush_id: str,
+                         source_digests: Optional[Dict[str, str]] = None) -> str:
     """渲染 generated view 文本（不落盘）。"""
-    digest = _source_digest(sources, task_dir)
+    digest = _source_digest(sources, task_dir, source_digests)
     source_lines = "\n".join(f'  - "{p.relative_to(task_dir).as_posix()}"' for p in sorted(sources))
     return (
         "---\n"
@@ -126,6 +131,7 @@ def _latest_projected_verification(task_dir: Path) -> str:
         return "NOT_RECORDED"
     latest = "NOT_RECORDED"
     latest_subject = ""
+    latest_scope = "full"
     try:
         for line in _read(path).splitlines():
             if not line.strip():
@@ -134,9 +140,12 @@ def _latest_projected_verification(task_dir: Path) -> str:
             if obj.get("type") in {"REVIEW_COMPLETED", "VERIFICATION"} and obj.get("actor") == "tp-test-engineer":
                 latest = str(obj.get("decision") or "NOT_RECORDED").upper()
                 latest_subject = str(obj.get("subject_digest") or "")
+                latest_scope = obj.get("verification_scope", "full")
+                if latest_scope == "technical":
+                    latest += "_TECHNICAL"
         if latest_subject:
             from .digest import compute_verification_subject_digest
-            if compute_verification_subject_digest(task_dir) != latest_subject:
+            if compute_verification_subject_digest(task_dir, scope=latest_scope) != latest_subject:
                 return f"{latest}_STALE"
     except Exception:
         return "UNKNOWN"
@@ -287,7 +296,18 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
     state = str(task["current_state"] or "NEW")
     owner = str(task["owner_role"] or "unknown")
     phase = str(task["current_stage"] or "intake")
+    from . import current_context
+    current = current_context.read_current(task_dir, task_id=str(task["task_id"]))
+    # Stamp the source bytes actually consumed for the slice. A concurrent edit
+    # must leave a detectable stale view, not a freshly hashed old summary.
+    source_digests = {item["path"]: item["digest"].removeprefix("sha256:") for item in current["sources"]}
     sources = _continuation_sources(task_dir, state)
+    captured_names = set(source_digests)
+    current_names = {p.name for p in sources if p.name in current_context.SOURCE_NAMES}
+    if current["status"] in {"AVAILABLE", "ABSENT", "CONFLICT"} and captured_names != current_names:
+        # A newly created competing document (or a deleted source) cannot be
+        # stamped as current using a slice read from the previous source set.
+        raise ValueError("CURRENT_CONTEXT_SOURCES_CHANGED: rebuild the view from current canonical sources")
     verification = _latest_projected_verification(task_dir)
     status_context = _status_context(task_dir)
     quality = status_context.get("quality_facts") or {}
@@ -333,7 +353,23 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
             body += "- 延期验收项：" + "、".join(deferred) + "（见 acceptance.md）\n"
         if verification != "PASS":
             body += "- 提示：COMPLETED 表示任务工作已结束，不代表未记录/失败/延期的验证被改写为 PASS。\n"
-        return _generated_view_text(task_dir, "final-result.md", body, sources, flush_id)
+        body += current_context.render_current(current)
+        return _generated_view_text(task_dir, "final-result.md", body, sources, flush_id, source_digests)
+
+    # A handoff is an instruction surface: phase flexibility must not override
+    # an actual wait or terminal state recorded by the Runtime.
+    if state == "BLOCKED":
+        guidance = "任务处于 BLOCKED：保持等待；满足恢复条件后通过 `task resume` 重新校验，不因接续自动启动新的开发或验收。"
+    elif state == "CANCELLED":
+        guidance = "任务已 CANCELLED：当前工作已终止；本接续记录仅供查询，不继续开发或验收。"
+    elif blockers:
+        guidance = "受阻动作保持等待；按以上恢复条件取得有效新事实后重新查询 `workflow next`，不把 BLOCKED 当作开发缺陷，不重复必败操作。"
+    elif current["status"] in current_context.UNUSABLE:
+        guidance = current_context.RECOVERY
+    elif "TECHNICAL" in verification:
+        guidance = "技术限定结果不代表整体验收通过；按 workflow next 完成必要代码审查，保留完整验证及视觉/人验缺口，不直接交付或结单。"
+    else:
+        guidance = "V5.3.2：phase 是查询事实，不是流程门禁；继续完成业务工作即可。"
 
     body = (
         "# 任务接续区\n\n"
@@ -343,10 +379,12 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
         f"- 最新 Change Set：{status_context.get('change_set_id') or 'NOT_RECORDED'}\n"
         f"- 当前阻塞：{blocker_text}\n"
         f"- 下一责任：{status_context.get('next_responsibility') or owner}\n"
+        f"- 技术验证事实：{verification}\n"
         f"- 最近记录：{summary}\n"
-        "\n> V5.3.1：phase 是查询事实，不是流程门禁；继续完成业务工作即可。\n"
+        f"\n> {guidance}\n"
     )
-    return _generated_view_text(task_dir, "continuation.md", body, sources, flush_id)
+    body += current_context.render_current(current)
+    return _generated_view_text(task_dir, "continuation.md", body, sources, flush_id, source_digests)
 
 def _probe_writable(task_dir: Path) -> None:
     """任务目录可写探测（探测文件立即删除，无持久副作用）。"""
@@ -401,6 +439,7 @@ def _restore(task_dir: Path, bak_dir: Path, rel_paths: List[str], journal: Optio
             except OSError:
                 pass
 
+@command_context.measured("projection")
 def _stage_and_replace(task_dir: Path, texts: Dict[str, str], rel_paths: List[str]) -> None:
     """写全部临时文件后逐个 os.replace 原子替换；中途失败清理未替换的临时文件。
 
@@ -467,8 +506,8 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
                          task_id: str = "", operation: str = "commit",
                          db_state_before: str = "", target_state: str = "",
                          owner_before: str = "", owner_after: str = "",
-                         flush_id: str = "") -> Dict[str, str]:
-    """一致性提交核心（V5.3.1 durable journal 版）：
+                         flush_id: str = "", before_prepare=None) -> Dict[str, str]:
+    """一致性提交核心（V5.3.2 durable journal 版）：
 
     1. BEGIN IMMEDIATE 获取 SQLite writer serialization；2. 读取 revision 并备份现有投影；
     3. 写 durable journal（PREPARED）；4. db_and_render(conn) 写 DB 并渲染投影；
@@ -490,14 +529,17 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
     db_committed = False
     transaction_started = False
     texts: Dict[str, str] = {}
+    lock_scope = contextlib.ExitStack()
 
     try:
         try:
             # Acquire SQLite's single-writer lock before reading revision or copying
             # projection backups.  Concurrent writers therefore cannot prepare file
             # recovery state against a DB snapshot that another writer may advance.
-            conn.execute("BEGIN IMMEDIATE")
+            with command_context.span("lock_wait"):
+                conn.execute("BEGIN IMMEDIATE")
             transaction_started = True
+            lock_scope.enter_context(command_context.span("lock_held"))
             _assert_task_workspace_identity(conn, task_dir, task_id)
         except sqlite3.OperationalError as exc:
             if "locked" in str(exc).lower() or "busy" in str(exc).lower():
@@ -506,6 +548,8 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
                 ) from exc
             raise
 
+        if before_prepare is not None:
+            before_prepare(conn)
         rev_before = transaction_journal.current_revision(conn, task_id)
         _backup(task_dir, bak_dir, effective_rel_paths)
         journal = {
@@ -578,9 +622,11 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
                 if row["event_type"] == "HANDOFF" and journal["expected_handoff_event_id"] is None:
                     journal["expected_handoff_event_id"] = row["id"]
         transaction_journal.write_journal(task_dir, journal)
-        conn.execute("COMMIT")
+        with command_context.span("db_commit"):
+            conn.execute("COMMIT")
         transaction_started = False
         db_committed = True
+        lock_scope.close()
         journal["phase"] = PHASE_DB_COMMITTED
         transaction_journal.write_journal(task_dir, journal)
     except BaseException as exc:
@@ -591,6 +637,7 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
                 pass
             transaction_started = False
 
+        lock_scope.__exit__(type(exc), exc, exc.__traceback__)
         if db_committed:
             raise ReconciliationRequiredError(
                 f"DB committed but post-commit step failed: {exc}; "
@@ -619,6 +666,8 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
         raise ProjectionCommitFailedError(
             f"commit write failed and was rolled back (db restored, files restored): {exc}"
         ) from exc
+    finally:
+        lock_scope.close()
 
     transaction_journal.remove_journal(task_dir, tx_id)
     shutil.rmtree(bak_dir, ignore_errors=True)
@@ -640,3 +689,72 @@ def _finalize_texts(task_dir: Path, texts: Dict[str, str], view_rel: str, render
     _stage_and_replace(task_dir, non_view, list(non_view))
     texts[view_rel] = render_view()
     return texts
+
+
+@command_context.measured("projection")
+def refresh_current_view(conn, task_dir: Path, task_id: str, *, summary: str = "",
+                         flush_id: str = "", expected_revision: Optional[int] = None) -> Dict[str, Any]:
+    """Rebuild only an unsealed view, after the fact transaction has committed.
+
+    The writer lock prevents an older renderer overwriting a newer snapshot. A
+    stale/missing view is detectable from its source digest, including after a
+    process crash before this function. No new event or business state is written.
+    Terminal manifests/final results remain in their existing atomic seal.
+    """
+    started = False
+    lock_scope = contextlib.ExitStack()
+    failure = (None, None, None)
+    try:
+        with command_context.span("lock_wait"):
+            conn.execute("BEGIN IMMEDIATE")
+        started = True
+        lock_scope.enter_context(command_context.span("lock_held"))
+        _assert_task_workspace_identity(conn, task_dir, task_id)
+        if any(transaction_journal.transactions_dir(task_dir).glob("*.json")):
+            # A malformed journal is unresolved too, not an absent transaction.
+            raise ValueError("unresolved transaction journal; reconcile first")
+        task = conn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
+        if task is None:
+            raise ValueError("task not found")
+        revision = transaction_journal.current_revision(conn, task_id)
+        if expected_revision is not None and revision != expected_revision:
+            raise ValueError("fact revision advanced; rebuild against the latest projection")
+        if str(task["current_state"] or "") == "COMPLETED":
+            conn.execute("ROLLBACK")
+            started = False
+            lock_scope.close()
+            return {"view_status": "SEALED"}
+        errors = projection_cmd.validate_projection_files(conn, task, task_dir)
+        if errors:
+            raise ValueError("required projections are stale; reconcile first")
+        events = conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id,)).fetchall()
+        expected_events, _ = projection_cmd._build_events_jsonl(events, task_id)
+        if (task_dir / "events.jsonl").read_text(encoding="utf-8") != expected_events:
+            raise ValueError("required event projection differs from DB facts; reconcile first")
+        if not summary:
+            latest = conn.execute("SELECT summary FROM task_event WHERE task_id=? ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+            summary = str(latest["summary"] or "") if latest else ""
+        rel = _current_view_rel(str(task["current_state"] or ""))
+        text = _rebuild_current_view_text(task_dir, task, summary, flush_id or f"VIEW-{uuid.uuid4().hex}")
+        _stage_and_replace(task_dir, {rel: text}, [rel])
+        # No DB write is part of a derived-only refresh.
+        conn.execute("ROLLBACK")
+        started = False
+        lock_scope.close()
+        return {"view_status": "CURRENT"}
+    except Exception as exc:
+        failure = (type(exc), exc, exc.__traceback__)
+        try:
+            print(f"DERIVED_VIEW_PENDING: view not updated; no business write attempted here; {type(exc).__name__}: {exc}; "
+                  "use projection rebuild --view-only (reconcile first if required projections drifted)", file=sys.stderr)
+        except Exception:
+            # The machine result below still exposes PENDING and its recovery path.
+            # A closed optional warning stream cannot undo committed facts.
+            pass
+        return {"view_status": "PENDING", "view_recovery": "projection rebuild --view-only"}
+    finally:
+        try:
+            if started:
+                conn.execute("ROLLBACK")
+        finally:
+            lock_scope.__exit__(*(sys.exc_info() if sys.exc_info()[0] else failure))

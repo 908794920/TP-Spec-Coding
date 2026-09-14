@@ -29,6 +29,54 @@ def _split_csv(s: Optional[str]) -> List[str]:
     return [item.strip() for item in s.split(",") if item.strip()]
 
 
+def summarize_work_items(conn, task, *, rows=None, retired: bool = False) -> dict:
+    """Read existing milestones; never derive Task/project completion or repair rows."""
+    task = dict(task)
+    if rows is None:
+        rows = conn.execute("SELECT * FROM work_item WHERE task_id=? ORDER BY created_at,item_id",
+                            (task["task_id"],)).fetchall()
+    items = [dict(row) for row in rows]
+    by_id = {row["item_id"]: row for row in items}
+    counts = {"PENDING": 0, "ACTIVE": 0, "COMPLETED": 0}
+    issues = []
+    current = not retired and task.get("current_state") not in {"COMPLETED", "CANCELLED"}
+    for item in items:
+        state = item.get("status")
+        if state in counts:
+            counts[state] += 1
+        else:
+            issues.append(f"{item['item_id']}: UNKNOWN_STATUS")
+        try:
+            depends = json.loads(item.get("depends_on_json") or "[]")
+            if not isinstance(depends, list) or any(not isinstance(d, str) or not d.strip() for d in depends):
+                raise ValueError("invalid dependency list")
+        except (ValueError, TypeError):
+            depends = []
+            issues.append(f"{item['item_id']}: INVALID_DEPENDENCIES")
+        unresolved = [d for d in depends if d not in by_id or by_id[d]["status"] != "COMPLETED"]
+        if any(d not in by_id or d == item["item_id"] for d in depends):
+            issues.append(f"{item['item_id']}: DEPENDENCY_UNRESOLVED")
+        if state == "COMPLETED" and unresolved:
+            issues.append(f"{item['item_id']}: COMPLETED_WITH_PENDING_DEPENDENCY")
+        item["depends_on"] = depends
+        item["unresolved_dependencies"] = unresolved
+        item["current"] = current
+    if task.get("current_state") == "COMPLETED" and counts["PENDING"] + counts["ACTIVE"]:
+        issues.append("TERMINAL_TASK_OPEN_ITEMS")
+    elif not current and counts["ACTIVE"]:
+        issues.append("HISTORICAL_ACTIVE_ITEM")
+    consistency = "NEEDS_RECONCILIATION" if issues else ("RECORDED" if items else "NOT_RECORDED")
+    summary = (f"WorkItem 登记：待处理 {counts['PENDING']} / 已认领 {counts['ACTIVE']} / 已完成 {counts['COMPLETED']}；"
+               f"{consistency}。只代表该任务里程碑记录，不是整任务/项目验收或进程存活。")
+    if issues:
+        summary += " 待核对：" + "; ".join(issues)
+    return {"source": "work_item", "completion_scope": "task_work_items_only", "current": current,
+            "counts": counts, "consistency": consistency, "issues": issues,
+            "items": [{key: item.get(key) for key in ("item_id", "title", "status", "owner_role",
+                       "owner_agent", "depends_on", "unresolved_dependencies", "current", "updated_at")}
+                      for item in items], "summary": summary}
+
+
 def cmd_workitem_create(args) -> int:
     task_id = args.task
     item_id = args.id
@@ -174,19 +222,17 @@ def cmd_workitem_release(args) -> int:
 def cmd_workitem_list(args) -> int:
     task_id = args.task
     db_path = dbmod.resolve_db_path(args.db, project_id=getattr(args, "project", None), task_id=task_id)
-    conn = dbmod.connect(db_path)
+    conn = dbmod.connect_readonly(db_path)
     try:
-        task = conn.execute("SELECT task_id FROM task WHERE task_id = ?", (task_id,)).fetchone()
+        conn.execute("BEGIN")
+        task = conn.execute("SELECT * FROM task WHERE task_id = ?", (task_id,)).fetchone()
         if task is None:
             print(f"ERROR: task not found: {task_id}", file=sys.stderr)
             return 4
-        sql = "SELECT * FROM work_item WHERE task_id = ?"
-        params = [task_id]
-        if args.status:
-            sql += " AND status = ?"
-            params.append(args.status)
-        sql += " ORDER BY created_at"
-        rows = conn.execute(sql, params).fetchall()
+        from .event_policies import is_task_retired
+        facts = summarize_work_items(conn, task, retired=is_task_retired(conn, task_id))
+        print(facts["summary"])
+        rows = [item for item in facts["items"] if not args.status or item["status"] == args.status]
         if not rows:
             print(f"(no work items for {task_id})")
             return 0
@@ -194,7 +240,9 @@ def cmd_workitem_list(args) -> int:
         for r in rows:
             print(
                 f"  {r['item_id']} [{r['status']}] {r['title'] or ''} "
-                f"owner={r['owner_role'] or '-'}/{r['owner_agent'] or '-'}"
+                f"owner={r['owner_role'] or '-'}/{r['owner_agent'] or '-'} "
+                f"depends={','.join(r['depends_on']) or '-'} "
+                f"waiting_on={','.join(r['unresolved_dependencies']) or '-'}"
             )
         return 0
     finally:

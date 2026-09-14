@@ -40,7 +40,7 @@ _TASK_ID_RE = re.compile(r"^TASK-[A-Za-z0-9][A-Za-z0-9._-]*$")
 # risk/flow 等级
 _RISK_LEVELS = ("L0", "L1", "L2", "L3")
 
-# Frozen long-state SHD compatibility table. Active V5.3.1 Record-first tasks return through the fast path and do not use this table.
+# Frozen long-state SHD compatibility table. Active V5.3.2 Record-first tasks return through the fast path and do not use this table.
 _SHD_TRANSITIONS: Dict[str, List[str]] = {
     "NEW": ["RISK_ANALYZING", "TECH_DESIGNING", "DEVELOPING", "CANCELLED"],
     "RISK_ANALYZING": ["REQUIREMENT_CLARIFYING", "PRODUCT_DESIGNING", "TECH_DESIGNING", "DEVELOPING", "TECHNICAL_DISCOVERY"],
@@ -76,7 +76,7 @@ _SHD_FORWARD_CONSUMERS: Dict[str, List[str]] = {
     "VERIFYING": ["REVIEWING", "CLOSING", "COMPLETED"],
 }
 
-# V5.3.1 A-01：front matter 解析统一走 cli/frontmatter.py（LF/CRLF/BOM 兼容）
+# V5.3.2 A-01：front matter 解析统一走 cli/frontmatter.py（LF/CRLF/BOM 兼容）
 _FM_RE = FRONTMATTER_RE
 
 # HPB: next_prompt 必须完整的 12 字段
@@ -152,7 +152,7 @@ def _check_shd_closure(
     risk_level: str = "",
     flow_level: str = "",
 ) -> List[str]:
-    """SHD M1/M2 + HPB 校验（V5.3.1），返回错误消息列表。"""
+    """SHD M1/M2 + HPB 校验（V5.3.2），返回错误消息列表。"""
     errors: List[str] = []
     # M1 反向一致性
     if current_state in _SHD_DRIVER:
@@ -231,7 +231,7 @@ def _check_shd_closure(
 _INTAKE_ARTIFACTS = (
     ("requirement.md", "requirement.md"),
     # One-time source compatibility: old pre-task requirement facts are adopted
-    # into the v5.3.1 canonical requirement artifact, never copied as a second
+    # into the v5.3.2 canonical requirement artifact, never copied as a second
     # active requirement model.
     ("requirement-knowledge.md", "requirement.md"),
     ("requirement-clarifications.md", "requirement-clarifications.md"),
@@ -258,7 +258,7 @@ def _adopt_intake_artifacts(scaffold_dir: Path, intake_dir: Path, task_id: str, 
             text = raw.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             raise ValueError(f"intake artifact must be UTF-8: {src}") from exc
-        # V5.3.1 Record-first: business roles own content, Runtime owns machine metadata.
+        # V5.3.2 Record-first: business roles own content, Runtime owns machine metadata.
         # Missing/mismatched front matter is normalized instead of sending the role
         # through a bookkeeping retry loop.
         artifact_type = target_name[:-3]
@@ -395,7 +395,7 @@ def _recover_interrupted_task_create(
 
 
 def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, flow: str, created_at: str) -> Path:
-    """Build a complete V5.3.1 task scaffold in a temporary sibling directory.
+    """Build a complete V5.3.2 task scaffold in a temporary sibling directory.
 
     The caller may atomically rename the returned directory after the DB transaction
     has prepared successfully.  No existing task directory is overwritten.
@@ -413,7 +413,7 @@ def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, fl
     if tmp.exists():
         shutil.rmtree(tmp, ignore_errors=True)
     shutil.copytree(template_root, tmp)
-    # V5.3.1 Record-first scaffold: create only the durable task shell. Optional
+    # V5.3.2 Record-first scaffold: create only the durable task shell. Optional
     # business artifacts are created when a role has real content, never because a
     # state machine requires an empty form. Base templates remain available.
     essential = {'task.md', 'acceptance.md', 'status.yaml'}
@@ -655,12 +655,12 @@ def cmd_task_create(args) -> int:
 
 
 def cmd_task_transition(args) -> int:
-    """V5.3.1 Hardening：禁用活动任务的独立状态推进（任务书 §4.2 方案 A）。
+    """V5.3.2 Hardening：禁用活动任务的独立状态推进（任务书 §4.2 方案 A）。
 
-    V5.3.1 遗留的独立 transition（直接 UPDATE task + INSERT STATE 事件）可绕过
+    V5.3.2 遗留的独立 transition（直接 UPDATE task + INSERT STATE 事件）可绕过
     commit 的 durable journal、projection 原子提交、架构评审与验收门禁，已被移除。
 
-    V5.3.1 活动任务：
+    V5.3.2 活动任务：
     - 日常事实入口为 ``task checkpoint/block/resume/verify/complete``；这些命令复用
       durable journal + projection 原子提交，但不暴露旧 handoff/phase gate；
     - 旧 long-state commit 已迁入 migration/history-only；日常只使用 Record-first API；
@@ -680,10 +680,10 @@ def cmd_task_transition(args) -> int:
             return 4
         # 历史任务：静态归档，只读拒绝（不推进、不改写）。
         if (task["base_version"] or "") != active_version():
-            print(f"ERROR: legacy contract task is a frozen static archive; the V5.3.1 runtime operates only base_version={active_version()}", file=sys.stderr)
+            print(f"ERROR: legacy contract task is a frozen static archive; the V5.3.2 runtime operates only base_version={active_version()}", file=sys.stderr)
             return 3
         # 活动任务：独立状态推进被禁用（方案 A）。
-        print("DIRECT_TRANSITION_DISABLED: V5.3.1 uses record-first task checkpoint/block/resume/complete; direct transition is not a daily API", file=sys.stderr)
+        print("DIRECT_TRANSITION_DISABLED: V5.3.2 uses record-first task checkpoint/block/resume/complete; direct transition is not a daily API", file=sys.stderr)
         return 9
     finally:
         conn.close()
@@ -819,10 +819,10 @@ def cmd_task_validate(args) -> int:
             print(f"ERROR: {e}", file=sys.stderr)
             return 3
         if (task["base_version"] or "") != active_version():
-            print(f"ERROR: legacy contract task is a frozen static archive; the V5.3.1 runtime validates only base_version={active_version()}", file=sys.stderr)
+            print(f"ERROR: legacy contract task is a frozen static archive; the V5.3.2 runtime validates only base_version={active_version()}", file=sys.stderr)
             return 3
         errors = []
-        # V5.3.1 Record-first validation protects ledger truth, not process completeness.
+        # V5.3.2 Record-first validation protects ledger truth, not process completeness.
         quick = conn.execute("PRAGMA quick_check").fetchone()
         if quick is None or str(quick[0]).lower() != "ok":
             errors.append(f"sqlite integrity check failed: {quick[0] if quick else 'no result'}")
@@ -1041,7 +1041,7 @@ def _upgrade_contract_artifact_text(name: str, text: str, source: str, target: s
         out = out.replace(f"artifact_contract.version: {source}", f"artifact_contract.version: {target}")
         out = out.replace(f"templates/{source}", f"templates/{target}")
     if name == "codex-review.md":
-        # V5.3.1 review routing is Runtime-owned and unambiguously named next_state.
+        # V5.3.2 review routing is Runtime-owned and unambiguously named next_state.
         out = re.sub(r"(?m)^(\s*)intended_next\s*:\s*(.*)$", r"\1next_state: \2", out, count=1)
     if name == "acceptance.md":
         out = _migrate_legacy_database_verification(out)
@@ -1080,7 +1080,7 @@ def _task_migratable_artifacts(task_dir: Path) -> Dict[str, str]:
         path = task_dir / name
         if path.is_file():
             try:
-                result[name] = path.read_text(encoding="utf-8-sig")
+                result[name] = path.read_bytes().decode("utf-8")
             except OSError:
                 continue
     return result
@@ -1093,7 +1093,7 @@ def _task_contract_files(task_dir: Path) -> Dict[str, str]:
         if not path.is_file() or path.suffix.lower() not in {'.md', '.yaml', '.yml'}:
             continue
         try:
-            text = path.read_text(encoding='utf-8-sig')
+            text = path.read_bytes().decode('utf-8')
         except OSError:
             continue
         if re.search(r'(?ms)^artifact_contract:\s*\n\s+version:', text):
@@ -1183,6 +1183,19 @@ def _deep_projection_snapshot(conn, task, task_dir: Path, actor: str = "human_ow
     return issues
 
 
+def _migration_input_snapshot(task_dir: Path) -> Dict[str, str]:
+    """Bind task-root inputs by content; evidence subdirectories remain immutable."""
+    snapshot: Dict[str, str] = {}
+    for path in sorted(task_dir.iterdir()):
+        if path.suffix.lower() not in {".md", ".yaml", ".yml", ".json", ".jsonl"}:
+            continue
+        if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+            raise ValueError(f"MIGRATION_INPUT_UNSAFE: linked task artifact {path.name}")
+        if path.is_file():
+            snapshot[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return snapshot
+
+
 def cmd_task_migrate(args) -> int:
     """Atomically migrate/repair a non-terminal task to the active contract.
 
@@ -1212,8 +1225,12 @@ def cmd_task_migrate(args) -> int:
     if not os.path.isfile(db_path):
         print(f"ERROR: database not found: {db_path}", file=sys.stderr)
         return 4
-    conn = dbmod.connect(db_path)
+    conn = dbmod.connect_readonly(db_path)
     try:
+        schema_ok, schema_issues = dbmod.verify_schema(conn)
+        if not schema_ok:
+            print(f"ERROR: SCHEMA_MISMATCH: {schema_issues}; task migration cannot relabel an unknown database schema", file=sys.stderr)
+            return 6
         from . import transaction_commit, projection_cmd, reconcile_cmd, event_policies
         from .migrations.v5_2_3.role_map import map_active_owner
         task = conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
@@ -1226,7 +1243,11 @@ def cmd_task_migrate(args) -> int:
         if (task["current_state"] or "") in {"COMPLETED", "CANCELLED"}:
             print("ERROR: terminal tasks are immutable archives and are not migrated", file=sys.stderr)
             return 5
+        from .migrations import contract_migration_policy
         old = str(task["base_version"] or "")
+        if not contract_migration_policy(old, target)["migration_supported"]:
+            print(f"ERROR: UNSUPPORTED_MIGRATION_SOURCE: task contract {old!r} -> {target}; no changes", file=sys.stderr)
+            return 6
         if not old:
             print("ERROR: DB task.base_version is empty; migration source is ambiguous", file=sys.stderr)
             return 6
@@ -1239,9 +1260,19 @@ def cmd_task_migrate(args) -> int:
             )
             return 6
 
-        contract_files = _task_contract_files(task_dir)
+        input_snapshot = _migration_input_snapshot(task_dir)
+        status_text = status_path.read_bytes().decode("utf-8-sig")
+        if (_yaml_scalar(status_text, "task_id") or "") not in {"", args.task}:
+            raise ValueError("MIGRATION_INPUT_CHANGED: status task identity changed; replan")
+        input_revision = transaction_commit.transaction_journal.current_revision(conn, args.task)
+        input_task = dict(task)
         migratable_artifacts = _task_migratable_artifacts(task_dir)
         versions = _artifact_contract_versions(task_dir)
+        unsupported = {name: version for name, version in versions.items()
+                       if not contract_migration_policy(version, target)["migration_supported"]}
+        if unsupported:
+            print(f"ERROR: UNSUPPORTED_MIGRATION_SOURCE: artifact contracts {unsupported}; no changes", file=sys.stderr)
+            return 6
         status_base = _yaml_scalar(status_text, "base_version") or ""
         m_contract = re.search(r'(?ms)^artifact_contract:\s*\n\s+version:\s*["\']?([^"\'\n#]+)', status_text)
         status_contract = m_contract.group(1).strip() if m_contract else ""
@@ -1333,7 +1364,7 @@ def cmd_task_migrate(args) -> int:
                 tx_conn.execute(
                     "INSERT INTO task_event (task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (args.task, "STATE", current, migrated_state, task["current_stage"], migrated_phase,
-                     args.actor, "V5.3.1 record-first state collapse", json.dumps(detail, ensure_ascii=False), target, timestamp),
+                     args.actor, "V5.3.2 record-first state collapse", json.dumps(detail, ensure_ascii=False), target, timestamp),
                 )
             refreshed = tx_conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
             status_yaml, events_jsonl, warnings = projection_cmd.render_projection(tx_conn, refreshed)
@@ -1359,12 +1390,26 @@ def cmd_task_migrate(args) -> int:
                 ),
             )
 
+        def recheck_migration_inputs(tx_conn):
+            latest = tx_conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
+            latest_project = tx_conn.execute("SELECT base_version FROM project WHERE project_id=?",
+                                             (task["project_id"],)).fetchone()
+            if (not dbmod.verify_schema(tx_conn)[0] or latest is None or dict(latest) != input_task
+                    or event_policies.is_task_retired(tx_conn, args.task)
+                    or latest_project is None or str(latest_project["base_version"]) != target
+                    or transaction_commit.transaction_journal.current_revision(tx_conn, args.task) != input_revision
+                    or _migration_input_snapshot(task_dir) != input_snapshot):
+                raise ValueError("MIGRATION_INPUT_CHANGED: task, contract, event or artifact changed; replan before migration")
+
         rel_paths = sorted(set(texts) | {"status.yaml", "events.jsonl", "handoff.json", view_rel})
+        conn.close()
+        conn = dbmod.connect(db_path)
         transaction_commit._commit_with_recovery(
             task_dir, conn, rel_paths, db_and_render,
             task_id=args.task, operation="contract_migrate",
             db_state_before=current, target_state=migrated_state,
             owner_before=owner, owner_after=migrated_owner, flush_id=flush_id,
+            before_prepare=recheck_migration_inputs,
         )
         refreshed = conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
         after_drift = _deep_projection_snapshot(conn, refreshed, task_dir, args.actor)
@@ -1417,9 +1462,14 @@ def cmd_task_migration_plan(args) -> int:
     if not os.path.isfile(db_path):
         print(f"ERROR: database not found: {db_path}", file=sys.stderr)
         return 4
-    conn = dbmod.connect(db_path)
+    conn = dbmod.connect_readonly(db_path)
     try:
+        schema_ok, schema_issues = dbmod.verify_schema(conn)
+        if not schema_ok:
+            print(f"ERROR: SCHEMA_MISMATCH: {schema_issues}; inspection only, no changes", file=sys.stderr)
+            return 6
         from . import event_policies
+        from .migrations import contract_migration_policy
         project = conn.execute("SELECT * FROM project WHERE project_id=?", (args.project,)).fetchone()
         if project is None:
             print(f"ERROR: project not found: {args.project}", file=sys.stderr)
@@ -1451,6 +1501,7 @@ def cmd_task_migration_plan(args) -> int:
                 "classification": "",
                 "decision_options": [],
                 "issues": [],
+                "compatibility": contract_migration_policy(db_base, active_version()),
             }
             if not task_dir.is_dir():
                 entry["four_way"] = {
@@ -1496,6 +1547,21 @@ def cmd_task_migration_plan(args) -> int:
                 "generated_projection": generated_status,
             }
             entry["artifact_versions"] = versions
+            unsupported = {name: version for name, version in versions.items()
+                           if not contract_migration_policy(version, active_version())["migration_supported"]}
+            if unsupported:
+                entry["compatibility"] = {**entry["compatibility"], "migration_supported": False,
+                                          "unsupported_artifacts": unsupported}
+            entry["planned_artifact_changes"] = []
+            if entry["compatibility"]["migration_supported"]:
+                for name, before_text in _task_migratable_artifacts(task_dir).items():
+                    after_text = _upgrade_contract_artifact_text(name, before_text, db_base, active_version())
+                    if before_text != after_text:
+                        entry["planned_artifact_changes"].append({
+                            "path": name,
+                            "before_sha256": hashlib.sha256(before_text.encode("utf-8")).hexdigest(),
+                            "after_sha256": hashlib.sha256(after_text.encode("utf-8")).hexdigest(),
+                        })
             for bucket in ("status", "events", "handoff", "generated"):
                 entry["issues"].extend(deep[bucket])
             if status_state and status_state != str(task["current_state"] or ""):
@@ -1519,6 +1585,10 @@ def cmd_task_migration_plan(args) -> int:
                     entry["issues"].append(f"DB/status artifact contract mismatch: db={db_base!r}, artifact={status_contract!r}")
                 if len(unique_versions) > 1:
                     entry["issues"].append(f"mixed artifact contracts: {unique_versions}")
+            if not entry["compatibility"]["migration_supported"]:
+                entry["classification"] = "UNSUPPORTED_MIGRATION_SOURCE"
+                entry["decision_options"] = ["KEEP_OLD_ARCHIVE", "WAIT_FOR_CONFIRMATION"]
+                entry["issues"].append(f"unsupported migration input: {entry['compatibility'].get('unsupported_artifacts') or db_base!r}")
             items.append(entry)
 
         blocked = [i for i in items if i["classification"] != "CURRENT"]
@@ -1527,6 +1597,15 @@ def cmd_task_migration_plan(args) -> int:
         report = {
             "schema": "tp-spec.task-migration-plan/v3",
             "active_version": active_version(),
+            "read_only": True,
+            "compatibility": contract_migration_policy(project_base, active_version()),
+            "migration_boundary": {
+                "automatic_migration": False,
+                "backup": "Back up the selected database (including live WAL via an approved SQLite backup) and task directory before authorized migration.",
+                "recovery": "Journal-backed process-crash recovery; use reconcile for an interrupted commit. No blind rollback over newer user facts.",
+                "preserved": ["historical_events", "evidence", "project_overrides", "memory", "durable_tests"],
+                "evidence_policy": "Old PASS keeps its original subject; future gates require applicable current evidence.",
+            },
             "project_id": args.project,
             "project_base_version": project_base,
             "project_contract_current": project_contract_current,
@@ -1535,7 +1614,9 @@ def cmd_task_migration_plan(args) -> int:
             "retired_historical_tasks": retired_ids,
             "active_non_terminal_tasks": len(items),
             "release_gate": "PASS" if (project_contract_current and not blocked) else "BLOCKED",
-            "project_action": "NO_ACTION" if project_contract_current else "RUN_PROJECT_UPGRADE_CONTRACT",
+            "project_action": "NO_ACTION" if project_contract_current else (
+                "RUN_PROJECT_UPGRADE_CONTRACT" if contract_migration_policy(project_base, active_version())["migration_supported"]
+                else "UNSUPPORTED_MIGRATION_SOURCE"),
             "requires_explicit_decision": [i["task_id"] for i in blocked],
             "tasks": items,
         }
@@ -1651,6 +1732,7 @@ def _acceptance_table_rows(text: str) -> Dict[str, Dict[str, Any]]:
         rows[m.group(1)] = {
             "index": idx,
             "cells": cells,
+            "evidence": cells[6].strip(),
             "witness": cells[7].strip().lower(),
             "verdict": normalize_verdict(cells[8]),
         }
@@ -1693,11 +1775,141 @@ def _upsert_acceptance_yaml_list(text: str, key: str, entries: List[Dict[str, An
     return text.rstrip() + heading + "```yaml\n" + block + "```\n"
 
 
-def cmd_task_acceptance_override(args) -> int:
-    """Record an explicit human_owner defer/waive decision for pending acceptance.
+def _owner_acceptance_source_path(request_id: str) -> str:
+    """Return a safe, deterministic task-local receipt path for an owner statement."""
+    # LogicalRequest permits ``:`` in request ids. Percent-encode every other
+    # character outside the Windows-safe set instead of collapsing distinct ids
+    # (for example ``owner:a`` and ``owner_a``) to one receipt path.
+    safe = re.sub(
+        r"[^A-Za-z0-9._-]",
+        lambda match: f"%{ord(match.group(0)):02X}",
+        request_id,
+    )
+    return f"evidence/owner-acceptance/{safe}.md"
 
-    This is an audited Runtime write, not a manual SQLite/artifact edit. It never
-    turns unexecuted tests into PASS: defer => DEFERRED_ACCEPTED, waive => OWNER_WAIVED.
+
+def _owner_acceptance_source_document(source: str) -> str:
+    """Keep the supplied owner statement as a clearly labelled, non-automated receipt."""
+    return (
+        "# Owner acceptance source\n\n"
+        "This file records the owner-provided statement verbatim. It is a human "
+        "acceptance declaration, not automated execution or visual evidence.\n\n"
+        f"{source.rstrip()}\n"
+    )
+
+
+def _stale_owner_acceptance_pass(conn, task_id: str, task_dir: Path, ac: str, row: Dict[str, Any]) -> bool:
+    """Return whether a human Owner PASS is stale and may be renewed."""
+    if row.get("witness") != "human" or not str(row.get("evidence") or "").startswith("evidence/owner-acceptance/"):
+        return False
+    from . import event_policies
+    matching = [
+        item for item in event_policies.load_owner_acceptance_decisions(conn, task_id)
+        if str(item.get("mode") or "").lower() == "accept"
+        and ac in {str(value).strip() for value in item.get("acs") or []}
+        and str(item.get("source_evidence") or "").strip() == str(row.get("evidence") or "").strip()
+    ]
+    if not matching:
+        return False
+    effective = event_policies.effective_owner_acceptance(conn, task_id, task_dir=task_dir)
+    current = (effective.get("by_ac") or {}).get(ac)
+    # A current valid Owner result, including a later disposition, is not a
+    # stale PASS. An older defer/waive is superseded by the accept it preceded;
+    # only a later disposition keeps the stale row protected.
+    if current is None:
+        return True
+    current_event_id = current.get("_event_id")
+    latest_accept_id = max(int(item.get("_event_id") or 0) for item in matching)
+    return isinstance(current_event_id, int) and current_event_id < latest_accept_id
+
+
+def _set_owner_acceptance_result(text: str, selected: Iterable[str], evidence_path: str) -> str:
+    """Mark only selected human criteria as PASS and bind the owner receipt."""
+    lines = text.splitlines()
+    rows = _acceptance_table_rows(text)
+    for ac in selected:
+        row = rows[ac]
+        if row["witness"] != "human":
+            raise ValueError(f"accept requires human witness criteria: {ac}")
+        cells = list(row["cells"])
+        cells[6] = f" {evidence_path} "
+        cells[8] = " PASS "
+        lines[row["index"]] = "|".join(cells)
+    updated = "\n".join(lines) + ("\n" if text.endswith(("\n", "\r\n")) else "")
+    witness = re.search(r"(?m)^\s*human_witness\s*:", updated)
+    if witness is None:
+        raise ValueError("accept requires page_verification.human_witness")
+    updated = re.sub(r"(?m)^(\s*human_witness\s*:\s*).*$", r"\1confirmed", updated, count=1)
+    quoted = json.dumps(evidence_path, ensure_ascii=False)
+    if re.search(r"(?m)^\s*witness_evidence\s*:", updated):
+        updated = re.sub(r"(?m)^(\s*witness_evidence\s*:\s*).*$", rf"\1{quoted}", updated, count=1)
+    else:
+        updated = re.sub(
+            r"(?m)^(\s*human_witness\s*:\s*confirmed\s*\n)",
+            rf"\1  witness_evidence: {quoted}\n",
+            updated,
+            count=1,
+        )
+    return updated
+
+
+def _owner_acceptance_replay(conn, task_id: str, request) -> Optional[Dict[str, Any]]:
+    """Replay one explicit owner request without reselecting mutated acceptance rows."""
+    if not request.explicit:
+        return None
+    rows = conn.execute(
+        "SELECT * FROM task_event WHERE event_type='OWNER_ACCEPTANCE_DECISION' ORDER BY id"
+    ).fetchall()
+    found = None
+    for row in rows:
+        try:
+            detail = json.loads(row["detail_json"] or "{}")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(detail, dict):
+            continue
+        logical = detail.get("logical_request")
+        request_value = detail.get("request_id")
+        if not request_value and isinstance(logical, dict):
+            request_value = logical.get("request_id")
+        if request_value != request.request_id:
+            continue
+        if str(row["task_id"] or "") != str(task_id):
+            raise ValueError("REQUEST_ID_CONFLICT: request id already belongs to another task")
+        if (not isinstance(logical, dict)
+                or logical.get("operation") != "acceptance-override"
+                or logical.get("payload_sha256") != request.payload_sha256
+                or not isinstance(logical.get("response"), dict)):
+            raise ValueError("REQUEST_ID_CONFLICT: the ID belongs to different semantics; use a new ID for new work")
+        if found is not None:
+            raise ValueError("REQUEST_RECORD_INVALID: duplicate owner acceptance receipt; reconcile before retrying")
+        found = dict(logical["response"])
+    if found is not None:
+        if (found.get("task_id") != task_id
+                or found.get("request_id") != request.request_id
+                or found.get("payload_sha256") != request.payload_sha256):
+            raise ValueError("REQUEST_RECORD_INVALID: owner acceptance receipt does not match its request")
+        found["replayed"] = True
+    return found
+
+
+def _owner_acceptance_replay_serialized(conn, task_id: str, request) -> Optional[Dict[str, Any]]:
+    """Recheck an explicit request after a mutable preflight observation."""
+    if not request.explicit:
+        return None
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        return _owner_acceptance_replay(conn, task_id, request)
+    finally:
+        conn.execute("ROLLBACK")
+
+
+def cmd_task_acceptance_override(args) -> int:
+    """Record an explicit human_owner acceptance/defer/waive decision.
+
+    This is an audited Runtime write, not a manual SQLite/artifact edit. ``accept``
+    records a human result and its source receipt; it never fabricates automated
+    execution or visual evidence.
     """
     if args.actor != "human_owner":
         print("ERROR: acceptance-override requires --actor human_owner", file=sys.stderr)
@@ -1711,11 +1923,36 @@ def cmd_task_acceptance_override(args) -> int:
     if not os.path.isfile(db_path):
         print(f"ERROR: database not found: {db_path}", file=sys.stderr)
         return 4
-    text = acceptance_path.read_text(encoding="utf-8-sig")
-    rows = _acceptance_table_rows(text)
     conn = dbmod.connect(db_path)
     try:
         from . import transaction_commit, projection_cmd, event_policies
+        from . import recording, command_context
+        source = str(getattr(args, "source", "") or "").strip()
+        if args.mode == "accept" and not source:
+            print("ERROR: accept requires --source with the owner-provided acceptance statement", file=sys.stderr)
+            return 6
+        if args.mode in {"defer", "waive"} and (not args.reason or not args.residual_risk):
+            print(f"ERROR: {args.mode} requires --reason and --residual-risk", file=sys.stderr)
+            return 6
+        request_payload = {
+            "mode": args.mode,
+            "scope": args.scope or "",
+            "acs": sorted(dict.fromkeys(args.ac or [])),
+            "source": source,
+            "reason": args.reason or "",
+            "residual_risk": args.residual_risk or "",
+            "reverify_owner": args.reverify_owner or "",
+            "trigger": args.trigger or "",
+        }
+        request = recording.LogicalRequest(
+            args.task, task_dir, "acceptance-override", request_payload,
+            getattr(args, "request_id", None),
+        )
+        replay = _owner_acceptance_replay(conn, args.task, request)
+        if replay is not None:
+            print(json.dumps(replay, ensure_ascii=False))
+            return 0
+
         task = conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
         if task is None:
             print(f"ERROR: task not found: {args.task}", file=sys.stderr)
@@ -1724,34 +1961,129 @@ def cmd_task_acceptance_override(args) -> int:
             print("ERROR: retired historical tasks are immutable archives", file=sys.stderr)
             return 5
         state = str(task["current_state"] or "")
-        if state not in {"ACTIVE", "VERIFYING", "BROWSER_VERIFYING", "REVIEWING"}:
-            print("ERROR: acceptance-override requires ACTIVE work or a legacy verification state", file=sys.stderr)
+        if state not in {"ACTIVE", "VERIFYING", "BROWSER_VERIFYING", "REVIEWING", "BLOCKED"}:
+            print("ERROR: acceptance-override requires non-terminal active work or BLOCKED state", file=sys.stderr)
             return 5
 
+        text = acceptance_path.read_text(encoding="utf-8-sig")
+        acceptance_before = hashlib.sha256(acceptance_path.read_bytes()).hexdigest()
+        rows = _acceptance_table_rows(text)
         selected: List[str] = []
-        if args.scope == "human-pending":
-            selected.extend(ac for ac, row in rows.items() if row["witness"] == "human" and row["verdict"] == "PENDING")
-        selected.extend(args.ac or [])
+        explicit_acs = list(args.ac or [])
+        visual_scope = None
+        if args.scope == "visual":
+            from .yaml_checks import check_acceptance_yaml
+            visual_check = check_acceptance_yaml(
+                text, enforce_completion=False, allow_human_pending=True,
+            )
+            if not visual_check.ok:
+                print(
+                    "ERROR: acceptance-override visual scope is invalid: "
+                    + "; ".join(visual_check.issues),
+                    file=sys.stderr,
+                )
+                return 7
+            visual = (visual_check.page_verification or {}).get("visual")
+            refs = visual.get("acceptance_refs") if isinstance(visual, dict) else None
+            if not isinstance(refs, list) or not refs or any(
+                    not isinstance(value, str) or not value.strip()
+                    for value in refs
+            ):
+                print(
+                    "ERROR: visual acceptance-override requires non-empty "
+                    "page_verification.visual.acceptance_refs",
+                    file=sys.stderr,
+                )
+                return 6
+            visual_scope = {str(value).strip() for value in refs}
+            outside = [ac for ac in explicit_acs if ac not in visual_scope]
+            if outside:
+                print(
+                    "ERROR: visual acceptance-override ACs must be declared in "
+                    "page_verification.visual.acceptance_refs: " + ", ".join(outside),
+                    file=sys.stderr,
+                )
+                return 6
+        if args.scope in {"human-pending", "visual"}:
+            selected.extend(
+                ac for ac, row in rows.items()
+                if row["witness"] == "human" and row["verdict"] == "PENDING"
+                and (visual_scope is None or ac in visual_scope)
+            )
+        selected.extend(explicit_acs)
         selected = list(dict.fromkeys(selected))
         if not selected:
+            replay = _owner_acceptance_replay_serialized(conn, args.task, request)
+            if replay is not None:
+                print(json.dumps(replay, ensure_ascii=False))
+                return 0
             print("ERROR: no acceptance criteria selected", file=sys.stderr)
             return 6
         missing = [ac for ac in selected if ac not in rows]
         if missing:
             print("ERROR: unknown acceptance criteria: " + ", ".join(missing), file=sys.stderr)
             return 6
-        illegal = [ac for ac in selected if rows[ac]["verdict"] not in {"PENDING", "BLOCKED", "DEFERRED_ACCEPTED", "OWNER_WAIVED"}]
+        stale_owner_passes = {
+            ac for ac in selected
+            if args.mode == "accept"
+            and rows[ac]["verdict"] == "PASS"
+            and _stale_owner_acceptance_pass(conn, args.task, task_dir, ac, rows[ac])
+        }
+        illegal = [
+            ac for ac in selected
+            if rows[ac]["verdict"] not in {"PENDING", "BLOCKED", "DEFERRED_ACCEPTED", "OWNER_WAIVED"}
+            and ac not in stale_owner_passes
+        ]
         if illegal:
+            replay = _owner_acceptance_replay_serialized(conn, args.task, request)
+            if replay is not None:
+                print(json.dumps(replay, ensure_ascii=False))
+                return 0
             print("ERROR: acceptance-override only applies to pending/blocked/deferred/waived rows: " + ", ".join(illegal), file=sys.stderr)
+            return 6
+        if args.mode == "accept" and any(rows[ac]["witness"] != "human" for ac in selected):
+            print("ERROR: accept only applies to acceptance criteria witnessed by human", file=sys.stderr)
+            return 6
+        if args.scope == "visual" and args.mode != "accept":
+            print("ERROR: --scope visual is only valid with --mode accept", file=sys.stderr)
             return 6
         if args.mode == "defer" and (not args.reverify_owner or not args.trigger):
             print("ERROR: defer requires --reverify-owner and --trigger", file=sys.stderr)
             return 6
 
+        development = None
+        current_change_set = None
+        subject_digest = ""
+        source_rel = ""
+        source_text = ""
+        if args.mode == "accept":
+            from . import record_first
+            from .change_set import capture_change_set, same_bound_product_content
+            development = record_first._latest_development_change_set(conn, args.task)
+            if (not development or not development.get("change_set_id")
+                    or not development.get("repo_roots")):
+                print("ERROR: accept requires a bound current Development ChangeSet", file=sys.stderr)
+                return 7
+            current_change_set = capture_change_set(development["repo_roots"])
+            if not same_bound_product_content(development["detail"], current_change_set):
+                print("ERROR: DEVELOPMENT_CHANGE_SET_STALE: product changed before owner acceptance", file=sys.stderr)
+                return 7
+            from .digest import compute_verification_subject_digest
+            subject_digest = compute_verification_subject_digest(task_dir)
+            source_rel = _owner_acceptance_source_path(request.request_id)
+            source_text = _owner_acceptance_source_document(source)
+            source_path = task_dir / source_rel
+            if source_path.is_file() and source_path.read_text(encoding="utf-8") != source_text:
+                print("ERROR: REQUEST_ID_CONFLICT: owner source receipt already has different content", file=sys.stderr)
+                return 6
+
         target_verdict = "DEFERRED_ACCEPTED" if args.mode == "defer" else "OWNER_WAIVED"
         timestamp = dbmod.now_iso()
-        verdicts = {ac: target_verdict for ac in selected}
-        updated = _set_acceptance_verdicts(text, verdicts)
+        if args.mode == "accept":
+            updated = _set_owner_acceptance_result(text, selected, source_rel)
+        else:
+            verdicts = {ac: target_verdict for ac in selected}
+            updated = _set_acceptance_verdicts(text, verdicts)
         if args.mode == "defer":
             entries = [{
                 "ac": ac,
@@ -1762,7 +2094,7 @@ def cmd_task_acceptance_override(args) -> int:
                 "trigger": args.trigger,
             } for ac in selected]
             updated = _upsert_acceptance_yaml_list(updated, "deferred_acceptance", entries)
-        else:
+        elif args.mode == "waive":
             entries = [{
                 "ac": ac,
                 "recorded_at": timestamp,
@@ -1782,8 +2114,55 @@ def cmd_task_acceptance_override(args) -> int:
         flush_id = f"OWNER-ACCEPT-{uuid.uuid4().hex}"
         view_rel = transaction_commit._current_view_rel(state)
         owner = str(task["owner_role"] or "")
+        waiting_fact = {}
+        if state == "BLOCKED":
+            from . import waiting
+            waiting_fact = waiting.load_wait(conn, args.task)
+        human_pending_before = {
+            ac for ac, row in rows.items()
+            if row["witness"] == "human"
+            and row["verdict"] in {"PENDING", "BLOCKED", "DEFERRED_ACCEPTED", "OWNER_WAIVED"}
+        }
+        resume_wait = bool(
+            args.mode == "accept" and state == "BLOCKED"
+            and waiting_fact.get("kind") == "human_acceptance"
+            and human_pending_before.issubset(set(selected))
+        )
+        reason = args.reason or source or "Owner acceptance decision"
+        residual_risk = args.residual_risk or (
+            "Automated visual execution remains unrun; this record covers only the declared owner scope."
+            if args.scope == "visual" else "No additional residual risk was stated by the owner."
+        )
+        response = {
+            "task_id": args.task,
+            "request_id": request.request_id,
+            "payload_sha256": request.payload_sha256,
+            "mode": args.mode,
+            "acs": selected,
+            "state_before": state,
+            "source_evidence": source_rel or None,
+            "visual_scope": args.scope == "visual",
+            "facts_committed": True,
+            "replayed": False,
+        }
 
         def db_and_render(tx_conn, transaction_id=""):
+            fresh_task = tx_conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
+            if fresh_task is None or str(fresh_task["current_state"] or "") != state:
+                raise ValueError("TASK_FACTS_CHANGED: task state changed before owner decision")
+            if hashlib.sha256(acceptance_path.read_bytes()).hexdigest() != acceptance_before:
+                raise ValueError("ACCEPTANCE_CHANGED_BEFORE_COMMIT: reread the current acceptance declaration")
+            if args.mode == "accept":
+                from . import record_first
+                from .change_set import capture_change_set, same_bound_product_content
+                from .digest import compute_verification_subject_digest
+                latest = record_first._latest_development_change_set(tx_conn, args.task)
+                if (not latest or latest.get("event_id") != development.get("event_id")
+                        or not latest.get("repo_roots")
+                        or not same_bound_product_content(latest["detail"], capture_change_set(latest["repo_roots"]))
+                        or latest.get("change_set_id") != development.get("change_set_id")
+                        or compute_verification_subject_digest(task_dir) != subject_digest):
+                    raise ValueError("OWNER_ACCEPTANCE_STALE: subject or product changed before commit")
             detail = {
                 "transaction_id": transaction_id,
                 "producer": "task_acceptance_override",
@@ -1794,11 +2173,29 @@ def cmd_task_acceptance_override(args) -> int:
                 "flush_id": flush_id,
                 "mode": args.mode,
                 "acs": selected,
-                "reason": args.reason,
-                "residual_risk": args.residual_risk,
+                "reason": reason,
+                "residual_risk": residual_risk,
                 "reverify_owner": args.reverify_owner or "",
                 "trigger": args.trigger or "",
             }
+            if args.mode == "accept":
+                detail.update({
+                    "request_id": request.request_id,
+                    "payload_sha256": request.payload_sha256,
+                    "decision_source": {
+                        "kind": "human_owner_statement",
+                        "reference": source,
+                        "invocation_id": command_context.invocation_id(),
+                    },
+                    "change_set_id": str(current_change_set.get("content_digest") or ""),
+                    "change_set_snapshot_digest": str(current_change_set.get("snapshot_digest") or ""),
+                    "subject_digest": subject_digest,
+                    "repo_roots": list(development["repo_roots"]),
+                    "source_evidence": source_rel,
+                    "source_evidence_sha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+                    "visual_scope": {"kind": "selected_acceptance", "acs": selected} if args.scope == "visual" else None,
+                })
+            detail["logical_request"] = request.detail(response)
             tx_conn.execute(
                 "INSERT INTO task_event (task_id,event_type,actor_role,reason_code,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?)",
                 (args.task, "OWNER_ACCEPTANCE_DECISION", "human_owner", args.mode.upper(),
@@ -1812,20 +2209,53 @@ def cmd_task_acceptance_override(args) -> int:
                 print(f"WARN: {warning}", file=sys.stderr)
             return transaction_commit._finalize_texts(
                 task_dir,
-                {"acceptance.md": updated, "status.yaml": status_yaml, "events.jsonl": events_jsonl},
+                {"acceptance.md": updated, "status.yaml": status_yaml, "events.jsonl": events_jsonl,
+                 **({source_rel: source_text} if source_rel else {})},
                 view_rel,
                 lambda: transaction_commit._rebuild_current_view_text(
                     task_dir, refreshed, f"human_owner acceptance {args.mode}: {', '.join(selected)}", flush_id
                 ),
             )
 
-        transaction_commit._commit_with_recovery(
-            task_dir, conn, ["acceptance.md", "status.yaml", "events.jsonl", view_rel], db_and_render,
-            task_id=args.task, operation="owner_acceptance_override",
-            db_state_before=state, target_state=state,
-            owner_before=owner, owner_after=owner, flush_id=flush_id,
-        )
-        print(f"acceptance-override: mode={args.mode}; acs={','.join(selected)}; state={state}; flush_id={flush_id}")
+        def replay_under_writer_lock(tx_conn):
+            replayed = _owner_acceptance_replay(tx_conn, args.task, request)
+            if replayed is not None:
+                raise recording.RequestReplay(replayed)
+
+        try:
+            transaction_commit._commit_with_recovery(
+                task_dir, conn, ["acceptance.md", "status.yaml", "events.jsonl", view_rel] + ([source_rel] if source_rel else []), db_and_render,
+                task_id=args.task, operation="owner_acceptance_override",
+                db_state_before=state, target_state=state,
+                owner_before=owner, owner_after=owner, flush_id=flush_id,
+                before_prepare=replay_under_writer_lock,
+            )
+        except recording.RequestReplay as replay:
+            print(json.dumps(replay.result, ensure_ascii=False))
+            return 0
+        resumed = False
+        resume_error = None
+        if resume_wait:
+            from . import record_first
+            try:
+                record_first.resume(
+                    task_id=args.task, task_dir=str(task_dir), actor="human_owner",
+                    summary="Owner acceptance resolved the human acceptance wait",
+                    phase=str(task["current_stage"] or "other"),
+                    resolution_evidence=[source_rel], db=db_path,
+                    expected_block_event_id=waiting_fact.get("block_event_id"),
+                    expected_wait_kind=waiting_fact.get("kind"),
+                )
+                resumed = True
+            except ValueError as exc:
+                resume_error = str(exc)
+        if args.mode == "accept":
+            response["resumed"] = resumed
+            if resume_error:
+                response["resume_error"] = resume_error
+            print(json.dumps(response, ensure_ascii=False))
+        else:
+            print(f"acceptance-override: mode={args.mode}; acs={','.join(selected)}; state={state}; flush_id={flush_id}")
         return 0
     finally:
         conn.close()
@@ -1851,6 +2281,15 @@ def _parse_context_usage_arg(raw):
     return decoded
 
 
+def cmd_task_run_pytest(args) -> int:
+    from .pytest_execution import run_pytest
+    result = run_pytest(task_id=args.task, task_dir=args.task_dir, tests=args.test,
+                        repo_root=args.repo_root, authorization_evidence=args.authorization_evidence,
+                        request_id=args.request_id, summary=args.summary, timeout=args.timeout, db=args.db)
+    print(json.dumps(result, ensure_ascii=False))
+    return int(result["command_exit_code"])
+
+
 def cmd_task_checkpoint(args) -> int:
     from . import record_first
     result = record_first.checkpoint(
@@ -1859,7 +2298,10 @@ def cmd_task_checkpoint(args) -> int:
         knowledge_signals=_parse_knowledge_signal_args(args.knowledge_signal_json),
         delivery_signals=args.delivery_signal,
         context_usage=_parse_context_usage_arg(args.context_usage_json),
-        repo_roots=args.repo_root, db=args.db,
+        repo_roots=args.repo_root, request_id=args.request_id, collect=args.collect,
+        result_reports=getattr(args, "result_report", None),
+        report_artifact_root=getattr(args, "report_artifact_root", None),
+        recorded_result_ids=getattr(args, "recorded_result", None), db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1869,7 +2311,9 @@ def cmd_task_block(args) -> int:
     from . import record_first
     result = record_first.block(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
-        reason=args.reason, phase=args.phase, db=args.db,
+        reason=args.reason, phase=args.phase, kind=args.kind,
+        responsibility=args.responsibility, condition=args.condition,
+        requires_tasks=args.requires_task, prerequisite_evidence=args.prerequisite_evidence, db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1879,7 +2323,7 @@ def cmd_task_resume(args) -> int:
     from . import record_first
     result = record_first.resume(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
-        summary=args.summary, phase=args.phase, db=args.db,
+        summary=args.summary, phase=args.phase, resolution_evidence=args.resolution_evidence, db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1890,9 +2334,10 @@ def cmd_task_verify(args) -> int:
     result = record_first.verify(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
         decision=args.decision, summary=args.summary, evidence=args.evidence,
+        scope=getattr(args, "scope", "full"), checks=getattr(args, "check", None),
         knowledge_signals=_parse_knowledge_signal_args(args.knowledge_signal_json),
         delivery_signals=args.delivery_signal,
-        context_usage=_parse_context_usage_arg(args.context_usage_json), db=args.db,
+        context_usage=_parse_context_usage_arg(args.context_usage_json), request_id=args.request_id, db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1914,6 +2359,14 @@ def cmd_task_delivery_converge(args) -> int:
 
 def cmd_task_complete(args) -> int:
     from . import record_first
+    if args.check:
+        result = record_first.completion_check(
+            task_id=args.task, task_dir=args.task_dir, db=args.db,
+        )
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result.get("ready") else 1
+    if not args.summary:
+        raise ValueError("complete requires --summary unless --check is used")
     result = record_first.complete(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
         summary=args.summary, db=args.db,
@@ -1940,6 +2393,12 @@ def cmd_task_scope_change(args) -> int:
         summary = str(args.summary or "").strip()
         if not scope_id or not summary:
             raise ValueError("scope change requires non-empty --scope-id and --summary")
+        repo_roots = getattr(args, "repo_root", None)
+        if repo_roots is not None:
+            from .change_set import _git_root
+            repo_roots = sorted({str(_git_root(value)) for value in repo_roots})
+            if not repo_roots:
+                raise ValueError("DELIVERY_SCOPE_INVALID: an explicit repository scope cannot be empty")
         now = dbmod.now_iso()
         flush_id = f"SCOPE-{uuid.uuid4().hex}"
         owner = str(task["owner_role"] or "")
@@ -1956,6 +2415,8 @@ def cmd_task_scope_change(args) -> int:
                 "scope_id": scope_id,
                 "summary": summary,
             }
+            if repo_roots is not None:
+                detail["repo_roots"] = repo_roots
             detail = event_contract.add_event_semantics(
                 detail, event_type="SCOPE_CHANGE", operation="SCOPE_CHANGE",
                 result_status="COMPLETED", producer="task_scope_change",
@@ -2022,12 +2483,12 @@ def add_task_subparsers(task_parser) -> None:
     p_create.add_argument("--flow", required=True, choices=["L0", "L1", "L2", "L3"])
     p_create.add_argument("--summary", required=False, default="任务创建")
     p_create.add_argument("--db", required=False, default=None)
-    p_create.add_argument("--scaffold", action="store_true", help="Create the V5.3.1 task directory and templates together with the DB task")
+    p_create.add_argument("--scaffold", action="store_true", help="Create the V5.3.2 task directory and templates together with the DB task")
     p_create.add_argument("--from-intake", required=False, default=None, help="Adopt pre-task requirement artifacts from an intake directory; implies --scaffold and preserves source")
     p_create.add_argument("--task-dir", required=False, default=None, help="Scaffold destination (default: .tp-spec/tasks/<TASK-ID>)")
     p_create.set_defaults(func=cmd_task_create)
 
-    # V5.3.1 Record-first daily API: business facts, not workflow bookkeeping.
+    # V5.3.2 Record-first daily API: business facts, not workflow bookkeeping.
     from . import record_first
     p_cp = sub.add_parser("checkpoint", help="Record meaningful task progress; auto-activates NEW and rebuilds projections")
     p_cp.add_argument("--task", required=True)
@@ -2036,12 +2497,29 @@ def add_task_subparsers(task_parser) -> None:
     p_cp.add_argument("--phase", required=True, choices=record_first.PHASES)
     p_cp.add_argument("--summary", required=True)
     p_cp.add_argument("--evidence", action="append")
+    p_cp.add_argument("--request-id", help="reuse for retrying one logical request; new work needs a new ID")
+    p_cp.add_argument("--collect", action="append", help="copy a completed local output into bound task evidence; repeatable")
+    p_cp.add_argument("--recorded-result", type=int, action="append", help="reference a trusted existing development/verification/CODE event without re-signing it")
+    p_cp.add_argument("--result-report", action="append", help="accept an existing JUnit/Base/review/Playwright JSON report as an observation; never executes a tool or grants PASS")
+    p_cp.add_argument("--report-artifact-root", help="explicitly opt in to collect report-declared browser media under this approved local output directory; no network or arbitrary file discovery")
     p_cp.add_argument("--knowledge-signal-json", action="append", help="structured JSON object with type/summary and optional evidence/source_refs")
     p_cp.add_argument("--delivery-signal", action="append")
     p_cp.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks checkpoint")
     p_cp.add_argument("--repo-root", action="append", default=None, help="explicit product Git root; repeat for multi-repo Development checkpoint")
     p_cp.add_argument("--db", default=None)
     p_cp.set_defaults(func=cmd_task_checkpoint)
+
+    p_run = sub.add_parser("run-pytest", help="Run explicitly authorized, selected pytest files and auto-record observed outputs; never grants formal PASS")
+    p_run.add_argument("--task", required=True)
+    p_run.add_argument("--task-dir", required=True)
+    p_run.add_argument("--test", action="append", required=True, help="explicit .py file or node ID inside one bound repo; repeatable, no arbitrary options")
+    p_run.add_argument("--repo-root", help="one root already bound by the development checkpoint; required for multi-repo tasks")
+    p_run.add_argument("--authorization-evidence", required=True, help="existing evidence for the caller's approved command scope; a reference is not itself a grant")
+    p_run.add_argument("--request-id", required=True, help="stable logical test-run ID; never reuse for new execution")
+    p_run.add_argument("--summary", required=True)
+    p_run.add_argument("--timeout", type=float, default=600.0, help="seconds to wait for the owned pytest process; no automatic rerun after interruption")
+    p_run.add_argument("--db", default=None)
+    p_run.set_defaults(func=cmd_task_run_pytest)
 
     p_block = sub.add_parser("block", help="Record a real blocker and set task state BLOCKED")
     p_block.add_argument("--task", required=True)
@@ -2050,6 +2528,12 @@ def add_task_subparsers(task_parser) -> None:
     p_block.add_argument("--reason", required=True)
     p_block.add_argument("--phase", choices=record_first.PHASES)
     p_block.add_argument("--db", default=None)
+    from .waiting import KINDS
+    p_block.add_argument("--kind", choices=KINDS, default="unspecified")
+    p_block.add_argument("--responsibility", choices=record_first.ACTORS)
+    p_block.add_argument("--condition", help="specific recovery condition; not an executable expression")
+    p_block.add_argument("--requires-task", action="append", help="same-project dependency task; repeatable")
+    p_block.add_argument("--prerequisite-evidence", action="append", help="current failed prerequisite evidence/*")
     p_block.set_defaults(func=cmd_task_block)
 
     p_resume = sub.add_parser("resume", help="Resolve the explicit blocker and resume ACTIVE work")
@@ -2059,6 +2543,7 @@ def add_task_subparsers(task_parser) -> None:
     p_resume.add_argument("--summary", required=True)
     p_resume.add_argument("--phase", choices=record_first.PHASES)
     p_resume.add_argument("--db", default=None)
+    p_resume.add_argument("--resolution-evidence", action="append", help="new evidence/* for typed wait resolution")
     p_resume.set_defaults(func=cmd_task_resume)
 
     p_verify = sub.add_parser("verify", help="Record actual technical verification; PASS requires real evidence/* and never acts as a phase gate")
@@ -2068,6 +2553,9 @@ def add_task_subparsers(task_parser) -> None:
     p_verify.add_argument("--decision", required=True, choices=["PASS", "FAIL", "NEEDS_FIX"])
     p_verify.add_argument("--summary", required=True)
     p_verify.add_argument("--evidence", action="append")
+    p_verify.add_argument("--scope", choices=["full", "technical"], default="full", help="full keeps all existing checks; technical is explicitly limited and cannot satisfy delivery/completion")
+    p_verify.add_argument("--check", action="append", help="actual check performed; required for technical scope, repeat for multiple checks")
+    p_verify.add_argument("--request-id", help="reuse only for retrying the same actual verification record")
     p_verify.add_argument("--knowledge-signal-json", action="append", help="structured JSON object with type/summary and optional evidence/source_refs")
     p_verify.add_argument("--delivery-signal", action="append")
     p_verify.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks verification")
@@ -2091,11 +2579,12 @@ def add_task_subparsers(task_parser) -> None:
     p_delivery.add_argument("--db", default=None)
     p_delivery.set_defaults(func=cmd_task_delivery_converge)
 
-    p_complete = sub.add_parser("complete", help="Record terminal completion and expose actual verification facts; no CLOSING phase")
+    p_complete = sub.add_parser("complete", help="Record terminal completion or run a read-only completion preflight")
     p_complete.add_argument("--task", required=True)
     p_complete.add_argument("--task-dir", required=True)
     p_complete.add_argument("--actor", required=False, default=None, choices=record_first.ACTORS, help="optional; defaults to current task owner")
-    p_complete.add_argument("--summary", required=True)
+    p_complete.add_argument("--summary", required=False, default="")
+    p_complete.add_argument("--check", action="store_true", help="read-only preflight; does not write task facts or projections")
     p_complete.add_argument("--db", default=None)
     p_complete.set_defaults(func=cmd_task_complete)
 
@@ -2105,6 +2594,7 @@ def add_task_subparsers(task_parser) -> None:
     p_scope.add_argument("--actor", default="human_owner", choices=["human_owner"])
     p_scope.add_argument("--scope-id", required=True)
     p_scope.add_argument("--summary", required=True)
+    p_scope.add_argument("--repo-root", action="append", help="owner-approved complete effective repository list; repeat for every included repo; omitted means no repository-scope replacement, not an operation grant")
     p_scope.add_argument("--db", default=None)
     p_scope.set_defaults(func=cmd_task_scope_change)
 
@@ -2165,16 +2655,18 @@ def add_task_subparsers(task_parser) -> None:
     p_retire.add_argument("--db", required=False, default=None)
     p_retire.set_defaults(func=cmd_task_retire)
 
-    # task acceptance-override (human_owner audited defer/waive; no false PASS)
-    p_accept = sub.add_parser("acceptance-override", help="human_owner: defer or waive selected acceptance criteria without forging PASS")
+    # task acceptance-override (human_owner audited accept/defer/waive)
+    p_accept = sub.add_parser("acceptance-override", help="human_owner: record a scoped acceptance, defer, or waive decision")
     p_accept.add_argument("--task", required=True)
     p_accept.add_argument("--task-dir", required=True)
     p_accept.add_argument("--actor", default="human_owner", choices=["human_owner"])
-    p_accept.add_argument("--mode", required=True, choices=["defer", "waive"])
-    p_accept.add_argument("--scope", choices=["human-pending"], default=None)
+    p_accept.add_argument("--mode", required=True, choices=["accept", "defer", "waive"])
+    p_accept.add_argument("--scope", choices=["human-pending", "visual"], default=None)
     p_accept.add_argument("--ac", action="append", help="acceptance criterion id; repeatable")
-    p_accept.add_argument("--reason", required=True)
-    p_accept.add_argument("--residual-risk", required=True)
+    p_accept.add_argument("--source", default=None, help="owner-provided acceptance statement; required for --mode accept")
+    p_accept.add_argument("--request-id", default=None, help="stable logical request id for safe replay")
+    p_accept.add_argument("--reason", default=None)
+    p_accept.add_argument("--residual-risk", default=None)
     p_accept.add_argument("--reverify-owner", default=None)
     p_accept.add_argument("--trigger", default=None)
     p_accept.add_argument("--db", default=None)

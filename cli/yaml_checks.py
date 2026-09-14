@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""V5.3.1 fail-closed YAML 解析与工件结构校验（Hardening P0-3/P1-4）。
+"""V5.3.2 fail-closed YAML 解析与工件结构校验（Hardening P0-3/P1-4）。
 
-依据：《V5.3.1 执行AI统一修复与自验证任务》§9.1（使用真实 YAML 解析，禁止仅正则）
-与《V5.3.1 源码级发布审查报告》P1-4（deferred_acceptance 仍使用正则）。
+依据：《V5.3.2 执行AI统一修复与自验证任务》§9.1（使用真实 YAML 解析，禁止仅正则）
+与《V5.3.2 源码级发布审查报告》P1-4（deferred_acceptance 仍使用正则）。
 
 设计：
 - ``parse_yaml_fail_closed(text, name)``：真实 YAML 解析（pyyaml 可用时），
@@ -232,6 +232,23 @@ def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_h
                 if not isinstance(required, bool):
                     result.ok = False
                     result.issues.append("page_verification.visual.required must be boolean")
+                if "acceptance_refs" in visual:
+                    refs = visual.get("acceptance_refs")
+                    if not isinstance(refs, list) or any(
+                            not isinstance(value, str) or not value.strip()
+                            for value in refs
+                    ):
+                        result.ok = False
+                        result.issues.append("page_verification.visual.acceptance_refs must be a list of non-empty strings")
+                    else:
+                        refs0 = [str(value).strip() for value in refs]
+                        unknown_refs = [value for value in refs0 if value not in ac_verdicts]
+                        if unknown_refs:
+                            result.ok = False
+                            result.issues.append(
+                                "page_verification.visual unknown acceptance_refs: "
+                                + ", ".join(unknown_refs)
+                            )
                 if required is True and not str(visual.get("evidence_manifest") or "").strip():
                     result.ok = False
                     result.issues.append("page_verification.visual required=true needs evidence_manifest")

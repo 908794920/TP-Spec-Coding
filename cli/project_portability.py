@@ -8,6 +8,9 @@ paths, but should not duplicate the current machine's global content roots.
 from __future__ import annotations
 
 import copy
+import hashlib
+import stat
+import tempfile
 import os
 import re
 from pathlib import Path
@@ -15,7 +18,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
-from cli.content_systems import same_path
+from cli.content_systems import same_path, load_content_systems
+from cli.config_loader import load_config
+from cli.project_surface import project_path_issue
 from cli.environment import load_installation_config
 
 _DRIVE_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
@@ -34,20 +39,6 @@ def _resolved(raw: str, workspace: Path) -> Optional[Path]:
     if not p.is_absolute():
         return None
     return p.resolve(strict=False)
-
-
-def _prune(value: Any) -> Any:
-    if isinstance(value, dict):
-        out = {}
-        for key, child in value.items():
-            cleaned = _prune(child)
-            if cleaned in ({}, [], "", None):
-                continue
-            out[key] = cleaned
-        return out
-    if isinstance(value, list):
-        return [_prune(v) for v in value]
-    return value
 
 
 def _walk_machine_paths(value: Any, prefix: str = "") -> List[Tuple[str, str]]:
@@ -70,6 +61,11 @@ def project_portability_plan(workspace_root: "str | Path", *, installation_confi
     workspace = Path(workspace_root).resolve(strict=False)
     path = workspace / ".tp-spec" / "config" / "content-systems.yaml"
     installation = load_installation_config(installation_config)
+    issue = project_path_issue(path, workspace)
+    if issue:
+        return {"schema": "tp-spec.project-portability-plan/v1", "workspace_root": str(workspace),
+                "config_path": str(path), "status": "BLOCKED", "changes": [], "blockers": [issue],
+                "delete_config": False, "normalized": None}
     if not path.is_file():
         return {
             "schema": "tp-spec.project-portability-plan/v1",
@@ -82,7 +78,9 @@ def project_portability_plan(workspace_root: "str | Path", *, installation_confi
             "normalized": None,
         }
     try:
-        original = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
+        before_bytes = path.read_bytes()
+        original = load_config(path, use_cache=False)
+        load_content_systems(workspace, installation_config_path=installation_config)
     except Exception as exc:
         return {
             "schema": "tp-spec.project-portability-plan/v1",
@@ -118,19 +116,14 @@ def project_portability_plan(workspace_root: "str | Path", *, installation_confi
             if "tp_spec_root" in (original.get("paths") or {}):
                 changes.append({"action": "REMOVE_EMPTY_OVERRIDE", "field": "paths.tp_spec_root"})
 
-    base_defaults = yaml.safe_load((Path(__file__).resolve().parents[1] / "governance" / "content-systems.yaml").read_text(encoding="utf-8-sig")) or {}
-    default_systems = base_defaults.get("systems") or {}
     systems = data.get("systems")
     if isinstance(systems, dict):
         for name, install_root in (("wiki", installation.wiki_root), ("knowledge", installation.knowledge_root)):
             sec = systems.get(name)
             if not isinstance(sec, dict):
                 continue
-            defaults = default_systems.get(name) or {}
-            for field in ("enabled", "layout"):
-                if field in sec and sec.get(field) == defaults.get(field):
-                    sec.pop(field, None)
-                    changes.append({"action": "REMOVE_REDUNDANT_DEFAULT_OVERRIDE", "field": f"systems.{name}.{field}"})
+            # Explicit semantic values remain pinned, even when they currently
+            # equal Base defaults. Only known machine-path duplicates are removed.
             raw = str(sec.get("root") or "").strip()
             if not raw:
                 if "root" in sec:
@@ -149,7 +142,17 @@ def project_portability_plan(workspace_root: "str | Path", *, installation_confi
                 sec.pop("registry", None)
                 changes.append({"action": "REMOVE_EMPTY_OVERRIDE", "field": f"systems.{name}.registry"})
 
-    normalized = _prune(data)
+    # Prune only containers emptied by the path cleanup above. Recursive pruning
+    # would erase deliberate []/false/empty overrides and re-enable Base defaults.
+    if isinstance(systems, dict):
+        for name in ("wiki", "knowledge"):
+            if name in systems and systems[name] == {} and (original.get("systems") or {}).get(name):
+                del systems[name]
+        if not systems and original.get("systems"):
+            data.pop("systems", None)
+    if isinstance(paths, dict) and not paths and original.get("paths"):
+        data.pop("paths", None)
+    normalized = data
     if not isinstance(normalized, dict):
         normalized = {}
     if original.get("schema"):
@@ -173,6 +176,7 @@ def project_portability_plan(workspace_root: "str | Path", *, installation_confi
         "blockers": sorted(set(blockers)),
         "delete_config": delete_config,
         "normalized": normalized,
+        "before_sha256": hashlib.sha256(before_bytes).hexdigest(),
     }
 
 
@@ -181,12 +185,33 @@ def normalize_project_portability(workspace_root: "str | Path", *, installation_
     if plan["status"] == "BLOCKED" or not apply or plan["status"] == "CURRENT":
         return {**plan, "apply": bool(apply)}
     path = Path(plan["config_path"])
-    if plan["delete_config"]:
-        path.unlink(missing_ok=True)
-        action = "DELETE_REDUNDANT_PROJECT_CONTENT_CONFIG"
-    else:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(yaml.safe_dump(plan["normalized"], allow_unicode=True, sort_keys=False), encoding="utf-8", newline="\n")
-        action = "WRITE_PORTABLE_PROJECT_CONTENT_CONFIG"
+    workspace = Path(plan["workspace_root"])
+    temporary = None
+    try:
+        def check_unchanged():
+            issue = project_path_issue(path, workspace)
+            if issue:
+                raise ValueError(issue)
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != plan["before_sha256"]:
+                raise ValueError(f"PROJECT_CONFIG_CHANGED: replan before writing {path}")
+        check_unchanged()
+        if plan["delete_config"]:
+            path.unlink()
+            action = "DELETE_REDUNDANT_PROJECT_CONTENT_CONFIG"
+        else:
+            mode = stat.S_IMODE(path.stat().st_mode)
+            with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".tp-spec-config-", delete=False) as handle:
+                temporary = Path(handle.name)
+                handle.write(yaml.safe_dump(plan["normalized"], allow_unicode=True, sort_keys=False).encode("utf-8"))
+            os.chmod(temporary, mode)
+            check_unchanged()
+            os.replace(temporary, path)
+            action = "WRITE_PORTABLE_PROJECT_CONTENT_CONFIG"
+    except (OSError, ValueError) as exc:
+        return {**plan, "status": "BLOCKED", "apply": True,
+                "blockers": [f"{type(exc).__name__}: {exc}"], "recovery": "Recheck the current project override and repeat sync-project --apply."}
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     final = project_portability_plan(workspace_root, installation_config=installation_config)
     return {**final, "apply": True, "applied_action": action, "previous_changes": plan["changes"]}

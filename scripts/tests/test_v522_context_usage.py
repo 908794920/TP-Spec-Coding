@@ -289,7 +289,7 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
         self.assertEqual(detail["context_usage"][0]["source_type"], "memory_skill")
 
     def test_review_persists_context_usage_and_malformed_is_soft(self):
-        template = Path(__file__).resolve().parents[2] / "templates" / "5.3.1" / "architecture-review.md"
+        template = Path(__file__).resolve().parents[2] / "templates" / "5.3.2" / "architecture-review.md"
         shutil.copy2(template, self.task_dir / "architecture-review.md")
         payload = json.dumps([{
             "source_type": "wiki", "asset_id": "wiki:demo/backend/architecture.md",
@@ -314,6 +314,11 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
         self.assertNotIn("context_usage", self.latest_detail("REVIEW_COMPLETED"))
 
     def test_delivery_records_compact_handoff_and_bad_context_is_soft(self):
+        (self.task_dir / "acceptance.md").write_text(
+            '```yaml\nno_acceptance_required:\n  declared: true\n'
+            '  reason: Isolated telemetry contract fixture, not business acceptance.\n```\n',
+            encoding="utf-8",
+        )
         ev = self.task_dir / "evidence" / "verify.txt"
         ev.parent.mkdir(exist_ok=True); ev.write_text("ok\n", encoding="utf-8")
         rc, out, err = self.call(
@@ -321,9 +326,11 @@ class TestContextUsageRuntimeIntegration(unittest.TestCase):
             "--decision", "PASS", "--summary", "verified", "--evidence", "evidence/verify.txt",
         )
         self.assertEqual(rc, 0, (out, err))
+        (self.task_dir / "evidence/code-review.txt").write_text("Synthetic reviewer result\n", encoding="utf-8")
         rc, out, err = self.call(
             "review", "record", "--task", self.task_id, "--task-dir", str(self.task_dir),
             "--actor", "tp-code-reviewer", "--kind", "CODE", "--decision", "PASS", "--summary", "reviewed",
+            "--evidence", "evidence/code-review.txt",
         )
         self.assertEqual(rc, 0, (out, err))
         rc, out, err = self.call(

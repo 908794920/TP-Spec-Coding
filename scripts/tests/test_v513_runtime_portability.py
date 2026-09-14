@@ -235,3 +235,114 @@ class SchedulerBootstrapCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def test_b09_rebind_registry_failure_is_recoverable_without_repeat_db_write(tmp_path, monkeypatch):
+    workspace = tmp_path / 'workspace'; workspace.mkdir()
+    db = workspace / '.tp-spec/db/demo.db'
+    registry = tmp_path / 'registry.json'
+    make_runtime_db(db, 'demo', tmp_path / 'missing-old')
+    original = dbmod.register_project
+    def fail(**kwargs):
+        raise OSError('registry unavailable')
+    monkeypatch.setattr(dbmod, 'register_project', fail)
+    result = apply_runtime_rebind(workspace, 'demo', registry_path=str(registry))
+    assert result['status'] == 'SYNC_REQUIRED' and result['facts_committed'] is True
+    conn = dbmod.connect_readonly(str(db))
+    before = tuple(conn.execute("SELECT * FROM project").fetchone()); conn.close()
+    monkeypatch.setattr(dbmod, 'register_project', original)
+    assert runtime_rebind_plan(workspace, 'demo', registry_path=str(registry))['status'] == 'REBIND_AVAILABLE'
+    result = apply_runtime_rebind(workspace, 'demo', registry_path=str(registry))
+    assert result['status'] == 'CURRENT' and registry.is_file()
+    conn = dbmod.connect_readonly(str(db))
+    assert tuple(conn.execute("SELECT * FROM project").fetchone()) == before; conn.close()
+    mtimes = (db.stat().st_mtime_ns, registry.stat().st_mtime_ns)
+    assert apply_runtime_rebind(workspace, 'demo', registry_path=str(registry))['status'] == 'CURRENT'
+    assert (db.stat().st_mtime_ns, registry.stat().st_mtime_ns) == mtimes
+
+
+def test_b09_current_db_root_does_not_hide_conflicting_live_registry(tmp_path):
+    workspace = tmp_path / 'workspace'; workspace.mkdir()
+    other = tmp_path / 'other-live'; other.mkdir()
+    db = workspace / '.tp-spec/db/demo.db'
+    registry = tmp_path / 'registry.json'
+    make_runtime_db(db, 'demo', workspace)
+    registry.write_text(json.dumps({'projects':[{'project_id':'demo', 'root_path':str(other),
+                                                  'db_path':str(other/'demo.db')}]}))
+    before = registry.read_bytes()
+    result = apply_runtime_rebind(workspace, 'demo', registry_path=str(registry))
+    assert result['status'] == 'BLOCKED', result
+    assert registry.read_bytes() == before
+
+
+def test_b09_registry_corruption_is_not_treated_as_an_empty_cache(tmp_path):
+    workspace = tmp_path / 'workspace'; workspace.mkdir()
+    db = workspace / '.tp-spec/db/demo.db'
+    registry = tmp_path / 'registry.json'
+    make_runtime_db(db, 'demo', workspace)
+    registry.write_text('{"projects": [broken', encoding='utf-8')
+    before = registry.read_bytes()
+    result = apply_runtime_rebind(workspace, 'demo', registry_path=str(registry))
+    assert result['status'] == 'BLOCKED', result
+    assert registry.read_bytes() == before
+
+
+def test_b09_rebind_does_not_replace_another_live_database_at_the_same_root(tmp_path):
+    workspace = tmp_path / 'workspace'; workspace.mkdir()
+    db = workspace / '.tp-spec/db/demo.db'
+    other_db = workspace / 'other.db'
+    registry = tmp_path / 'registry.json'
+    make_runtime_db(db, 'demo', workspace)
+    make_runtime_db(other_db, 'demo', workspace)
+    dbmod.register_project('demo', str(other_db), str(workspace), '5.1.3', 1, registry_path=str(registry))
+    before = registry.read_bytes()
+    result = apply_runtime_rebind(workspace, 'demo', registry_path=str(registry))
+    assert result['status'] == 'BLOCKED', result
+    assert registry.read_bytes() == before
+
+
+def test_b09_rebind_rechecks_identity_after_preflight(tmp_path, monkeypatch):
+    workspace = tmp_path / 'workspace'; workspace.mkdir()
+    other = tmp_path / 'other'; other.mkdir()
+    db = workspace / '.tp-spec/db/demo.db'
+    registry = tmp_path / 'registry.json'
+    make_runtime_db(db, 'demo', tmp_path / 'missing-old')
+    original = dbmod.connect
+    def concurrent_registration(path, *args, **kwargs):
+        dbmod.register_project('demo', str(other / 'demo.db'), str(other), '5.1.3', 1,
+                               registry_path=str(registry))
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(dbmod, 'connect', concurrent_registration)
+    result = apply_runtime_rebind(workspace, 'demo', registry_path=str(registry))
+    assert result['status'] == 'BLOCKED', result
+    assert json.loads(registry.read_text())['projects'][0]['root_path'] == str(other)
+    conn = dbmod.connect_readonly(str(db))
+    try:
+        assert conn.execute('SELECT root_path FROM project').fetchone()[0] == str(tmp_path / 'missing-old')
+    finally:
+        conn.close()
+
+
+def test_b09_failed_registry_publish_preserves_other_projects(tmp_path, monkeypatch):
+    workspace = tmp_path / 'workspace'; workspace.mkdir()
+    db = workspace / '.tp-spec/db/demo.db'
+    registry = tmp_path / 'registry.json'
+    make_runtime_db(db, 'demo', workspace)
+    dbmod.register_project('unrelated', str(tmp_path / 'unrelated.db'), str(tmp_path), '5.1.3', 1,
+                           registry_path=str(registry))
+    before = registry.read_bytes()
+    def fail_publish(*args, **kwargs):
+        raise OSError('registry replace unavailable')
+    monkeypatch.setattr(dbmod.os, 'replace', fail_publish)
+    result = apply_runtime_rebind(workspace, 'demo', registry_path=str(registry))
+    assert result['status'] == 'SYNC_REQUIRED' and result['facts_committed'] is True, result
+    assert registry.read_bytes() == before
+
+
+def test_b09_repeated_contract_registry_convergence_does_not_rewrite(tmp_path):
+    registry = tmp_path / 'registry.json'
+    dbmod.register_project('demo', str(tmp_path / 'demo.db'), str(tmp_path), '5.3.2', 1,
+                           registry_path=str(registry))
+    before = (registry.read_bytes(), registry.stat().st_mtime_ns)
+    assert dbmod.update_registered_project_contract('demo', '5.3.2', str(registry)) is True
+    assert (registry.read_bytes(), registry.stat().st_mtime_ns) == before

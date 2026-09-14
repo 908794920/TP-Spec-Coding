@@ -114,7 +114,8 @@ class KnowledgeTaskCase:
         )
         assert rc == 0, (out, err)
 
-    def prepare_delivery(self, task_id: str, *, knowledge_signal: dict | None = None) -> Path:
+    def prepare_delivery(self, task_id: str, *, knowledge_signal: dict | None = None,
+                         extra_evidence: dict[str, str] | None = None) -> Path:
         task_dir = self.create_task(task_id)
         self.checkpoint(task_id, task_dir, "tp-product-manager", "requirement")
         self.checkpoint(task_id, task_dir, "tp-software-architect", "architecture")
@@ -126,6 +127,8 @@ class KnowledgeTaskCase:
         ev = task_dir / "evidence" / "verification.txt"
         ev.parent.mkdir(parents=True, exist_ok=True)
         ev.write_text("verified knowledge candidate\n", encoding="utf-8")
+        for name, content in (extra_evidence or {}).items():
+            (task_dir / "evidence" / name).write_text(content, encoding="utf-8")
         verify_args = [
             "task", "verify", "--task", task_id, "--task-dir", str(task_dir),
             "--decision", "PASS", "--summary", "verification PASS",
@@ -136,10 +139,11 @@ class KnowledgeTaskCase:
         rc, out, err = self.call(*verify_args)
         assert rc == 0, (out, err)
 
+        (task_dir / "evidence/code-review.txt").write_text("Synthetic reviewer evidence for the current subject.\n", encoding="utf-8")
         rc, out, err = self.call(
             "review", "record", "--task", task_id, "--task-dir", str(task_dir),
             "--actor", "tp-code-reviewer", "--kind", "CODE", "--decision", "PASS",
-            "--summary", "code review PASS",
+            "--summary", "code review PASS", "--evidence", "evidence/code-review.txt",
         )
         assert rc == 0, (out, err)
         return task_dir
@@ -481,34 +485,44 @@ def test_result_sources_must_be_bound_to_request():
 
 
 
-def test_result_becomes_stale_when_bound_source_changes():
+@pytest.mark.parametrize("source, action, role", [
+    ("evidence/verification.txt", "dispatch_role", "tp-test-engineer"),
+    ("evidence/learning.txt", "dispatch_effect", "tp-knowledge"),
+])
+def test_result_becomes_stale_when_bound_source_changes(source, action, role):
     case = KnowledgeTaskCase(); case.setup_method()
     try:
         task_id = "TASK-V529-KNOW-SOURCE-STALE"
         task_dir = case.prepare_delivery(task_id, knowledge_signal={
             "type": "ROOT_CAUSE_LEARNING", "summary": "可复用故障根因",
-            "evidence": ["evidence/verification.txt"],
-        })
+            "evidence": [source],
+        }, extra_evidence={"learning.txt": "independent learning source\n"})
         case.deliver_ready(task_id, task_dir)
-        request_row, _ = case.latest_request(task_id)
+        request_row, request = case.latest_request(task_id)
         rc, out, err = run([
             "knowledge", "task-converge",
             "--task", task_id, "--task-dir", str(task_dir), "--db", str(case.db),
             "--workspace-root", str(case.project), "--request-event-id", str(request_row["id"]),
             "--disposition", "NO_DURABLE_INSIGHT", "--reason-code", "TASK_SPECIFIC_LOW_REUSE_VALUE",
-            "--query", "root cause learning", "--source", "evidence/verification.txt",
+            "--query", "root cause learning", "--source", source,
         ])
         assert rc == 0, (out, err)
         assert orchestration.resolve_route(task_id, db_path=str(case.db))["recommended_action"] == "task_complete"
 
-        (task_dir / "evidence" / "verification.txt").write_text(
-            "changed after Knowledge convergence\n", encoding="utf-8"
-        )
+        (task_dir / source).write_text("changed after Knowledge convergence\n", encoding="utf-8")
+        # Knowledge freshness still applies to both sources. When the very same
+        # file also proves Verification PASS, that prerequisite must recover first.
+        assert orchestration._knowledge_result_for_request(
+            case.events(task_id), {"event": request_row, "detail": request}, task_dir,
+        ) is None
         route = orchestration.resolve_route(task_id, db_path=str(case.db))
-        assert route["recommended_action"] == "dispatch_effect"
-        assert route["role_id"] == "tp-knowledge"
+        assert route["recommended_action"] == action
+        assert route["role_id"] == role
+        if role == "tp-test-engineer":
+            assert "CURRENT_VERIFICATION_REQUIRED" in route["reason_codes"]
     finally:
         case.teardown_method()
+
 
 def test_task_scoped_convergence_uses_targeted_search_not_full_vault_scan():
     import inspect

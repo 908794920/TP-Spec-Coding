@@ -11,6 +11,7 @@ from cli import db as dbmod
 from cli import orchestration
 from cli.task_cmd import _upgrade_contract_artifact_text
 from cli.version import active_version
+from cli.migrations import SOURCE_CONTRACTS
 from scripts.tests.runtime_testutil import build_task, run
 
 
@@ -211,3 +212,199 @@ def test_release_contract_is_v529_and_single_active_template():
     assert active_dirs == [_target_version()]
     assert (base / "templates" / _target_version() / "status.yaml").is_file()
     assert not (base / "templates" / _legacy_version()).exists()
+
+
+# B09: synthetic legacy contracts exercise the real production CLI; no site DB.
+B09_SOURCE = ".".join(["5", "3", "0"])
+
+def _b09_legacy_case(tmp_path, monkeypatch, source=B09_SOURCE):
+    from scripts.tests.v532_testutil import make_runtime
+    project, db, tdir, tid = make_runtime(tmp_path, monkeypatch)
+    _replace_contract_versions(tdir, source, active_version())
+    conn = dbmod.connect(str(db))
+    try:
+        conn.execute("UPDATE task SET base_version=? WHERE task_id=?", (source, tid))
+        conn.execute("UPDATE project SET base_version=?", (source,))
+    finally:
+        conn.close()
+    return project, db, tdir, tid
+
+
+def _b09_rows(db):
+    conn = dbmod.connect_readonly(str(db))
+    try:
+        return {name: [tuple(r) for r in conn.execute(f"SELECT * FROM {name} ORDER BY 1")]
+                for name in ("project", "task", "task_event", "config")}
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("operation", ["plan", "project_dry_run"])
+def test_b09_migration_previews_do_not_switch_sqlite_journal_mode(tmp_path, monkeypatch, operation):
+    import sqlite3
+    from scripts.tests.v532_testutil import run_cli
+    project, db, tdir, tid = _b09_legacy_case(tmp_path, monkeypatch)
+    conn = sqlite3.connect(db, isolation_level=None)
+    assert conn.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete"
+    conn.close()
+    before = (db.read_bytes(), db.stat().st_mtime_ns, _b09_rows(db))
+    argv = (["task", "migration-plan", "--project", "v532-test"] if operation == "plan" else
+            ["project", "upgrade-contract", "--id", "v532-test", "--dry-run"])
+    rc, out, err = run_cli([*argv, "--db", str(db)])
+    assert rc == 0, (out, err)
+    assert (db.read_bytes(), db.stat().st_mtime_ns, _b09_rows(db)) == before
+
+
+@pytest.mark.parametrize("source", ["99.0.0", "5.3.99", "0.0.0"])
+def test_b09_unknown_contract_is_not_blindly_relabelled(tmp_path, monkeypatch, source):
+    from scripts.tests.v532_testutil import run_cli, task_args
+    project, db, tdir, tid = _b09_legacy_case(tmp_path, monkeypatch, source)
+    before = _b09_rows(db)
+    rc, out, err = run_cli(["project", "upgrade-contract", "--id", "v532-test", "--db", str(db)])
+    assert rc != 0 and "UNSUPPORTED_MIGRATION_SOURCE" in out + err
+    assert _b09_rows(db) == before
+    conn = dbmod.connect(str(db))
+    conn.execute("UPDATE project SET base_version=?", (active_version(),)); conn.close()
+    before = _b09_rows(db)
+    rc, out, err = run_cli(task_args(db, tdir, tid, "migrate"))
+    assert rc != 0 and "UNSUPPORTED_MIGRATION_SOURCE" in out + err
+    assert _b09_rows(db) == before
+    rc, out, err = run_cli(["task", "migration-plan", "--project", "v532-test", "--db", str(db)])
+    assert rc == 0, (out, err)
+    row = json.loads(out)["tasks"][0]
+    assert "MIGRATE_TO_ACTIVE" not in row["decision_options"]
+    assert row["compatibility"]["migration_supported"] is False
+
+
+@pytest.mark.parametrize("change", ["artifact", "event", "terminal"])
+def test_b09_task_migration_rechecks_inputs_inside_writer_boundary(tmp_path, monkeypatch, change):
+    from cli import transaction_commit
+    from scripts.tests.v532_testutil import run_cli, task_args
+    project, db, tdir, tid = _b09_legacy_case(tmp_path, monkeypatch)
+    rc, out, err = run_cli(["project", "upgrade-contract", "--id", "v532-test", "--db", str(db)])
+    assert rc == 0, (out, err)
+    original = transaction_commit._commit_with_recovery
+    observed = {}
+    def changed_before_lock(*args, **kwargs):
+        if change == "artifact":
+            p = tdir / "acceptance.md"
+            p.write_bytes(p.read_bytes() + b"\nUser change while migration was preparing.\n")
+        else:
+            conn = dbmod.connect(str(db))
+            if change == "terminal":
+                conn.execute("UPDATE task SET current_state='COMPLETED' WHERE task_id=?", (tid,))
+            else:
+                _insert_event(conn, tid, "OBSERVATION", "human_owner", {}, summary="concurrent fact")
+            conn.close()
+        observed["rows"] = _b09_rows(db)
+        observed["files"] = {p.name: p.read_bytes() for p in tdir.iterdir() if p.is_file()}
+        return original(*args, **kwargs)
+    monkeypatch.setattr(transaction_commit, "_commit_with_recovery", changed_before_lock)
+    rc, out, err = run_cli(task_args(db, tdir, tid, "migrate"))
+    assert rc != 0 and "MIGRATION_INPUT_CHANGED" in out + err, (rc, out, err)
+    assert _b09_rows(db) == observed["rows"]
+    assert {p.name: p.read_bytes() for p in tdir.iterdir() if p.is_file()} == observed["files"]
+    assert not list(tdir.glob(".v511-bak-*"))
+
+
+def test_b09_registry_output_failure_does_not_hide_committed_project_upgrade(tmp_path, monkeypatch):
+    from scripts.tests.v532_testutil import run_cli
+    project, db, tdir, tid = _b09_legacy_case(tmp_path, monkeypatch)
+    registry = tmp_path / 'registered.json'
+    dbmod.register_project(project_id='v532-test', project_name='fixture', db_path=str(db),
+                           root_path=str(project), base_version=B09_SOURCE, schema_version=1,
+                           registry_path=str(registry))
+    original = dbmod._write_registry_payload
+    def fail(*args, **kwargs):
+        raise OSError('registry volume unavailable')
+    monkeypatch.setattr(dbmod, '_write_registry_payload', fail)
+    args = ['project', 'upgrade-contract', '--id', 'v532-test', '--registry', str(registry), '--db', str(db)]
+    rc, out, err = run_cli(args)
+    assert rc == 0 and 'PENDING' in out + err and 'committed' in out + err, (rc, out, err)
+    committed = _b09_rows(db)
+    assert committed['project'][0][3] == active_version()
+    monkeypatch.setattr(dbmod, '_write_registry_payload', original)
+    rc, out, err = run_cli(args)
+    assert rc == 0, (out, err)
+    assert _b09_rows(db) == committed
+    assert json.loads(registry.read_text())["projects"][0]["base_version"] == active_version()
+
+
+@pytest.mark.parametrize('source', sorted(SOURCE_CONTRACTS))
+def test_b09_known_source_plans_migrate_once_and_preserve_evidence(tmp_path, monkeypatch, source):
+    from scripts.tests.v532_testutil import run_cli, task_args
+    project, db, tdir, tid = _b09_legacy_case(tmp_path, monkeypatch, source)
+    evidence = (tdir / 'evidence/check.txt').read_bytes()
+    old_events = _b09_rows(db)['task_event']
+    rc, out, err = run_cli(['task', 'migration-plan', '--project', 'v532-test', '--db', str(db)])
+    assert rc == 0, (out, err)
+    report = json.loads(out)
+    assert report['read_only'] is True and report['active_version'] == active_version()
+    assert report['tasks'][0]['compatibility']['runtime_compatible'] is False
+    assert report['tasks'][0]['compatibility']['migration_supported'] is True
+    assert report['tasks'][0]['planned_artifact_changes']
+    assert _b09_rows(db)['task_event'] == old_events
+    assert run_cli(['project', 'upgrade-contract', '--id', 'v532-test', '--db', str(db)])[0] == 0
+    args = task_args(db, tdir, tid, 'migrate')
+    rc, out, err = run_cli(args)
+    assert rc == 0, (out, err)
+    rows = _b09_rows(db)
+    files = {str(p.relative_to(tdir)): (p.read_bytes(), p.stat().st_mtime_ns)
+             for p in tdir.rglob('*') if p.is_file()}
+    rc, out, err = run_cli(args)
+    assert rc == 0 and 'already current' in out, (rc, out, err)
+    assert _b09_rows(db) == rows
+    assert {str(p.relative_to(tdir)): (p.read_bytes(), p.stat().st_mtime_ns)
+            for p in tdir.rglob('*') if p.is_file()} == files
+    assert (tdir / 'evidence/check.txt').read_bytes() == evidence
+    assert rows['task_event'][:len(old_events)] == old_events
+
+
+def test_b09_explicit_artifact_migration_preserves_bom_newlines_and_history_prose(tmp_path, monkeypatch):
+    from scripts.tests.v532_testutil import run_cli, task_args
+    project, db, tdir, tid = _b09_legacy_case(tmp_path, monkeypatch)
+    artifact = tdir / 'tech-design.md'
+    raw = (f'\ufeff---\r\nartifact: tech-design\r\nartifact_contract:\r\n  version: "{B09_SOURCE}"\r\n---\r\n'
+           f'\r\nUser-owned discussion of {B09_SOURCE}; trailing spaces  \r\n\r\n').encode("utf-8")
+    artifact.write_bytes(raw)
+    assert run_cli(['project', 'upgrade-contract', '--id', 'v532-test', '--db', str(db)])[0] == 0
+    rc, out, err = run_cli(task_args(db, tdir, tid, 'migrate'))
+    assert rc == 0, (out, err)
+    assert artifact.read_bytes() == raw.replace(f'version: "{B09_SOURCE}"'.encode(), f'version: "{active_version()}"'.encode())
+
+
+def test_b09_migration_failure_rolls_back_and_can_be_retried(tmp_path, monkeypatch):
+    from cli import transaction_commit
+    from scripts.tests.v532_testutil import run_cli, task_args
+    project, db, tdir, tid = _b09_legacy_case(tmp_path, monkeypatch)
+    assert run_cli(['project', 'upgrade-contract', '--id', 'v532-test', '--db', str(db)])[0] == 0
+    before = _b09_rows(db)
+    files = {str(p.relative_to(tdir)): p.read_bytes() for p in tdir.rglob('*') if p.is_file()}
+    original = transaction_commit._stage_and_replace
+    def fail_after_replace(*args, **kwargs):
+        original(*args, **kwargs)
+        raise OSError('simulated migration write interruption')
+    monkeypatch.setattr(transaction_commit, '_stage_and_replace', fail_after_replace)
+    args = task_args(db, tdir, tid, 'migrate')
+    rc, out, err = run_cli(args)
+    assert rc != 0 and 'rolled back' in out + err
+    assert _b09_rows(db) == before
+    assert {str(p.relative_to(tdir)): p.read_bytes() for p in tdir.rglob('*') if p.is_file()} == files
+    monkeypatch.setattr(transaction_commit, '_stage_and_replace', original)
+    assert run_cli(args)[0] == 0
+
+
+@pytest.mark.parametrize('operation', ['project','task'])
+def test_b09_schema_mismatch_cannot_be_relabelled_as_current(tmp_path, monkeypatch, operation):
+    from scripts.tests.v532_testutil import run_cli, task_args
+    project, db, tdir, tid = _b09_legacy_case(tmp_path, monkeypatch)
+    conn = dbmod.connect(str(db))
+    if operation == 'task':
+        conn.execute('UPDATE project SET base_version=?', (active_version(),))
+    conn.execute('UPDATE schema_meta SET schema_version=2'); conn.close()
+    before = _b09_rows(db)
+    args = (['project','upgrade-contract','--id','v532-test','--db',str(db)] if operation=='project'
+            else task_args(db,tdir,tid,'migrate'))
+    rc, out, err = run_cli(args)
+    assert rc != 0 and 'SCHEMA_MISMATCH' in out + err, (rc,out,err)
+    assert _b09_rows(db) == before

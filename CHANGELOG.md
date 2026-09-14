@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.3.2] Open Release Line — 2026-09-06
+
+- 从 **5.3.1** 收敛到 **5.3.2** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.3.2`，不再保留 `templates/5.3.1`。
+- v5.3.1 已正式发布（Graphify Provider M2 No-Go + Requirement Frontier + strict-marker 门禁与 Windows 发布验证）；本行作为后续功能开发的开放版本线，Role-first 产品形态与各 Formal Role 活动契约不变。
+
 ## [5.3.1] Open Release Line — 2026-08-31
 
 - 从 **5.3.0** 收敛到 **5.3.1** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.3.1`，不再保留 `templates/5.3.0`。

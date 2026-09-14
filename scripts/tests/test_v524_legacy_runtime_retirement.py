@@ -10,7 +10,6 @@ def test_active_config_loader_does_not_resolve_legacy_state_owner():
 
 
 def test_active_workflow_loader_does_not_merge_legacy_microstates():
-    workflow_loader._WORKFLOW_CACHE.clear()
     wf = workflow_loader.load_workflow()
     assert set(wf.states) == {"NEW", "ACTIVE", "BLOCKED", "COMPLETED", "CANCELLED"}
     assert "RISK_ANALYZING" not in wf.transitions

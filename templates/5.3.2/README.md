@@ -1,4 +1,4 @@
-# V5.3.1 Task 模板 — Record-first
+# V5.3.2 Task 模板 — Record-first
 
 这套模板服务于 **完成开发任务 + 事后溯源**。SQLite/event ledger 是权威记录；Markdown 只承载有业务价值的内容。
 
@@ -16,6 +16,12 @@
 - `status.yaml`：Runtime 投影。
 
 其他模板均是**按需工件**：有内容价值才创建，不存在不阻塞任务。没有真实澄清、决策或架构内容时不创建空工件。
+
+## 当前有效区（按需）
+
+Task 与 canonical Requirement 中只有一处维护 `tp-spec:current` 标记之间的必要业务内容：当前目标、范围/非范围、有效决定和来源、验收与操作边界。已有 Requirement 承担需求时优先沿用它，Task 留短指针；没有 Requirement 的局部任务直接使用 Task。不新增文件、不为填写标记补问卷。模板只有空标题/注释时视为没有当前区。
+
+旧决定留在标记外的历史区或已有 `requirement-decisions.md`，保留 `SUPERSEDED`、继任及依据；不得为精简删除唯一授权来源。接续和路由只摘取当前区并标明来源，不解析自然语言来授予权限。具体读取/限制见现有 [生命周期说明](../../docs/agents/tp-software-lifecycle.md)。
 
 ## Requirement Frontier（条件方法）
 
@@ -38,4 +44,4 @@ L0～L3 继续作为风险/查询标签，但不决定一条固定昂贵链路�
 
 ## 真实性边界
 
-Runtime 只对以下事项 fail-closed：账本/状态完整性、明确未解决 blocker、高风险动作授权、以及验证事实造假。未测试不能写 PASS；human 测试可由 human_owner defer/waive，但不得伪装成 PASS。knowledge DEFERRED 默认不阻止 COMPLETED。
+Runtime 只对以下事项 fail-closed：账本/状态完整性、明确未解决 blocker、高风险动作授权、以及验证事实造假。未测试不能写 PASS；human_owner 可对已按声明范围实际核验的人工/视觉项通过官方 `acceptance-override --mode accept` 留证，也可对未执行项 defer/waive，但不得伪装成 PASS。Owner 决策不解除无关 blocker。knowledge DEFERRED 默认不阻止 COMPLETED。

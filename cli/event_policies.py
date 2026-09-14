@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""V5.3.1 可信事件注册表（Final Hardening 单一来源）。
+"""V5.3.2 可信事件注册表（Final Hardening 单一来源）。
 
-依据：《V5.3.1 Final Hardening Invariant 修复任务》Task 1（§3）与《V5.3.1
+依据：《V5.3.2 Final Hardening Invariant 修复任务》Task 1（§3）与《V5.3.2
 HARDENING 源码复审报告》P0-1/P0-2。INV-02：治理事件只能由可信生产者产生；
 INV-03：门禁不信任 type/actor/summary 三元组，只接受含完整身份链的可信事件。
 
@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
@@ -80,7 +81,7 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
     "REVIEW_COMPLETED": _policy("governance", ("review_record", "commit"), True, _REVIEW_IDENTITY_FIELDS),
     "REVIEW": _policy("governance", ("review_record", "commit"), True, _EVENT_SCHEMA_FIELDS),
     "VERIFICATION": _policy("governance", ("commit",), True, _EVENT_SCHEMA_FIELDS),
-    # V5.3.1 Record-first verification is a trusted fact but no longer a state gate.
+    # V5.3.2 Record-first verification is a trusted fact but no longer a state gate.
     # It binds decision + current technical subject digest + real evidence without
     # requiring a role-authored review artifact.
     "VERIFICATION_COMPLETED": _policy(
@@ -129,7 +130,12 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
 
 
 def load_owner_acceptance_decisions(conn, task_id: str) -> list[dict]:
-    """Load trusted human_owner acceptance defer/waive decisions from the ledger."""
+    """Load trusted human_owner acceptance decisions from the ledger.
+
+    ``accept`` is a real owner result, while ``defer`` and ``waive`` retain their
+    historical meanings.  The returned dictionaries contain the event id only as
+    an internal ordering aid; it is never written back into the task artifact.
+    """
     rows = conn.execute(
         "SELECT * FROM task_event WHERE task_id=? AND event_type='OWNER_ACCEPTANCE_DECISION' ORDER BY id",
         (task_id,),
@@ -150,12 +156,126 @@ def load_owner_acceptance_decisions(conn, task_id: str) -> list[dict]:
             continue
         if str(detail.get("actor_role") or "") != "human_owner":
             continue
+        if str(detail.get("task_id") or "") != str(task_id):
+            continue
         mode = str(detail.get("mode") or "").lower()
         acs = detail.get("acs")
-        if mode not in {"defer", "waive"} or not isinstance(acs, list) or not acs:
+        if mode not in {"defer", "waive", "accept"} or not isinstance(acs, list) or not acs:
             continue
-        out.append(detail)
+        if any(not isinstance(ac, str) or not ac.strip() for ac in acs):
+            continue
+        if mode == "accept":
+            source = detail.get("decision_source")
+            logical = detail.get("logical_request")
+            response = logical.get("response") if isinstance(logical, dict) else None
+            if (not isinstance(source, dict)
+                    or source.get("kind") != "human_owner_statement"
+                    or not str(source.get("reference") or "").strip()
+                    or not str(source.get("invocation_id") or "").strip()
+                    or not str(detail.get("request_id") or "").strip()
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(detail.get("payload_sha256") or ""))
+                    or not str(detail.get("subject_digest") or "").strip()
+                    or not str(detail.get("change_set_id") or "").strip()
+                    or not str(detail.get("source_evidence") or "").strip()
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(detail.get("source_evidence_sha256") or ""))
+                    or not isinstance(logical, dict)
+                    or logical.get("operation") != "acceptance-override"
+                    or logical.get("request_id") != detail.get("request_id")
+                    or logical.get("payload_sha256") != detail.get("payload_sha256")
+                    or not isinstance(response, dict)
+                    or response.get("task_id") != task_id
+                    or response.get("request_id") != detail.get("request_id")
+                    or response.get("payload_sha256") != detail.get("payload_sha256")
+                    or response.get("mode") != "accept"
+                    or response.get("acs") != acs):
+                continue
+        item = dict(detail)
+        item["_event_id"] = int(row["id"])
+        out.append(item)
     return out
+
+
+def effective_owner_acceptance(
+    conn,
+    task_id: str,
+    *,
+    task_dir: Optional[Union[str, Path]] = None,
+    change_set_id: Optional[str] = None,
+    subject_digest: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Return the latest trusted owner disposition for each acceptance criterion.
+
+    ``accept`` records are usable only when their current product ChangeSet,
+    acceptance subject and owner-source evidence still match.  Historical
+    ``defer``/``waive`` entries remain readable without retroactive bindings.  A
+    later disposition supersedes an earlier one for the same AC, but no event is
+    deleted or rewritten.
+
+    A canonical artifact that cannot be read (for example invalid UTF-8) leaves the
+    subject unconfirmable: no ``accept`` record may be treated as current, because a
+    read-only routing surface must report that state instead of failing as an
+    internal error.  Corruption itself is reported at the closure boundaries by
+    artifact validation (``TEXT_INTEGRITY_INVALID``).
+    """
+    base = Path(task_dir).resolve() if task_dir is not None else None
+    current_change_set = str(change_set_id or "").strip()
+    current_subject = str(subject_digest or "").strip()
+    if base is not None:
+        if not current_subject:
+            from .digest import compute_verification_subject_digest
+            try:
+                current_subject = compute_verification_subject_digest(base)
+            except (OSError, UnicodeError):
+                current_subject = ""
+        if not current_change_set:
+            try:
+                from . import record_first
+                development = record_first._latest_development_change_set(conn, task_id)
+                roots = list(development.get("repo_roots") or []) if development else []
+                if development and development.get("change_set_id") and roots:
+                    from .change_set import capture_change_set, same_bound_product_content
+                    current = capture_change_set(roots)
+                    if same_bound_product_content(development["detail"], current):
+                        current_change_set = str(current.get("content_digest") or "")
+            except Exception:
+                current_change_set = ""
+
+    from .evidence import validate_evidence_path
+
+    by_ac: Dict[str, Dict[str, Any]] = {}
+    for item in load_owner_acceptance_decisions(conn, task_id):
+        mode = str(item.get("mode") or "").lower()
+        if mode == "accept":
+            if not base or not current_change_set or not current_subject:
+                continue
+            if str(item.get("change_set_id") or "") != current_change_set:
+                continue
+            if str(item.get("subject_digest") or "") != current_subject:
+                continue
+            source_path = str(item.get("source_evidence") or "").strip()
+            checked = validate_evidence_path(base, source_path, require_evidence_dir=True)
+            if (not checked.ok
+                    or str(item.get("source_evidence_sha256") or "") != checked.sha256):
+                continue
+        for raw_ac in item.get("acs") or []:
+            ac = str(raw_ac).strip()
+            if ac:
+                by_ac[ac] = item
+
+    accepted = sorted(ac for ac, item in by_ac.items() if str(item.get("mode") or "").lower() == "accept")
+    visual = set()
+    for ac in accepted:
+        item = by_ac[ac]
+        scope = item.get("visual_scope")
+        if isinstance(scope, dict) and ac in {str(value).strip() for value in scope.get("acs") or []}:
+            visual.add(ac)
+    return {
+        "by_ac": by_ac,
+        "accepted_acs": accepted,
+        "visual_acs": sorted(visual),
+        "change_set_id": current_change_set,
+        "subject_digest": current_subject,
+    }
 
 
 def is_governance_event(event_type: str) -> bool:
@@ -237,8 +357,13 @@ def load_trusted_governance_events(
     artifact_path: Optional[Union[str, Path]] = None,
     expected_subject_digest: Optional[str] = None,
     evidence_dir: Optional[Union[str, Path]] = None,
+    latest_only: bool = False,
 ) -> list[TrustedEvent]:
-    """返回全部可信治理事件，按事件 id 从新到旧排列。"""
+    """返回可信事件；latest_only 在结果校验前选定最新同角色/种类记录。
+
+    当前门禁不能跳过较新的失败、损坏证据或失效主体去复用历史 PASS。
+    默认保留历史检索语义，审计调用不因当前门禁策略而丢失旧事实。
+    """
     policy = EVENT_POLICIES.get(event_type)
     if not policy or policy["authority"] != "governance":
         return []
@@ -246,6 +371,11 @@ def load_trusted_governance_events(
         "SELECT * FROM task_event WHERE task_id=? AND event_type=? ORDER BY id DESC",
         (task_id, event_type),
     ).fetchall()
+    if latest_only:
+        rows = [row for row in rows
+                if (actor is None or (row["actor_role"] or "") == actor)
+                and (review_kind is None or str(_event_detail(row).get("review_kind") or "").upper()
+                     == str(review_kind).upper())][:1]
     fields = tuple(detail_required) if detail_required is not None else policy["required_fields"]
     trusted: list[TrustedEvent] = []
     for row in rows:
@@ -316,12 +446,14 @@ def load_trusted_governance_event(
     artifact_path: Optional[Union[str, Path]] = None,
     expected_subject_digest: Optional[str] = None,
     evidence_dir: Optional[Union[str, Path]] = None,
+    latest_only: bool = False,
 ) -> Optional[TrustedEvent]:
     """加载最新一条可信治理事件。"""
     events = load_trusted_governance_events(
         conn, task_id, event_type=event_type, actor=actor, decision=decision,
         detail_required=detail_required, review_kind=review_kind, artifact_path=artifact_path,
         expected_subject_digest=expected_subject_digest, evidence_dir=evidence_dir,
+        latest_only=latest_only,
     )
     return events[0] if events else None
 
@@ -351,3 +483,56 @@ def load_task_retirement(conn, task_id: str) -> Optional[TrustedEvent]:
 def is_task_retired(conn, task_id: str) -> bool:
     """Whether a task is an administratively retired historical instance."""
     return load_task_retirement(conn, task_id) is not None
+
+
+def verification_scope(detail: Dict[str, Any]) -> str:
+    """Interpret only explicit supported scopes; old events retain full semantics."""
+    scope = detail.get("verification_scope", "full")
+    if scope not in ("full", "technical"):
+        raise ValueError("invalid verification scope")
+    if scope == "technical":
+        checks = detail.get("checks")
+        if not isinstance(checks, list) or not checks or any(
+            not isinstance(item, str) or not item.strip() for item in checks
+        ):
+            raise ValueError("technical verification requires explicit checks")
+    return scope
+
+
+def verification_subject_matches(detail: Dict[str, Any], task_dir: Union[str, Path]) -> bool:
+    from .digest import compute_verification_subject_digest
+    try:
+        scope = verification_scope(detail)
+        return detail.get("subject_digest") == compute_verification_subject_digest(task_dir, scope=scope)
+    except (ValueError, OSError, UnicodeError):
+        return False
+
+
+def load_current_verification(conn, task_id: str, task_dir: Union[str, Path], *, require_full: bool = False) -> Optional[TrustedEvent]:
+    """Latest actual PASS, with its own scope, current subject and original evidence.
+
+    Product ChangeSet freshness is checked by callers against their captured snapshot.
+    Never search past a newer failure, unknown scope, or damaged evidence for a PASS.
+    """
+    current = load_trusted_governance_event(
+        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer",
+        decision="PASS", evidence_dir=task_dir, latest_only=True,
+    )
+    if current is None or not verification_subject_matches(current.detail, task_dir):
+        return None
+    scope = verification_scope(current.detail)
+    from .delivery_contract import load_repository_scope, full_scope_matches
+    known = load_repository_scope(conn, task_id)
+    try:
+        development_event_id = int(current.detail.get("development_event_id") or 0)
+    except (ValueError, TypeError):
+        return None
+    if int(current.row["id"]) <= known["scope_event_id"] or development_event_id <= known["scope_event_id"]:
+        return None
+    if scope == "full" and not full_scope_matches(
+        known, current.detail, development_event_id=development_event_id
+    ):
+        return None
+    if require_full and scope != "full":
+        return None
+    return current

@@ -12,7 +12,7 @@ def add_arch_review(db, task, decision='PASS'):
     detail = json.dumps({
         'decision': decision,
         'review_kind': 'ARCHITECTURE',
-        'schema_version': '5.3.1',
+        'schema_version': '5.3.2',
         'context_policy': 'isolated',
         'design_execution_context_id': 'ctx-design',
         'review_execution_context_id': 'ctx-review',
@@ -27,7 +27,7 @@ def add_arch_review(db, task, decision='PASS'):
 
 def add_verify(db, task, decision='PASS'):
     conn = dbmod.connect(db); now = dbmod.now_iso()
-    detail = json.dumps({'decision': decision, 'review_kind': 'VERIFICATION', 'schema_version': '5.3.1', 'subject_digest': 'sha256:test'})
+    detail = json.dumps({'decision': decision, 'review_kind': 'VERIFICATION', 'schema_version': '5.3.2', 'subject_digest': 'sha256:test'})
     with dbmod.transactional(conn):
         conn.execute('INSERT INTO task_event(task_id,event_type,to_stage,actor_role,summary,detail_json,created_at) VALUES(?,?,?,?,?,?,?)',
                      (task,'VERIFICATION_COMPLETED','verification','tp-test-engineer',decision,detail,now))
@@ -43,6 +43,7 @@ def test_l1_routes_formal_roles_and_preserves_effect_boundary():
         r = orchestration.resolve_route('TASK-V514', db_path=db)
         assert r['role_id'] == 'tp-product-manager'
         add_checkpoint(db, 'TASK-V514', 'tp-product-manager', 'requirement')
+        add_decision(db, 'TASK-V514', 'workflow:include-stage:architecture')
         r = orchestration.resolve_route('TASK-V514', db_path=db)
         assert r['role_id'] == 'tp-software-architect' and r['next_stage'] == 'architecture'
         add_checkpoint(db, 'TASK-V514', 'tp-software-architect', 'architecture')

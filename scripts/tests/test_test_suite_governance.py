@@ -240,7 +240,7 @@ def test_identical_runtime_run_helpers_are_centralized():
         assert "runtime_testutil import run" in path.read_text(encoding="utf-8"), name
     helper = (TESTS_ROOT / "runtime_testutil.py").read_text(encoding="utf-8")
     assert "cli_testutil import invoke_main" in helper
-    assert "refresh_card: bool = False" in helper
+    assert "refresh_card" not in helper
 
     migrated_direct_main = {
         "test_v512_integrated_upgrade.py",
@@ -254,7 +254,8 @@ def test_identical_runtime_run_helpers_are_centralized():
         assert "climain.main(" not in text, name
 
     card_text = (TESTS_ROOT / "test_v526_html_cards.py").read_text(encoding="utf-8")
-    assert "invoke_main(argv, refresh_card=True)" in card_text
+    assert "invoke_main(argv)" in card_text
+    assert "refresh_card" not in card_text
 
 
 def test_autonomy_shared_run_and_git_helpers_are_centralized():
@@ -282,7 +283,7 @@ def test_autonomy_shared_run_and_git_helpers_are_centralized():
         assert "git_repo" not in _top_level_function_names(TESTS_ROOT / name), name
     helper = (TESTS_ROOT / "autonomy_testutil.py").read_text(encoding="utf-8")
     assert "cli_testutil import invoke_main" in helper
-    assert "refresh_card: bool = False" in helper
+    assert "refresh_card" not in helper
 
 
 def test_default_tp_spec_user_root_is_function_scoped(tmp_path):
@@ -312,10 +313,11 @@ def test_task7_slow_markers_follow_measured_high_cost_integration_files():
 def test_task8_xdist_remains_unadopted_without_cross_platform_pilot():
     dev = (BASE / "requirements-dev.txt").read_text(encoding="utf-8")
     testing = DOC_PATH.read_text(encoding="utf-8")
+    assert "pytest==9.1.1" in dev
     assert "pytest-xdist" not in dev
     assert "Task 8 决策：不引入 pytest-xdist" in testing
     assert "Linux 与 Windows pilot" in testing
-    assert "requirements-dev.txt 保持不变" in testing
+    assert "受控插件" in testing
 
 
 def test_ci_separates_pr_feedback_from_push_release_full_regression():

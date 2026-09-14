@@ -1,4 +1,4 @@
-"""v5.3.1 Requirement Frontier method contracts."""
+"""v5.3.2 Requirement Frontier method contracts."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,7 +8,7 @@ import yaml
 BASE = Path(__file__).resolve().parents[2]
 CAPABILITY = BASE / "skills" / "capabilities" / "requirement-clarification" / "SKILL.md"
 PRODUCT_ROLE = BASE / "skills" / "roles" / "tp-product-manager" / "SKILL.md"
-TEMPLATE_ROOT = BASE / "templates" / "5.3.1"
+TEMPLATE_ROOT = BASE / "templates" / "5.3.2"
 
 
 def _read(path: Path) -> str:
@@ -196,3 +196,18 @@ def test_template_readme_preserves_record_first_and_conditional_use():
         "blocking_open",
         "全部未解决",
     )
+
+
+def test_b05_templates_offer_one_optional_current_region_and_keep_history_separate():
+    # The template is the user-facing editing contract; behavior lives in the
+    # production CLI tests, not in these literal assertions.
+    for name in ('task.md', 'requirement.md'):
+        text = _read(TEMPLATE_ROOT / name)
+        assert text.count('<!-- tp-spec:current:start -->') == 1
+        assert text.count('<!-- tp-spec:current:end -->') == 1
+        assert text.index('<!-- tp-spec:current:start -->') < text.index('<!-- tp-spec:current:end -->')
+        assert 'SUPERSEDED' in text[text.index('<!-- tp-spec:current:end -->'):]
+    capability = _read(CAPABILITY)
+    assert '当前有效范围与决策' in capability
+    assert '单一维护位置' in capability
+    assert '技术事实' in capability and '不授予' in capability

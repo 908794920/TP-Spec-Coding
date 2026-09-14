@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from cli import orchestration
+from cli import db as dbmod
+from scripts.tests.v532_testutil import make_runtime, run_cli, task_args
 from scripts.tests.v514_orchestration_testutil import (
     add_checkpoint,
     add_code_review,
@@ -35,10 +38,10 @@ def _db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, level: str) -> str:
         ),
         (
             "L1",
-            ("workflow:include-stage:planning", "workflow:deep-review"),
+            ("workflow:include-stage:planning", "workflow:include-stage:architecture", "workflow:deep-review"),
             {
-                "requirement": (True, ""),
-                "architecture": (True, ""),
+                "requirement": (False, "unresolved_scope"),
+                "architecture": (False, "architecture_risk"),
                 "planning": (False, "contextual"),
                 "development": (True, ""),
                 "verification": (True, ""),
@@ -47,13 +50,13 @@ def _db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, level: str) -> str:
         ),
         (
             "L2",
-            ("workflow:include-stage:product", "workflow:include-stage:architecture_review"),
+            ("workflow:include-stage:product", "workflow:include-stage:architecture", "workflow:include-stage:planning", "workflow:include-stage:architecture_review"),
             {
-                "requirement": (True, ""),
+                "requirement": (False, "unresolved_scope"),
                 "product": (False, "contextual"),
-                "architecture": (True, ""),
+                "architecture": (False, "architecture_risk"),
                 "architecture_review": (False, "architecture_risk"),
-                "planning": (True, ""),
+                "planning": (False, "contextual"),
                 "development": (True, ""),
                 "verification": (True, ""),
                 "review": (True, ""),
@@ -62,13 +65,13 @@ def _db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, level: str) -> str:
         ),
         (
             "L3",
-            ("workflow:include-stage:product",),
+            ("workflow:include-stage:product", "workflow:include-stage:architecture", "workflow:include-stage:architecture_review", "workflow:include-stage:planning"),
             {
-                "requirement": (True, ""),
+                "requirement": (False, "unresolved_scope"),
                 "product": (False, "contextual"),
-                "architecture": (True, ""),
+                "architecture": (False, "architecture_risk"),
                 "architecture_review": (False, "architecture_risk"),
-                "planning": (True, ""),
+                "planning": (False, "contextual"),
                 "development": (True, ""),
                 "verification": (True, ""),
                 "review": (True, ""),
@@ -209,3 +212,125 @@ def test_task_card_visually_separates_steps_execution_roles_and_conditional_role
     assert "definition_source" in text
     assert "reason_code" in text
     assert '"workflow.conditional_roles"' not in text  # definition source value comes from projection data
+
+# B06: these summaries are Runtime records, not a process monitor or project PASS.
+
+
+def test_b06_completed_task_with_pending_workitem_reports_drift_without_repair(tmp_path, monkeypatch):
+    _, db, tdir, tid = make_runtime(tmp_path, monkeypatch)
+    assert run_cli(['workitem','create','--task',tid,'--id','WI-1','--title','Pending milestone','--db',str(db)])[0] == 0
+    assert run_cli(task_args(db,tdir,tid,'checkpoint','--actor','tp-development-engineer','--phase','development','--summary','WP-0 complete'))[0] == 0
+    assert run_cli(task_args(db,tdir,tid,'complete','--actor','tp-development-engineer','--summary','WP-0 only'))[0] == 0
+    before = (tdir/'generated/final-result.md').read_bytes()
+    with dbmod.connect_readonly(str(db)) as conn:
+        events = conn.execute('SELECT COUNT(*) FROM task_event').fetchone()[0]
+    progress = orchestration.resolve_progress(tid,db_path=str(db))
+    assert progress['work_items']['consistency'] == 'NEEDS_RECONCILIATION'
+    assert progress['work_items']['counts'] == {'PENDING':1,'ACTIVE':0,'COMPLETED':0}
+    assert progress['work_items']['completion_scope'] == 'task_work_items_only'
+    assert progress['current_step'] == {} and progress['next_step'] == {}
+    rc,out,err = run_cli(['report','task-summary','--task',tid,'--db',str(db)])
+    assert rc == 0 and 'NEEDS_RECONCILIATION' in out, (out,err)
+    rc,out,err = run_cli(['workitem','list','--task',tid,'--db',str(db)])
+    assert rc == 0 and 'NEEDS_RECONCILIATION' in out, (out,err)
+    with dbmod.connect_readonly(str(db)) as conn:
+        assert conn.execute('SELECT status FROM work_item').fetchone()[0] == 'PENDING'
+        assert conn.execute('SELECT COUNT(*) FROM task_event').fetchone()[0] == events
+    assert (tdir/'generated/final-result.md').read_bytes() == before
+
+
+def test_b06_open_work_record_is_not_process_liveness(tmp_path, monkeypatch):
+    _,db,tdir,tid = make_runtime(tmp_path,monkeypatch)
+    assert run_cli(['work','start','--task',tid,'--role','tp-development-engineer','--agent','worker-a','--db',str(db)])[0] == 0
+    progress = orchestration.resolve_progress(tid,db_path=str(db))
+    record = progress['work_sessions']
+    assert record['runtime_status'] == 'UNKNOWN'
+    assert record['open_count'] == 1
+    assert record['open_sessions'][0]['actor_agent'] == 'worker-a'
+    assert record['open_sessions'][0]['model_used'] == ''
+    assert record['last_recorded_at']
+    assert '运行状态未知' in record['summary']
+    rc,out,err = run_cli(['report','stage-time','--task',tid,'--db',str(db)])
+    assert rc == 0 and '运行状态未知' in out, (out,err)
+    assert run_cli(task_args(db,tdir,tid,'cancel','--actor','human_owner','--reason','stop'))[0] == 0
+    stopped = orchestration.resolve_progress(tid,db_path=str(db))
+    assert stopped['current_step'] == {} and stopped['next_step'] == {}
+    assert stopped['work_sessions']['open_count'] == 1
+    assert stopped['work_sessions']['runtime_status'] == 'UNKNOWN'
+
+
+def test_b06_workitems_completed_do_not_grant_task_or_dependency_completion(tmp_path, monkeypatch):
+    _,db,_,tid = make_runtime(tmp_path,monkeypatch)
+    def item(*args):
+        rc,out,err = run_cli(['workitem',*args,'--task',tid,'--db',str(db)])
+        assert rc == 0,(out,err)
+    item('create','--id','WI-1','--depends','WI-UPSTREAM')
+    item('complete','--id','WI-1')
+    progress = orchestration.resolve_progress(tid,db_path=str(db))
+    assert progress['work_items']['items'][0]['unresolved_dependencies'] == ['WI-UPSTREAM']
+    assert progress['work_items']['consistency'] == 'NEEDS_RECONCILIATION'
+    assert progress['work_items']['counts']['COMPLETED'] == 1
+    with dbmod.connect_readonly(str(db)) as conn:
+        assert conn.execute('SELECT current_state FROM task').fetchone()[0] not in ['COMPLETED','CANCELLED']
+
+
+def test_b06_retirement_keeps_original_state_and_open_work_history(tmp_path,monkeypatch):
+    _,db,tdir,tid = make_runtime(tmp_path,monkeypatch)
+    assert run_cli(task_args(db,tdir,tid,'checkpoint','--actor','tp-development-engineer','--phase','development','--summary','record'))[0] == 0
+    assert run_cli(['work','start','--task',tid,'--role','tp-development-engineer','--db',str(db)])[0] == 0
+    rc,out,err = run_cli(['task','retire','--task',tid,'--actor','human_owner','--reason','synthetic historical instance','--db',str(db)])
+    assert rc == 0,(out,err)
+    route = orchestration.resolve_route(tid,db_path=str(db))
+    assert route['recommended_action']=='none' and route['role_id'] is None
+    assert route['reason_codes']==['TASK_RETIRED']
+    progress = orchestration.resolve_progress(tid,db_path=str(db))
+    assert progress['retired'] and progress['current_step']=={} and progress['next_step']=={}
+    assert progress['work_sessions']['open_count']==1
+    assert progress['work_items']['current'] is False
+    with dbmod.connect_readonly(str(db)) as conn:
+        assert conn.execute('SELECT current_state FROM task').fetchone()[0]=='ACTIVE'
+    rc,out,err = run_cli(['work','start','--task',tid,'--role','tp-code-reviewer','--db',str(db)])
+    assert rc != 0 and 'TASK_NOT_CURRENT' in err,(out,err)
+
+
+@pytest.mark.parametrize('metadata', ['null','{"bad":1}','["MISSING"]','{broken'])
+def test_b06_invalid_workitem_metadata_is_reported_without_repair(tmp_path,monkeypatch,metadata):
+    _,db,_,tid = make_runtime(tmp_path,monkeypatch)
+    assert run_cli(['workitem','create','--task',tid,'--id','WI-1','--db',str(db)])[0]==0
+    with dbmod.connect(str(db)) as conn:
+        with dbmod.transactional(conn):
+            conn.execute('UPDATE work_item SET depends_on_json=?',(metadata,))
+    progress = orchestration.resolve_progress(tid,db_path=str(db))
+    assert progress['work_items']['consistency']=='NEEDS_RECONCILIATION'
+    assert progress['work_items']['issues']
+    with dbmod.connect_readonly(str(db)) as conn:
+        assert conn.execute('SELECT depends_on_json FROM work_item').fetchone()[0]==metadata
+
+
+def test_b06_all_items_done_but_no_sessions_is_not_task_completion(tmp_path,monkeypatch):
+    _,db,_,tid = make_runtime(tmp_path,monkeypatch)
+    for args in [('create',),('complete',)]:
+        assert run_cli(['workitem',*args,'--task',tid,'--id','WI-1','--db',str(db)])[0]==0
+    progress = orchestration.resolve_progress(tid,db_path=str(db))
+    assert progress['work_items']['consistency']=='RECORDED'
+    assert progress['work_items']['counts']['COMPLETED']==1
+    assert progress['work_sessions']['runtime_status']=='UNKNOWN'
+    assert progress['work_sessions']['last_recorded_at']==''
+    with dbmod.connect_readonly(str(db)) as conn:
+        assert conn.execute('SELECT current_state FROM task').fetchone()[0]=='NEW'
+
+
+def test_b06_milestone_list_shows_dependencies_without_changing_items(tmp_path, monkeypatch):
+    _, db, _, tid = make_runtime(tmp_path, monkeypatch)
+    for item_id, dependencies in [('WI-1', []), ('WI-2', ['--depends', 'WI-1'])]:
+        assert run_cli(['workitem', 'create', '--task', tid, '--id', item_id,
+                        *dependencies, '--db', str(db)])[0] == 0
+    rc, out, err = run_cli(['workitem', 'list', '--task', tid, '--status', 'PENDING', '--db', str(db)])
+    assert rc == 0, (out, err)
+    assert 'WI-2' in out and 'depends=WI-1 waiting_on=WI-1' in out
+    assert run_cli(['workitem', 'complete', '--task', tid, '--id', 'WI-1', '--db', str(db)])[0] == 0
+    rc, out, err = run_cli(['workitem', 'list', '--task', tid, '--status', 'PENDING', '--db', str(db)])
+    assert rc == 0, (out, err)
+    assert 'depends=WI-1 waiting_on=-' in out and '已完成 1' in out
+    with dbmod.connect_readonly(str(db)) as conn:
+        assert conn.execute("SELECT status FROM work_item WHERE item_id='WI-2'").fetchone()[0] == 'PENDING'

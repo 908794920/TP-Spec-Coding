@@ -61,11 +61,24 @@ def _now() -> datetime:
     return datetime.now(_TZ_CN)
 
 
+def task_progress_facts(conn, task, *, events=None, retired: bool = False) -> dict:
+    """One read-only interpretation shared by CLI summaries and explicit views."""
+    from .workitem_cmd import summarize_work_items
+    from .work_session_cmd import summarize_work_sessions
+    if events is None:
+        events = conn.execute("SELECT * FROM task_event WHERE task_id=? "
+                              "AND event_type IN ('WORK_SESSION_STARTED','WORK_SESSION_ENDED') ORDER BY id",
+                              (task["task_id"],)).fetchall()
+    return {"work_items": summarize_work_items(conn, task, retired=retired),
+            "work_sessions": summarize_work_sessions(events)}
+
+
 def cmd_report_task_summary(args) -> int:
     task_id = args.task
     db_path = dbmod.resolve_db_path(args.db, project_id=getattr(args, "project", None), task_id=task_id)
-    conn = dbmod.connect(db_path)
+    conn = dbmod.connect_readonly(db_path)
     try:
+        conn.execute("BEGIN")
         task = conn.execute("SELECT * FROM task WHERE task_id = ?", (task_id,)).fetchone()
         if task is None:
             print(f"ERROR: task not found: {task_id}", file=sys.stderr)
@@ -85,13 +98,13 @@ def cmd_report_task_summary(args) -> int:
             "SELECT COUNT(*) AS c FROM task_event WHERE task_id = ? AND event_type = 'REWORK'",
             (task_id,),
         ).fetchone()["c"]
-        workitem_total = conn.execute(
-            "SELECT COUNT(*) AS c FROM work_item WHERE task_id = ?", (task_id,)
-        ).fetchone()["c"]
-        workitem_by_status = conn.execute(
-            "SELECT status, COUNT(*) AS c FROM work_item WHERE task_id = ? GROUP BY status",
-            (task_id,),
-        ).fetchall()
+        from .event_policies import is_task_retired
+        facts = task_progress_facts(conn, task, retired=is_task_retired(conn, task_id))
+        workitem_total = len(facts["work_items"]["items"])
+        workitem_by_status = {}
+        for item in facts["work_items"]["items"]:
+            state = item["status"]
+            workitem_by_status[state] = workitem_by_status.get(state, 0) + 1
         print(f"=== Task Summary: {task_id} ===")
         print(f"  title:         {task['title'] or ''}")
         print(f"  project:       {task['project_id']}")
@@ -108,85 +121,18 @@ def cmd_report_task_summary(args) -> int:
         print(f"  rework events:     {rework_count}")
         print(f"  work items:        {workitem_total}")
         if workitem_by_status:
-            dist = ", ".join(f"{r['status']}={r['c']}" for r in workitem_by_status)
+            dist = ", ".join(f"{state}={count}" for state, count in sorted(workitem_by_status.items()))
             print(f"  workitem status:   {dist}")
+        print("  " + facts["work_items"]["summary"])
+        print("  " + facts["work_sessions"]["summary"])
         return 0
     finally:
         conn.close()
 
 
-def _work_session_detail(row) -> Dict[str, Any]:
-    """解析 Work Session 事件 detail_json；无效内容按空对象处理。"""
-    raw = row["detail_json"] if "detail_json" in row.keys() else ""
-    if not raw:
-        return {}
-    try:
-        value = json.loads(raw)
-    except (TypeError, json.JSONDecodeError):
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
 def _pair_work_sessions(rows) -> Dict[str, Any]:
-    """按 session_id 配对并发/交错 Work Session；旧事件仅按角色做保守兼容。"""
-    open_by_id: Dict[str, Any] = {}
-    legacy_open_by_role: Dict[str, Any] = {}
-    pairs: List[Dict[str, Any]] = []
-    unmatched_starts: List[Any] = []
-    unmatched_ends: List[Any] = []
-
-    for row in rows:
-        detail = _work_session_detail(row)
-        sid = str(detail.get("session_id") or "")
-        role = str(row["actor_role"] or "")
-        if row["event_type"] == "WORK_SESSION_STARTED":
-            if sid:
-                previous = open_by_id.get(sid)
-                if previous is not None:
-                    unmatched_starts.append(previous)
-                open_by_id[sid] = row
-            else:
-                previous = legacy_open_by_role.get(role)
-                if previous is not None:
-                    unmatched_starts.append(previous)
-                legacy_open_by_role[role] = row
-            continue
-
-        start_row = None
-        if sid:
-            start_row = open_by_id.pop(sid, None)
-        elif role:
-            start_row = legacy_open_by_role.pop(role, None)
-        if start_row is None:
-            unmatched_ends.append(row)
-            continue
-
-        start_time = _parse_iso(start_row["created_at"])
-        end_time = _parse_iso(row["created_at"])
-        duration = None
-        if start_time is not None and end_time is not None:
-            seconds = (end_time - start_time).total_seconds()
-            if seconds >= 0:
-                duration = seconds
-        end_detail = _work_session_detail(row)
-        pairs.append({
-            "session_id": sid,
-            "role": str(start_row["actor_role"] or role or "(unknown)"),
-            "start": start_time,
-            "end": end_time,
-            "duration": duration,
-            "reason": str(end_detail.get("reason") or ""),
-            "start_event_id": start_row["id"],
-            "end_event_id": row["id"],
-        })
-
-    unmatched_starts.extend(open_by_id.values())
-    unmatched_starts.extend(legacy_open_by_role.values())
-    return {
-        "pairs": pairs,
-        "unmatched_starts": unmatched_starts,
-        "unmatched_ends": unmatched_ends,
-    }
+    from .work_session_cmd import pair_work_sessions
+    return pair_work_sessions(rows)
 
 
 def cmd_report_stage_time(args) -> int:
@@ -194,6 +140,7 @@ def cmd_report_stage_time(args) -> int:
     db_path = dbmod.resolve_db_path(args.db, project_id=getattr(args, "project", None), task_id=task_id)
     conn = dbmod.connect_readonly(db_path)
     try:
+        conn.execute("BEGIN")
         task = conn.execute("SELECT * FROM task WHERE task_id = ?", (task_id,)).fetchone()
         if task is None:
             print(f"ERROR: task not found: {task_id}", file=sys.stderr)
@@ -204,12 +151,9 @@ def cmd_report_stage_time(args) -> int:
             "WHERE task_id = ? AND event_type = 'STATE' ORDER BY id",
             (task_id,),
         ).fetchall()
-        if not state_events:
-            print(f"(no STATE events for {task_id})")
-            return 0
         # 查询所有 WORK_SESSION_STARTED/ENDED 对
         sessions = conn.execute(
-            "SELECT id, event_type, actor_role, detail_json, created_at FROM task_event "
+            "SELECT id, task_id, event_type, actor_role, actor_agent, model_used, work_item_id, detail_json, created_at FROM task_event "
             "WHERE task_id = ? AND event_type IN ('WORK_SESSION_STARTED', 'WORK_SESSION_ENDED') "
             "ORDER BY id",
             (task_id,),
@@ -220,38 +164,28 @@ def cmd_report_stage_time(args) -> int:
             (task_id,),
         ).fetchall()
 
+        from .work_session_cmd import _session_time
         now = _now()
         # 计算 elapsed_time：每个 STATE 的 (下一条 STATE.time - 本条 STATE.time)，最后一条用 now
         stages: List[Dict[str, Any]] = []
         for i, ev in enumerate(state_events):
-            start = _parse_iso(ev["created_at"])
+            start = _session_time(ev["created_at"])
             if i + 1 < len(state_events):
-                end = _parse_iso(state_events[i + 1]["created_at"])
+                end = _session_time(state_events[i + 1]["created_at"])
             else:
                 end = now
-            elapsed = (end - start).total_seconds() if start and end else None
+            elapsed = (end - start).total_seconds() if start and end and end >= start else None
             stages.append({
                 "state": ev["to_state"],
                 "start": ev["created_at"],
                 "elapsed": elapsed,
-                "active": 0.0,
-                "normal_wait": 0.0,
+                "active": None,
+                "normal_wait": None,
                 "blocked": 0.0,
             })
 
-        # 构建 state 时间区间索引：每个 stage 的 [start, end)
-        def _find_stage(t: datetime) -> Optional[int]:
-            for idx, s in enumerate(stages):
-                s_start = _parse_iso(s["start"])
-                if idx + 1 < len(stages):
-                    s_end = _parse_iso(stages[idx + 1]["start"])
-                else:
-                    s_end = now
-                if s_start and s_end and s_start <= t < s_end:
-                    return idx
-            return None
-
-        # 只使用已配对 Work Session 计算真实执行时长；等待原因不等于等待区间。
+        # Recorded spans may overlap across roles. Split by state boundaries,
+        # but never infer productive/CPU time, wait duration or missing ENDs.
         session_report = _pair_work_sessions(sessions)
         role_totals: Dict[str, Dict[str, float]] = {}
         for pair in session_report["pairs"]:
@@ -259,9 +193,14 @@ def cmd_report_stage_time(args) -> int:
             duration = pair["duration"]
             if start_t is None or duration is None:
                 continue
-            stage_idx = _find_stage(start_t)
-            if stage_idx is not None:
-                stages[stage_idx]["active"] += duration
+            for index, stage in enumerate(stages):
+                lower = _session_time(stage["start"])
+                upper = _session_time(stages[index + 1]["start"]) if index + 1 < len(stages) else now
+                if lower is None or upper is None or upper < lower:
+                    continue
+                overlap = (min(pair["end"], upper) - max(start_t, lower)).total_seconds()
+                if overlap > 0:
+                    stage["active"] = (stage["active"] or 0.0) + overlap
             role = str(pair["role"] or "(unknown)")
             bucket = role_totals.setdefault(role, {"sessions": 0.0, "seconds": 0.0})
             bucket["sessions"] += 1
@@ -270,7 +209,7 @@ def cmd_report_stage_time(args) -> int:
         # 计算 blocked_time：current_state=BLOCKED 期间
         for idx, s in enumerate(stages):
             if s["state"] == "BLOCKED":
-                s["blocked"] = s["elapsed"] or 0.0
+                s["blocked"] = s["elapsed"]
 
         # 输出表格
         print(f"=== Stage Time: {task_id} (current={task['current_state']}) ===")
@@ -297,9 +236,9 @@ def cmd_report_stage_time(args) -> int:
         for r in rows:
             print(fmt_row(r))
 
-        print("\n=== Role Work Time (paired Work Sessions; measured only) ===")
+        print("\n=== Role Work Time (paired Work Sessions; recorded intervals only) ===")
         if role_totals:
-            print(f"{'role':<32} {'sessions':>8} {'measured':>10}")
+            print(f"{'role':<32} {'sessions':>8} {'recorded':>10}")
             print(f"{'-' * 32} {'-' * 8} {'-' * 10}")
             for role, values in sorted(role_totals.items()):
                 print(f"{role:<32} {int(values['sessions']):>8} {_fmt_duration(values['seconds']):>10}")
@@ -307,6 +246,9 @@ def cmd_report_stage_time(args) -> int:
             print("  no paired role work sessions")
         print(f"  unmatched starts: {len(session_report['unmatched_starts'])}")
         print(f"  unmatched ends: {len(session_report['unmatched_ends'])}")
+        from .work_session_cmd import summarize_work_sessions
+        print("  " + summarize_work_sessions(sessions)["summary"])
+        print("  note: intervals are recorded wall-clock spans, not CPU/model time or process liveness; active is the sum of recorded spans (roles may overlap)")
         print("  note: waiting end reasons do not measure waiting duration; waiting time is not inferred")
         if rework_events:
             print(f"\n  rework events: {len(rework_events)}")
@@ -620,7 +562,7 @@ def _fmt_value(v: float | None, fmt: str = _FMT_MONEY, na: str = "N/A") -> str:
 
 
 def cmd_report_cost_benefit(args) -> int:
-    """V5.3.1 B-15 成本披露报表（强制四列 + W1-W4 告警 + 净亏独立列）。
+    """V5.3.2 B-15 成本披露报表（强制四列 + W1-W4 告警 + 净亏独立列）。
 
     对齐升级计划 §3.5（L180-189）与 B-13 设计文档。
     仅披露不阻断：不改变 workflow 状态、不改变风险等级。
@@ -842,6 +784,14 @@ def add_report_subparsers(report_parser) -> None:
     """注册 report 命令组的子命令。"""
     sub = report_parser.add_subparsers(dest="subcommand", required=True)
 
+    from .command_context import cmd_timings
+    timing = sub.add_parser("timings", help="Read automatic production CLI timing receipts")
+    timing.add_argument("--task", default=None)
+    timing.add_argument("--invocation", default=None)
+    timing.add_argument("--limit", type=int, default=20)
+    timing.add_argument("--json", action="store_true")
+    timing.set_defaults(func=cmd_timings)
+
     # report task-summary
     p_ts = sub.add_parser("task-summary", help="Task summary report")
     p_ts.add_argument("--task", required=True, help="task id")
@@ -879,7 +829,7 @@ def add_report_subparsers(report_parser) -> None:
     p_cross.add_argument("--db", required=False, default=None)
     p_cross.set_defaults(func=cmd_report_cross)
 
-    # report context-effectiveness (V5.3.1 Context Effectiveness)
+    # report context-effectiveness (V5.3.2 Context Effectiveness)
     p_ctx = sub.add_parser(
         "context-effectiveness",
         help="Read-only Task-bound Context Effectiveness report",
@@ -890,8 +840,8 @@ def add_report_subparsers(report_parser) -> None:
     p_ctx.add_argument("--db", default=None)
     p_ctx.set_defaults(func=cmd_report_context_effectiveness)
 
-    # report cost-benefit（V5.3.1 B-15 成本披露报表）
-    p_cb = sub.add_parser("cost-benefit", help="Cost-benefit disclosure report (V5.3.1 B-15)")
+    # report cost-benefit（V5.3.2 B-15 成本披露报表）
+    p_cb = sub.add_parser("cost-benefit", help="Cost-benefit disclosure report (V5.3.2 B-15)")
     p_cb.add_argument("--task", required=True, help="task id")
     p_cb.add_argument("--output", required=True, help="persist report to JSON file path")
     # 四列强制字段

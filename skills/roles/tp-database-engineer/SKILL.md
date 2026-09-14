@@ -1,11 +1,11 @@
 ---
 id: tp-database-engineer
 name: tp-数据库工程师
-version: 5.3.1
+version: 5.3.2
 status: active
 type: workflow-role
 role: tp-database-engineer
-description: tp-数据库工程师：TP-Spec-Coding v5.3.1 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-数据库工程师：TP-Spec-Coding v5.3.2 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-数据库工程师
@@ -22,4 +22,4 @@ description: tp-数据库工程师：TP-Spec-Coding v5.3.1 正式软件工程角
 6. SQL 按用途归属而不是按扩展名归属：随产品部署/迁移的 SQL 放目标仓库既有正式目录；一次性调查、回读和验证 SQL 放当前 Task `evidence/sql/`；临时生成物使用受控 Temp。
 7. 修改/删除现有 SQL、Mapper、Schema 前检查真实调用、Migration 历史、兼容窗口和外部数据契约，优先复用或修改既有路径，不并行堆叠第二套实现。
 ## Project Memory（按需）
-只有工作自然出现 Evidence-backed、Non-volatile、Reusable 且 costly-to-rediscover 的项目经验时，才按需调用 `tp-memory-capture`。未触碰 Memory：0 动作；只检查 touched fragment，不扫描整个 PROJECT、全部 Skills 或历史任务；Memory 缺失/候选沉淀不得阻塞当前研发。
+遵守业务项目根 `AGENTS.md` 自有规则及当前 Task 授权；临时决定留 Task。已确认稳定 Rule 不受重发现成本限制，根规则写失败说明未持久化。Rule 或高价值经验触发沉淀时先读 [tp-memory-capture](../../capabilities/tp-memory-capture/SKILL.md) 的相关段；未触碰 Memory：0 动作，已知目标直达、无关 Memory 不读，可选缓存失败不阻塞研发。

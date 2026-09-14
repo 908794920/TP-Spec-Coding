@@ -28,6 +28,13 @@ def _case(layer: str, domains: tuple[str, ...], necessity: str, main_contracts: 
     }
 
 TEST_FILE_CATALOG = {
+    'scripts/tests/test_v532_browser_reports.py': _case('integration', ('runtime', 'base'), 'KEEP_INDEPENDENT_CONTRACT', 'native Playwright outcome mapping, opt-in bounded attachment custody, evidence replay and no automatic visual PASS', resources=('subprocess', 'sqlite', 'git', 'env_mutation', 'cwd_mutation')),
+    'scripts/tests/test_v532_project_surface.py': _case('integration', ('base', 'portability'), 'KEEP_INDEPENDENT_CONTRACT', 'production project sync preserves owned bytes and rejects ambiguous markers/symlink writes', resources=('subprocess', 'sqlite', 'git', 'env_mutation', 'cwd_mutation')),
+    'scripts/tests/test_v532_cli_contract.py': _case('integration', ('runtime', 'cards', 'base'), 'KEEP_INDEPENDENT_CONTRACT', 'production zero-card lifecycle, CLI timing/correlation/failure and content-fresh config', resources=('subprocess', 'sqlite', 'git', 'env_mutation', 'cwd_mutation')),
+    'scripts/tests/test_v532_recording.py': _case('integration', ('runtime', 'base'), 'KEEP_INDEPENDENT_CONTRACT', 'logical request receipt replay/conflict/concurrency, automatic copied artifact binding and configured limits', resources=('subprocess', 'sqlite', 'git', 'env_mutation', 'cwd_mutation')),
+    'scripts/tests/test_v532_waiting.py': _case('integration', ('runtime', 'workflow'), 'KEEP_INDEPENDENT_CONTRACT', 'typed waits, owner/dependency resolution and unchanged prerequisite rejection', resources=('subprocess', 'sqlite', 'git', 'env_mutation', 'cwd_mutation')),
+    'scripts/tests/test_v532_closeout.py': _case('integration', ('runtime', 'workflow'), 'KEEP_INDEPENDENT_CONTRACT', 'Owner acceptance receipt, scoped visual disposition, blocked recovery and read-only completion preflight', resources=('subprocess', 'sqlite', 'git', 'env_mutation', 'cwd_mutation')),
+    'scripts/tests/test_v532_projection_resilience.py': _case('integration', ('runtime', 'base'), 'KEEP_INDEPENDENT_CONTRACT', 'optional continuation recovery without rolling back facts; required projections and terminal seal remain atomic', resources=('subprocess', 'sqlite', 'git', 'env_mutation', 'cwd_mutation')),
     'scripts/tests/migration/test_v523_to_v524_role_map.py': _case('contract', ('migration', 'roles'), 'KEEP_REGRESSION', 'v523 to v524 role map regression/compatibility contract'),
     'scripts/tests/test_b12_structured_refs.py': _case('contract', ('base',), 'KEEP_REGRESSION', 'b12 structured refs regression/compatibility contract'),
     'scripts/tests/test_b14_lossless_summary.py': _case('contract', ('base',), 'KEEP_REGRESSION', 'b14 lossless summary regression/compatibility contract'),
@@ -122,7 +129,7 @@ SMOKE_NODEIDS = {
     'scripts/tests/test_config_loader.py::TestSuccessPaths::test_all_governance_validate',
     'scripts/tests/test_v510_active_contract.py::TestActiveContract::test_gate_accepts_active_version',
     'scripts/tests/test_v513_record_first.py::RecordFirstCase::test_simple_verified_flow_has_small_event_budget',
-    'scripts/tests/test_v514_orchestration_router.py::test_l1_standard_route',
+    'scripts/tests/test_v514_orchestration_router.py::test_l1_on_demand_route_and_explicit_architecture',
     'scripts/tests/test_v524_role_catalog.py::test_catalog_has_only_new_active_role_model',
     'scripts/tests/test_v526_html_cards.py::test_renderer_contains_core_fields_interactions_and_snapshot_notice',
 }

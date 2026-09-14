@@ -8,7 +8,7 @@ def read(rel: str) -> str:
 
 
 def test_implementation_template_contains_pre_and_post_change_contract():
-    text = read("templates/5.3.1/implementation.md")
+    text = read("templates/5.3.2/implementation.md")
     for marker in [
         "### Usage Footprint",
         "### 可复用代码",
@@ -35,7 +35,9 @@ def test_lifecycle_and_integration_keep_external_implementation_review_only():
     integration = read("skills/roles/tp-integration-engineer/SKILL.md")
     assert "外部 AI 已完成实现" in lifecycle
     assert "Test Engineer + Code Reviewer" in lifecycle
-    assert "Integration 发现问题必须返回 Development" in integration
+    assert "Integration 发现真实产品 Finding 返回 Development" in integration
+    assert "缺权限、环境或证据则明确等待和恢复条件" in integration
+    assert "不无条件派返工" in integration
 
 
 def test_systematic_debugging_requires_executed_red_feedback_loop_before_product_change():
@@ -129,8 +131,54 @@ def test_capability_references_capture_overdevelopment_and_low_value_tests():
 
 
 def test_test_guide_separates_visual_and_non_visual_validation():
-    guide = read("templates/5.3.1/requirement-test-guide.md")
+    guide = read("templates/5.3.2/requirement-test-guide.md")
     assert "## 非可视化验证" in guide
     assert "## 可视化验证" in guide
     assert "登录策略" in guide
     assert "目标视口" in guide
+
+
+def test_b04_batch_guidance_is_proportionate_and_does_not_grant_test_authority():
+    implementation = read('skills/capabilities/implementation-control/SKILL.md')
+    testing = read('skills/capabilities/testing-strategy/SKILL.md')
+    developer = read('skills/roles/tp-development-engineer/SKILL.md')
+    tester = read('skills/roles/tp-test-engineer/SKILL.md')
+    assert '方法清单，不是每轮必跑步骤' in implementation
+    assert '五行短路线（简单任务）' not in implementation
+    assert 'context.validation' in testing and '不是覆盖证明' in testing
+    for text in (testing, tester):
+        assert '不默认全量构建/回归' in text
+    assert '没有真实 Finding 可以不修改' in developer
+    assert 'durable regression test' in tester and '新测试默认使用' not in tester
+
+
+# 这里只保护指令/资产契约，不能据此宣称真实 Agent 已遵守。
+def test_b14_conditional_methods_keep_risk_evidence_and_stop_conditions():
+    import re
+    text = read("skills/capabilities/implementation-control/SKILL.md")
+    assert "按触发条件选用" in text
+    assert "不要求逐项回答" in text
+    assert "Usage Footprint" in text and "全文搜索无引用不等于可安全删除" in text
+    assert "新问题或有效触发" in text and "授权" in text
+    assert "不默认全量构建/回归" in text
+    # 标题写“按需”仍可能留下串行清单，因此同时检查方法结构。
+    methods = text.split("## 文件归属", 1)[0]
+    assert not re.search(r"(?m)^\d+\. ", methods)
+
+
+def test_b14_simple_feedback_template_does_not_require_five_line_route():
+    text = read("templates/5.3.2/implementation.md")
+    intro = text.split("## 开发前", 1)[0]
+    assert "批次摘要" in intro and "不另建" in intro
+    assert "五行" not in intro
+    assert "跨文件" not in intro  # file count alone is not a planning trigger
+    assert "### Usage Footprint" in text and "### 已知风险 / 未完成项" in text
+
+
+def test_b14_unexpected_stop_explanation_distinguishes_runtime_from_inference():
+    text = read("agents/tp-software-lifecycle/SKILL.md")
+    section = text.split("## 异常解释", 1)[1]
+    for token in ("实际文件", "适用条件", "解释", "受阻动作", "恢复", "Runtime", "推断"):
+        assert token in section
+    assert "隐藏指令" in section and "前置未变" in section
+    assert "其余获准工作" in section
