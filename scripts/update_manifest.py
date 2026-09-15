@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -107,27 +108,30 @@ def generate() -> int:
     return 0
 
 
-_DIRECTORY_MODE_IGNORES = {".git", ".pytest_cache", "__pycache__", ".mypy_cache", ".ruff_cache"}
-_DIRECTORY_MODE_SUFFIX_IGNORES = {".pyc", ".pyo", ".coverage", ".tmp", ".db-wal", ".db-shm"}
+_DIRECTORY_MODE_IGNORES = {".git", ".pytest_cache", "__pycache__", ".mypy_cache", ".ruff_cache",
+                           "node_modules", "dist", ".vite", ".venv", "venv", "workbench-logs", "release"}
+_DIRECTORY_MODE_SUFFIX_IGNORES = {".pyc", ".pyo", ".coverage", ".tmp", ".db-wal", ".db-shm", ".tsbuildinfo", ".patch", ".zip"}
 
 
 def _dir_file_set() -> set[str]:
     """无 Git 模式：枚举稳定发布文件，忽略可再生运行缓存。"""
     out: set[str] = set()
-    for p in BASE.rglob("*"):
-        if not p.is_file():
-            continue
-        rel_path = p.relative_to(BASE)
-        rel = rel_path.as_posix()
-        if rel == "manifest.sha256":
-            continue
-        if any(part in _DIRECTORY_MODE_IGNORES for part in rel_path.parts):
-            continue
-        if p.suffix.lower() in _DIRECTORY_MODE_SUFFIX_IGNORES:
-            continue
-        if p.name.startswith("_t4_") or p.name.startswith("_probe"):
-            continue
-        out.add(rel)
+    for directory, dirs, names in os.walk(BASE):
+        # Prune before descent: installing npm packages must not expand the source set.
+        dirs[:] = [name for name in dirs if name not in _DIRECTORY_MODE_IGNORES]
+        for name in names:
+            p = Path(directory) / name
+            rel = p.relative_to(BASE).as_posix()
+            if rel == "manifest.sha256" or not p.is_file():
+                continue
+            # Retired presentation output stays excluded; never delete user history.
+            if rel.startswith((".tp-spec/card/", "docs/planning/")):
+                continue
+            if p.suffix.lower() in _DIRECTORY_MODE_SUFFIX_IGNORES:
+                continue
+            if name.startswith(("_t4_", "_probe")):
+                continue
+            out.add(rel)
     return out
 
 

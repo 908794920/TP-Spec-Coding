@@ -11,7 +11,7 @@
 - `tasks/`：活动任务事实与正式工件。
 - `tasksHistory/`：已归档任务历史。
 - `.execution/`：持久执行辅助状态；不替代任务账本。
-- `card/`：固定项目级 Web Artifact，入口为 `.tp-spec/card/index.html`；该目录是 **presentation-only / rebuildable / non-authoritative**，不属于 Runtime/Task truth，删除后可重新生成。
+- 历史 `card/`：旧展示文件不再生成或更新，不属于 Runtime/Task truth；不要因升级批量删除其中的用户历史文件。
 - `memory/`：项目 Git 可携带的轻量热记忆与项目级 Skill；`INDEX.md` 是目标未知时的可选导航，`PROJECT.md` 不是事实真源，不保存敏感或 machine-local 信息。
 
 ## 使用方式
@@ -24,6 +24,7 @@
 6. Runtime 状态只通过当前 Base 正式 CLI/角色流程修改，不直接编辑 SQLite 或伪造账本投影。
 7. Base 版本升级、binding 修复、Runtime root rebind、项目入口文档同步由 `tp-base-maintenance` / 标准 `tp-spec base ...` 命令负责；Knowledge/Wiki 内容分别由对应维护能力负责。
 8. 当前活动任务若仍包含具有执行语义的旧 Junction 路径，应 targeted repair；历史任务与 evidence 不因迁移而重写。
-9. 项目级可重建生成物默认放入 `.tp-spec/<feature>/`，不要在项目根新增 `.tp-spec-*` 或 preview/cache 兄弟目录；高频短生命周期 execution scratch 继续使用 **system Temp**，不迁入项目状态目录。
+9. 查看项目/任务/配置的可视化，在 TP-Spec-Coding 自身源码根运行 `npm run dev` 并打开终端地址；不要在本业务项目复制前端，也不通过会话宿主生成 HTML。页面只读现有事实，进入页面或手动读取才更新。
+10. 项目级可重建生成物默认放入 `.tp-spec/<feature>/`，不要在项目根新增 `.tp-spec-*` 或 preview/cache 兄弟目录；高频短生命周期 execution scratch 继续使用 **system Temp**，不迁入项目状态目录。
 
 如果本目录中的说明与当前 Base canonical protocol 冲突，以当前 Base protocol + Resolver 的确定性结果为准。

@@ -32,5 +32,13 @@ release/
 # 未发布规划文档：不进入正式发布 Git/manifest，由后续版本分支单独归档
 /docs/planning/
 
-# TP-Spec 项目级 Web Artifact（presentation-only，可重建，不进入版本库）
+# 历史展示文件仅继续排除：生成入口已退役，不删除用户原件、不重新纳入版本库
 .tp-spec/card/
+
+# 本地工作台依赖、构建缓存和解释器环境（源码和锁文件仍入库）
+node_modules/
+.vite/
+.venv/
+venv/
+*.tsbuildinfo
+workbench-logs/

@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -368,13 +369,18 @@ def _parse_detail(raw: Any) -> Dict[str, Any]:
         return {}
 
 
-def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_progress: bool = False) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-    path = dbmod.resolve_db_path(db_path, task_id=task_id)
-    if not Path(path).is_file():
-        raise OrchestrationError(f"database not found: {path}")
-    conn = dbmod.connect_readonly(path)
+def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_progress: bool = False,
+                     connection: Optional[sqlite3.Connection] = None) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    if connection is None:
+        path = dbmod.resolve_db_path(db_path, task_id=task_id)
+        if not Path(path).is_file():
+            raise OrchestrationError(f"database not found: {path}")
+        conn = dbmod.connect_readonly(path)
+    else:
+        conn = connection
     try:
-        conn.execute("BEGIN")
+        if not conn.in_transaction:
+            conn.execute("BEGIN")
         row = conn.execute(
             "SELECT t.*, p.root_path AS project_root_path FROM task t "
             "LEFT JOIN project p ON p.project_id=t.project_id WHERE t.task_id=?",
@@ -423,7 +429,8 @@ def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_pro
                         task["_current_code_review"] = {"event_id": int(reviewed.row["id"])}
         return task, facts
     finally:
-        conn.close()
+        if connection is None:
+            conn.close()
 
 
 def _decision_signal_ids(events: Iterable[Dict[str, Any]], contract: Optional[Dict[str, Any]] = None) -> Dict[str, int]:
@@ -1099,7 +1106,8 @@ def _route_role_boundary(task: Dict[str, Any], level: str, events: List[Dict[str
 def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                   base_root: Optional["str | Path"] = None,
                   confirmation_policy: Optional[str] = None,
-                  allowed_effects: Optional[Iterable[str]] = None) -> Dict[str, Any]:
+                  allowed_effects: Optional[Iterable[str]] = None,
+                  _facts: Optional[Tuple[Dict[str, Any], List[Dict[str, Any]]]] = None) -> Dict[str, Any]:
     root = _root(base_root)
     contract = load_contract(root)
     catalog = load_role_catalog(root)
@@ -1108,7 +1116,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
         unknown_allowed = sorted(allowed_set - KNOWN_EFFECTS)
         if unknown_allowed:
             raise OrchestrationError(f"unknown allowed effects: {unknown_allowed}")
-    task, events = _load_task_facts(task_id, db_path)
+    task, events = _facts if _facts is not None else _load_task_facts(task_id, db_path)
     contract = orchestration_policy.resolve(contract, catalog, task["_orchestration_overrides"],
                                             project_id=str(task["project_id"]), task_id=task_id)
     task["_policy_sources"] = contract["_policy_sources"]
@@ -1471,6 +1479,7 @@ def resolve_progress(
     *,
     db_path: Optional[str] = None,
     base_root: Optional["str | Path"] = None,
+    connection: Optional[sqlite3.Connection] = None,
 ) -> Dict[str, Any]:
     """Return display-oriented workflow progress from the same orchestration facts.
 
@@ -1490,10 +1499,10 @@ def resolve_progress(
         for item in (catalog.get("roles") or [])
         if isinstance(item, dict) and item.get("workflow_role")
     }
-    task, events = _load_task_facts(task_id, db_path, include_progress=True)
+    task, events = _load_task_facts(task_id, db_path, include_progress=True, connection=connection)
     contract = orchestration_policy.resolve(contract, catalog, task["_orchestration_overrides"],
                                             project_id=str(task["project_id"]), task_id=task_id)
-    route = resolve_route(task_id, db_path=db_path, base_root=root)
+    route = resolve_route(task_id, db_path=db_path, base_root=root, _facts=(dict(task), events))
     task["_risk_signals"] = route.get("risk_signals", [])
     level = str(route.get("effective_level") or resolve_effective_level(task.get("risk_level"), task.get("flow_level")))
     signals = _decision_signals(events, contract)

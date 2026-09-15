@@ -96,7 +96,9 @@ Runtime 负责自动维护核心事实：
 - 结构化 `task_event`；
 - Review / Verification / Workflow Confirmation / Delivery 等正式结果；
 - Evidence metadata 与来源；
-- 卡片和其他只读投影。
+- 必要的 status/events 只读投影。
+
+本地工作台只消费这些事实，普通 CLI 不会启动或刷新页面；启动方式见 [WORKBENCH.md](WORKBENCH.md)。
 
 AI 应调用专用业务 CLI，让 Runtime 自动记账。`summary` 只用于人类阅读，不能作为 PASS/FAIL、阶段完成或路由依据。缺少非关键 Governance enrichment 时应优先保留真实工作结果，而不是要求 AI 手工补大量文档。
 

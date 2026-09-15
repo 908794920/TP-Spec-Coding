@@ -8,11 +8,12 @@ documentation must remain machine-neutral.
 from __future__ import annotations
 
 import re
+import os
 import sys
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[1]
-SKIP_DIRS = {".git", ".pytest_cache", "__pycache__"}
+SKIP_DIRS = {".git", ".pytest_cache", "__pycache__", "node_modules", "dist", ".vite", ".venv", "venv", "workbench-logs"}
 ALLOWED_FINGERPRINT_FILES: set[Path] = set()
 FORBIDDEN_FINGERPRINTS: tuple[str, ...] = ()
 RUNTIME_SURFACES = ("agents", "automation", "cli", "knowledge", "project-entry", "scripts", "templates", "wiki")
@@ -21,13 +22,12 @@ POSIX_HOME = re.compile(r"/(?:home|Users)/[^/\s]+/")
 
 
 def _files():
-    for path in BASE.rglob("*"):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(BASE)
-        if any(part in SKIP_DIRS for part in rel.parts):
-            continue
-        yield rel, path
+    for directory, dirs, names in os.walk(BASE):
+        dirs[:] = [name for name in dirs if name not in SKIP_DIRS]
+        for name in names:
+            path = Path(directory) / name
+            if path.is_file():
+                yield path.relative_to(BASE), path
 
 
 def scan() -> list[str]:

@@ -8,7 +8,7 @@
   低于当前基座版本的 token（前一修补版本、5.0.x、4.x 及历史编码标识符），
   否则 FAILED；
 - 历史位置精确 allowlist（_ALLOWED_HISTORY_PREFIXES / _ALLOWED_HISTORY_GLOBS）：
-  reports/、显式 migration 源码、历史回归测试（Test-V510*/test_v510_*/v510_single_contract.py）
+  reports/、显式 migration 源码和历史决策/验证记录
   允许保留对旧版本的精确引用（不视为污染），避免改写历史证据；活动 `skills/` 必须跟随当前契约扫描；
 - CHANGELOG.md 只放行版本导航标题行（## vX.Y.Z）；
 - 未来版本（例如更高版本演练目标）与独立命名空间版本（治理/工具 schema 的
@@ -41,38 +41,20 @@ def _ensure_utf8_stdio() -> None:
                 pass
 
 # 历史位置精确 allowlist（任务书 §12）：这些位置允许出现旧版本 token（归档证据、
-# 历史回归测试、旧版目录），保留原样以维持审计链；不参与活动契约纯度判定。
+# 显式迁移与旧版目录），保留原样以维持审计链；不参与活动契约纯度判定。
 # 前缀匹配（相对 BASE 的 posix 路径前缀）。
 _ALLOWED_HISTORY_PREFIXES = (
     "reports/",       # 历史质量报告
     "cli/migrations/",
     "scripts/migration/",
-    "scripts/tests/fixtures/history/",
     "docs/decisions/",  # 决策 ADR 归档：精确引用决策发生时的基座契约版本
 )
 # 精确文件 glob 匹配（相对 BASE）。
 _ALLOWED_HISTORY_GLOBS = (
-    "scripts/tests/Test-V510*",
-    "scripts/tests/test_v510_*",
-    "scripts/tests/v510_single_contract.py",
-    "scripts/tests/test_b12_*",
-    "scripts/tests/test_b14_*",
-    "scripts/tests/test_b17_*",
-    "scripts/tests/test_c1_*",
-    "scripts/tests/test_c5_*",
-    "scripts/tests/test_config_loader.py",
-    "scripts/tests/test_v511_commit_reliability.py",
-    "scripts/tests/test_v511_hardening_gates.py",
-    "scripts/tests/test_v511_*",
-    "scripts/tests/test_v512_*",
-    "scripts/tests/test_v513_*",
-    "scripts/tests/test_b18_*",
-    "scripts/ci/Test-V510*",
     "CHANGELOG.md",
     "THIRD_PARTY_NOTICES.md",  # 第三方声明归档：精确引用评估/发布发生时的版本号
     "docs/MIGRATION_V529.md",  # 当前迁移说明必须精确引用上一活动契约
-    "docs/TESTING.md",  # 测试治理审计：精确引用治理发生时的原始基线版本数据
-    "scripts/tests/test_test_suite_governance.py",  # 断言 TESTING.md 记录的历史基线事实
+    "docs/TESTING.md",  # 验证策略附录保留历史实测版本；不是当前测试执行授权
     "manifest.sha256",  # 生成产物，可引用历史文件名
     "db/registry.local.json",
     "db/registry.local.json.example",
@@ -124,7 +106,8 @@ def _is_legacy_dotted(token: str, version: str) -> bool:
 
 
 # 严格排除的子目录名（任意层级）
-EXCLUDE_DIRS = {".git", "__pycache__", ".pytest_cache", "reports"}
+EXCLUDE_DIRS = {".git", "__pycache__", ".pytest_cache", "reports", "node_modules", "dist",
+                ".vite", ".venv", "venv", "workbench-logs"}
 
 # CHANGELOG 发布导航标题：## vX.Y.Z（可带说明后缀，如"— 历史版本"；
 # 允许列表项前缀“- ”）（放行）
@@ -138,6 +121,15 @@ _TEXT_EXTS = {
 _NO_EXT_NAMES = {"VERSION", "Dockerfile", "Makefile"}
 
 
+def _directory_files(base: Path) -> "list[Path]":
+    import os
+    files: "list[Path]" = []
+    for directory, dirs, names in os.walk(base):
+        dirs[:] = [name for name in dirs if name not in EXCLUDE_DIRS]
+        files.extend(Path(directory) / name for name in names if (Path(directory) / name).is_file())
+    return sorted(files)
+
+
 def _git_visible_files(base: Path) -> "list[Path]":
     """Return Git-visible files (tracked-existing + untracked non-ignored).
 
@@ -148,7 +140,7 @@ def _git_visible_files(base: Path) -> "list[Path]":
     """
     git_dir = base / ".git"
     if not git_dir.exists():
-        return sorted(p for p in base.rglob("*") if p.is_file())
+        return _directory_files(base)
     import subprocess
     try:
         proc = subprocess.run(
@@ -157,7 +149,7 @@ def _git_visible_files(base: Path) -> "list[Path]":
             check=True,
         )
     except (OSError, subprocess.CalledProcessError):
-        return sorted(p for p in base.rglob("*") if p.is_file())
+        return _directory_files(base)
     out: "list[Path]" = []
     for rel in proc.stdout.decode("utf-8").split("\0"):
         if not rel:
@@ -213,6 +205,18 @@ def scan_file(path: Path, legacy_re: "re.Pattern[str]", version: str) -> list[st
         text = path.read_text(encoding="utf-8")
     except (UnicodeDecodeError, OSError):
         return issues
+    if rel in {"package.json", "package-lock.json"}:
+        # Dependency semvers are not TP-Spec contract versions (e.g. picomatch).
+        import json
+        try:
+            package = json.loads(text)
+            versions = [package.get("version")]
+            if rel == "package-lock.json":
+                versions.append(package.get("packages", {}).get("", {}).get("version"))
+        except (ValueError, AttributeError):
+            return [f"  [INVALID] {rel}: npm metadata is not a JSON object"]
+        return [f"  [VERSION] {rel}: root version {value!r} != {version!r}"
+                for value in versions if value != version]
     is_changelog = path.name == "CHANGELOG.md"
     for i, line in enumerate(text.splitlines(), 1):
         stripped = line.strip()

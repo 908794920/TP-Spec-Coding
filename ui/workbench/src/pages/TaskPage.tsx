@@ -1,0 +1,60 @@
+import { api } from '../api';
+import { useRead } from '../useRead';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Context, Envelope, ReadState, TaskData } from '../types';
+import { record, stateLabel, text } from '../facts';
+import { buildGraph, type GraphObject } from '../graph/model';
+import { TaskGraph, type GraphHandle } from '../graph/TaskGraph';
+import { TaskDetail } from '../components/TaskDetail';
+import { WorkflowStrip, type WorkflowHandle } from '../components/WorkflowStrip';
+import { EventTimeline } from '../components/EventTimeline';
+import { Empty, Problems, ReadStatus } from '../components/Facts';
+function TaskWorkspace({ context, snapshot, revision }: {
+    context: Context;
+    snapshot: Envelope<TaskData>;
+    revision: number;
+}) {
+    const data = snapshot.data;
+    const taskId = text(record(data.task).task_id);
+    const [detailsRequested, requestDetails] = useState(false), [detailRevision, refreshDetails] = useState(0);
+    const [closeoutRequested, requestCloseout] = useState(false), [closeoutRevision, refreshCloseout] = useState(0);
+    const identity = JSON.stringify([context.context_key, taskId]);
+    const details = useRead(detailsRequested ? identity + '/details' : '', `${revision}:${detailRevision}`, signal => api.details(context.context_key, taskId, signal));
+    const closeout = useRead(closeoutRequested ? identity + '/closeout' : '', `${revision}:${closeoutRevision}`, signal => api.closeout(context.context_key, taskId, signal));
+    const model = useMemo(() => buildGraph(context.context_key, data), [context.context_key, data]);
+    const [selectedId, setSelectedId] = useState(''), [detailOpen, setDetailOpen] = useState(false);
+    const graph = useRef<GraphHandle>(null), workflow = useRef<WorkflowHandle>(null);
+    const selected = model.nodes.find(n => n.id === selectedId);
+    useEffect(() => { if (selectedId && !selected) {
+        setSelectedId('');
+        setDetailOpen(false);
+    } }, [selectedId, selected]);
+    const onOpen = useCallback((object: GraphObject) => { setSelectedId(object.id); setDetailOpen(true); }, []);
+    const close = useCallback(() => { setDetailOpen(false); requestAnimationFrame(() => graph.current?.focusNode(selectedId)); }, [selectedId]);
+    const support = record(data.data_support), task = record(data.task);
+    return <>
+    <WorkflowStrip workflow={record(data.workflow)} ref={workflow}/>
+    <div className="section-heading"><h3>工作关系</h3><div className="graph-actions"><button type="button" onClick={() => workflow.current?.locateCurrent()}>定位当前步骤</button><button type="button" disabled={task.state !== 'BLOCKED'} onClick={() => graph.current?.locate(model.taskNodeId)}>定位阻塞 Task</button><button type="button" onClick={() => graph.current?.locate(model.taskNodeId)}>Task 概况</button></div></div>
+    {support.work_unit !== 'provided' && <p className="support-note">当前展示 Task 与已登记的 WorkItem；基线没有提供完整 Work Unit 模型，不把 WorkItem、Work Session 或 Agent Thread 混为一类。</p>}
+    <div className={`task-workspace ${detailOpen && selected ? 'with-detail' : ''}`}>
+      <TaskGraph ref={graph} model={model} selectedId={selectedId} onOpen={onOpen}/>
+      {detailOpen && selected && <TaskDetail object={selected} snapshot={snapshot} onClose={close} details={details}
+        onDetails={() => requestDetails(true)} onRefreshDetails={() => { requestDetails(true); refreshDetails(n => n + 1); }}
+        closeout={closeout} closeoutRequested={closeoutRequested} onCloseout={() => { requestCloseout(true); refreshCloseout(n => n + 1); }}/>}
+    </div>
+    <EventTimeline events={data.timeline} scope={data.timeline_scope} workItemId={selected?.kind === 'work_item' ? selected.objectId : undefined}/>
+  </>;
+}
+export function TaskPage({ context, taskId, read, revision }: {
+    context?: Context;
+    taskId: string;
+    revision: number;
+    read: ReadState<Envelope<TaskData>>;
+}) {
+    if (!context || !taskId)
+        return <Empty title="选择一个 Task 查看工作关系">从项目总览或左侧任务索引进入；不会自动选取“最近任务”。</Empty>;
+    const data = read.data?.data;
+    return <div className="page task-page"><div className="page-heading"><div><span className="eyebrow">任务工作区 · {context.name}</span><h2><code>{taskId}</code> {text(record(data?.task).title)}</h2><p>{data ? stateLabel('task', record(data.task).state) : '状态未读取'} · {context.workspace_root}</p></div></div>
+    <ReadStatus {...read}/>{data && <><Problems items={data.problems}/><TaskWorkspace key={JSON.stringify([context.context_key, taskId])} context={context} snapshot={read.data!} revision={revision}/></>}
+  </div>;
+}

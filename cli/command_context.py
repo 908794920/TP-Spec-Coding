@@ -23,7 +23,7 @@ from time import perf_counter
 from typing import Any, Iterator
 import uuid
 
-_SEGMENTS = ("parse", "config", "changeset", "lock_wait", "lock_held", "db_write", "db_commit", "evidence", "projection", "card")
+_SEGMENTS = ("parse", "config", "changeset", "lock_wait", "lock_held", "db_write", "db_commit", "evidence", "projection")
 _CURRENT: ContextVar["CommandContext | None"] = ContextVar("tp_spec_command", default=None)
 
 
@@ -43,7 +43,7 @@ class CommandContext:
 
     def bind(self, args) -> None:
         group = str(getattr(args, "group", "") or "")
-        action = str(getattr(args, "subcommand", "") or getattr(args, "card_type", "") or "")
+        action = str(getattr(args, "subcommand", "") or "")
         self.command = " ".join(value for value in (group, action) if value)
         task_id = getattr(args, "id", None) if group == "task" and action == "create" else getattr(args, "task", None)
         # Invalid input is not an established identity. Do not copy arbitrary

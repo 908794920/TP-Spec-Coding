@@ -917,12 +917,15 @@ def validate_final_acceptance(conn, task_id: str, task_dir: Path) -> None:
         raise ValueError("INTEGRITY_ACCEPTANCE: " + "; ".join(issues))
 
 
-def completion_check(*, task_id: str, task_dir: str, db: Optional[str] = None) -> Dict[str, Any]:
+def completion_check(*, task_id: str, task_dir: str, db: Optional[str] = None,
+                     connection=None, base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
     """Read-only completion preflight shared with the terminal write path."""
     tdir = _task_dir(task_dir)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
-    conn = dbmod.connect_readonly(db_path)
+    conn = connection if connection is not None else dbmod.connect_readonly(db_path)
     try:
+        if not conn.in_transaction:
+            conn.execute("BEGIN")
         task = _load(conn, task_id)
         state = str(task["current_state"] or "")
         result: Dict[str, Any] = {
@@ -939,7 +942,8 @@ def completion_check(*, task_id: str, task_dir: str, db: Optional[str] = None) -
             return result
         from . import orchestration
         try:
-            route = orchestration.resolve_route(task_id, db_path=db_path)
+            facts = orchestration._load_task_facts(task_id, db_path, connection=conn)
+            route = orchestration.resolve_route(task_id, db_path=db_path, base_root=base_root, _facts=facts)
         except Exception as exc:
             result["ready"] = False
             result["blockers"].append(f"ROUTE_CHECK_FAILED: {type(exc).__name__}: {exc}")
@@ -965,7 +969,8 @@ def completion_check(*, task_id: str, task_dir: str, db: Optional[str] = None) -
             result["blockers"].append(str(exc))
         return result
     finally:
-        conn.close()
+        if connection is None:
+            conn.close()
 
 
 def _cleanup_terminal_temp_artifacts(task) -> Dict[str, Any]:

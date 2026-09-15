@@ -22,6 +22,8 @@ description: 唯一软件工程 Domain Agent；基于 L0~L3、风险、phase、�
 2. 每个 phase 只选择当前真正需要的 Formal Role；Security/Database 等可按风险跨 phase 参与。
 3. 每个 Role 只加载必要 Skill/Sub-Skill；Skill Pool 很大不等于单 Task 要全跑。`workflow next` 提供只读 `included_stages`、`policy_sources` 和有限 `context.validation`；执行者仍核对实际调用方、AC 和授权后选择验证，不能把建议当成覆盖证明。项目政策及查询方法按需读 [生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)。
 
+修改 TP-Spec-Coding 自身源码时，将 [本仓验证策略](../../docs/TESTING.md) 传给各执行/审查角色；本地与云端均不因批次、提交或最终汇合自动全量测试，临时用例结束后清理。其他业务仓库仍按自身规则。
+
 ## 外部实现接入
 外部 AI 已完成实现或用户明确说明代码已由其他开发者完成时，默认把现有工作区固定为 Development subject，随后调度 Test Engineer + Code Reviewer，二者 `effects=[]`。Codex/当前 Agent 不因为“还能优化”自动重新进入 Development；只有独立 Test/Review 产生确定 Finding 后，才返回 Development 并把修改范围限制在 Finding 覆盖内容。
 
@@ -43,14 +45,14 @@ Knowledge 不增加 lifecycle stage：Delivery READY 后若 Runtime 存在可信
 ## 工作段与临时工件
 工作段用于有意义的执行/暂停边界，不逐工具 start/end。ACTIVE、未闭合 START 和角色名均不证明进程存活或独立 Agent；未知保持待诊断，不补造时间，不自动修历史或杀进程。只在已知中断、原 task/role/agent 与 ownership/授权成立时收口，不冒充执行者；终态/退休任务不得新开工作段。
 
-临时诊断使用登记的系统 Temp；持久回归、原始文件和 Evidence 不是清理对象。残留检查只报告，不得自动删除未托管路径；`CLEANUP_PENDING` 不新增 public state，不逆改已提交事实，必要验收仍检查清理证据。
+临时诊断使用登记的系统 Temp；业务项目已获准保留的回归、原始文件和 Evidence 不是清理对象。基座自身的临时用例按本仓验证策略结束后清理。残留检查只报告，不得自动删除未托管路径；`CLEANUP_PENDING` 不新增 public state，不逆改已提交事实，必要验收仍检查清理证据。
 
 - 读取条件：创建临时夹具、工作段收口或诊断残留；内容：只读工作段、临时工件与已知中断恢复；路径：[生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)。只读命中段，不每轮展开命令手册。
 
-## 正常反馈与显式卡片
+## 正常反馈与本地工作台
 开始/继续、有意义里程碑、范围变化和等待/结束边界，复用可信结果简短 Markdown 汇报；箭头只表达本次实际执行段，不伪造完成比例、Token 或运行中状态，不逐命令刷屏，不破坏 CLI JSON/YAML stdout。
 
-所有普通命令（含 checkpoint/verify/block/resume/complete、work start/end、workflow confirm）不自动生成 snapshot、不写 HTML、不输出 CARD_DISPLAY、不调用 Host bridge；不预生成、不静默、延迟或后台刷新。仅用户明确请求卡片时读取 [tp-card-display](../tp-card-display/SKILL.md)，会话内/离线降级细节按该契约处理。不得复制卡片模板、渲染器或 Host bridge；展示失败不改变 Runtime 成功事实，不写回 Runtime/Wiki/Knowledge。
+所有普通命令（含 checkpoint/verify/block/resume/complete、work start/end、workflow confirm）不生成 HTML、不启动工作台或触发页面刷新。需要可视化时，在 TP-Spec-Coding 自身根目录运行 `npm run dev`，使用 [本地工作台](../../docs/WORKBENCH.md)，不派发额外展示 Agent。页面只读事实，不依赖会话宿主；读取失败不改变 Runtime 成功事实，不写回 Runtime/Wiki/Knowledge。
 
 ## 深度模式与安全
 本 Domain Agent 只决定**何时进入深度模式**；UltraPlan/UltraReview 由正式专业角色主持；`mode` 与 `effects` 独立于 Role。任何 `repo_mutation` 都必须继续遵守 Execution Envelope / allowed_effects fail-closed 边界。

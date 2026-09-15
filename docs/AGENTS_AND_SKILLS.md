@@ -37,7 +37,7 @@ CLI / Runtime
 
 ## 4. 生成型 topology
 
-Role Catalog 的 `topology` 是对同一份 catalog + Skill metadata 的生成投影，用于快速检索和卡片展示，不是第二事实源。
+Role Catalog 的 `topology` 是对同一份 catalog + Skill metadata 的生成投影，用于快速检索和工作台展示，不是第二事实源。
 
 节点同时保留稳定 `id` 和用户可读 `name`。运行时消费者读取生成投影，不为了查询关系扫描整个 Skills 目录，也不增加新的数据库或后台服务。
 
@@ -49,7 +49,7 @@ Runtime 的核心职责是自动记录真实执行事实。原则：
 - `summary` 只用于人类阅读，不参与状态、颜色、质量判断或工作流路由；
 - 普通 Capability Skill 调用不默认成为 Runtime owner；
 - 非关键 Governance enrichment 缺失不应轻易回滚真实工作；
-- 卡片、HTML、status/events 文件属于只读投影或展示，不反向成为事实源。
+- 本地工作台及 status/events 文件属于只读投影或展示，不反向成为事实源；历史 HTML 也不是当前事实。
 
 正式事件的结果语义由 Base 的 event semantics 契约控制；旧事件只允许按确定性的 legacy machine contract 兼容，禁止从自由文本补 PASS/FAIL。
 

@@ -13,6 +13,8 @@ description: tp-开发工程师：TP-Spec-Coding v5.3.3 正式软件工程角色
 ## 责任
 完成前后端业务实现、调试、重构、性能/并发改进和开发自测。Java/Spring、Python、Vue/React 等属于 Technology Context，不拆成顶层角色；数据库专有设计和变更由 Database Engineer 负责或共同承担。
 
+修改或审查 TP-Spec-Coding 自身源码时，先应用 [本仓验证策略](../../../docs/TESTING.md)：局部临时验证、结束后清理，不因提交/交付或 Review 建议执行全量测试；下述通用方法不构成永久测试要求。其他业务仓库遵守各自规则。
+
 ## 工作方式
 1. Token 主要用于读真实代码、实现、调试和验证，不用于维护流程工件。
 2. 以当前有效 canonical Requirement、已有适用的 Architecture/Tech Lead 约束和真实代码定位最小合理修改范围；局部反馈留在原 Task，不为缺少可选阶段事件补造方案。没有真实 Finding 可以不修改；代码事实冲突时先查明，不静默扩大 scope。

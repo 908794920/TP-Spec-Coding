@@ -57,6 +57,10 @@ systems:
       - .mypy_cache
       - .ruff_cache
       - node_modules
+      - .vite
+      - .venv
+      - venv
+      - workbench-logs
       - target
       - test
       - tests
@@ -97,7 +101,6 @@ systems:
       - '**/agents/openai.yaml'
       - '**/__init__.py'
       - automation/knowledge/README.md
-      - scripts/ci/Test-V510SwitchNegatives.ps1
       excluded_extensions:
       - .css
       - .scss
