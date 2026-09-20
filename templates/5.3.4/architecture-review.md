@@ -2,7 +2,7 @@
 artifact: architecture-review
 task_id: ""
 artifact_contract:
-  version: 5.3.3
+  version: 5.3.4
 owner: tp-software-architect
 status: draft
 review:

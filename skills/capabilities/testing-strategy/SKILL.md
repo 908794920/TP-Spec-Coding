@@ -1,11 +1,11 @@
 ---
 name: testing-strategy
 display_name: 分层测试
-version: 5.3.3
+version: 5.3.4
 description: Use to choose and execute risk-proportionate tests for code changes, mapping acceptance criteria to reproducible evidence without equating test count with confidence.
 ---
 
-# 分层测试 — V5.3.3 Record-first
+# 分层测试 — V5.3.4 Record-first
 
 ## 本轮范围
 修改 TP-Spec-Coding 自身源码时以 [本仓验证策略](../../../docs/TESTING.md) 为准，仅做当前功能临时验证，执行后清理；不因通用测试方法、风险等级或最终交付自动全量回归。下面的复用/留存方法仅在目标业务仓库规则允许时适用。

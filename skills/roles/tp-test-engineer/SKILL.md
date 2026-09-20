@@ -1,11 +1,11 @@
 ---
 id: tp-test-engineer
 name: tp-测试工程师
-version: 5.3.3
+version: 5.3.4
 status: active
 type: workflow-role
 role: tp-test-engineer
-description: tp-测试工程师：TP-Spec-Coding v5.3.3 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-测试工程师：TP-Spec-Coding v5.3.4 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-测试工程师

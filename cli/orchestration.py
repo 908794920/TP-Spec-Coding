@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.3.3 deterministic, read-only workflow orchestration.
+"""V5.3.4 deterministic, read-only workflow orchestration.
 
 Workflow chooses *when* to invoke a role.  Skills choose *how* to do the work.
 The existing Task Runtime remains the only durable fact ledger.

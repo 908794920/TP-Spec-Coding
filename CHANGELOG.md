@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.3.4] Open Release Line — 2026-09-20
+
+- 从 **5.3.3** 收敛到 **5.3.4** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.3.4`，不再保留 `templates/5.3.3`。
+- v5.3.3 已正式发布（本地可视化工作台取代卡片 UI + antd v6 界面成熟化 + 侧栏项目树/技能拓扑/中文呈现 + 卡片链 W01-W05 退役）；本行作为后续功能开发的开放版本线，Role-first 产品形态与各 Formal Role 活动契约不变。
+
 ## [5.3.3] Open Release Line — 2026-09-14
 
 - W05：完整移除旧 HTML 卡片命令、模板/渲染器、inline/Web Artifact 及专属展示角色，清理路由、快照 card_type 和新 CLI 诊断中的 card 区段；既有历史诊断和用户 HTML 不删除。

@@ -1,7 +1,7 @@
 ---
 name: tp-memory-capture
 display_name: 项目记忆捕获
-version: 5.3.3
+version: 5.3.4
 description: 内部按需沉淀能力；工作自然出现已确认稳定 Rule 或高价值经验时加载，区分根 AGENTS 自有规则、Task 临时事实与可选 Fact/Procedure，不扫描历史。
 ---
 

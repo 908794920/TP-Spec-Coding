@@ -130,7 +130,7 @@ tp-spec temp cleanup --project <PROJECT> --task <TASK> --run-id <RUN>
 
 这不是三步必跑脚本：`temp orphan-check` 只报告 owned/unmanaged 候选，可加 `--project/--task/--workspace-root` 收窄；**不得自动删除**历史 `.tmp` 或无 ownership manifest 路径。`temp cleanup` 仅显式重试已登记且获准的自有路径。`CLEANUP_PENDING` 表示本机清理未完成，不新增 Task state、不逆改已提交事实；依赖必要清理证据的 Delivery 门禁仍有效。未知、重复或损坏的 START 不选最后一条、不自动修历史，不杀进程。
 
-## v5.3.3 记账入口与恢复
+## v5.3.4 记账入口与恢复
 
 普通命令不启动工作台。会话基于本轮 CLI 回执简短说明结果、下一责任和等待条件；需要可视化时，在 TP-Spec-Coding 自身根目录使用 `npm run dev`，见 [本地工作台](../WORKBENCH.md)。机器 stdout 保持 JSON/YAML，不插入展示 marker。
 
