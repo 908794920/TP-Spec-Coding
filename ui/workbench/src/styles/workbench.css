@@ -1,11 +1,9 @@
 * { box-sizing: border-box; }
 body { margin: 0; }
-button, input, select { font: inherit; }
-button, input, select { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); min-height: 32px; padding: 5px 10px; }
-button { cursor: pointer; }
-button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-button:disabled { opacity: .5; cursor: not-allowed; }
-button.selected, .primary-nav button[aria-current] { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+/* The element-level fallback for buttons/inputs/selects is gone: every interactive element is an Ant
+   Design component now, and the only native <button> left (the graph's object-search results) sets
+   its own base styling at `.graph-results button` below. `ul`/`li` keep a guard because content
+   lists are still plain markup. */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 a { color: var(--accent); }
 code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
@@ -16,68 +14,203 @@ small,.muted,.read-status { color: var(--muted); font-size: 12px; }
 summary { cursor: pointer; overflow-wrap: anywhere; }
 summary + p, summary + .fields { margin-top: 8px; }
 label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
-input,select { width: 100%; min-width: 0; }
-ul { padding-left: 20px; }
-li { overflow-wrap: anywhere; }
-.skip-link { position: fixed; left: 12px; top: -70px; z-index: 20; padding: 12px; background: white; }
+ul:not([class*="ant-"]) { padding-left: 20px; }
+li:not([class*="ant-"]) { overflow-wrap: anywhere; }
+.skip-link { position: fixed; left: 12px; top: -70px; z-index: 20; padding: 12px; background: var(--surface); }
 .skip-link:focus { top: 8px; }
-.app-header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--border); min-height: 60px; }
+/* Keeps the loading sentence available to assistive technology while the visual placeholder is a
+   skeleton, which is decorative and carries no text of its own. */
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.read-loading { margin-bottom: 16px; }
+/* The left inset is smaller than the right one so the collapse icon sits against the edge: it is a
+   chrome control, not content, and 20px read as an accidental gap. */
+.app-header { display: flex; align-items: center; gap: 16px; padding: 12px 20px 12px 10px; background: var(--surface); border-bottom: 1px solid var(--border); min-height: var(--header-h); position: sticky; top: 0; z-index: 30; }
 .brand { display: flex; gap: 10px; align-items: baseline; white-space: nowrap; }
 .brand strong { letter-spacing: .03em; font-size: 18px; }
-.brand span,.header-meta { color: var(--muted); }
-.refresh-button { margin-left: auto; white-space: nowrap; }
+.brand .ant-typography-secondary,.header-meta { color: var(--muted); }
+.app-header .header-right { margin-left: auto; }
+.app-header .refresh-button { white-space: nowrap; }
+/* The fold control and the task search sit together at the left edge, so they get the pair gap
+   rather than the header's own. */
+.header-actions { display: flex; align-items: center; gap: 4px; }
+/* Header task search: the icon opens a query panel for TASK ID / title across every registered
+   project. The panel is positioned under the header, so opening it never reflows the header. It
+   anchors to its own left edge — it now lives at the left of the bar — and is capped so it cannot
+   run past the viewport's right edge. */
+.task-search { position: relative; display: flex; align-items: center; }
+/* The button itself is a plain antd outlined button, matching the fold control and 重新读取: only the
+   open state is ours to state, and it mirrors the accent antd uses on hover. */
+.task-search-toggle[aria-expanded='true'] { color: var(--accent); border-color: var(--accent); }
+.task-search-panel { position: absolute; left: 0; top: calc(100% + 10px); z-index: 40; width: min(440px, calc(100vw - 60px)); display: grid; gap: 8px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--panel-shadow); }
+.task-search-panel p.muted { margin: 0; font-size: 12px; }
+.task-search-hits { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 320px; overflow-y: auto; }
+.task-hit { font: inherit; cursor: pointer; width: 100%; min-width: 0; display: grid; gap: 3px; border: 0; border-radius: var(--radius); background: transparent; color: var(--text); padding: 6px 8px; text-align: left; }
+.task-hit:hover,.task-hit:focus-visible { background: var(--muted-surface); }
+.hit-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.hit-head .ant-tag { flex: none; margin: 0; }
+.hit-id { flex: none; font-size: 12px; font-weight: 600; }
+.hit-project,.hit-title { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-alert { margin: 0; padding: 8px 20px; }
-.shell { display: grid; grid-template-columns: 260px minmax(0,1fr); min-height: calc(100vh - 60px); }
-.navigation { background: var(--surface); border-right: 1px solid var(--border); padding: 18px 16px; min-width: 0; max-height: calc(100vh - 60px); overflow: auto; position: sticky; top: 0; }
+/* The sidebar width comes from `--nav-w` (written by the app, persisted as a UI preference) and the
+   divider is its own grid column: the sidebar scrolls, so a handle positioned inside it would be
+   clipped by its own overflow. */
+.shell { display: grid; grid-template-columns: var(--nav-w, 260px) 7px minmax(0,1fr); min-height: calc(100vh - var(--header-h)); }
+.shell.nav-collapsed { grid-template-columns: minmax(0,1fr); }
+.shell.nav-collapsed .navigation,.shell.nav-collapsed .nav-resizer { display: none; }
+/* Sticks below the sticky header rather than at top:0, or it would slide under the header. */
+/* Vertical scrolling only: every row ellipsizes, so a sideways scrollbar would only ever be noise,
+   and alert text is told to wrap instead of forcing one. */
+.navigation { background: var(--surface); padding: 18px 16px; min-width: 0; max-height: calc(100vh - var(--header-h)); overflow-y: auto; overflow-x: hidden; position: sticky; top: var(--header-h); }
+.navigation .ant-alert-message { overflow-wrap: anywhere; }
+.nav-resizer { position: sticky; top: var(--header-h); align-self: start; height: calc(100vh - var(--header-h)); cursor: col-resize; touch-action: none; }
+.nav-resizer::before { content: ''; position: absolute; inset: 0 auto 0 3px; width: 1px; background: var(--border); }
+.nav-resizer:hover::before,.nav-resizer:focus-visible::before { background: var(--accent); }
 .navigation h2 { font-size: 14px; }
 .navigation p,.navigation details { margin-top: 10px; }
-.primary-nav { display: grid; gap: 6px; padding: 18px 0; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
-.primary-nav button { text-align: left; }
-.navigation-tasks h3 { font-size: 13px; }
-.source-details { border-top: 1px solid var(--border); padding-top: 12px; font-size: 12px; }
+/* The page menu that used to sit at the top of the sidebar is gone: the project tree and its two
+   icons already reach every page, and a second navigation path to the same three views only made
+   the sidebar longer. */
+/* Sidebar project tree: a project is a folder row that expands to its most recent tasks. Rows are
+   native buttons, so each one declares its own base styling — the element-level fallback is gone. */
+/* The「项目」group header is the control that shows or hides the whole project list, and the icon on
+   its right opens 全局配置 — the same shape as the editor's own sidebar: title, fold caret, actions. */
+.nav-section-head { display: flex; align-items: center; gap: 2px; margin: 0 0 6px; }
+.nav-section-toggle { font: inherit; cursor: pointer; flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); padding: 3px 4px; text-align: left; }
+.nav-section-toggle:hover { background: var(--muted-surface); }
+.nav-section-title { font-size: 12px; }
+.nav-section-toggle .caret { font-size: 10px; flex: none; }
+.section-config { flex: none; color: var(--muted); }
+.section-config:hover { color: var(--accent); }
+/* Two things here are load-bearing rather than cosmetic:
+   - the generic `ul:not([class*="ant-"])` content-list padding must not apply, or the tree is
+     indented away from the sidebar's own left edge;
+   - `minmax(0, 1fr)` keeps a row's min-content width from widening the track. Without it the tree
+     grew to 338px inside a 260px sidebar, which pushed the task dates and the overview button
+     off-screen entirely. */
+.navigation ul.project-tree,.navigation ul.project-task-list { padding-left: 0; }
+.project-tree { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: minmax(0,1fr); gap: 1px; }
+.project-row { min-width: 0; }
+/* The overview button is positioned over the row instead of taking flow space, so the whole row
+   stays a single toggle target: a click anywhere on it shows or hides the folder. */
+.project-head { position: relative; display: flex; align-items: center; }
+.project-toggle { font: inherit; cursor: pointer; width: 100%; min-width: 0; display: flex; align-items: center; gap: 6px; border: 0; border-radius: var(--radius); background: transparent; color: var(--text); padding: 5px 30px 5px 6px; text-align: left; }
+.project-toggle:hover { background: var(--muted-surface); }
+.project-row.selected > .project-head .project-toggle { color: var(--accent); background: var(--accent-soft); }
+.project-row.selected > .project-head .project-name { font-weight: 600; }
+.project-toggle .caret,.project-toggle .folder { flex: none; color: var(--muted); }
+.project-toggle .caret { font-size: 10px; }
+.project-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Revealed on hover or keyboard focus. Kept focusable while transparent so Tab still reaches them
+   instead of the controls being unreachable without a pointer. */
+.project-actions { position: absolute; right: 0; top: 2px; display: flex; align-items: center; gap: 2px; opacity: 0; pointer-events: none; }
+.project-head:hover .project-actions,.project-actions:focus-within { opacity: 1; pointer-events: auto; }
+.project-actions .ant-btn { color: var(--muted); }
+.project-actions .ant-btn:hover { color: var(--accent); }
+/* Fold carets and the group's action icon stay quiet until the pointer — or keyboard focus — is on
+   their row, so the list reads as folders and names and each affordance appears where the user
+   already is. Opacity, never `display`, because `display` would reflow the row on every hover. */
+.project-toggle .caret,.nav-section-toggle .caret,.section-config { opacity: 0; }
+.section-config { pointer-events: none; }
+.project-head:hover .caret,.project-toggle:focus-visible .caret,
+.nav-section-head:hover .caret,.nav-section-toggle:focus-visible .caret,
+.nav-section-head:hover .section-config,.section-config:focus-visible { opacity: 1; }
+.nav-section-head:hover .section-config,.section-config:focus-visible { pointer-events: auto; }
+/* A folded group keeps its caret on screen: with the list gone, that caret is the only thing still
+   saying where the list went. */
+.nav-section-toggle[aria-expanded='false'] .caret { opacity: 1; }
+.project-tasks { padding: 2px 0 4px 12px; }
+.project-tasks .ant-skeleton,.project-tasks .ant-alert { margin: 4px 0; }
+.project-tasks > p.muted { margin: 4px 6px; font-size: 12px; }
+.project-task-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0,1fr); gap: 1px; }
+.task-link { font: inherit; font-size: 12px; cursor: pointer; width: 100%; min-width: 0; display: flex; align-items: center; gap: 8px; border: 0; border-radius: var(--radius); background: transparent; color: var(--text); padding: 4px 6px; text-align: left; }
+.task-link:hover { background: var(--muted-surface); }
+.task-link.selected { color: var(--accent); background: var(--accent-soft); }
+.task-link > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-link small { flex: none; color: var(--muted); font-size: 11px; }
+.see-more { font: inherit; font-size: 12px; cursor: pointer; border: 0; background: transparent; color: var(--accent); padding: 4px 6px; text-align: left; }
+.see-more:hover { text-decoration: underline; }
+.navigation > .ant-alert { margin-top: 10px; }
+
 main { min-width: 0; }
 .page { padding: 20px 24px 32px; }
 .page-heading { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .page-heading p,.path { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .eyebrow { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-.section { border-top: 1px solid var(--border); padding: 18px 0; }
-.section-links { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 12px 0; }
+.project-page > .ant-card { margin-bottom: 12px; }
+.section-collapse { margin-bottom: 12px; }
+/* The config groups are picked from a tab bar at the top and shown one at a time. The panels are
+   cards without a title — the selected tab already names the group. */
+.config-tabs .ant-tabs-nav { margin-bottom: 12px; }
+.config-tabs .ant-tabs-tab { font-size: 13px; }
+/* Skill topology: a three-level outline from the entry node, rendered in the order the edges
+   arrived (the sequence lives in that order, so nothing is re-sorted). The list selectors are two
+   classes deep because the bare `ul:not([class*="ant-"])` fallback outranks a single class. */
+.skill-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0 12px; }
+.skill-summary .ant-tag { margin: 0; }
+.config-page .skill-tree,.config-page .skill-tree .skill-children { list-style: none; margin: 0; padding: 0; }
+.config-page .skill-tree .skill-children { padding-left: 16px; margin-left: 6px; border-left: 1px solid var(--border); }
+.skill-node { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 3px 0; }
+.skill-order { flex: none; min-width: 14px; font-size: 11px; color: var(--muted); text-align: right; }
+.skill-relation { flex: none; font-size: 11px; color: var(--muted); }
+.skill-id,.skill-path { font-size: 12px; }
+.skill-mode,.skill-shared { font-size: 11px; }
+.skill-orphans { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+/* Skill topology, graph view. Fixed node size keeps the computed laid-out positions readable
+   (level → x, order inside the level → y); dim/emphasis follow the task graph's convention. Edge
+   colours reach the SVG through inline `var()`, so the arrow markers inherit them as well. */
+.skill-view-switch { margin: 10px 0 0; }
+.skill-view-switch .ant-typography { font-size: 12px; }
+.skill-graph-node { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 4px 10px; border: 1px solid var(--node-border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--node-shadow); }
+.skill-graph-node.is-emphasized { border-color: var(--accent); background: var(--accent-tint); }
+.skill-graph-node.is-dim { opacity: .4; }
+.skill-graph-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.skill-graph-head .ant-typography { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skill-graph-head .ant-tag { flex: none; margin: 0; font-size: 11px; line-height: 16px; }
+.skill-graph-head .skill-shared { flex: none; }
+.skill-graph-node .skill-id { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skill-graph-node .react-flow__handle { width: 4px; height: 4px; border: 0; background: var(--node-border); }
+.topology-graph .graph-summary { margin-left: auto; font-size: 12px; }
 .section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 8px; }
 .section-heading h3 { margin: 0; }
 .read-status { margin-bottom: 16px; overflow-wrap: anywhere; }
-.problems,.graph-issues { padding: 10px 12px; border-left: 3px solid var(--warning); background: var(--warning-bg); margin-bottom: 12px; }
+.graph-issues { padding: 10px 12px; border-left: 3px solid var(--warning); background: var(--warning-bg); margin-bottom: 12px; }
+.problems { margin-bottom: 12px; }
 .problems ul,.graph-issues ul { margin: 8px 0 0; max-height: 240px; overflow: auto; }
-.error { color: var(--danger); background: #fff0f0; padding: 8px; overflow-wrap: anywhere; }
+.error { color: var(--danger); background: var(--danger-bg); padding: 8px; overflow-wrap: anywhere; }
 .warning { color: var(--warning); }
 .fields { margin: 0; }
-.field { display: grid; grid-template-columns: minmax(140px, 22%) minmax(0,1fr); padding: 7px 0; border-bottom: 1px solid #e8edf2; gap: 12px; }
-.field dt { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.field dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-.field .fields .field { grid-template-columns: minmax(88px, 30%) minmax(0,1fr); }
+.fields .ant-descriptions-item-label { width: 190px; color: var(--muted); font-size: 12px; }
+.fields .ant-descriptions-item-content { min-width: 0; overflow-wrap: anywhere; }
 .fact-value { white-space: pre-wrap; }
-.array-record,.record-block { margin: 8px 0; padding: 8px; border-left: 2px solid var(--border); }
-.array-record>span { display: block; }
+/* The recorded-facts fallback shown when the route cannot be inferred: the summary above already
+   carries the spacing, this only keeps the explanation and its table off each other. */
+.workflow-fallback { margin: 4px 0 12px; }
+.workflow-fallback p { margin: 0 0 8px; }
+.fact-nested { margin: 2px 0; }
+.fact-record { margin: 8px 0; padding: 8px; border-left: 2px solid var(--border); }
+.fact-record>span,.fact-record>.ant-typography { display: block; }
+.record-block { margin: 8px 0; padding: 8px; border-left: 2px solid var(--border); }
 .two-columns { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 24px; }
-.two-columns .field { grid-template-columns: minmax(100px, 30%) minmax(0,1fr); }
 .table-scroll { overflow: auto; max-width: 100%; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--surface); }
-th,td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
-th { font-size: 12px; color: var(--muted); background: var(--muted-surface); white-space: nowrap; }
-.task-table { min-width: 620px; }
-.task-table td:nth-child(2) { min-width: 150px; max-width: 360px; overflow-wrap: anywhere; }
+/* Every table is an Ant Design component now, so no bare `table`/`th`/`td` fallback remains
+   (Ant Design renders class-less <table> elements, which such a fallback would have hit). */
+.wb-section { margin-bottom: 12px; }
+.wb-section .ant-card-head-title h4 { margin: 0; font-size: 14px; }
+.wb-disclosure { margin: 8px 0; }
+.task-index-table { margin-top: 4px; }
+.task-index-table .ant-table-cell { vertical-align: top; }
+.task-index-table .link { padding: 0; }
 .link { background: none; color: var(--accent); padding: 0; min-height: unset; border: 0; text-align: left; }
 .filters { display: flex; gap: 12px; margin-top: 12px; }
 .filters label:first-child { flex: 1; }
 .filters label:last-child { min-width: 160px; }
+.filters .ant-select,.filters .ant-input-affix-wrapper,.filters .ant-input { width: 100%; }
 .result-count { margin: 8px 0; }
-.compact .filters { display: grid; gap: 8px; }
-.compact .filters label:last-child { min-width: 0; }
-.task-nav { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
-.task-nav button { width: 100%; border-color: transparent; text-align: left; display: grid; gap: 3px; padding: 8px; }
-.task-nav code { font-size: 11px; }
-.task-nav small { font-size: 11px; }
-.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.empty-state { padding: 56px 24px; max-width: 640px; }
+
+
+.empty-state { display: grid; gap: 12px; padding: 16px 20px; max-width: 560px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.empty-state .ant-empty { margin: 0; }
+.empty-body { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); font-weight: normal; }
 .workflow-strip { border: 1px solid var(--border); background: var(--surface); padding: 14px 16px; border-radius: var(--radius); }
 .workflow-strip h3 small { margin-left: 10px; font-weight: normal; }
 .step-summary { display: flex; gap: 40px; }
@@ -96,20 +229,23 @@ th { font-size: 12px; color: var(--muted); background: var(--muted-surface); whi
 .graph-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .graph-actions button,.graph-toolbar button,.graph-toolbar select { font-size: 12px; }
 .graph-toolbar .direction { flex-direction: row; align-items: center; gap: 6px; }
-.graph-toolbar .direction select { width: 132px; }
+.graph-toolbar .direction .ant-select { width: 132px; }
 .graph-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); background: var(--surface); }
-.graph-search input { flex: 1; min-width: 180px; max-width: 480px; }
+.graph-search .graph-query { flex: 1; min-width: 180px; max-width: 480px; }
 .graph-search>span { width: 100%; }
 .graph-results { background: var(--surface); padding: 8px 12px; border: 1px solid var(--border); border-top: 0; }
 .graph-results p { margin-bottom: 4px; font-size: 12px; }
 .graph-results ul { list-style: none; margin: 0; padding: 0; max-height: 180px; overflow: auto; }
-.graph-results button { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; border: 0; text-align: left; width: 100%; }
+.graph-results button { font: inherit; cursor: pointer; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; border: 0; border-radius: var(--radius); background: var(--surface); color: var(--text); min-height: 32px; padding: 5px 10px; text-align: left; width: 100%; }
+.graph-results button:hover { color: var(--accent); }
 .graph-results button span { max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.graph-canvas { height: clamp(380px, 60vh, 660px); width: 100%; border: 1px solid var(--border); border-top: 0; background: #f5f7fa; }
+.graph-canvas { height: clamp(380px, 60vh, 660px); width: 100%; border: 1px solid var(--border); border-top: 0; background: var(--graph-bg); }
+/* Placeholder while the graph's own chunk loads: same box as the canvas, so nothing shifts. */
+.graph-loading { display: grid; place-items: center; font-size: 12px; color: var(--muted); }
 .graph-legend { margin: 8px 2px; color: var(--muted); font-size: 12px; }
-.work-node { height: 116px; padding: 8px 12px; border: 1px solid #bdc9d7; border-radius: var(--radius); background: var(--surface); box-shadow: 0 1px 2px #00000008; font-size: 12px; }
-.work-node.is-selected { border: 2px solid var(--accent); padding: 7px 11px; box-shadow: 0 0 0 3px #245bb81a; }
-.work-node.is-emphasized:not(.is-selected) { border-color: var(--accent); background: #f8faff; }
+.work-node { height: 116px; padding: 8px 12px; border: 1px solid var(--node-border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--node-shadow); font-size: 12px; }
+.work-node.is-selected { border: 2px solid var(--accent); padding: 7px 11px; box-shadow: 0 0 0 3px var(--accent-ring); }
+.work-node.is-emphasized:not(.is-selected) { border-color: var(--accent); background: var(--accent-tint); }
 .work-node.is-dim { opacity: .45; }
 .node-kind { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--muted); }
 .node-kind span:nth-child(2) { color: var(--warning); }
@@ -119,7 +255,7 @@ th { font-size: 12px; color: var(--muted); background: var(--muted-surface); whi
 .node-state,.node-owner { font-size: 11px; }
 .node-owner { color: var(--muted); }
 .tone-blocked { color: var(--danger); }.tone-completed { color: var(--good); }.tone-active { color: var(--accent); }.tone-unknown { color: var(--warning); }
-.react-flow__node-workGroup { border: 1px dashed #b8c6d4; border-radius: 8px; background: #edf1f550; }
+.react-flow__node-workGroup { border: 1px dashed var(--group-border); border-radius: 8px; background: var(--group-bg); }
 .work-group-label { display: grid; gap: 4px; padding: 12px 20px; font-size: 12px; color: var(--muted); pointer-events: none; }
 .react-flow__edge-text { font-size: 9px; fill: var(--muted); }
 .react-flow__node:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
@@ -128,25 +264,38 @@ th { font-size: 12px; color: var(--muted); background: var(--muted-surface); whi
 .detail-heading { padding: 14px 12px; display: flex; gap: 8px; align-items: flex-start; border-bottom: 1px solid var(--border); }
 .detail-heading>div { flex: 1; min-width: 0; }.detail-heading h3 { font-size: 14px; margin: 0; overflow-wrap: anywhere; }.detail-heading button { font-size: 12px; }
 .detail-body { overflow: auto; overscroll-behavior: contain; padding: 12px; min-height: 0; }
-.detail-body .field { grid-template-columns: minmax(70px,32%) minmax(0,1fr); gap: 8px; }
-.detail-body .field .fields .field { display: block; }
+.detail-body .fields .ant-descriptions-item-label { width: 132px; }
 .detail-body details { margin: 10px 0; }
-.task-detail::backdrop { background: #19253655; }
-.copy-text { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }.copy-text>span { font-size: 12px; color: var(--muted); }.quiet { padding: 2px 6px; min-height: 26px; font-size: 12px; }
-.event-timeline { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+.task-detail::backdrop { background: var(--overlay); }
+.copy-text { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }.copy-text>span { font-size: 12px; color: var(--muted); }
+.event-timeline { margin: 12px 0; }
 .event-timeline .table-scroll { max-height: 340px; margin-top: 8px; }
-.event-timeline table { min-width: 550px; }
+.event-timeline .ant-table { background: transparent; }
 .event-summary { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 650px; }
-.nav-toggle { display: none; }
-@media(max-width:1200px){ .shell {grid-template-columns: 210px minmax(0,1fr);} .page {padding: 16px;} .brand {gap: 8px;} .two-columns {grid-template-columns:minmax(0,1fr);} }
+/* No `.shell` width override here: the sidebar width is the user's, and a fixed column count would
+   drop the divider column. */
+@media(max-width:1200px){ .page {padding: 16px;} .brand {gap: 8px;} .two-columns {grid-template-columns:minmax(0,1fr);} }
 @media(max-width:1100px){ .task-workspace.with-detail {grid-template-columns:minmax(0,1fr);} .task-detail {position:fixed;inset:16px 16px 16px auto;width:min(430px,calc(100vw - 32px));max-height:calc(100vh - 32px);height:calc(100vh - 32px);} }
-@media(max-width:800px){ .shell {grid-template-columns:minmax(0,1fr);} .nav-toggle {display:block;font-size:12px;} .navigation {display:none;position:static;max-height:60vh;border-bottom:1px solid var(--border);border-right:0;} .navigation-open .navigation {display:block;} .app-header {padding:10px 12px;gap:10px;} .header-meta {font-size:12px;} .primary-nav {display:flex;flex-wrap:wrap;} .task-nav {grid-template-columns:repeat(2,minmax(0,1fr));} .brand {font-size:12px;} .brand strong {font-size:15px;} }
-@media(max-width:520px){ .page {padding:12px;} .brand span,.header-meta {display:none;} .brand strong {font-size:14px;} .app-header {gap:8px;} .refresh-button {font-size:12px;} h2 {font-size:18px;} .field {grid-template-columns:minmax(85px,30%) minmax(0,1fr);gap:8px;} .filters {flex-direction:column;} .filters label:last-child {min-width:0;} .step-summary {flex-direction:column;gap:0;} .flow-steps li {min-width:132px;} .workflow-strip {padding:12px;} .graph-search input {min-width:130px;} .graph-canvas {height:460px;} .task-detail {inset:8px;width:calc(100vw - 16px);height:calc(100vh - 16px);max-height:calc(100vh - 16px);} .task-nav {grid-template-columns:minmax(0,1fr);} .graph-actions button {padding:5px 7px;} .page-heading {margin-bottom:12px;} }
+/* Narrow screens stack the sidebar above the page instead of resizing it, so the divider is dropped
+   and the collapse toggle stays the only way to reclaim the space. */
+/* Touch and narrow screens have no hover, so every hover-revealed control is pinned on instead —
+   otherwise the fold carets and the action icons would be unreachable there. */
+@media(max-width:800px){ .shell {grid-template-columns:minmax(0,1fr);} .navigation {position:static;max-height:60vh;border-bottom:1px solid var(--border);} .nav-resizer {display:none;} .project-actions,.project-toggle .caret,.nav-section-toggle .caret,.section-config {opacity:1;pointer-events:auto;} .app-header {padding:10px 12px;gap:10px;} .header-meta {font-size:12px;} .brand {font-size:12px;} .brand strong {font-size:15px;} }
+@media(max-width:520px){ .page {padding:12px;} .brand .ant-typography-secondary,.header-meta {display:none;} .brand strong {font-size:14px;} .app-header {gap:8px;} .refresh-button {font-size:12px;} h2 {font-size:18px;} .field {grid-template-columns:minmax(85px,30%) minmax(0,1fr);gap:8px;} .filters {flex-direction:column;} .filters label:last-child {min-width:0;} .step-summary {flex-direction:column;gap:0;} .flow-steps li {min-width:132px;} .workflow-strip {padding:12px;} .graph-search .graph-query {min-width:130px;} .graph-canvas {height:460px;} .task-detail {inset:8px;width:calc(100vw - 16px);height:calc(100vh - 16px);max-height:calc(100vh - 16px);} .graph-actions button {padding:5px 7px;} .page-heading {margin-bottom:12px;} }
 @media(prefers-reduced-motion:reduce){ * {scroll-behavior:auto!important;} }
 /* W04 details: text-first facts, no outcome inferred from green containers. */
-.detail-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; border-bottom: 1px solid var(--border); }
-.detail-tabs button { flex: 1 0 auto; font-size: 12px; padding: 6px 8px; }
-.detail-tabs [aria-selected="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+/* The detail panel stays a full-height flex column with only the body scrolling, so every wrapper
+   Ant Design's Tabs inserts between the nav and the body has to stay shrinkable while the nav must
+   not grow. Class names confirmed against the rendered DOM: v6 renders
+   `.ant-tabs-body-holder > .ant-tabs-body > .ant-tabs-content` (the pane is `-content`, not the
+   `-tabpane` of v5). */
+.task-detail .ant-tabs { flex: 1 1 auto; min-height: 0; }
+.task-detail .ant-tabs-nav { flex: none; margin: 0; padding: 0 8px; border-bottom: 1px solid var(--border); }
+.task-detail .ant-tabs-nav::before { border-bottom: 0; }
+.task-detail .ant-tabs-tab { font-size: 12px; padding: 9px 0; }
+.task-detail .ant-tabs-body-holder,.task-detail .ant-tabs-body,.task-detail .ant-tabs-content { display: flex; flex-direction: column; min-height: 0; }
+.task-detail .ant-tabs-content { flex: 1 1 auto; }
+.task-detail .detail-body { flex: 1 1 auto; }
 .detail-scope { padding: 8px; border-left: 2px solid var(--accent); background: var(--muted-surface); font-size: 12px; }
 .detail-section { padding: 12px 0; border-top: 1px solid var(--border); }
 .detail-section h4 { margin: 0 0 8px; font-size: 14px; }
@@ -154,7 +303,7 @@ th { font-size: 12px; color: var(--muted); background: var(--muted-surface); whi
 .detail-section .read-status { margin-top: 10px; }
 .blocker-list { padding-left: 20px; }
 .blocker-list pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: 4px 0; }
-.evidence-list>details { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.evidence-list>.wb-disclosure { padding: 8px 0; border-bottom: 1px solid var(--border); }
 .evidence-source { padding: 8px; margin: 8px 0; border-left: 2px solid var(--border); }
 .evidence-source>strong { display: block; margin-bottom: 8px; font-size: 12px; }
-.event-timeline .field { grid-template-columns: 110px minmax(0,1fr); }
+.event-timeline .fields .ant-descriptions-item-label { width: 120px; }

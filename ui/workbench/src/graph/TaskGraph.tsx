@@ -1,9 +1,10 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { Button, Input, Select, Typography } from 'antd';
 import { ReactFlow, ReactFlowProvider, Background, MarkerType, applyNodeChanges, useReactFlow, type Edge, type NodeChange } from '@xyflow/react';
 import { WorkGroup, WorkNode, type WorkbenchNode } from './WorkNode';
 import { relatedIds, visibleIds, type GraphModel, type GraphObject } from './model';
 import { layoutGraph, NODE_HEIGHT, NODE_WIDTH } from './layout';
-import { Fields } from '../components/Facts';
+import { Disclosure, Fields } from '../components/Facts';
 import '@xyflow/react/dist/style.css';
 const nodeTypes = { work: WorkNode, workGroup: WorkGroup };
 export interface GraphHandle {
@@ -100,14 +101,14 @@ const GraphCanvas = forwardRef<GraphHandle, Props>(({ model, selectedId, onOpen 
     function rearrange() { setNodes(initialNodes(model)); requestAnimationFrame(() => requestAnimationFrame(() => { void flow.fitView({ padding: .14, duration: 180 }); })); }
     return <div className="task-graph" ref={root}>
     <div className="graph-toolbar" aria-label="图形浏览工具">
-      <div className="graph-actions"><button type="button" onClick={() => { void flow.zoomIn(); }} aria-label="放大画布">放大</button><button type="button" onClick={() => { void flow.zoomOut(); }} aria-label="缩小画布">缩小</button><button type="button" onClick={() => { void flow.fitView({ padding: .14, duration: 180 }); }}>适配视图</button><button type="button" onClick={rearrange}>重排</button></div>
-      <div className="graph-actions"><button type="button" onClick={() => setShowItems(v => !v)} aria-pressed={!showItems}>{showItems ? '收起工作项' : '展开工作项'}</button>
-        <button type="button" disabled={!selected || selected.kind === 'task'} onClick={() => { if (selectedId)
-        setCollapsed(old => new Set([...old, selectedId])); }}>收起选中项下游</button>
-        <button type="button" disabled={!hiddenCount && !collapsed.size} onClick={expand}>展开全部</button></div>
-      <label className="direction">依赖高亮<select value={direction} onChange={e => setDirection(e.target.value as typeof direction)} disabled={!selectedId}><option value="none">不高亮</option><option value="upstream">选中项上游</option><option value="downstream">选中项下游</option></select></label>
+      <div className="graph-actions"><Button size="small" onClick={() => { void flow.zoomIn(); }} aria-label="放大画布">放大</Button><Button size="small" onClick={() => { void flow.zoomOut(); }} aria-label="缩小画布">缩小</Button><Button size="small" onClick={() => { void flow.fitView({ padding: .14, duration: 180 }); }}>适配视图</Button><Button size="small" onClick={rearrange}>重排</Button></div>
+      <div className="graph-actions"><Button size="small" aria-pressed={!showItems} onClick={() => setShowItems(v => !v)}>{showItems ? '收起工作项' : '展开工作项'}</Button>
+        <Button size="small" disabled={!selected || selected.kind === 'task'} onClick={() => { if (selectedId)
+        setCollapsed(old => new Set([...old, selectedId])); }}>收起选中项下游</Button>
+        <Button size="small" disabled={!hiddenCount && !collapsed.size} onClick={expand}>展开全部</Button></div>
+      <label className="direction">依赖高亮<Select<'none' | 'upstream' | 'downstream'> className="direction-select" value={direction} onChange={setDirection} disabled={!selectedId} popupMatchSelectWidth={180} options={[{ value: 'none', label: '不高亮' }, { value: 'upstream', label: '选中项上游' }, { value: 'downstream', label: '选中项下游' }]}/></label>
     </div>
-    <div className="graph-search"><label htmlFor="graph-query">定位对象</label><input id="graph-query" type="search" placeholder="当前 Task / WorkItem 的 ID、标题或负责人" value={query} onChange={e => setQuery(e.target.value)}/>
+    <div className="graph-search"><label htmlFor="graph-query">定位对象</label><Input className="graph-query" id="graph-query" type="search" allowClear placeholder="当前 Task / WorkItem 的 ID、标题或负责人" value={query} onChange={e => setQuery(e.target.value)}/>
       <span className="muted">{model.nodes.length} 个对象 · {model.edges.length} 条已确认依赖{hiddenCount ? ` · 隐藏 ${hiddenCount} 个对象` : ''}</span></div>
     {q && <div className="graph-results" aria-label="对象搜索结果"><p>{results.length} 项匹配</p><ul>{results.map(n => <li key={n.id}><button type="button" onClick={() => locate(n.id)}><code>{n.objectId}</code><span>{n.title || '标题未记录'}</span>{!visible.has(n.id) && <small>展开并定位</small>}</button></li>)}</ul></div>}
     <div className="graph-canvas" onKeyDownCapture={event => {
@@ -130,8 +131,8 @@ const GraphCanvas = forwardRef<GraphHandle, Props>(({ model, selectedId, onOpen 
       </ReactFlow>
     </div>
     <p className="graph-legend">边框 / 归属标识＝正式父 Task；箭头＝前置 → 后续。拖动只改变视觉坐标，不能增删或重连业务关系。状态不代表执行者在线。</p>
-    {model.issues.length > 0 && <details className="graph-issues" open><summary>图数据问题 · {model.issues.length} 项</summary><ul>{model.issues.map((issue, i) => <li key={`${issue.code}:${i}`}><code>{issue.code}</code> {issue.message}</li>)}</ul></details>}
-    {model.invalidRecords.length > 0 && <details className="graph-issues"><summary>无正式身份的原始记录 · {model.invalidRecords.length} 项</summary>{model.invalidRecords.map((row, i) => <Fields key={i} value={row}/>)}</details>}
+    {model.issues.length > 0 && <Disclosure className="graph-issues" open label={`图数据问题 · ${model.issues.length} 项`}><ul>{model.issues.map((issue, i) => <li key={`${issue.code}:${i}`}><Typography.Text code>{issue.code}</Typography.Text> {issue.message}</li>)}</ul></Disclosure>}
+    {model.invalidRecords.length > 0 && <Disclosure className="graph-issues" label={`无正式身份的原始记录 · ${model.invalidRecords.length} 项`}>{model.invalidRecords.map((row, i) => <Fields key={i} value={row}/>)}</Disclosure>}
   </div>;
 });
 export const TaskGraph = forwardRef<GraphHandle, Props>((props, ref) => <ReactFlowProvider><GraphCanvas {...props} ref={ref}/></ReactFlowProvider>);

@@ -4,5 +4,15 @@
   --bg: #f3f5f7; --surface: #fff; --muted-surface: #f7f9fb; --text: #202a36; --muted: #586776;
   --border: #d7dfe7; --accent: #245bb8; --accent-soft: #edf3ff; --warning: #8c5510; --warning-bg: #fff7e8;
   --danger: #a33135; --good: #246b50; --radius: 6px;
+  /* Sticky header height: the sidebar top and every scroll-margin derive from it. */
+  --header-h: 60px;
+  /* Presentation-only tokens that used to be literals inside workbench.css (graph canvas, overlays).
+     They are not Ant Design theme tokens, so they live here and only here. --accent-ring is
+     --accent at 10% alpha. */
+  --graph-bg: #f5f7fa; --node-border: #bdc9d7; --node-shadow: 0 1px 2px #00000008;
+  --accent-ring: #245bb81a; --accent-tint: #f8faff;
+  /* The only floating panel (the header task search) needs elevation the flat cards do not. */
+  --panel-shadow: 0 8px 24px #19253614;
+  --group-border: #b8c6d4; --group-bg: #edf1f550; --danger-bg: #fff0f0; --overlay: #19253655;
   color: var(--text); background: var(--bg); color-scheme: light;
 }

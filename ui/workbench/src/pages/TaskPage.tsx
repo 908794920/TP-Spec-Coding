@@ -1,14 +1,19 @@
+import { Button } from 'antd';
 import { api } from '../api';
 import { useRead } from '../useRead';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Context, Envelope, ReadState, TaskData } from '../types';
 import { record, stateLabel, text } from '../facts';
 import { buildGraph, type GraphObject } from '../graph/model';
-import { TaskGraph, type GraphHandle } from '../graph/TaskGraph';
+import type { GraphHandle } from '../graph/TaskGraph';
 import { TaskDetail } from '../components/TaskDetail';
 import { WorkflowStrip, type WorkflowHandle } from '../components/WorkflowStrip';
 import { EventTimeline } from '../components/EventTimeline';
 import { Empty, Problems, ReadStatus } from '../components/Facts';
+/* The graph pulls in @xyflow/react and its stylesheet, which the first screen never shows; loading it
+   on demand keeps both out of the entry chunk. The fallback reuses `.graph-canvas` so the region is
+   already the right size and nothing shifts when it arrives. */
+const TaskGraph = lazy(() => import('../graph/TaskGraph').then(module => ({ default: module.TaskGraph })));
 function TaskWorkspace({ context, snapshot, revision }: {
     context: Context;
     snapshot: Envelope<TaskData>;
@@ -33,11 +38,13 @@ function TaskWorkspace({ context, snapshot, revision }: {
     const close = useCallback(() => { setDetailOpen(false); requestAnimationFrame(() => graph.current?.focusNode(selectedId)); }, [selectedId]);
     const support = record(data.data_support), task = record(data.task);
     return <>
-    <WorkflowStrip workflow={record(data.workflow)} ref={workflow}/>
-    <div className="section-heading"><h3>工作关系</h3><div className="graph-actions"><button type="button" onClick={() => workflow.current?.locateCurrent()}>定位当前步骤</button><button type="button" disabled={task.state !== 'BLOCKED'} onClick={() => graph.current?.locate(model.taskNodeId)}>定位阻塞 Task</button><button type="button" onClick={() => graph.current?.locate(model.taskNodeId)}>Task 概况</button></div></div>
+    <WorkflowStrip workflow={record(data.workflow)} task={task} ref={workflow}/>
+    <div className="section-heading"><h3>工作关系</h3><div className="graph-actions"><Button size="small" onClick={() => workflow.current?.locateCurrent()}>定位当前步骤</Button><Button size="small" disabled={task.state !== 'BLOCKED'} onClick={() => graph.current?.locate(model.taskNodeId)}>定位阻塞 Task</Button><Button size="small" onClick={() => graph.current?.locate(model.taskNodeId)}>Task 概况</Button></div></div>
     {support.work_unit !== 'provided' && <p className="support-note">当前展示 Task 与已登记的 WorkItem；基线没有提供完整 Work Unit 模型，不把 WorkItem、Work Session 或 Agent Thread 混为一类。</p>}
     <div className={`task-workspace ${detailOpen && selected ? 'with-detail' : ''}`}>
-      <TaskGraph ref={graph} model={model} selectedId={selectedId} onOpen={onOpen}/>
+      <Suspense fallback={<div className="graph-canvas graph-loading" role="status">正在加载关系图…</div>}>
+        <TaskGraph ref={graph} model={model} selectedId={selectedId} onOpen={onOpen}/>
+      </Suspense>
       {detailOpen && selected && <TaskDetail object={selected} snapshot={snapshot} onClose={close} details={details}
         onDetails={() => requestDetails(true)} onRefreshDetails={() => { requestDetails(true); refreshDetails(n => n + 1); }}
         closeout={closeout} closeoutRequested={closeoutRequested} onCloseout={() => { requestCloseout(true); refreshCloseout(n => n + 1); }}/>}
@@ -52,7 +59,8 @@ export function TaskPage({ context, taskId, read, revision }: {
     read: ReadState<Envelope<TaskData>>;
 }) {
     if (!context || !taskId)
-        return <Empty title="选择一个 Task 查看工作关系">从项目总览或左侧任务索引进入；不会自动选取“最近任务”。</Empty>;
+        return <div className="page task-page"><div className="page-heading"><div><span className="eyebrow">任务工作区</span><h2>尚未选择 Task</h2></div></div>
+        <Empty title="选择一个 Task 查看工作关系">从项目总览或左侧任务索引进入；不会自动选取“最近任务”。</Empty></div>;
     const data = read.data?.data;
     return <div className="page task-page"><div className="page-heading"><div><span className="eyebrow">任务工作区 · {context.name}</span><h2><code>{taskId}</code> {text(record(data?.task).title)}</h2><p>{data ? stateLabel('task', record(data.task).state) : '状态未读取'} · {context.workspace_root}</p></div></div>
     <ReadStatus {...read}/>{data && <><Problems items={data.problems}/><TaskWorkspace key={JSON.stringify([context.context_key, taskId])} context={context} snapshot={read.data!} revision={revision}/></>}

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { Button, Tabs } from 'antd';
 import type { GraphObject } from '../graph/model';
 import type { CloseoutData, DetailData, Envelope, ReadState, TaskData } from '../types';
 import { record, stateLabel, stageLabel } from '../facts';
-import { CopyText, Fields, Problems, ReadStatus } from './Facts';
+import { CopyText, Disclosure, Fields, Problems, ReadStatus } from './Facts';
 import { VerificationDetail, Outcome } from './VerificationDetail';
 import { EvidenceList } from './EvidenceList';
 import { CloseoutPanel } from './CloseoutPanel';
@@ -20,7 +21,7 @@ interface Props {
   onClose: () => void;
 }
 export function TaskDetail({ object, snapshot, details, onDetails, onRefreshDetails, closeout, closeoutRequested, onCloseout, onClose }: Props) {
-  const dialog = useRef<HTMLDialogElement>(null), close = useRef<HTMLButtonElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null), close = useRef<HTMLButtonElement | HTMLAnchorElement>(null);
   const [tab, setTab] = useState<Tab>('overview');
   useEffect(() => {
     const element = dialog.current!;
@@ -32,6 +33,9 @@ export function TaskDetail({ object, snapshot, details, onDetails, onRefreshDeta
     };
     present();
     media.addEventListener('change', present);
+    /* Ant Design's Tabs exposes no prop for naming the tablist, and the hand-rolled bar this
+       replaced carried `aria-label="对象详情分类"`; set it so the group name survives. */
+    element.querySelector('.detail-tabs [role="tablist"]')?.setAttribute('aria-label', '对象详情分类');
     return () => { media.removeEventListener('change', present); element.close(); };
   }, []);
   useEffect(() => { setTab('overview'); close.current?.focus(); }, [object.id]);
@@ -39,13 +43,11 @@ export function TaskDetail({ object, snapshot, details, onDetails, onRefreshDeta
   const data = details.data?.data, task = record(snapshot.data.task), workflow = record(snapshot.data.workflow);
   const mismatch = !!details.data && details.data.read.task_revision !== snapshot.read.task_revision;
   return <dialog className="task-detail" ref={dialog} aria-labelledby="detail-heading" onCancel={e => { e.preventDefault(); onClose(); }} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}>
-    <header className="detail-heading"><div><span className="eyebrow">{object.kind === 'task' ? 'Task' : 'WorkItem'} 详情</span><h3 id="detail-heading">{object.title || '标题未记录'}</h3></div><button type="button" ref={close} onClick={onClose} aria-label="关闭详情并返回节点">关闭</button></header>
-    <div className="detail-tabs" role="tablist" aria-label="对象详情分类">{tabs.map(([key, label], index) => <button type="button" key={key} id={`tab-${key}`} role="tab" aria-selected={tab === key} aria-controls="task-detail-content" tabIndex={tab === key ? 0 : -1}
-      onClick={() => selectTab(key)} onKeyDown={event => {
-        const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
-        if (next >= 0) { event.preventDefault(); selectTab(tabs[next][0]); document.getElementById(`tab-${tabs[next][0]}`)?.focus(); }
-      }}>{label}</button>)}</div>
-    <div id="task-detail-content" className="detail-body nowheel nopan" role="tabpanel" aria-labelledby={`tab-${tab}`} tabIndex={0}>
+    <header className="detail-heading"><div><span className="eyebrow">{object.kind === 'task' ? 'Task' : 'WorkItem'} 详情</span><h3 id="detail-heading">{object.title || '标题未记录'}</h3></div><Button size="small" ref={close} onClick={onClose} aria-label="关闭详情并返回节点">关闭</Button></header>
+    {/* Ant Design's Tabs owns the tablist/tab/tabpanel roles and the arrow/Home/End keys that the
+        previous roving tabindex implemented; `destroyOnHidden` keeps exactly one pane mounted. */}
+    <Tabs className="detail-tabs" activeKey={tab} onChange={key => selectTab(key as Tab)} destroyOnHidden
+      items={tabs.map(([key, label]) => ({ key, label, children: key === tab ? <div className="detail-body nowheel nopan">
       <CopyText value={object.objectId}/><p>{stateLabel(object.kind, object.status)}</p>
       {tab === 'overview' ? <>
         <Fields value={{ object_type: object.kind, owner: object.owner, parent_task: object.parentTaskId,
@@ -55,35 +57,36 @@ export function TaskDetail({ object, snapshot, details, onDetails, onRefreshDeta
           <Fields value={{ task_state: stateLabel('task', task.state), current: stageLabel(workflow.current_step) || '当前步骤未解析', next: stageLabel(workflow.next_step) || '下一步未解析',
             current_source: workflow.current_step_source, next_source: workflow.next_step_source, effective_level: workflow.effective_level,
             completed_at: task.completed_at, read_at: snapshot.read.completed_at }} labels={{ task_state: 'Task 正式状态', current: '当前步骤', next: '下一步', current_source: '当前步骤来源', next_source: '下一步来源', effective_level: '有效流程等级', completed_at: '正式结束时间', read_at: '读取时间' }}/>
-          <details><summary>路由与来源字段</summary><Fields value={{ current: workflow.current_step, next: workflow.next_step, route: workflow.route }}/></details>
+          <Disclosure label="路由与来源字段"><Fields value={{ current: workflow.current_step, next: workflow.next_step, route: workflow.route }}/></Disclosure>
         </section>
-        <details><summary>Task 最近记录与工作段（只读）</summary>
+        <Disclosure label="Task 最近记录与工作段（只读）">
           <p className="muted">以下属于父 Task {String(task.task_id ?? '')}，不是所选 WorkItem 的独立结论；摘要不决定 PASS，工作段不证明执行者在线。</p>
           <Fields value={{ latest_checkpoint: snapshot.data.latest_checkpoint, summary: snapshot.data.summary,
             summary_source: snapshot.data.summary_source, work_sessions: snapshot.data.work_sessions }}
             labels={{ latest_checkpoint: '最近 checkpoint 记录', summary: 'Task 摘要', summary_source: '摘要来源', work_sessions: '已记录工作段' }}/>
-        </details>
-        <details><summary>本次对象原始字段{object.records.length > 1 ? ` · ${object.records.length} 条歧义记录` : ''}</summary>{object.records.map((row, i) => <div className="record-block" key={i}><Fields value={row}/></div>)}</details>
+        </Disclosure>
+        <Disclosure label={<>本次对象原始字段{object.records.length > 1 ? ` · ${object.records.length} 条歧义记录` : ''}</>}>{object.records.map((row, i) => <div className="record-block" key={i}><Fields value={row}/></div>)}</Disclosure>
         <p className="muted">WorkItem 完成不代表 Task 已结单；没有可信执行器观察时，负责人也不代表正在运行。</p>
       </> : <>
         <p className="detail-scope">以下是 <strong>Task {String(task.task_id ?? '')}</strong> 的读取结果{object.kind === 'work_item' ? '，不是所选 WorkItem 的独立验收或交付结论' : ''}。</p>
-        <button type="button" onClick={onRefreshDetails} disabled={details.loading}>重新读取详情</button>
+        <Button onClick={onRefreshDetails} disabled={details.loading}>重新读取详情</Button>
         <ReadStatus {...details}/>
         {mismatch && <p className="warning" role="status">详情与画布的账本版本不同，不能合并为同一次快照。请重新读取页面，以下保留各自读取时间。</p>}
         {data && <Problems items={data.problems}/>}
         {tab === 'blockers' && <>
           {data && <><Fields value={data.blockers} labels={{ waiting: '当前结构化等待', legacy_blocker: '历史自由文本阻塞', source: '来源', note: '解释边界' }}/>
-            <details><summary>Verification / Review / Delivery 的原始阻塞字段</summary><Fields value={{ verification: record(record(data.verification).recorded).detail, review: record(record(data.review).recorded).detail, delivery: record(record(data.delivery).recorded).detail }}/></details></>}
+            <Disclosure label="Verification / Review / Delivery 的原始阻塞字段"><Fields value={{ verification: record(record(data.verification).recorded).detail, review: record(record(data.review).recorded).detail, delivery: record(record(data.delivery).recorded).detail }}/></Disclosure></>}
           <CloseoutPanel read={closeout} requested={closeoutRequested} onRequest={onCloseout} taskRevision={snapshot.read.task_revision}/>
         </>}
         {tab === 'verification' && data && <VerificationDetail data={data}/>}
         {tab === 'evidence' && data && <>
           <EvidenceList value={data.evidence}/><Outcome title="Delivery（不等于正式结单或已上线）" value={data.delivery}/>
-          <Fields value={data.task} labels={{ task_id: '正式 Task', state: '正式状态', phase: '阶段', owner: 'Task 负责人', completed_at: '正式结束时间' }}/>
+          {/* `stateLabel` needs the object kind, which `Fields` cannot know, so the kind is applied here. */}
+          <Fields value={{ ...record(data.task), state: stateLabel('task', record(data.task).state) }} labels={{ task_id: '正式 Task', state: '正式状态', phase: '阶段', owner: 'Task 负责人', completed_at: '正式结束时间' }}/>
           <p className="muted">未取得单独的“用户接收交付”事实时保持未记录，不从 Owner accept、Delivery READY 或 WorkItem 完成推断。</p>
           <CloseoutPanel read={closeout} requested={closeoutRequested} onRequest={onCloseout} taskRevision={snapshot.read.task_revision}/>
         </>}
       </>}
-    </div>
+    </div> : null, }))}/>
   </dialog>;
 }

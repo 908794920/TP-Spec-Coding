@@ -28,6 +28,10 @@ from cli.path_identity import canonical_path, same_path
 from cli.version import active_version
 from cli.wiki import registry as wiki_registry
 
+# States that get their own counter in `task_statistics`. Anything else (including a retired task)
+# falls into `other` and is named in `other_states`, so the breakdown always adds up to `total`.
+_STATE_BUCKETS = ("new", "active", "blocked", "completed", "cancelled")
+
 
 def _problem(code: str, message: str, *, severity: str = "warning") -> Dict[str, str]:
     return {"code": code, "severity": severity, "message": message}
@@ -531,7 +535,12 @@ def build_project_snapshot(
         problems.append(_problem("CONTENT_RESOLVER_ERROR", f"Wiki/Knowledge 配置解析失败：{exc}", severity="error"))
 
     task_index: List[Dict[str, Any]] = []
-    stats = {"total": 0, "new": 0, "active": 0, "blocked": 0, "completed": 0, "cancelled": 0, "verification_attention": 0}
+    # `new`/`active`/`blocked`/`completed`/`cancelled`/`other` partition `total` exactly. `other` is
+    # the catch-all for tasks those buckets cannot express (retired, or a state outside
+    # _STATE_BUCKETS); `other_states` names what went into it so the number is never a mystery.
+    # `verification_attention` is a cross-cutting metric over the same tasks — it is NOT additive.
+    stats = {"total": 0, "new": 0, "active": 0, "blocked": 0, "completed": 0, "cancelled": 0,
+             "other": 0, "other_states": {}, "verification_attention": 0}
     in_progress: List[Dict[str, Any]] = []
     archived: List[Dict[str, Any]] = []
     db_path = _registered_db_path(entry or {}) if entry else None
@@ -576,11 +585,18 @@ def build_project_snapshot(
                     stats["total"] = len(rows)
                     for row in rows:
                         if str(row["task_id"]) in retired_ids:
+                            stats["other"] += 1
+                            stats["other_states"]["RETIRED"] = stats["other_states"].get("RETIRED", 0) + 1
                             continue
                         state = str(row["current_state"] or "").upper()
                         key = state.lower()
-                        if key in stats:
+                        if key in _STATE_BUCKETS:
                             stats[key] += 1
+                        else:
+                            # Never drop a task silently: total must stay reconstructible.
+                            stats["other"] += 1
+                            name = state or "UNRECORDED"
+                            stats["other_states"][name] = stats["other_states"].get(name, 0) + 1
                     current_ids = [task_id for task_id in ids if task_id not in retired_ids]
                     stats["verification_attention"] = _verification_attention(conn, current_ids)
                     in_progress = [
