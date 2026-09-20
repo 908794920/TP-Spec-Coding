@@ -12,6 +12,8 @@
 
 ## 实际验证
 
+按 [`docs/TESTING.md`](../docs/TESTING.md) 选择本次范围；PR / 提交 / 推送不触发全量测试，也不要求重跑已验证且未受影响的内容。
+
 ```text
 # 请填写实际执行过的命令和结果，不要写“应该通过”。
 ```
@@ -20,6 +22,6 @@
 
 - [ ] 没有提交机器绝对路径、真实 Runtime DB、用户 Registry、私有 Wiki/Knowledge 数据或凭据
 - [ ] role ID / Runtime actor 归属没有被目录移动或 Orchestrator 错误改写
-- [ ] 新行为有对应测试或可重复验证证据
+- [ ] 已说明当前改动的局部验证结果或未执行原因；本次临时用例与夹具已清理，不要求永久测试文件
 - [ ] README / Getting Started 与真实 CLI 行为保持一致（如本次改动影响使用方式）
-- [ ] 发布候选已使用 `git add -A` 纳入所有新增文件，并通过 `python scripts/update_manifest.py --verify-release`
+- [ ] 交付包含本次新增、修改和删除项；涉及 Manifest / Role Catalog 时已同步对应派生物

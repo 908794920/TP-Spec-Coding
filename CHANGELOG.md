@@ -1,5 +1,23 @@
 # Changelog
 
+## [5.3.3] Open Release Line — 2026-09-14
+
+- W05：完整移除旧 HTML 卡片命令、模板/渲染器、inline/Web Artifact 及专属展示角色，清理路由、快照 card_type 和新 CLI 诊断中的 card 区段；既有历史诊断和用户 HTML 不删除。
+- W05：工作台是唯一可视化入口，使用根目录 `npm run dev`；纯文本/JSON 查询与 Runtime 验证/验收/结单规则保留。更新字段去向、入口文档、角色拓扑与源码 Manifest；交付五批增量和原始基线到最终源码的累计 Patch，不代表用户已合并、验收或发布。
+- W05 字段覆盖对照补齐 Task 概况的最近 checkpoint、原摘要/来源及已有工作段；未改前端依赖或启动器。此前尚未执行的真实浏览器、锁定构建/完整类型检查及 Windows 项继续留待本地，不因最终交付自动运行全量回归。
+
+- W04：新增按需只读详情接口和四类详情，分别展示 Verification/Review、Owner 逐 AC 处置、验收声明、证据每次引用的哈希、Delivery 与正式状态；按需呈现现有结单预检的完整实际返回，不重写 Runtime 门禁。
+- W04：刷新采用上下文与请求身份，失败保留原数据/时间，跨项目同名 Task 与乱序响应不会覆盖当前界面；增加读取版本差异、事件截断和验收声明读取竞态提示。真实 React/Vite/浏览器及 Windows 验证仍待本地，未据局部测试声明全系统通过。
+
+- W03：在 W02 本地只读服务基础上，新增项目总览/任务工作区/全局配置、正式 WorkItem 归属与依赖图、独立实际流程、概况与 Task 时间线；图浏览不改变业务关系，异常关系明确保留。新增 React Flow 精确依赖及唯一轻量分层布局，未新增 Runtime 模型。
+- W03 当前仅声明源码和适用局部验证结果，真实 Vite/React Flow 浏览器、锁定构建/类型检查与 Windows 项待本地；W03 交付时详细验收/证据解释及旧卡片完整退役分别安排在 W04/W05；当前 W04 实施见上。
+
+- W01：移除基座历史测试、测试开发依赖、pytest 发现配置及自动测试 CI / PowerShell Full 入口；基座验证策略统一为当前功能的临时局部检查，结束后清理，不因提交、推送或交付自动全量回归。
+- 保留 Runtime 验证、业务任务指定测试执行与已有报告接收能力；Role Catalog 和 Manifest 随本次源码清理同步。W01 当期未实现工作台；卡片产品入口仍保留到 W05。
+
+- 从 **5.3.2** 收敛到 **5.3.3** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.3.3`，不再保留 `templates/5.3.2`。
+- v5.3.2 已正式发布（owner acceptance `accept` 模式 + v5.3.2 运行时契约集成 + 卡片渲染修复 + 只读路由在 canonical 工件不可解码时不再崩溃）；本行作为后续功能开发的开放版本线，Role-first 产品形态与各 Formal Role 活动契约不变。
+
 ## [5.3.2] Open Release Line — 2026-09-06
 
 - 从 **5.3.1** 收敛到 **5.3.2** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.3.2`，不再保留 `templates/5.3.1`。

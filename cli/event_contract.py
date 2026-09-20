@@ -2,7 +2,7 @@
 """Structured task-event semantic contract.
 
 Runtime/event_policies remains authoritative for who may write an event.  This
-module only normalizes machine result semantics used by workflow and cards.
+module only normalizes machine result semantics used by workflow and workbench.
 Human summaries are intentionally absent from this API.
 """
 from __future__ import annotations

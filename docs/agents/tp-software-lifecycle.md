@@ -46,7 +46,7 @@ Role 是能力集合，不是固定流程包。工作流按任务复杂度、风
 
 ## 按需路由与现有项目配置
 
-`governance/orchestration.yaml` 是 Base 默认政策，现有 Runtime `config` 表只保存项目少量覆盖，不新增配置文件/数据库。`workflow next --json` 正常读取并校验有效配置；`policy_sources` 标明 Base 与项目来源，`included_stages` 也供进度投影复用。只读路由不启动角色进程、测试或浏览器，不新增 Task、业务事件或卡片。
+`governance/orchestration.yaml` 是 Base 默认政策，现有 Runtime `config` 表只保存项目少量覆盖，不新增配置文件/数据库。`workflow next --json` 正常读取并校验有效配置；`policy_sources` 标明 Base 与项目来源，`included_stages` 也供进度投影复用。只读路由不启动角色进程、测试或浏览器，不新增 Task、业务事件，也不启动工作台。
 
 L1–L3 在没有范围事实及下游工作时仍先澄清；已有相关工作不要求倒补需求事件。需求明确后，架构/架构复审由实际风险、既有活动或显式信号选择，不因 L3 标签自动启用；规划由显式需求、既有活动或真实上游返修触发。没有新问题时不制造下一轮开发。新的可选备注不会仅凭事件编号使完成的开发重新开始；真实架构 REVISE、失败后上游重评、产品/证据主体变化仍重新评估。L1+ Verify、L2/L3 CODE Review 与 Delivery 必要要求保持，未修改 Q01 独立审查频度或身份边界。
 
@@ -99,7 +99,7 @@ Base 中已有的信号名、条件角色 phases 和受角色能力约束的 mod
 
 ## 工作段、里程碑与运行状态
 
-`report task-summary --task <TASK> --db <DB>`、`report stage-time --task <TASK> --db <DB>`、`workitem list --task <TASK> --db <DB>` 只读账本，不生成卡片、不修订 WorkItem 或历史工作段。路由进度与用户显式查看的卡片复用相同解释：
+`report task-summary --task <TASK> --db <DB>`、`report stage-time --task <TASK> --db <DB>`、`workitem list --task <TASK> --db <DB>` 只读账本，不启动工作台、不修订 WorkItem 或历史工作段。路由进度与本地工作台复用相同解释：
 
 - WorkItem 的待处理/已认领/已完成仅表示该任务里程碑登记。Task 已结单而 WorkItem 未完成、已完成项仍依赖未完成/不存在项、历史任务仍有 ACTIVE 项或损坏依赖，显示 `NEEDS_RECONCILIATION`，不自动补完成或计算项目百分比。同任务依赖由既有 `--depends` 表达；跨任务等待沿用已有 `block/resume`，不新增调度器。
 - WP-0 等子范围结单不证明大型项目完成；取消/退休记录保持历史性质，不继续派发。非 Git 原型的获准 SHA-256 冻结仍按 canonical 当前范围及原证据表达；声明不代替哈希/授权核验，不强迫初始化 Git 或软件交付 Complete。
@@ -112,7 +112,7 @@ Base 中已有的信号名、条件角色 phases 和受角色能力约束的 mod
 
 ### 临时工件与已知中断恢复（按需）
 
-仅创建临时诊断夹具/中间输出、处理当前工作段或诊断残留时读本段，不为每条工具命令查询或开关 session。获准持久回归脚本/夹具/基线保留在业务测试目录；原始文件、intake、正式工件和 Evidence 不按 Temp 清理。
+仅创建临时诊断夹具/中间输出、处理当前工作段或诊断残留时读本段，不为每条工具命令查询或开关 session。业务项目获准持久回归脚本/夹具/基线保留在业务测试目录；基座自身采用 [本仓临时验证策略](../TESTING.md)，不套用业务测试留存规则；原始文件、intake、正式工件和 Evidence 不按 Temp 清理。
 
 有意义执行段使用 `work start`，取真实 `session_id` 作为 run_id；临时根通过既有入口登记，不创建工作区 `.tmp`：
 
@@ -130,9 +130,9 @@ tp-spec temp cleanup --project <PROJECT> --task <TASK> --run-id <RUN>
 
 这不是三步必跑脚本：`temp orphan-check` 只报告 owned/unmanaged 候选，可加 `--project/--task/--workspace-root` 收窄；**不得自动删除**历史 `.tmp` 或无 ownership manifest 路径。`temp cleanup` 仅显式重试已登记且获准的自有路径。`CLEANUP_PENDING` 表示本机清理未完成，不新增 Task state、不逆改已提交事实；依赖必要清理证据的 Delivery 门禁仍有效。未知、重复或损坏的 START 不选最后一条、不自动修历史，不杀进程。
 
-## v5.3.2 记账入口与恢复
+## v5.3.3 记账入口与恢复
 
-普通命令不生成卡片。会话基于本轮 CLI 回执简短说明结果、下一责任和等待条件；需要详细卡片时才显式调用 `card task`。机器 stdout 保持 JSON/YAML，不插入展示 marker。
+普通命令不启动工作台。会话基于本轮 CLI 回执简短说明结果、下一责任和等待条件；需要可视化时，在 TP-Spec-Coding 自身根目录使用 `npm run dev`，见 [本地工作台](../WORKBENCH.md)。机器 stdout 保持 JSON/YAML，不插入展示 marker。
 
 同一工作批次可一次引用多个真实输出，无需为每个文件再写一篇治理说明：
 
@@ -140,13 +140,13 @@ tp-spec temp cleanup --project <PROJECT> --task <TASK> --run-id <RUN>
 tp-spec task checkpoint --task <TASK> --task-dir <TASK_DIR> --db <DB> --actor tp-development-engineer --phase development --summary "本批业务变化" --request-id <本批稳定ID> --collect <输出文件A> --collect <输出文件B>
 ```
 
-`--collect` 复制已完成的本地输出到 Task 的 `evidence/collected/`，自动绑定路径、内容 SHA-256 与 Development ChangeSet；不执行源命令、不证明退出码、独立审查或验收 PASS。稳定脚本、场景、夹具和认可基线仍保存在项目正式测试目录，不转为 Temp。复制限额来自当前 Base 的 `governance/orchestration.yaml / execution.artifact_collection`；当前实现不是项目级策略 override，也不是自动发现所有宿主工具产物。失败批次可能留下未绑定的采集文件，不能据此宣称事实已入账。
+`--collect` 复制已完成的本地输出到 Task 的 `evidence/collected/`，自动绑定路径、内容 SHA-256 与 Development ChangeSet；不执行源命令、不证明退出码、独立审查或验收 PASS。业务项目获准的稳定脚本、场景、夹具和认可基线仍保存在其正式测试目录，不转为 Temp；基座自身的临时用例按 [本仓验证策略](../TESTING.md) 清理，实际结果不抹除。复制限额来自当前 Base 的 `governance/orchestration.yaml / execution.artifact_collection`；当前实现不是项目级策略 override，也不是自动发现所有宿主工具产物。失败批次可能留下未绑定的采集文件，不能据此宣称事实已入账。
 
 `checkpoint` 与 `verify` 支持 `--request-id`：同 Task 的同逻辑请求重试返回原始回执，不新增事件；新工作、新验收或改变参数使用新 ID。回执 `replayed: true` 指向原操作，**不是本次执行或当前版本的新 PASS**。已有绑定证据缺失/变更会拒绝重放，不能直接重跑原工作掩盖损坏。未给 ID 时自动生成并返回；发生响应丢失而调用方未保存 ID 时，不能保证调用方下一次随机 ID 被去重。当前并未扩展到所有写命令。
 
 ### 一次接收已有结果报告
 
-已有 pytest JUnit XML、Playwright原生JSON、`Test-TpSpecBase.ps1 -ReportPath` JSON 或 `tp-spec.code-review-result/v1` JSON 时，可与本批短摘要一起接收，不必手写测试数量、耗时或 Event/Evidence 元数据：
+已有 pytest JUnit XML、Playwright原生JSON、历史 Base 测试报告 JSON 或 `tp-spec.code-review-result/v1` JSON 时，可与本批短摘要一起接收，不必手写测试数量、耗时或 Event/Evidence 元数据：
 
 ```text
 tp-spec task checkpoint --task <TASK> --task-dir <TASK_DIR> --db <DB> --actor tp-development-engineer --phase development --summary "本批修改与待复验边界" --request-id <稳定批次ID> --result-report <pytest.xml> --result-report <base-report.json> --collect <其他输出>
@@ -163,6 +163,8 @@ tp-spec task checkpoint --task <TASK> --task-dir <TASK_DIR> --db <DB> --actor tp
 稳定请求 ID 在本次调用前确定。同 ID/同参数重试核对原事务、观察列表、证据哈希和报告摘要，返回原批次而非再接收或执行。源文件移走后仍可核对已绑定副本；同源路径已经用于新一轮测试时必须使用新 ID，不能把原请求的重放解释为新测试结果。改变 actor/文件列表/语义却复用 ID 会拒绝；不同 ID 不按摘要或 ChangeSet 合并。当前入口是**已有报告接收**，不是进程执行器、认证系统或多主体正式结果签收器，不能宣称已自动观察宿主外命令、时长或授权。
 
 ### 显式运行已获准的 pytest 检查并接收实际输出
+
+此能力保留给业务项目的指定用例，所选 CLI 解释器需具备 pytest；基座不再附带历史测试开发依赖，也不会自动安装。外部临时目录的基座用例按 [本仓验证策略](../TESTING.md) 执行，不通过修改本入口的路径限制来适配。
 
 只有原本就要运行、范围和副作用已获准的 pytest 检查才用此入口；不是每次 checkpoint 或每个 Task 的新必做步骤。已有报告继续使用 `--result-report`，无需为了采集元数据重新执行：
 
@@ -184,7 +186,7 @@ tp-spec task run-pytest --task <TASK> --task-dir <TASK_DIR> --db <DB> --test tes
 
 默认等待上限600秒，可用正且有限的 `--timeout` 指定。超时返回124，中断返回130，未能启动为127；pytest 退出码0–5原样保留，其他进程退出保留原码在 `execution.exit_code`、命令返回1。只有原测试为0而记账未能确认时，外层命令才转为非零并单独报告记账问题。超时/可捕获中断只结束本次拥有的直接子进程；后代进程状态不监控、既有外部业务副作用不撤回。
 
-目录预留后崩溃、完成回执缺失/损坏或控制文件冲突，都保持 `INCOMPLETE` / `INVALID`，**不自动过期、不删除预留、不换新ID偷重试**。只有实际所有权和授权成立、运行/外部结果核实后才处理恢复；原件存在则恢复原件并以原 ID 重试登记，无法确定执行状态就保持未知。并发同请求只允许一个执行者；这不是跨文件系统/账本/业务的分布式 exactly-once 保证。原始输出可能含敏感数据，应在获准环境与非敏感夹具上使用，按项目证据访问和保留政策管理；不会自动上传模型、自动脱敏、后台刷新卡片或清除用户文件。
+目录预留后崩溃、完成回执缺失/损坏或控制文件冲突，都保持 `INCOMPLETE` / `INVALID`，**不自动过期、不删除预留、不换新ID偷重试**。只有实际所有权和授权成立、运行/外部结果核实后才处理恢复；原件存在则恢复原件并以原 ID 重试登记，无法确定执行状态就保持未知。并发同请求只允许一个执行者；这不是跨文件系统/账本/业务的分布式 exactly-once 保证。原始输出可能含敏感数据，应在获准环境与非敏感夹具上使用，按项目证据访问和保留政策管理；不会自动上传模型、自动脱敏、后台刷新工作台或清除用户文件。
 
 ### 接收原生浏览器报告与已批准媒体
 
@@ -233,7 +235,7 @@ tp-spec task resume --task <TASK> --task-dir <TASK_DIR> --db <DB> --actor human_
 
 外部前置用既有 typed `block/resume` 留存实际解决证据：`block --phase` 对应受阻的 `review` 或 `delivery`（架构复审使用 `review`），不能用其他阶段或未分类的历史 resume 冲掉专业阻塞。环境恢复证据须与原前置内容不同、当前文件哈希仍有效；依赖须实际完成。`HUMAN_DECISION` 或明确归 `human_owner` 的交付阻塞，只有同阶段的 `human_acceptance/permission` 且由 `human_owner` 留证恢复才允许重新评估，代码变化和环境恢复不能代替授权。恢复条件本身的业务含义由真实执行者/用户确认，程序不从说明文本推断。
 
-首次命令因前置校验失败、尚未形成专业结果时，保留实际错误并按上述现有等待入口记录分类；不能填 `NEEDS_FIX` 代替未运行，也不要在同一条件下反复调用失败命令。本次没有建立跨命令失败缓存、自动轮询或重试调度器。解决记录不授予测试/Review/Visual/human PASS，也不免除实际 Delivery READY 与 Complete 校验。诊断查询仍不写业务事实或生成卡片。
+首次命令因前置校验失败、尚未形成专业结果时，保留实际错误并按上述现有等待入口记录分类；不能填 `NEEDS_FIX` 代替未运行，也不要在同一条件下反复调用失败命令。本次没有建立跨命令失败缓存、自动轮询或重试调度器。解决记录不授予测试/Review/Visual/human PASS，也不免除实际 Delivery READY 与 Complete 校验。诊断查询仍不写业务事实或启动工作台。
 
 正常事实提交后的 `generated/continuation.md` 是可重建派生物；更新失败返回 `facts_committed: true, view_status: PENDING`，不得将旧视图声称为最新。可在故障排除后运行：
 
@@ -243,20 +245,20 @@ tp-spec projection rebuild --task <TASK> --task-dir <TASK_DIR> --db <DB> --view-
 
 此命令不新增业务事件。`status.yaml`、`events.jsonl`、必要证据和结单封存仍受原有事务/恢复约束；数据库失败、账本损坏或必要投影失败不按派生物容错。重放原请求不会偷偷刷新视图。
 
-正常 CLI 自动将分段诊断写入用户级 `diagnostics/cli/`；通过以下只读入口查询，不读取完整卡片：
+正常 CLI 自动将分段诊断写入用户级 `diagnostics/cli/`；通过以下只读入口查询，不需要打开工作台：
 
 ```text
 tp-spec report timings --task <TASK> --limit 20 --json
 tp-spec report timings --invocation <cli_invocation_id> --json
 ```
 
-每条诊断区分未进入/完成/抛出异常的区段，给出解析、配置、ChangeSet、锁等待、持锁、写入、提交、证据、投影、卡片与总耗时。总计从标准流设置后的 `main` 解析起至调度返回，不含解释器启动、进入 `main` 前的导入、标准流设置和诊断文件自身保存；显式卡片内部的按需导入则包含在 card 区段内。分段是 inclusive 且同名调用累加，可能相互嵌套，不能相加或拿总时长减重叠区段求其他成本。
+每条诊断区分未进入/完成/抛出异常的区段，给出解析、配置、ChangeSet、锁等待、持锁、写入、提交、证据、投影与总耗时。总计从标准流设置后的 `main` 解析起至调度返回，不含解释器启动、进入 `main` 前的导入、标准流设置和诊断文件自身保存。分段是 inclusive 且同名调用累加，可能相互嵌套，不能相加或拿总时长减重叠区段求其他成本。
 
 `lock_wait` 只测显式 `BEGIN IMMEDIATE`；`lock_held` 从成功获取该锁到 COMMIT/ROLLBACK（或回滚尝试失败），包括其内证据、备份、投影及 journal 工作。正常 checkpoint 的必要事实事务与派生只读事务各有一次持锁区间，不将它们算成两次业务提交。延迟事务无法由 BEGIN 推定获取写锁的时点，其等待仍包含在 `db_write` 中，`lock_held` 不补造其持锁时间。命令结果始终看真实退出码和事实回执，某区段 completed 不代表业务 PASS。
 
 `completion: finished` 只表示已正常完成命令收尾，不代表退出码为 0；传播到命令边界的 KeyboardInterrupt 记 `interrupted` 和退出码 130，再继续传播中断。强杀/断电可能没有结束诊断，缺记录保持未知，不根据事件间隔补时长。旧 v1 诊断没有 completion/lock_held 仍可查询，缺字段不补造数值；损坏的分段数值/状态被跳过并计入 `corrupt_records_skipped`。
 
-普通命令 card 为 `not_entered`，只注册轻量参数，不导入 snapshot/render 实现；显式查看失败不冒称展示完成。默认保留最近 200 条，可用 `TP_SPEC_DIAGNOSTICS_KEEP=1..10000` 调整；路径仍遵循 `TP_SPEC_USER_ROOT`。诊断不保存原始 argv/凭据，Task 关联只保留符合既有格式的标识，非法输入记空；这不认证身份或授予权限。诊断构造/保存失败仅尝试一次无详细异常内容的警告，警告通道也不可用时不改变主结果，调用上下文仍释放。诊断不属于 Runtime 权威事实。派生视图故障的警告通道不可用时，机器回执仍返回 `facts_committed: true`、`view_status: PENDING` 及恢复入口。
+CLI 不再注册卡片命令，也不为新诊断生成 `card` 计时区段；已有 v1 诊断中的历史区段仍可原样只读查询，不重写或删除旧记录。普通 CLI 不导入工作台服务或前端，也不因页面查看失败改变正式命令结果。默认保留最近 200 条，可用 `TP_SPEC_DIAGNOSTICS_KEEP=1..10000` 调整；路径仍遵循 `TP_SPEC_USER_ROOT`。诊断不保存原始 argv/凭据，Task 关联只保留符合既有格式的标识，非法输入记空；这不认证身份或授予权限。诊断构造/保存失败仅尝试一次无详细异常内容的警告，警告通道也不可用时不改变主结果，调用上下文仍释放。诊断不属于 Runtime 权威事实。派生视图故障的警告通道不可用时，机器回执仍返回 `facts_committed: true`、`view_status: PENDING` 及恢复入口。
 
 ## 当前审查证据与交付前置
 
@@ -276,7 +278,7 @@ tp-spec report timings --invocation <cli_invocation_id> --json
 tp-spec task verify --task <TASK> --task-dir <TASK_DIR> --db <DB> --scope technical --check "实际已执行的检查及范围" --decision PASS --summary "仅这些技术检查通过；视觉/人验待验" --evidence evidence/<本次真实技术结果>
 ```
 
-`--check` 可重复，technical 至少需要一项非空检查说明；PASS 仍要求真实文件和当前 Development ChangeSet。范围、检查清单与证据进入同一正式事件/回执及幂等请求身份，不新增账本。状态、进度、接续摘要和显式卡片保留 `TECHNICAL` 限定；技术/审查均通过后，完整验收缺口仍显示等待，不能反复派发已知不满足前置的交付。未知范围不按完整 PASS 放行；无范围字段的历史事件保留原 full 语义，不自动转换旧 PASS。
+`--check` 可重复，technical 至少需要一项非空检查说明；PASS 仍要求真实文件和当前 Development ChangeSet。范围、检查清单与证据进入同一正式事件/回执及幂等请求身份，不新增账本。状态、进度、接续摘要和工作台保留 `TECHNICAL` 限定；技术/审查均通过后，完整验收缺口仍显示等待，不能反复派发已知不满足前置的交付。未知范围不按完整 PASS 放行；无范围字段的历史事件保留原 full 语义，不自动转换旧 PASS。
 
 补齐实际视觉/人验后，按当前完整验收范围重新执行默认 Verify 留证。原 CODE 审查明确绑定 technical 结果，当前产品、验收标准和检查方案未变，且原技术证据和审查产物仍有效时，不单凭补验的 Verify 事件编号要求重做该审查。普通 full 结果的既有重验证/Review 策略不因此放宽。只允许补充 AC 的执行证据/结论，不忽略 AC 标准、方法、必要视觉策略或产品变化；新 FAIL/NEEDS_FIX、损坏证据或失效主体不能被后来的 PASS 遮蔽。新执行应保留旧证据原件，不能覆盖旧文件后仍沿用其审查。
 
@@ -300,4 +302,4 @@ Runtime 只知道已登记仓库，不能从自然语言自动证明“所有获
 
 ChangeSet 原内容 ID 保持原格式；正式新记录额外保留既有快照内的逐仓 `product_digest`，按**仓库身份→内容**校验，避免两个仓库交换内容而总 ID 恰好不变。selected pytest 的 `subject_unchanged` 同样检查逐仓绑定。旧单仓仍可按原内容 ID 校验；旧多仓记录缺逐仓摘要时必须重新登记当前 checkpoint 和实际适用证据，不能补写历史摘要或复用旧 PASS。仅历史提交元数据变化、产品内容未变的原有兼容语义保留；未验证混用旧二进制读取新记录。
 
-最终结单重新检查最新 Delivery 及其原始附件；较新的损坏/失败结果不能回退到旧 READY。必要人验/视觉、独立 CODE、临时绕过清理和可信 AC 处置仍执行。范围历史损坏时报告具体阻塞，不静默丢掉较早仓库；提交前主体变化拒绝入账，但不撤销用户的产品修改。普通流转不生成或刷新卡片。
+最终结单重新检查最新 Delivery 及其原始附件；较新的损坏/失败结果不能回退到旧 READY。必要人验/视觉、独立 CODE、临时绕过清理和可信 AC 处置仍执行。范围历史损坏时报告具体阻塞，不静默丢掉较早仓库；提交前主体变化拒绝入账，但不撤销用户的产品修改。普通流转不启动工作台或触发页面刷新。

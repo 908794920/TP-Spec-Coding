@@ -1,0 +1,29 @@
+{
+  "name": "tp-spec-workbench",
+  "version": "5.3.3",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "dev": "node scripts/workbench-dev.mjs",
+    "build": "vite build --config ui/workbench/vite.config.ts",
+    "check:types": "tsc --project ui/workbench/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@ant-design/icons": "6.3.4",
+    "@xyflow/react": "12.10.1",
+    "antd": "6.6.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "typescript": "5.9.3",
+    "vite": "8.2.1"
+  }
+}

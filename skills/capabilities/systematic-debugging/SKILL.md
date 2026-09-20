@@ -1,11 +1,11 @@
 ---
 name: systematic-debugging
 display_name: 系统化调试
-version: 5.3.2
+version: 5.3.3
 description: Use when a test, build, runtime behavior, integration, or verification fails. Drive evidence-based reproduction, hypotheses, root-cause confirmation, minimal repair, and regression prevention.
 ---
 
-# 系统化调试 — V5.3.2 Record-first
+# 系统化调试 — V5.3.3 Record-first
 
 ## 修改前门禁：Tight Red Feedback Loop
 

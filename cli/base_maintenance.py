@@ -49,7 +49,7 @@ from cli.version import active_version
 
 BASE_LINK_DIRS = ("agents", "cli", "docs", "governance", "scripts", "skills", "templates", "automation")
 CONTENT_LINK_DIRS = ("wiki", "knowledge")
-SCAN_SKIP = {".git", ".idea", ".vscode", "node_modules", "target", "build", "dist", "__pycache__", ".pytest_cache"}
+SCAN_SKIP = {".git", ".idea", ".vscode", "node_modules", "target", "build", "dist", "__pycache__", ".pytest_cache", ".vite", ".venv", "venv", "workbench-logs"}
 PROJECT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 

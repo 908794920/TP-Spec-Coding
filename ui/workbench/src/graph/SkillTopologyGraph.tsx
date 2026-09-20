@@ -1,0 +1,141 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Button, Tag, Typography } from 'antd';
+import { Background, Handle, MarkerType, Position, ReactFlow, ReactFlowProvider, useNodesState, type Edge, type Node, type NodeProps } from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import { explainValue } from '../facts';
+import type { Topology } from './topology';
+
+/* The skill topology as a node-link graph. Positions are computed, never auto-laid-out: x is the
+   level and y is the node's order inside that level, so the sequence the payload carries in its edge
+   order stays visible as top-to-bottom order in every column. Shared skills are one node with several
+   incoming edges rather than a row per owner, which is what makes the fan-in readable. */
+const NODE_WIDTH = 212, NODE_HEIGHT = 46, GAP_X = 72, GAP_Y = 12;
+const KIND_BADGE: Record<string, string> = { 'product-entry': '入口', 'domain-agent': '领域 Agent', 'formal-role': '角色', 'capability-skill': 'SKILL' };
+const RELATION_LABEL: Record<string, string> = { 'routes-to': '路由', 'owns-role': '拥有', 'uses-skill': '使用' };
+/* Relation is shown by line weight and colour, not by a text label on all 37 edges. The colours are
+   tokens through `var()`: React Flow applies them to the SVG inline style, so the arrow markers
+   inherit them too and no hex literal is needed here. */
+const RELATION_STYLE: Record<string, { stroke: string; width: number }> = {
+    'routes-to': { stroke: 'var(--accent)', width: 2 },
+    'owns-role': { stroke: 'var(--muted)', width: 1.5 },
+    'uses-skill': { stroke: 'var(--node-border)', width: 1.2 },
+};
+
+interface SkillNodeData extends Record<string, unknown> {
+    label: string;
+    id: string;
+    kind: string;
+    order: number | null;
+    shared: number;
+    dim: boolean;
+    emphasis: boolean;
+}
+type SkillFlowNode = Node<SkillNodeData, 'skill'>;
+
+function SkillNode({ data }: NodeProps<SkillFlowNode>) {
+    return <div className={`skill-graph-node${data.emphasis ? ' is-emphasized' : ''}${data.dim ? ' is-dim' : ''}`}
+      title={data.id}>
+      <Handle type="target" position={Position.Left}/>
+      <div className="skill-graph-head">
+        {data.order !== null && <span className="skill-order">{data.order}</span>}
+        <Typography.Text strong>{data.label}</Typography.Text>
+        <Tag variant="filled" title={explainValue('kind', data.kind) || data.kind}>{KIND_BADGE[data.kind] ?? data.kind}</Tag>
+        {data.shared > 1 && <Typography.Text type="secondary" className="skill-shared">×{data.shared}</Typography.Text>}
+      </div>
+      {data.label !== data.id && <span className="skill-id">{data.id}</span>}
+      <Handle type="source" position={Position.Right}/>
+    </div>;
+}
+/* Declared once: a new object on every render makes React Flow re-mount every node. */
+const nodeTypes = { skill: SkillNode };
+
+function buildNodes(topology: Topology): SkillFlowNode[] {
+    const byLevel = new Map<number, string[]>();
+    topology.nodes.forEach((_, id) => {
+        const level = topology.level.get(id);
+        if (level === undefined)
+            return;
+        byLevel.set(level, [...(byLevel.get(level) ?? []), id]);
+    });
+    const tallest = Math.max(1, ...[...byLevel.values()].map(ids => ids.length));
+    const nodes: SkillFlowNode[] = [];
+    byLevel.forEach((ids, level) => {
+        /* Within a level the order is the recorded one; the column is only shifted as a block. */
+        const ordered = [...ids].sort((a, b) => (topology.order.get(a) ?? 0) - (topology.order.get(b) ?? 0));
+        const offset = (tallest - ordered.length) * (NODE_HEIGHT + GAP_Y) / 2;
+        ordered.forEach((id, index) => {
+            const node = topology.nodes.get(id)!;
+            nodes.push({
+                id, type: 'skill', position: { x: level * (NODE_WIDTH + GAP_X), y: offset + index * (NODE_HEIGHT + GAP_Y) },
+                style: { width: NODE_WIDTH, height: NODE_HEIGHT },
+                data: { label: node.name, id: node.id, kind: node.kind, shared: topology.parentCount.get(node.id) ?? 0,
+                    order: ids.length > 1 ? (topology.order.get(node.id) ?? null) : null, dim: false, emphasis: false },
+            });
+        });
+    });
+    return nodes;
+}
+
+function Canvas({ topology }: { topology: Topology }) {
+    const seeded = useMemo(() => buildNodes(topology), [topology]);
+    const [nodes, setNodes, onNodesChange] = useNodesState<SkillFlowNode>(seeded);
+    const [selected, setSelected] = useState('');
+    useEffect(() => { setNodes(seeded); setSelected(''); }, [seeded, setNodes]);
+    /* Selecting a node marks it and its direct relations, which is how a shared skill shows its owners. */
+    const related = useMemo(() => {
+        if (!selected)
+            return new Set<string>();
+        const ids = new Set([selected]);
+        topology.edges.forEach(edge => {
+            if (edge.from === selected)
+                ids.add(edge.to);
+            if (edge.to === selected)
+                ids.add(edge.from);
+        });
+        return ids;
+    }, [selected, topology.edges]);
+    const display = useMemo(() => nodes.map(node => ({ ...node, data: { ...node.data,
+        emphasis: related.has(node.id), dim: related.size > 0 && !related.has(node.id) } })), [nodes, related]);
+    const edges: Edge[] = useMemo(() => topology.edges.map((edge, index) => {
+        const style = RELATION_STYLE[edge.relation] ?? { stroke: 'var(--muted)', width: 1 };
+        const dim = related.size > 0 && !(related.has(edge.from) && related.has(edge.to));
+        return {
+            id: `${edge.from}->${edge.to}:${index}`, source: edge.from, target: edge.to,
+            type: 'smoothstep', deletable: false, reconnectable: false, selectable: false, focusable: false,
+            /* Only the non-conditional skills get a text label: 默认 are the two always-on ones. */
+            label: edge.mode === 'default' ? '默认' : undefined,
+            markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: style.stroke },
+            style: { stroke: style.stroke, strokeWidth: style.width, opacity: dim ? .15 : 1 },
+        };
+    }), [topology.edges, related]);
+    const counts = useMemo(() => {
+        const byLevel = new Map<number, number>();
+        topology.nodes.forEach((_, id) => {
+            const level = topology.level.get(id);
+            if (level !== undefined)
+                byLevel.set(level, (byLevel.get(level) ?? 0) + 1);
+        });
+        return [...byLevel].sort((a, b) => a[0] - b[0]);
+    }, [topology]);
+    return <div className="topology-graph">
+      <div className="graph-toolbar"><div className="graph-actions">
+        <Button size="small" disabled={!selected} onClick={() => setSelected('')}>清除选中</Button>
+      </div><Typography.Text type="secondary" className="graph-summary">
+        第 0 层入口 → {counts.slice(1).map(([level, count]) => `第 ${level} 层 ${count} 个`).join(' · ')}；共 {topology.nodes.size} 个节点、{topology.edges.length} 条关系
+      </Typography.Text></div>
+      <div className="graph-canvas">
+        <ReactFlow<SkillFlowNode, Edge> nodes={display} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange}
+          onNodeClick={(_, node) => setSelected(current => current === node.id ? '' : node.id)}
+          fitView fitViewOptions={{ padding: .12, maxZoom: 1 }} minZoom={.15} maxZoom={2}
+          nodesConnectable={false} edgesReconnectable={false} deleteKeyCode={null} edgesFocusable={false}
+          selectionOnDrag={false} multiSelectionKeyCode={null} onBeforeDelete={async () => false} attributionPosition="bottom-left">
+          <Background gap={20} size={1}/>
+        </ReactFlow>
+      </div>
+      <p className="graph-legend">箭头＝关系方向：<strong>路由</strong>（入口 → 领域 Agent）、<strong>拥有</strong>（领域 Agent → 正式角色）、<strong>使用</strong>（角色 / Agent → 能力 SKILL）。节点内序号＝该层内的记录顺序；数据里没有独立的顺序字段，顺序按连线次序呈现，因此不做排序。带 ×N 的节点被 N 处引用，点它可只高亮相关连线。</p>
+    </div>;
+}
+
+export function SkillTopologyGraph({ topology }: { topology: Topology }) {
+    return <ReactFlowProvider><Canvas topology={topology}/></ReactFlowProvider>;
+}

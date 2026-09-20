@@ -1,7 +1,7 @@
 ---
 name: tp-autonomy-integrate
 display_name: 自治集成
-version: 5.3.2
+version: 5.3.3
 description: Autonomous staging 进入 Canonical 的唯一桥：先隔离 Prepare + Verification，再由 human_owner 对唯一目标显式 Apply；多 Repo 使用可恢复 Integration Journal。
 ---
 

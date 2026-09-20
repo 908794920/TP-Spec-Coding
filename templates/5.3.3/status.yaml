@@ -1,0 +1,29 @@
+task_id: "TASK-YYYYMMDD-XXX"
+task_name: ""
+created: "YYYY-MM-DD"
+base_version: "5.3.3"
+artifact_contract:
+  version: "5.3.3"
+current_state: "NEW"
+current_phase: "intake"
+current_owner: "tp-software-lifecycle"
+risk_level: "L1"
+flow_level: "L1"
+blockers: []
+findings: []
+scope_changes: []
+next_responsibility: "tp-software-lifecycle"
+quality_facts:
+  change_set_id: "NOT_RECORDED"
+  development: "NOT_RECORDED"
+  verification: "NOT_RECORDED"
+  review: "NOT_RECORDED"
+  delivery: "NOT_RECORDED"
+  knowledge: "NOT_RECORDED"
+artifacts:
+  event_log: "events.jsonl"
+  continuation: "generated/continuation.md"
+  terminal_manifest: "generated/terminal-manifest.json"
+  acceptance: "acceptance.md"
+  task_document: "task.md"
+  evidence: "evidence/"

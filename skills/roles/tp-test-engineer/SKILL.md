@@ -1,17 +1,19 @@
 ---
 id: tp-test-engineer
 name: tp-测试工程师
-version: 5.3.2
+version: 5.3.3
 status: active
 type: workflow-role
 role: tp-test-engineer
-description: tp-测试工程师：TP-Spec-Coding v5.3.2 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-测试工程师：TP-Spec-Coding v5.3.3 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-测试工程师
 
 ## 责任
 独立证明实现行为是否满足 canonical Requirement：测试分析、单元、集成、接口、回归、验收、运行和浏览器验证。测试结果是事实，不是推动状态机的形式。
+
+修改或审查 TP-Spec-Coding 自身源码时，先应用 [本仓验证策略](../../../docs/TESTING.md)：局部临时验证、结束后清理，不因提交/交付或 Review 建议执行全量测试；下述通用方法不构成永久测试要求。其他业务仓库遵守各自规则。
 
 ## 独立验证
 不要只相信开发摘要，必须检查适用的真实代码/diff/配置与证据。按任务相关性检查：
@@ -28,7 +30,7 @@ description: tp-测试工程师：TP-Spec-Coding v5.3.2 正式软件工程角色
 3. PASS 必须绑定真实 Evidence；未执行的人测/浏览器测保持 PENDING/BLOCKED，或由 human_owner 通过官方 `task acceptance-override --mode accept` 对真实核验的声明范围留证；测试角色不能代替 Owner 写 PASS。
 4. Evidence subject 后续实质变化后旧 PASS 失效；标记 `PASS_STALE` 并必须重跑受影响验证。
 5. 生产只读/写入继续遵守明确确认与高风险授权。
-6. 测试创建时先判断是 durable regression test 还是 temporary diagnostic test；前者保护现实行为，后者进入受控 Temp 并在收敛前清理。已有测试已充分覆盖时优先复用/扩展，不用测试数量制造“更保险”的错觉。按需读取 [测试价值判定](../../capabilities/testing-strategy/references/test-value.md)。
+6. 测试留存由目标仓库已确认规则决定：基座自身仅保留本次结果，临时用例结束后删除；允许持久测试的业务项目才区分 durable regression test 与 temporary diagnostic test。后者进入受控 Temp 并在收敛前清理；有适用已有测试时优先复用，不用数量制造“更保险”的错觉。按需读取 [测试价值判定](../../capabilities/testing-strategy/references/test-value.md)。
 7. 源码 grep、DOM/CSS 字符串断言只能作为静态结构契约；存在 UI/页面 AC 时必须另做真实浏览器和交互验证。先从 Change Set/Diff 推导受影响页面，绑定当前 `change_set_id` 的 Visual Manifest；按需读取 [Visual QA](../../capabilities/testing-strategy/references/visual-qa.md)。
 
 ## 缺陷与返工
@@ -37,7 +39,7 @@ description: tp-测试工程师：TP-Spec-Coding v5.3.2 正式软件工程角色
 - LOCAL_REWORK 不得借机引入新需求、架构、scope、权限/数据语义；出现这些变化交相应正式 Role。
 
 ## 临时测试工件
-- 临时诊断测试/夹具使用登记的**系统临时目录**，禁止在项目工作区创建 `.tmp` 测试夹具；获准的 durable regression test 是持久资产，不按临时工件清理。用户原始文件可只读复制用于隔离测试，原件不得修改、覆盖、移动或删除；intake、正式 Task 工件和 Evidence 也不是临时工件。
+- 临时诊断测试/夹具使用登记的**系统临时目录**，禁止在项目工作区创建 `.tmp` 测试夹具；业务项目获准的 durable regression test 是持久资产，不按基座临时用例策略清理。用户原始文件可只读复制用于隔离测试，原件不得修改、覆盖、移动或删除；intake、正式 Task 工件和 Evidence 也不是临时工件。
 - 可控的正常、失败或暂停边界由匹配 task/role/agent 记录 `work end`；强制中断未记录时保留未知，不补造 END。只清理 ownership manifest 明确登记且获准的路径；残留检查只报告，不得自动删除。`CLEANUP_PENDING` 不是 Task 状态，需如实报告，不逆改已提交事实。
 - 读取条件：临时根登记、工作段收口或残留诊断；内容：只读操作参考中的临时工件与已知中断恢复；路径：[生命周期操作参考](../../../docs/agents/tp-software-lifecycle.md)。不因测试角色被加载就逐条执行清理命令。
 

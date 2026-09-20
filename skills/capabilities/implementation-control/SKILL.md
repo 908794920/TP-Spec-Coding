@@ -1,11 +1,11 @@
 ---
 name: implementation-control
 display_name: 实现过程控制
-version: 5.3.2
+version: 5.3.3
 description: Use while implementing an TP-Spec-Coding task when code changes, refactoring, reuse decisions, debugging, or scope control are required.
 ---
 
-# 实现过程控制 — V5.3.2 Record-first
+# 实现过程控制 — V5.3.3 Record-first
 
 ## 目的
 把“先理解、再最小修改、验证后再继续”变成默认开发习惯。目标不是写更多代码，而是用最小、可读、可验证的改动解决当前真实问题。
@@ -32,12 +32,14 @@ description: Use while implementing an TP-Spec-Coding task when code changes, re
 一轮只做 smallest coherent diff，保护用户已有修改，不顺手格式化/重构旧代码。只有确需保存复杂实施约束时才维护 `implementation.md` 的相关段；简单反馈复用批次摘要，不另造路线或空阶段工件。只清理由本次改动制造的 orphan、重复路径、失效兼容、无调用 helper、调试残留和低价值平行测试。
 
 ### GOAL-DRIVEN VERIFY — 验证并正确停止
+修改 TP-Spec-Coding 自身源码时先应用 [本仓验证策略](../../../docs/TESTING.md)：局部临时验证、结束后清理，不为提交或交付另开全量检查；其他业务仓库的测试留存按其已确认规则。
+
 重新阅读完整 Diff，使 changed file 对应 AC、Finding、必要 Migration 或本次清理。在既有授权内复用/扩展已有测试，按 Diff、调用方、当前 AC 和风险做最小充分验证，不默认全量构建/回归，不用数量或覆盖率替代真实行为。持久回归与临时诊断分开；涉及页面/动效/流程时按需读取 [testing-strategy](../testing-strategy/SKILL.md)，静态契约不等于真实视觉/流程通过。
 
 留真实 Evidence、未运行边界和复验点后停在本批约定位置；只有新问题或有效触发才继续。缺权限/环境保持等待，不用无 Finding 的开发代替验收，也不把局部通过写成整任务 PASS。
 
 ## 文件归属
-- 产品运行、部署、长期维护所需资产：遵循目标仓库既有目录，例如正式 Migration SQL、Mapper XML、长期回归测试、产品 README。
+- 产品运行、部署、长期维护所需资产：遵循目标仓库既有目录，例如正式 Migration SQL、Mapper XML、目标业务仓库明确允许的长期回归测试、产品 README；基座临时用例不属于持久产品资产。
 - 当前 Task 的方案、调查、路线和事实修正：放 `.tp-spec/tasks/<TASK-ID>/`。
 - 当前 Task 的测试/验收证据：放 `evidence/`，例如验证 SQL、日志、截图、测试报告。
 - 一次性夹具、Mock、中间输出：使用 TP-Spec 受控系统临时目录，不污染产品仓库。

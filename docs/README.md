@@ -6,8 +6,9 @@
 
 - 第一次接触项目：先读根目录 [`README.md`](../README.md)。
 - 安装、机器配置、项目接入和排错：读 [`GETTING_STARTED.md`](GETTING_STARTED.md)。
+- 启动和开发本地工作台：读 [`WORKBENCH.md`](WORKBENCH.md)。
 - 理解 Agent / Role / Skill / Runtime：读 [`AGENTS_AND_SKILLS.md`](AGENTS_AND_SKILLS.md)。
-- 升级到 V5.3.2 的在途项目/Task：读 [`MIGRATION_V529.md`](MIGRATION_V529.md)。
+- 升级到 V5.3.3 的在途项目/Task：读 [`MIGRATION_V529.md`](MIGRATION_V529.md)。
 
 ## 按 Agent 选择入口
 
@@ -17,7 +18,6 @@
 | Domain Agent | ID | 导航 | 执行契约 |
 | --- | --- | --- | --- |
 | tp-软件工程生命周期 | `tp-software-lifecycle` | [打开](./agents/tp-software-lifecycle.md) | [`agents/tp-software-lifecycle/SKILL.md`](../agents/tp-software-lifecycle/SKILL.md) |
-| 卡片展示调度 | `tp-card-display` | [打开](./agents/tp-card-display.md) | [`agents/tp-card-display/SKILL.md`](../agents/tp-card-display/SKILL.md) |
 | tp-项目自治维护 | `tp-project-autonomy` | [打开](./agents/tp-project-autonomy.md) | [`agents/tp-project-autonomy/SKILL.md`](../agents/tp-project-autonomy/SKILL.md) |
 | tp-基座维护 | `tp-base-maintenance` | [打开](./agents/tp-base-maintenance.md) | [`agents/tp-base-maintenance/SKILL.md`](../agents/tp-base-maintenance/SKILL.md) |
 | tp-knowledge | `tp-knowledge` | [打开](./agents/tp-knowledge.md) | [`agents/tp-knowledge/SKILL.md`](../agents/tp-knowledge/SKILL.md) |
@@ -45,7 +45,7 @@ Runtime 的任务状态、事件、Evidence 与工作流事实由 CLI/Runtime �
 
 ## 维护、测试与发布
 
-Base 维护入口见 [`tp-base-maintenance`](agents/tp-base-maintenance.md)。自动化总入口见 [`automation/README.md`](../automation/README.md)。发布时运行仓库既有 Full/Release 门禁，文档导航检查属于发布面检查，不参与 Runtime 路由。
+Base 维护入口见 [`tp-base-maintenance`](agents/tp-base-maintenance.md)。自动化总入口见 [`automation/README.md`](../automation/README.md)。本仓开发与交付按 [`TESTING.md`](TESTING.md) 选择当前改动的局部验证，不自动运行全量测试；内容清单和文档导航按对应变更核对，不参与 Runtime 路由。
 
 ## 历史与过程文档政策
 

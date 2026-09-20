@@ -1,13 +1,15 @@
 ---
 name: testing-strategy
 display_name: 分层测试
-version: 5.3.2
+version: 5.3.3
 description: Use to choose and execute risk-proportionate tests for code changes, mapping acceptance criteria to reproducible evidence without equating test count with confidence.
 ---
 
-# 分层测试 — V5.3.2 Record-first
+# 分层测试 — V5.3.3 Record-first
 
 ## 本轮范围
+修改 TP-Spec-Coding 自身源码时以 [本仓验证策略](../../../docs/TESTING.md) 为准，仅做当前功能临时验证，执行后清理；不因通用测试方法、风险等级或最终交付自动全量回归。下面的复用/留存方法仅在目标业务仓库规则允许时适用。
+
 `workflow next` 的 `context.validation` 提供当前已绑定仓库的变更路径及 acceptance.md 候选，**不是覆盖证明**，不自动运行检查或授予权限。先从当前有效 AC、Diff、真实调用/引用和已有测试中选择本轮检查；候选列表可被截断，HEAD 到工作区不等于整个任务累计范围，不能因返回路径少就宣称没有其他影响。
 
 优先复用/扩展已有测试；局部反馈只补有保留价值的检查点和一份批次摘要，不重写全面测试单。共享组件按真实消费方选择场景，一行身份/权限改动也要补专项风险验证；影响不明时定向调查或扩展有依据的检查，不盲猜无影响，也不默认全量构建/回归。编译、浏览器、部署和有副作用操作沿用已有授权；无权限时保持待验，不改写为 PASS。模块/整任务收敛仍核对完整有效范围及必要独立审查。

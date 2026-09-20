@@ -1,7 +1,7 @@
 ---
 id: tp-base-maintenance
 name: tp-基座维护
-version: 5.3.2
+version: 5.3.3
 status: active
 type: human-owner-skill
 tool_agnostic: 本技能不依赖特定 IDE；Base/Wiki/Knowledge 根必须来自 Installation/Resolver，不在 Skill 中硬编码用户绝对路径。
@@ -16,6 +16,8 @@ description: >
 ## 0. 定位
 
 本 Skill 维护的是 **TP-Spec-Coding Installation + Project Binding + Project Integration Surface**，不是业务项目内容。
+
+修改基座源码或交付文件时按 [本仓验证策略](../../docs/TESTING.md) 选择局部检查，不因维护/发布角色触发全量测试；安装诊断与 Runtime 既有职责不变。
 
 权威分层：
 
@@ -68,9 +70,9 @@ Workspace Inventory 默认：
 
 ### 项目级生成物放置规则
 
-与当前项目绑定、由 TP-Spec-Coding 生成、非产品源码且无需独立外部存储的本地产物，默认收敛到 `<workspace>/.tp-spec/<feature>/`，不得为单一功能在项目根新增 `.tp-spec-*`、`.xxx-preview`、`.tmp` 等兄弟隐藏目录。当前固定卡片 Web Artifact 为 `.tp-spec/card/index.html`。
+与当前项目绑定、由 TP-Spec-Coding 生成、非产品源码且无需独立外部存储的本地产物，默认收敛到 `<workspace>/.tp-spec/<feature>/`，不得为单一功能在项目根新增 `.tp-spec-*`、`.xxx-preview`、`.tmp` 等兄弟隐藏目录。本地工作台从 TP-Spec-Coding 源码根启动，不在业务项目生成页面或复制前端工程。
 
-`.tp-spec/card` 仅属于 **presentation-only / rebuildable / non-authoritative** 展示产物：删除后仅在用户显式请求卡片时由正式 `tp-spec card ...` 重建，不写 Runtime/Task truth，不成为任务账本或产品内容。高频、短生命周期 execution scratch（测试工作区、ZIP 解压、中间渲染等）继续使用受 ownership 管理的 **system Temp**，不得为了目录统一迁回 `.tp-spec`。用户级/机器级状态继续使用 `~/.tp-spec/`。
+旧 `.tp-spec/card/` 可能含用户历史展示文件；退出生成入口不构成删除这些文件的授权，它们仍不是 Runtime/Task truth。高频、短生命周期 execution scratch（测试工作区、ZIP 解压、中间渲染等）继续使用受 ownership 管理的 **system Temp**，不得为了目录统一迁回 `.tp-spec`。用户级/机器级状态继续使用 `~/.tp-spec/`。
 
 ## 2. Project Scope 不得丢失
 

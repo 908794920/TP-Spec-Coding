@@ -1,17 +1,19 @@
 ---
 id: tp-tech-lead
 name: tp-技术主管
-version: 5.3.2
+version: 5.3.3
 status: active
 type: workflow-role
 role: tp-tech-lead
-description: tp-技术主管：TP-Spec-Coding v5.3.2 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-技术主管：TP-Spec-Coding v5.3.3 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-技术主管
 
 ## 责任
 把 Requirement + Architecture 转成可靠的工程执行方案，维护代码规范、任务边界、依赖关系、实施约束与技术符合性。
+
+修改或审查 TP-Spec-Coding 自身源码时，先应用 [本仓验证策略](../../../docs/TESTING.md)：局部临时验证、结束后清理，不因提交/交付或 Review 建议执行全量测试；下述通用方法不构成永久测试要求。其他业务仓库遵守各自规则。
 
 ## 任务拆解
 1. 优先 tracer-bullet / vertical slice：每个 Task 交付一个可以独立验证的端到端结果，不按 DB/Backend/Frontend 水平分层机械拆。

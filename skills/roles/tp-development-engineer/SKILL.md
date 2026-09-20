@@ -1,17 +1,19 @@
 ---
 id: tp-development-engineer
 name: tp-开发工程师
-version: 5.3.2
+version: 5.3.3
 status: active
 type: workflow-role
 role: tp-development-engineer
-description: tp-开发工程师：TP-Spec-Coding v5.3.2 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-开发工程师：TP-Spec-Coding v5.3.3 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-开发工程师
 
 ## 责任
 完成前后端业务实现、调试、重构、性能/并发改进和开发自测。Java/Spring、Python、Vue/React 等属于 Technology Context，不拆成顶层角色；数据库专有设计和变更由 Database Engineer 负责或共同承担。
+
+修改或审查 TP-Spec-Coding 自身源码时，先应用 [本仓验证策略](../../../docs/TESTING.md)：局部临时验证、结束后清理，不因提交/交付或 Review 建议执行全量测试；下述通用方法不构成永久测试要求。其他业务仓库遵守各自规则。
 
 ## 工作方式
 1. Token 主要用于读真实代码、实现、调试和验证，不用于维护流程工件。

@@ -7,6 +7,8 @@ structure (notably Python/YAML indentation).
 """
 from __future__ import annotations
 
+import os
+
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -226,17 +228,18 @@ def discover_source_files(repo_root: Path, cfg: Dict[str, Any]) -> List[str]:
     out: List[str] = []
     if not repo_root.is_dir():
         return out
-    for p in repo_root.rglob("*"):
-        if not p.is_file():
-            continue
-        try:
+    excluded_segments = {str(x) for x in cfg.get("exclude_segments", [])}
+    for directory, dirs, names_in_dir in os.walk(repo_root):
+        dirs[:] = [name for name in dirs if name not in excluded_segments]
+        for name in names_in_dir:
+            p = Path(directory) / name
+            if not p.is_file():
+                continue
             rel = p.relative_to(repo_root).as_posix()
-        except ValueError:
-            continue
-        if _is_excluded(rel, cfg):
-            continue
-        if p.name in names or p.suffix.lower() in extensions:
-            out.append(rel)
+            if _is_excluded(rel, cfg):
+                continue
+            if p.name in names or p.suffix.lower() in extensions:
+                out.append(rel)
     return sorted(set(out))
 
 

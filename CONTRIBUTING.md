@@ -5,64 +5,29 @@
 ## 适合直接提交的改动
 
 - Bug 修复；
-- 测试补强；
+- 当前功能的必要验证与缺陷复现；
 - 文档、示例和兼容性修复；
 - 不改变公开契约的小型可维护性改进。
 
 较大的行为变化、Runtime/schema 变化、角色职责调整或新工作流，请先在 Issue 中说明：目标、使用场景、兼容影响和验证方式，再开始大范围实现。
 
-## 开发环境
+## 开发环境与验证范围
 
 ```bash
-python -m pip install -r requirements-dev.txt
+python -m pip install -r requirements.txt
 ```
 
-日常修改先运行快速门禁：
+本仓库唯一的现行验证说明是 [`docs/TESTING.md`](docs/TESTING.md)。根据当前 diff、调用方和验收要求选择局部检查；必要临时单测在隔离目录执行，结束后清理代码与夹具，仅记录实际结果和未执行项。读取文档不运行产品测试。
 
-```bash
-python -m pytest -q -m "smoke or ((unit or contract) and not slow)"
-```
+不恢复历史测试目录、分类 catalog 或自动全量 CI，也不通过“发布前保险”、Reviewer 建议或通用 Skill 自动扩大范围。普通 commit、push、PR、批次结束与交付不追加测试；缺少永久测试文件本身不是拒绝提交或交付的理由。
 
-再按受影响领域补充定向测试，例如：
+## 源码与交付一致性
 
-```bash
-python -m pytest -q -m "cards and not slow"
-python -m pytest -q -m "workflow and not slow"
-```
+按本次授权提交或制作 Patch，完整包含新增、修改和删除项；不要把用户其他未提交改动一并纳入。实际修改角色文档时同步 Role Catalog，源码交付范围变化时同步 Manifest，按需使用现有生成工具核对对应内容，不机械执行全部维护脚本。
 
-PR 的 Linux 门禁分为快速层与非 slow integration：
+`manifest.sha256` 的开发模式覆盖 Git 可见工作树；正式 Git 发布面仍使用已暂存的源码集合核对，不能把未入库文件当作已交付。`update_manifest.py --verify-release` 只校验文件身份，不运行测试，也不签发产品验收通过。
 
-```bash
-python -m pytest -q -m "smoke or ((unit or contract) and not slow)"
-python -m pytest -q -m "integration and not slow and not serial"
-# 只有 catalog 中出现 serial 测试时才会执行该集合；当前为空。
-python -m pytest -q -m "integration and not slow and serial"
-```
-
-同时继续执行版本、Role Catalog、文档导航、可移植性和 release manifest 检查。Windows PR 运行快速 pytest 与 `Test-TpSpecBase.ps1 -Mode Static`。
-
-**快速门禁不是发布门禁。受影响领域通过也不能宣称发布回归通过。**
-
-## 正式发布检查
-
-普通开发允许 `manifest.sha256` 临时覆盖尚未 `git add` 的可见文件，方便 Patch 在提交前验证；**正式发布不允许这样做**。发布候选必须以 Git index 为准，确保 GitHub 最终能拿到本机测试过的全部文件。
-
-```bash
-# 必须使用 -A，避免漏掉 .github/ 这类点目录或删除项
-git add -A
-
-# Release pytest 不通过 marker 排除 slow / serial / 历史 regression。
-python -m pytest -q --durations=50
-python scripts/update_manifest.py --verify-release
-```
-
-Windows 发布候选再运行完整门禁：
-
-```powershell
-pwsh -File scripts/ci/Test-TpSpecBase.ps1 -Mode Full
-```
-
-只有 Linux / Windows CI 均通过后，才创建对应 **Git Tag** 和 **GitHub Release**。Tag 指向的提交必须就是完成上述 Release Gate 的提交；不要先打 Tag 再补文件。
+本地合并、真实任务体验、commit/push 和正式发布分别报告；Tag/Release 由发布所有者明确决定，不从局部检查或 Patch 交付推导发布授权。
 
 ## 设计边界
 
@@ -91,7 +56,7 @@ pwsh -File scripts/ci/Test-TpSpecBase.ps1 -Mode Full
 
 ## AI 生成代码
 
-AI 辅助贡献是允许的，但提交者仍对代码、测试、许可证和安全性负责。建议在 PR 中说明使用的 AI 工具，以及哪些关键结论经过了人工或独立验证。
+AI 辅助贡献是允许的，但提交者仍对代码、实际验证结果、许可证和安全性负责。建议在 PR 中说明使用的 AI 工具，以及哪些关键结论经过了人工或独立验证。
 
 ## Commit / PR
 
@@ -108,7 +73,7 @@ PR 请包含：
 - 为什么改；
 - 主要行为变化；
 - 兼容/迁移影响；
-- 实际执行过的测试命令；
+- 实际执行过的局部验证命令、结果及临时材料清理情况；
 - 未验证或仍有风险的部分。
 
 提交代码即表示你同意你的贡献按本仓库的 MIT License 发布。
