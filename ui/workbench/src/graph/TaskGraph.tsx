@@ -5,6 +5,7 @@ import { WorkGroup, WorkNode, type WorkbenchNode } from './WorkNode';
 import { relatedIds, visibleIds, type GraphModel, type GraphObject } from './model';
 import { layoutGraph, NODE_HEIGHT, NODE_WIDTH } from './layout';
 import { Disclosure, Fields } from '../components/Facts';
+import { useAppearance } from '../theme';
 import '@xyflow/react/dist/style.css';
 const nodeTypes = { work: WorkNode, workGroup: WorkGroup };
 export interface GraphHandle {
@@ -34,6 +35,7 @@ function initialNodes(model: GraphModel): WorkbenchNode[] {
     ];
 }
 const GraphCanvas = forwardRef<GraphHandle, Props>(({ model, selectedId, onOpen }, ref) => {
+    const { resolved } = useAppearance();
     const root = useRef<HTMLDivElement>(null);
     const flow = useReactFlow<WorkbenchNode, Edge>();
     const [nodes, setNodes] = useState<WorkbenchNode[]>(() => initialNodes(model));
@@ -125,7 +127,7 @@ const GraphCanvas = forwardRef<GraphHandle, Props>(({ model, selectedId, onOpen 
                 onOpen(object);
             }
         }}>
-      <ReactFlow<WorkbenchNode, Edge> nodes={displayNodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onNodeClick={(_, node) => { if (node.data.object)
+      <ReactFlow<WorkbenchNode, Edge> colorMode={resolved} nodes={displayNodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onNodeClick={(_, node) => { if (node.data.object)
         onOpen(node.data.object); }} fitView fitViewOptions={{ padding: .14, maxZoom: 1 }} minZoom={.08} maxZoom={2} nodesConnectable={false} edgesReconnectable={false} deleteKeyCode={null} nodesFocusable edgesFocusable={false} selectionOnDrag={false} multiSelectionKeyCode={null} onBeforeDelete={async () => false} attributionPosition="bottom-left">
         <Background gap={20} size={1}/>
       </ReactFlow>

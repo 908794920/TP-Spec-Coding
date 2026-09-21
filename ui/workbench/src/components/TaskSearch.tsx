@@ -59,15 +59,17 @@ export function TaskSearch({ contexts, revision, onOpenTask }: {
 }) {
     const [open, setOpen] = useState(false), [query, setQuery] = useState('');
     const box = useRef<HTMLDivElement>(null);
+    const trigger = useRef<HTMLButtonElement | HTMLAnchorElement>(null);
     const panelId = useId();
     const { rows, loading, error } = useAllTasks(contexts, revision, open);
     /* The query is the only filter. A task search that silently hid retired or completed work would
        answer a narrower question than the one that was asked. */
     const hits = useMemo(() => (query.trim() ? filterTasks(rows, query, '') : []), [rows, query]);
     const shown = hits.slice(0, MAX_HITS);
-    function close() {
+    function close(returnFocus = true) {
         setOpen(false);
         setQuery('');
+        if (returnFocus) requestAnimationFrame(() => trigger.current?.focus());
     }
     /* The panel is our own markup rather than a popover component, so dismissal is explicit here:
        a pointer press anywhere outside it closes it, as does Escape. */
@@ -84,23 +86,20 @@ export function TaskSearch({ contexts, revision, onOpenTask }: {
         return () => document.removeEventListener('pointerdown', onPointerDown);
     }, [open]);
     return <div className="task-search" ref={box}>
-      {/* No `type="text"`: the header's other controls are outlined antd buttons, and this one sits
-          directly beside the fold control, so a borderless grey icon read as a different control. */}
-      <Button className="task-search-toggle" icon={<SearchOutlined/>} aria-expanded={open} aria-controls={panelId}
+      <Button ref={trigger} type="text" className="task-search-toggle" icon={<SearchOutlined/>} aria-expanded={open} aria-controls={panelId}
         aria-label={open ? '收起任务查询' : '按 TASK ID 或标题查询任务'} title="查询任务（TASK ID / 标题）"
         onClick={() => (open ? close() : setOpen(true))}/>
-      {open && <div className="task-search-panel" id={panelId}>
+      {open && <div className="task-search-panel" id={panelId} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
         <Input className="task-search-input" autoFocus allowClear value={query} prefix={<SearchOutlined/>}
           aria-label="按 TASK ID 或标题查询任务" placeholder="按 TASK ID 或标题查询"
-          onChange={event => setQuery(event.target.value)}
-          onKeyDown={event => { if (event.key === 'Escape') close(); }}/>
+          onChange={event => setQuery(event.target.value)}/>
         {loading && <p className="muted" role="status">正在读取 {contexts.length} 个项目的任务索引…</p>}
         {!!error && <Alert type="error" showIcon title={`查询未完成：${error}`}/>}
         {!loading && !error && !query.trim() && <p className="muted">已读到 {rows.length} 个任务，输入 TASK ID 或标题开始查询。</p>}
         {!loading && !error && !!query.trim() && !hits.length && <p className="muted">没有匹配「{query.trim()}」的任务。</p>}
         {!!shown.length && <ul className="task-search-hits" aria-label="查询结果">{shown.map(hit => <li key={`${hit.context_key}\u0000${hit.task_id}`}>
           <button type="button" className="task-hit" title={`${hit.task_id} · ${hit.title || '未记录标题'} · ${hit.project_name}`}
-            onClick={() => { onOpenTask(hit.context_key, hit.task_id); close(); }}>
+            onClick={() => { onOpenTask(hit.context_key, hit.task_id); close(false); requestAnimationFrame(() => document.getElementById('main-content')?.focus()); }}>
             <span className="hit-head"><span className="hit-id">{hit.task_id}</span>
               <Tag variant="filled" color={toneColor[stateTone('task', hit.state)]}>{stateLabel('task', hit.state)}</Tag>
               <span className="hit-project">{hit.project_name}</span></span>

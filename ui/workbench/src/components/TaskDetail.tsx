@@ -8,10 +8,15 @@ import { VerificationDetail, Outcome } from './VerificationDetail';
 import { EvidenceList } from './EvidenceList';
 import { CloseoutPanel } from './CloseoutPanel';
 const tabs = [['overview', '概况'], ['blockers', '阻塞'], ['verification', '验证与验收'], ['evidence', '证据与交付']] as const;
-type Tab = typeof tabs[number][0];
+export type TaskDetailTab = typeof tabs[number][0];
+type Tab = TaskDetailTab;
 interface Props {
   object: GraphObject;
   snapshot: Envelope<TaskData>;
+  /** 详情入口打开或调用方再次请求时切换到指定页签。 */
+  initialTab?: Tab;
+  /** 仅需要稳定默认页签的调用方使用的回退入口。 */
+  defaultTab?: Tab;
   details: ReadState<Envelope<DetailData>>;
   onDetails: () => void;
   onRefreshDetails: () => void;
@@ -20,30 +25,32 @@ interface Props {
   onCloseout: () => void;
   onClose: () => void;
 }
-export function TaskDetail({ object, snapshot, details, onDetails, onRefreshDetails, closeout, closeoutRequested, onCloseout, onClose }: Props) {
+export function TaskDetail({ object, snapshot, initialTab, defaultTab, details, onDetails, onRefreshDetails, closeout, closeoutRequested, onCloseout, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null), close = useRef<HTMLButtonElement | HTMLAnchorElement>(null);
-  const [tab, setTab] = useState<Tab>('overview');
+  const requestedTab = initialTab ?? defaultTab ?? 'overview';
+  const [tab, setTab] = useState<Tab>(requestedTab);
   useEffect(() => {
     const element = dialog.current!;
-    const media = window.matchMedia('(max-width: 1100px)');
     const present = () => {
-      if (element.open) element.close();
-      if (media.matches) element.showModal(); else element.show();
+      if (!element.open) element.showModal();
       close.current?.focus();
     };
     present();
-    media.addEventListener('change', present);
     /* Ant Design's Tabs exposes no prop for naming the tablist, and the hand-rolled bar this
        replaced carried `aria-label="对象详情分类"`; set it so the group name survives. */
     element.querySelector('.detail-tabs [role="tablist"]')?.setAttribute('aria-label', '对象详情分类');
-    return () => { media.removeEventListener('change', present); element.close(); };
+    return () => { if (element.open) element.close(); };
   }, []);
-  useEffect(() => { setTab('overview'); close.current?.focus(); }, [object.id]);
+  useEffect(() => {
+    setTab(requestedTab);
+    if (requestedTab !== 'overview') onDetails();
+    close.current?.focus();
+  }, [object.id, requestedTab, onDetails]);
   function selectTab(next: Tab) { setTab(next); if (next !== 'overview') onDetails(); }
   const data = details.data?.data, task = record(snapshot.data.task), workflow = record(snapshot.data.workflow);
   const terminal = task.state === 'COMPLETED' || task.state === 'CANCELLED' || workflow.retired === true;
   const mismatch = !!details.data && details.data.read.task_revision !== snapshot.read.task_revision;
-  return <dialog className="task-detail" ref={dialog} aria-labelledby="detail-heading" onCancel={e => { e.preventDefault(); onClose(); }} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}>
+  return <dialog className="task-detail task-detail-modal" ref={dialog} aria-labelledby="detail-heading" onCancel={e => { e.preventDefault(); onClose(); }} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}>
     <header className="detail-heading"><div><span className="eyebrow">{object.kind === 'task' ? 'Task' : 'WorkItem'} 详情</span><h3 id="detail-heading">{object.title || '标题未记录'}</h3></div><Button size="small" ref={close} onClick={onClose} aria-label="关闭详情并返回节点">关闭</Button></header>
     {/* Ant Design's Tabs owns the tablist/tab/tabpanel roles and the arrow/Home/End keys that the
         previous roving tabindex implemented; `destroyOnHidden` keeps exactly one pane mounted. */}

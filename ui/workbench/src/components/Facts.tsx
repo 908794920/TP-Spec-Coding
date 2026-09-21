@@ -20,7 +20,7 @@ export function ReadStatus({ data, error, loading }: ReadState<Envelope<unknown>
         hears that a read is in progress. */}
     {loading && <div className="read-loading"><Skeleton active={false} title={false} paragraph={{ rows: 2 }}/><span className="visually-hidden">正在读取当前事实…</span></div>}
     {error && <Alert role="alert" type="error" showIcon title={`读取失败：${error}${data ? '。保留上次内容及原读取时间。' : ''}`}/>}
-    {data && <Space size={8} wrap><Tag variant="filled" color={data.read.completeness === 'partial' ? 'warning' : undefined}>读取于 <time dateTime={data.read.completed_at} title={data.read.completed_at}>{timestampText(data.read.completed_at)}</time> · {data.read.completeness === 'partial' ? '部分数据缺失' : '本次读取完成'}</Tag>
+    {data && <Space size={8} wrap><Tag variant="filled" color={error || data.read.completeness === 'partial' ? 'warning' : undefined}>读取于 <time dateTime={data.read.completed_at} title={data.read.completed_at}>{timestampText(data.read.completed_at)}</time> · {error ? '上次读取快照' : loading ? '正在重新读取' : data.read.completeness === 'partial' ? '部分数据缺失' : '本次读取完成'}</Tag>
       <Collapse className="read-details" size="small" ghost items={[{ key: 'read', label: '读取说明与一致性边界', children: <div className="read-details-body">
         <p>{data.read.note}</p><p>一致性边界：<Typography.Text code>{data.read.consistency}</Typography.Text></p>
         {data.read.task_revision && <p>账本观察标识（不含文件原子性保证）：<CopyText value={data.read.task_revision}/></p>}

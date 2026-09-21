@@ -1,18 +1,27 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
   font-size: 14px; line-height: 1.5; font-synthesis: none;
-  --bg: #f3f5f7; --surface: #fff; --muted-surface: #f7f9fb; --text: #202a36; --muted: #586776;
-  --border: #d7dfe7; --accent: #245bb8; --accent-soft: #edf3ff; --warning: #8c5510; --warning-bg: #fff7e8;
-  --danger: #a33135; --good: #246b50; --radius: 6px;
-  /* Sticky header height: the sidebar top and every scroll-margin derive from it. */
-  --header-h: 60px;
-  /* Presentation-only tokens that used to be literals inside workbench.css (graph canvas, overlays).
-     They are not Ant Design theme tokens, so they live here and only here. --accent-ring is
-     --accent at 10% alpha. */
-  --graph-bg: #f5f7fa; --node-border: #bdc9d7; --node-shadow: 0 1px 2px #00000008;
-  --accent-ring: #245bb81a; --accent-tint: #f8faff;
-  /* The only floating panel (the header task search) needs elevation the flat cards do not. */
-  --panel-shadow: 0 8px 24px #19253614;
-  --group-border: #b8c6d4; --group-bg: #edf1f550; --danger-bg: #fff0f0; --overlay: #19253655;
+  --bg: #f7f8fa; --surface: #ffffff; --sidebar: #f2f3f5; --elevated: #ffffff;
+  --muted-surface: #f4f5f7; --text: #202329; --muted: #626b78; --border: #e2e5ea;
+  --accent: #365bc6; --accent-soft: #edf1fc; --accent-tint: #f6f8ff; --accent-ring: #365bc624;
+  --warning: #8c5510; --warning-bg: #fff7e8; --danger: #ae343b; --danger-bg: #fff0f0; --good: #246b50; --good-bg: #edf7f1;
+  --tag-bg: #eef0f3; --graph-bg: #f7f8fa; --node-border: #c5ccd7;
+  --node-shadow: 0 1px 2px #20232908; --panel-shadow: 0 10px 32px #20232914;
+  --group-border: #b8c6d4; --group-bg: #edf1f550; --overlay: #15161966;
+  --radius: 8px; --control-radius: 6px; --header-h: 52px;
+  --motion-fast: 120ms; --motion-panel: 180ms; --motion-ease: cubic-bezier(.2,.8,.2,1);
   color: var(--text); background: var(--bg); color-scheme: light;
+}
+:root[data-theme='dark'] {
+  --bg: #151619; --surface: #1c1e22; --sidebar: #191a1d; --elevated: #24262b;
+  --muted-surface: #24262b; --text: #e5e7eb; --muted: #a3a9b5; --border: #333740;
+  --accent: #88a6ff; --accent-soft: #28334e; --accent-tint: #222b40; --accent-ring: #88a6ff30;
+  --warning: #e6b86b; --warning-bg: #332a1f; --danger: #ff9096; --danger-bg: #372328; --good: #7bceac; --good-bg: #20372d;
+  --tag-bg: #2a2d33; --graph-bg: #17191d; --node-border: #4c5360;
+  --node-shadow: 0 1px 2px #00000030; --panel-shadow: 0 12px 36px #00000055;
+  --group-border: #566078; --group-bg: #29314250; --overlay: #00000088;
+  color-scheme: dark;
+}
+@media(prefers-reduced-motion:reduce) {
+  :root { --motion-fast: 0ms; --motion-panel: 0ms; }
 }

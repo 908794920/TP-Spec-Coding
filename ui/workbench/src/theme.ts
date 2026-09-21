@@ -1,71 +1,69 @@
-import { useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { theme as antdTheme, type ThemeConfig } from 'antd';
+import { normalizeTheme, resolveTheme, THEME_KEY, type ThemePreference, type ResolvedTheme } from './appearance';
 
-/* Single source for the workbench palette. `styles/tokens.css` keeps the same values for the
-   legacy selectors that are still being migrated; change both together until migration ends. */
-const palette = {
-    bg: '#f3f5f7',
-    surface: '#fff',
-    mutedSurface: '#f7f9fb',
-    text: '#202a36',
-    muted: '#586776',
-    border: '#d7dfe7',
-    accent: '#245bb8',
-    accentSoft: '#edf3ff',
-    warning: '#8c5510',
-    warningBg: '#fff7e8',
-    danger: '#a33135',
-    good: '#246b50',
-    tagBg: '#f1f4f7',   // theme-only: the Tag default background has no CSS-variable counterpart
-};
-
-const fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif';
-const fontFamilyCode = 'ui-monospace, SFMono-Regular, Consolas, monospace';
-
-function buildTheme(motion: boolean): ThemeConfig {
+interface Appearance {
+    preference: ThemePreference;
+    resolved: ResolvedTheme;
+    setPreference: (value: ThemePreference) => void;
+}
+export const AppearanceContext = createContext<Appearance>({ preference: 'system', resolved: 'light', setPreference: () => {} });
+export const useAppearance = () => useContext(AppearanceContext);
+function storedPreference(): ThemePreference {
+    try { return normalizeTheme(localStorage.getItem(THEME_KEY)); } catch { return 'system'; }
+}
+// 配色只维护在 tokens.css；Ant Design 与原生组件读取相同的语义变量。
+function buildTheme(resolved: ResolvedTheme, motion: boolean): ThemeConfig {
+    const styles = getComputedStyle(document.documentElement);
+    const color = (name: string) => styles.getPropertyValue(name).trim();
     return {
-        algorithm: [antdTheme.defaultAlgorithm, antdTheme.compactAlgorithm],
+        algorithm: [resolved === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm, antdTheme.compactAlgorithm],
         token: {
-            colorPrimary: palette.accent,
-            colorBgLayout: palette.bg,
-            colorBgContainer: palette.surface,
-            colorBgElevated: palette.surface,
-            colorText: palette.text,
-            colorTextSecondary: palette.muted,
-            colorBorder: palette.border,
-            colorBorderSecondary: palette.border,
-            colorWarning: palette.warning,
-            colorWarningBg: palette.warningBg,
-            colorError: palette.danger,
-            colorSuccess: palette.good,
-            borderRadius: 6,
-            fontFamily,
-            fontFamilyCode,
-            motion,
+            colorPrimary: color('--accent'), colorBgLayout: color('--bg'), colorBgContainer: color('--surface'),
+            colorBgElevated: color('--elevated'), colorText: color('--text'), colorTextSecondary: color('--muted'),
+            colorBorder: color('--border'), colorBorderSecondary: color('--border'), colorWarning: color('--warning'),
+            // 状态文字采用深色时，自动推导的浅底可能发灰；背景也由语义配色明确提供。
+            colorWarningBg: color('--warning-bg'), colorError: color('--danger'), colorErrorBg: color('--danger-bg'),
+            colorSuccess: color('--good'), colorSuccessBg: color('--good-bg'), colorInfo: color('--accent'), colorInfoBg: color('--accent-soft'),
+            borderRadius: Number.parseFloat(color('--control-radius')),
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif',
+            fontFamilyCode: 'ui-monospace, SFMono-Regular, Consolas, monospace', fontSize: 14,
+            motion, motionDurationFast: '0.12s', motionDurationMid: '0.16s', motionDurationSlow: '0.18s',
         },
         components: {
-            Layout: { bodyBg: palette.bg, headerBg: palette.surface, siderBg: palette.surface, headerHeight: 60, headerPadding: 0 },
-            /* No `Menu` tokens: the sidebar's page menu was removed once the project tree and its
-               icons covered every page, so nothing renders a Menu any more. */
-            Table: { headerBg: palette.mutedSurface, headerColor: palette.muted, headerSplitColor: 'transparent', cellFontSize: 13, cellPaddingBlockSM: 8, cellPaddingInlineSM: 12 },
-            Descriptions: { itemPaddingBottom: 8, colonMarginRight: 8 },
-            Tag: { defaultBg: palette.tagBg, defaultColor: palette.muted },
-            Card: { headerBg: 'transparent', headerFontSize: 16, paddingLG: 16 },
-            Empty: { colorTextDescription: palette.muted },
+            Layout: { bodyBg: color('--bg'), headerBg: color('--surface'), siderBg: color('--sidebar'), headerHeight: 52, headerPadding: 0 },
+            Table: { headerBg: color('--muted-surface'), headerColor: color('--muted'), headerSplitColor: 'transparent', cellFontSize: 13, cellPaddingBlockSM: 10, cellPaddingInlineSM: 12 },
+            Descriptions: { labelBg: color('--muted-surface'), itemPaddingBottom: 8 },
+            Tag: { defaultBg: color('--tag-bg'), defaultColor: color('--muted') },
+            Card: { headerBg: 'transparent', headerFontSize: 15, paddingLG: 16, borderRadiusLG: 8 },
+            Tooltip: { colorBgSpotlight: color('--elevated'), colorTextLightSolid: color('--text') },
+            Empty: { colorTextDescription: color('--muted') },
         },
     };
 }
-
-/* Motion is a presentation-only concern here: when the user asks for reduced motion we disable
-   Ant Design's motion tokens too, instead of only hiding CSS scroll behaviour. */
-export function useWorkbenchTheme(): ThemeConfig {
-    const [reducedMotion, setReducedMotion] = useState(() =>
-        typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+export function useWorkbenchTheme() {
+    const [preference, changePreference] = useState<ThemePreference>(storedPreference);
+    const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches);
+    const [reducedMotion, setReducedMotion] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
+    const resolved = resolveTheme(preference, systemDark);
+    const [theme, setTheme] = useState(() => buildTheme(resolved, !reducedMotion));
+    useLayoutEffect(() => {
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.style.colorScheme = resolved;
+        setTheme(buildTheme(resolved, !reducedMotion));
+    }, [resolved, reducedMotion]);
     useEffect(() => {
-        const query = window.matchMedia('(prefers-reduced-motion: reduce)');
-        const update = () => setReducedMotion(query.matches);
-        query.addEventListener('change', update);
-        return () => query.removeEventListener('change', update);
+        const dark = matchMedia('(prefers-color-scheme: dark)'), reduced = matchMedia('(prefers-reduced-motion: reduce)');
+        const updateDark = () => setSystemDark(dark.matches), updateMotion = () => setReducedMotion(reduced.matches);
+        const storage = (event: StorageEvent) => { if (event.key === THEME_KEY || event.key === null) changePreference(normalizeTheme(event.newValue)); };
+        dark.addEventListener('change', updateDark); reduced.addEventListener('change', updateMotion); window.addEventListener('storage', storage);
+        return () => { dark.removeEventListener('change', updateDark); reduced.removeEventListener('change', updateMotion); window.removeEventListener('storage', storage); };
     }, []);
-    return buildTheme(!reducedMotion);
+    const setPreference = useCallback((value: ThemePreference) => {
+        const next = normalizeTheme(value);
+        changePreference(next);
+        try { localStorage.setItem(THEME_KEY, next); } catch { /* 无持久化能力时仍允许本页切换。 */ }
+    }, []);
+    const appearance = useMemo(() => ({ preference, resolved, setPreference }), [preference, resolved, setPreference]);
+    return { theme, appearance };
 }
