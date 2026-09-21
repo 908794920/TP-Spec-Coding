@@ -8,11 +8,11 @@
 
 ## Windows 轻量管理入口
 
-依赖准备完成后，在 `ui` 目录双击 `start.cmd`、`restart.cmd` 或 `stop.cmd`，也可从任意当前目录调用。启动与重启成功后默认打开系统浏览器，后台运行前后端；重复启动复用当前受管实例。路径从脚本位置解析，不需要填写源码绝对路径。日志与本机实例记录保存在根 `workbench-logs/`，不进入发布清单。
+依赖准备完成后，在 `ui` 目录双击 `start.cmd`、`restart.cmd` 或 `stop.cmd`，也可从任意当前目录调用；首次加载或依赖/锁文件变化后先双击 `install.cmd`。启动与重启成功后默认打开系统浏览器，后台运行前后端；重复启动复用当前受管实例。路径从脚本位置解析，不需要填写源码绝对路径。日志与本机实例记录保存在根 `workbench-logs/`，不进入发布清单。
 
 管理器只停止通过这些入口启动的本目录实例，通过私有管道和实例令牌通知原启动器关闭两端，不按端口或进程名称杀服务。首次切换时，原 `npm run dev` 启动的前台实例需在原终端按 `Ctrl+C` 停止，再运行 `start.cmd`；端口冲突不会自动接管旧实例。并发管理操作会明确拒绝，异常中断留下的 `manager.lock` 需确认没有管理操作运行后再移除。
 
-默认前端端口为 5173；如确需另一端口，可在调用前设置 `TP_SPEC_WORKBENCH_PORT`。管理入口不安装依赖、不升级 Base、不运行测试。启动失败查看 `workbench-logs/workbench.log`。
+默认前端端口为 5173；如确需另一端口，可在调用前设置 `TP_SPEC_WORKBENCH_PORT`。`start.cmd`/`restart.cmd`/`stop.cmd` 不安装依赖、不升级 Base、不运行测试；依赖准备只由 `install.cmd` 显式执行。启动失败查看 `workbench-logs/workbench.log`。
 
 ## 环境与启动
 
@@ -25,6 +25,8 @@ python -m pip install -r requirements.txt
 npm ci
 npm run dev
 ```
+
+Windows 上可用 `ui\install.cmd` 代替 `npm ci`：按 `package-lock.json` 安装，锁文件未变化时跳过重复安装（安装记录写在 `workbench-logs\install-state.json`，只记锁文件指纹与 Node/npm 版本），检测到受管工作台仍在运行时会拒绝安装。`install.cmd --python` 会一并执行上面的 `pip install`，`install.cmd --build` 会额外执行 `npm run build`，`install.cmd --force` 强制重装。
 
 默认浏览器地址 `http://127.0.0.1:5173`；API 自动选择空闲的本机端口。实际地址、源码根和 API PID 会打印到终端。浏览器访问前端地址，由前端代理 `/api` 到本次 Python 实例。不要单独执行 Vite 后期待它自动找到任意已运行的 API。
 
@@ -138,7 +140,7 @@ npm run check:types
 npm run build
 ```
 
-三者相互独立，不串联测试。`build` 仅生成 `ui/workbench/dist/`，不是生产部署，也不等于 `file://` 可用；本版默认使用本地工作台启动入口。没有安装依赖时先 `npm ci`，不应为了通过命令临时换依赖版本。
+三者相互独立，不串联测试。`build` 仅生成 `ui/workbench/dist/`，不是生产部署，也不等于 `file://` 可用；本版默认使用本地工作台启动入口。没有安装依赖时先 `npm ci`（Windows 可直接 `ui\install.cmd`），不应为了通过命令临时换依赖版本。
 
 修改页面见 `ui/workbench/src/`；统一样式变量见 `styles/tokens.css`；查询见 `cli/workbench/`。只维护 `cli/workbench/` 这一份展示查询和敏感键处理，不再保留旧 cards 调用者或 HTML/宿主适配。
 
