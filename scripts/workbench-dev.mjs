@@ -37,6 +37,10 @@ function pythonExecutable() {
   return process.platform === 'win32' ? 'python' : 'python3';
 }
 let child, vite, lines;
+// Optional parent IPC belongs only to the lightweight UI manager.
+process.on('message', message => {
+  if (message?.action === 'stop') void shutdown(0);
+});
 let closing = false;
 let shutdownPromise;
 const startupAbort = new AbortController();
@@ -76,7 +80,7 @@ function shutdown(code = 0) {
   shutdownPromise = (async () => {
     try { await vite?.close(); }
     catch (error) { console.error(`前端关闭失败：${error.message}`); process.exitCode = 1; }
-    finally { await stopPython(); lines?.close(); }
+    finally { await stopPython(); lines?.close(); if (process.connected) process.disconnect(); }
   })();
   return shutdownPromise;
 }
@@ -136,6 +140,7 @@ async function start() {
   vite.httpServer?.once('error', error => { if (!closing) { console.error(`前端服务错误：${error.message}`); void shutdown(1); } });
   await vite.listen();
   if (closing) { await vite.close(); return; }
+  process.send?.({ event: 'ready', port: options.port, instance, root });
   console.log(`TP-Spec 工作台：http://127.0.0.1:${options.port}\n源码：${root}\nPython API：${target}（PID ${child.pid}）\nCtrl+C 关闭本次两端服务。`);
 }
 start().catch(async error => {

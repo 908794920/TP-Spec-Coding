@@ -5,7 +5,7 @@ version: 5.3.4
 description: Use when a task benefits from an explicit technical delivery plan. Produce an implementation-ready, risk-aware plan without creating mandatory workflow gates or handoff bookkeeping.
 ---
 
-# 交付计划 — V5.3.4 Record-first
+# 交付计划 — Record-first
 
 ## 目的
 把已理解的需求与代码事实收敛为可实施方案。简单、路径唯一的任务可以不单独写计划；复杂任务才投入更多规划成本。
@@ -19,5 +19,8 @@ description: Use when a task benefits from an explicit technical delivery plan. 
 6. 给出选择理由、包含/不包含范围、依赖、回滚/补偿、风险与验证策略；方案应能直接指导开发，而不是只描述原则。
 7. 复杂任务可调用 `task-decomposition` 拆成可独立验证的工作项；简单任务避免为拆解而拆解。
 
+## 工程约束与责任
+根据目标项目既有规范引用 coding standard，不另造同义规则；计划说明必要角色及检查，但不代替产品改需求、架构做选型或 Reviewer 对具体 Diff 签 PASS。复杂范围依 [任务拆解](../task-decomposition/SKILL.md) 组织父 Task 内 Work，由主 Agent 负责集成。
+
 ## 完成判定
-后续开发 AI 能知道：为什么这样改、允许改什么、关键风险是什么、如何自测/验收、什么时候必须停止扩大范围。无需额外交接工件、阶段许可证或专门结单阶段才算“交付完成”。
+后续开发 AI 能知道：为什么这样改、允许改什么、关键风险是什么、如何自测/验收、什么时候必须停止扩大范围。这是“计划可执行”的判定，不是 Task 已交付；最终由 [交付收敛](../delivery-convergence/SKILL.md) 核对结果，不为计划完整增加阶段许可证。

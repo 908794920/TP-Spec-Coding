@@ -8,7 +8,7 @@
 - 安装、机器配置、项目接入和排错：读 [`GETTING_STARTED.md`](GETTING_STARTED.md)。
 - 启动和开发本地工作台：读 [`WORKBENCH.md`](WORKBENCH.md)。
 - 理解 Agent / Role / Skill / Runtime：读 [`AGENTS_AND_SKILLS.md`](AGENTS_AND_SKILLS.md)。
-- 升级到 V5.3.4 的在途项目/Task：读 [`MIGRATION_V529.md`](MIGRATION_V529.md)。
+- 源码升级与在途 Task 的契约迁移：读 [`GETTING_STARTED.md`](GETTING_STARTED.md) 第 10 节「同版本源码升级与兼容」。
 
 ## 按 Agent 选择入口
 
@@ -43,6 +43,8 @@
 
 Runtime 的任务状态、事件、Evidence 与工作流事实由 CLI/Runtime 自动维护。治理记录是执行副产物，不要求 AI 为日常工作手写大量状态文档。当前架构关系见 [`AGENTS_AND_SKILLS.md`](AGENTS_AND_SKILLS.md)。
 
+安全行为的提案、人工来源、范围决定和入口约束见 [Security Change Authority](security-change-authority.md)。
+
 ## 维护、测试与发布
 
 Base 维护入口见 [`tp-base-maintenance`](agents/tp-base-maintenance.md)。自动化总入口见 [`automation/README.md`](../automation/README.md)。本仓开发与交付按 [`TESTING.md`](TESTING.md) 选择当前改动的局部验证，不自动运行全量测试；内容清单和文档导航按对应变更核对，不参与 Runtime 路由。
@@ -50,3 +52,5 @@ Base 维护入口见 [`tp-base-maintenance`](agents/tp-base-maintenance.md)。�
 ## 历史与过程文档政策
 
 当前发布面只保留仍可执行、仍需用户阅读的文档。临时设计、迁移调查、一次性实施计划和机器生成过程报告不作为长期文档入口；已发布变化由 [`CHANGELOG.md`](../CHANGELOG.md) 记录。
+
+本政策由 [`check_document_navigation.py`](../scripts/check_document_navigation.py) 强制执行：**`docs/decisions/` 下的任何文件，以及文件名内嵌基座版本号的文档（如 `V531_*.md`、`MIGRATION_V529.md`），不得作为发布面文件引入**；增量 Patch 或人工提交带入时文档导航门禁直接失败。这类过程文档只在 Git 历史与 `CHANGELOG.md` 中保留，不复制进当前发布面，也不为它保留版本纯度白名单。

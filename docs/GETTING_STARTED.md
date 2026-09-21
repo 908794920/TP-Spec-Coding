@@ -145,6 +145,25 @@ python -m cli.main base resolve --workspace-root "<project-root>"
 
 先读取 Task、结构化 Event 和当前 workflow contract。旧事件缺少新结构化字段时只允许使用 Base 明确定义的确定性 legacy contract；禁止扫描自由文本 summary 猜 PASS/FAIL。
 
-## 10. 发布与文档
+## 10. 同版本源码升级与兼容
+
+本轮原始输入已经标为当前活动契约，只检查 VERSION 不能确认新能力是否存在。应用前核对交付 Patch 头部的原始源码身份、manifest 与适用链，保留自己的未提交修改、Runtime、Knowledge 和机器配置；不要 `reset --hard`、删库或覆盖业务任务来凑基线。
+
+最终全量 Patch 以原始 `32e8abb` ZIP 为输入，不应叠加在已应用 P1/P2A/P3/P4/P5A/P5B/P5C/P2B 的目录。已应用增量时，在独立原始基线副本核对全量目标，再由实际合并者按现有授权集成差异；不在用户工作区反复试错或重复应用。补丁应用命令和精确 digest 随 Patch 提供。
+
+| 事实/数据 | 升级后的解释 |
+|---|---|
+| Task 公共状态与 SQLite 物理 schema | 不新增第二账本或额外 Task 状态；用既有事件表保存新记录 |
+| `tp-spec.execution/v1` / `tp-spec.work-unit/v1` | 显式计划、角色参与、范围和结果接收/候选；未采用标记的旧 Task/Work 不补造新记录 |
+| `tp-spec.closeout/v1` / `tp-spec.task-learning/v1` | 新 READY Delivery 按有效等级检查并强制生成/复用任务输入评估；无信号也处理，稳定输入可复用 |
+| 同版本旧在途 Task | 先只读查看既有事实；需要新显式计划时用 `work plan`，不补造过去开始/完成；后续新 Delivery 才采用其新契约 |
+| 旧终态/历史案例 | `projection inspect` / `task terminal-check` 只读发现过期或漂移；不补新知识/步骤，不重算旧 hash 或改成 ACTIVE |
+| 更早版本在途 Task | 仍走既有 `project upgrade-contract` 与显式 `task migrate` 的适用契约和授权，不改版本字符串绕过；本次未替所有历史版本做迁移验收 |
+
+在实际获准的机器安装中先 `base installation-doctor`、`base resolve --workspace-root "<project-root>"`；同名版本不自动改 installation。确需同步薄入口时先运行不带 `--apply` 的 `base sync-project` 查看计划，再经已有授权应用；AGENTS 自有区、Runtime 和项目 binding 保留，不把机器路径迁入共享内容。
+
+新格式已写入后不要降级旧程序继续操作这些在途 Task。逆向 Patch 只恢复源码，不能撤销数据库事件、知识写入或人工决定；优先恢复新代码或向前修复。实际 Windows 安装、路径/Junction、宿主会话隔离、真实业务/权限和人工验收需现场核对；[工作台补验表](WORKBENCH.md)列出当前前端缺口，不因此增加全仓回归。
+
+## 11. 发布与文档
 
 当前用户文档从 [`README.md`](README.md) 进入。Agent / Role / Skill 的机器权威仍是 [`../governance/role-catalog.yaml`](../governance/role-catalog.yaml) 与各自 `SKILL.md`；导航文档只负责解释与跳转。

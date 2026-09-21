@@ -1,0 +1,4 @@
+interface:
+  display_name: "原型与交互设计"
+  short_description: "原型、UI、交互或动效设计时使用；保真业务、复用真实组件、检验请求状态和窄屏，区分原型与产品验收。"
+  default_prompt: "Use $ui-prototype-design for the applicable part of this task."

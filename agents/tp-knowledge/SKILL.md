@@ -22,9 +22,9 @@ Knowledge 是 TP-Spec-Coding 的**长期可复用知识层**：业务规则、�
 - Task Runtime：一次研发发生了什么。
 - Knowledge：跨 Task 长期复用的事实、规则、经验与证据索引。
 
-本 Skill 不维护 Base VERSION、公共 Junction、`.tp-spec` 受管块或基座同步；需要时调用 `tp-base-maintenance`。不拥有 workflow state，也不是固定生命周期 phase。只有 Runtime 已产生可信 `KNOWLEDGE_CONVERGENCE_REQUEST` 时，当前 Task 的 Completion 才等待本 Skill 写出绑定同一 Request/Change Set 的 Result。
+本 Skill 不维护 Base VERSION、公共 Junction、`.tp-spec` 受管块或基座同步；需要时调用 `tp-base-maintenance`。不拥有 workflow state，也不是固定生命周期 phase。每个 Task 交付都由集成交付工程师触发提炼；正式 task-converge Result 必须绑定可信 `KNOWLEDGE_CONVERGENCE_REQUEST` 与有效 Change Set。新交付按最终 Task 输入创建或复用 Request，不以知识信号决定是否执行。
 
-**与软件生命周期解耦但可接收 typed effect：** `tp-integration-engineer` 只根据已验证交付事实发起 `KNOWLEDGE_CONVERGENCE_REQUEST`；`tp-software-lifecycle` 以 `dispatch_effect` 按需调度本 Agent。没有 Request 的 Task 显示 `NOT_REQUIRED`，不增加 Knowledge 步骤。存在 Request 但尚未执行时显示 `NOT_RUN`，不得伪装成“无变化”。
+**与软件生命周期解耦但接收 typed effect：** 集成交付工程师每 Task 调用 [knowledge-capture](../../skills/capabilities/knowledge-capture/SKILL.md) 覆盖有效需求与各步骤材料；生命周期通过 dispatch_effect 交本 Agent 定向检索/判重/维护。无信号也要处理，但不强制新知识。旧 Runtime 的 NOT_REQUIRED 只是旧投影，不是新任务已经提炼；在途新交付缺学习 Request 时重跑正常 delivery-converge，不伪造 Result。存在 Request 未执行仍是 NOT_RUN，不得伪装“无变化”。
 
 **Task-scoped convergence 边界：** 只消费可信 Request 和其中绑定的 Task 来源，执行 current project + registered shared scopes 的最小 targeted search，最终只写 `CREATED / UPDATED / DUPLICATE / NO_DURABLE_INSIGHT`。不重新裁决软件 Verification/Review/Delivery，不启动全库 scan、`90-sources` ingest、Golden Set、audit 或 migration/normalization。`CREATED/UPDATED` 必须绑定 exact canonical；`DUPLICATE` 必须命中已有 canonical；`NO_DURABLE_INSIGHT` 也必须有实际 query、来源和原因码。
 
@@ -52,7 +52,9 @@ canonical-first FTS5 → source fallback
 
 Embedding/vector 已做历史评测并因收益不足退役；数据库里存在相关兼容表不代表当前启用。Graph 是 optional projection。
 
-## 2. 开始任何 Knowledge 工作前
+## 2. 按工作类型读取与执行
+
+Task-scoped convergence 直接按 §3A 核对 Resolver、Request、绑定来源和相关规则，使用定向检索与局部写入验证；不先运行下方完整维护链。只有明确接入/维护 Knowledge 系统时执行下列对应步骤：
 
 1. 用共享 Content Systems Resolver 解析 `knowledge_physical_root`、registry、projection DB、meta root；不硬编码 Vault 绝对路径。
 2. 读取 `knowledge/README.md` 与 `knowledge/rules/*` 当前 Base 规范。
@@ -91,30 +93,24 @@ maintain
 
 ## 3A. Task-scoped convergence
 
-软件 Delivery READY 后，只有出现已验证长期知识信号或 human_owner 明确要求时才产生 Request：
+新交付使用 `tp-spec.task-learning/v1`：先只读 `knowledge task-inputs`，按清单实际阅读，
+再用 `knowledge task-converge --assessment FILE|-` 记录逐项覆盖、定向处置与 Memory 评估。
+详细字段、命令、精确 canonical 绑定、局部复用和失败边界按需读
+[Task 知识与记忆收敛](references/task-convergence.md)，不预加载完整日常维护链。
 
-```text
-Delivery READY
-→ KNOWLEDGE_CONVERGENCE_REQUEST
-→ tp-spec knowledge task-converge --request-event-id <ID> ...
-→ targeted current-project + shared search
-→ KNOWLEDGE_CONVERGENCE_RESULT
-→ CREATED / UPDATED / DUPLICATE / NO_DURABLE_INSIGHT
-```
-
-执行要求：
-
-- Request 必须绑定当前 Delivery、Verification、Review 和 `change_set_id`；绑定过期时拒绝执行；
-- `--query` 必须是真实执行的 targeted query，Result 保存 search receipt；
-- `--source` 必须是当前 Task 中可读取、可 hash 的来源工件；
-- `DUPLICATE` 的 `--knowledge-ref` 必须出现在本次 targeted search 命中中；
-- `CREATED / UPDATED` 的 `--knowledge-ref` 必须精确解析为 canonical，绑定当前 Task evidence，并通过局部 lint 与单条增量索引；
-- `NO_DURABLE_INSIGHT` 表示“已检索和评估后没有长期价值”，不是“没执行”；
-- `NOT_RUN` 只作为 Runtime 投影状态，不写成功 Result；
-- Integration 不写 Result，普通 `FACT` 也不能替代 Result；
-- 不为了 Knowledge 回退软件生命周期；若代码本身变化，由 Change Set 机制正常返回 Development。
+- L0–L3 都处理；无信号不跳过，有价值才创建/更新，已有覆盖则引用。
+- Request 绑定当前 READY、产品候选及实际适用的 Verification/Review；不适用的轻量前置为 0，不伪造 PASS。
+- 所有有效输入均有真实评估；已替代或临时内容保留出处，不升级为永久约束。
+- 只做 current project + registered shared 定向检索；Result 保留各候选实际 query、精确目标、内容与索引 receipt。
+- 用共享 tp-memory-capture 归位；已评估与已保存分开，可选未持久化明确披露责任和恢复条件。
+- 同输入复用原请求/结果；变化只重评依赖受影响项，不按固定流程重跑有效技术检查。
+- Integration 触发并核对，不代写 Knowledge Result；普通 FACT 不替代正式 Result。
+- 缺必要环境或来源仍待处理，不因收敛自动做全库扫描、跨任务检索、提权、安装或发布。
+- 旧 Request 保留原参数兼容，旧终态不追补；代码问题仍走已获准的父 Task 修复流程，不为知识新增公共阶段。
 
 ## 4. 按需 Context Pointers
+
+- 读取条件：每 Task 最终交付 Request；内容：逐项输入覆盖、定向处置、Memory 读回和结果复用；路径：[Task 收敛](references/task-convergence.md)
 
 - 读取条件：接入或重新处理已登记的外部文档批次；内容：注册转换分流canonicalization与人工授权边界；路径：[外部文档接入](references/external-ingestion.md)
 - 读取条件：迁移或标准化已有 Knowledge Vault；内容：deterministic normalization与语义歧义处理边界；路径：[Legacy Knowledge 标准化](references/legacy-normalization.md)
@@ -141,4 +137,4 @@ Delivery READY
 - 不按目录名猜 project-id/source root；
 - 不为了覆盖率制造低价值 canonical；
 - 不把模型推断写成证据事实；
-- 不扫描全部 Task 历史自动灌入 Knowledge；只有显式 candidate/evidence 或维护范围进入沉淀流程。
+- 不扫描全部 Task 历史自动灌入 Knowledge；当前 Task 的有效需求及步骤来源由交付提炼明确纳入；其他 Task 只有显式 candidate/evidence 或授权维护范围才进入，禁止全历史扫描。

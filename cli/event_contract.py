@@ -88,6 +88,26 @@ def normalize_event_semantics(event_type: str, detail: Dict[str, Any] | None) ->
     }
 
 
+def inapplicable_prerequisite_binding(event_type: str, detail: Dict[str, Any], field: str) -> bool:
+    """Zero IDs mean an explicitly inapplicable P5A prerequisite, never a PASS.
+
+    The current-delivery resolver separately checks these declarations against
+    the effective route. Legacy requests still require both positive bindings.
+    """
+    kind = {"verification_event_id": "verification", "review_event_id": "review",
+            "verification_change_set_id": "verification", "review_change_set_id": "review"}.get(field)
+    adopted = (_upper(event_type) == "KNOWLEDGE_CONVERGENCE_REQUEST"
+               and detail.get("learning_schema") == "tp-spec.task-learning/v1") or (
+                   _upper(event_type) == "DELIVERY_RESULT" and detail.get("closeout_schema") == "tp-spec.closeout/v1")
+    if not kind or not adopted or not isinstance(detail.get("applicability"), dict):
+        return False
+    event_id = detail.get(kind + "_event_id")
+    expected = 0 if field.endswith("_event_id") else ""
+    return (type(event_id) is int and event_id == 0 and detail.get(field) == expected
+            and detail["applicability"].get(kind) == "NOT_REQUIRED")
+
+
+
 def validate_event_semantics(event_type: str, detail: Dict[str, Any] | None) -> List[str]:
     d = dict(detail or {})
     errors: List[str] = []
@@ -112,7 +132,7 @@ def validate_event_semantics(event_type: str, detail: Dict[str, Any] | None) -> 
         if review_kind in {"CODE", "IMPLEMENTATION", "ULTRA_REVIEW"}:
             required.extend(["change_set_id", "verification_event_id"])
     for field in required:
-        if not str(d.get(field) or "").strip():
+        if not str(d.get(field) or "").strip() and not inapplicable_prerequisite_binding(event_type, d, field):
             errors.append(f"{_upper(event_type)} requires {field}")
     expected_operation = _upper(family.get("operation"))
     if expected_operation and operation and operation != expected_operation:

@@ -282,7 +282,10 @@ def _validate_knowledge_ref(cfg, *, disposition: str, knowledge_ref: str,
 
 
 def cmd_task_converge(args) -> int:
-    """执行一次带证据的 Task-scoped Knowledge 收敛 effect。"""
+    """Execute a typed Task-scoped effect; legacy receipts keep their old contract."""
+    if getattr(args, "assessment", None):
+        from .convergence_cmd import cmd_converge
+        return cmd_converge(args)
     from cli import db as dbmod, event_contract, orchestration, record_first, workflow_records
     from cli.version import active_version
 
@@ -299,18 +302,24 @@ def cmd_task_converge(args) -> int:
 
         request = _task_convergence_request(conn, args.task, int(args.request_event_id))
         request_detail = dict(request.detail or {})
-        task_facts, events = orchestration._load_task_facts(args.task, db_path=db_path)
-        delivery_event = orchestration._delivery_completion_event(events, task_dir)
+        if request_detail.get("learning_schema"):
+            raise ValueError("Task learning requires --assessment FILE|- with input coverage, Knowledge and Memory")
+        if task["current_state"] in record_first.TERMINAL_STATES:
+            raise ValueError("legacy terminal task is read-only")
+        if not all(getattr(args, field, None) for field in ("disposition", "reason_code", "query", "source")):
+            raise ValueError("legacy task-converge requires disposition, reason-code, query and source")
+        task_facts, events = orchestration._load_task_facts(args.task, db_path=db_path, connection=conn, task_dir=task_dir)
+        orchestration.resolve_route(args.task, db_path=db_path, _facts=(task_facts, events), task_dir=task_dir)
+        delivery_event = orchestration._delivery_completion_event(events, task_dir, task=task_facts)
         if delivery_event is None or int(request_detail.get("delivery_event_id") or 0) != int(delivery_event.get("id") or 0):
             raise ValueError("Knowledge convergence request is stale: current READY delivery differs")
 
-        verification, _subject, current_change_set, _roots = workflow_records._latest_trusted_verification(
-            conn, args.task, task_dir,
-        )
-        current_change_set_id = str(current_change_set.get("content_digest") or "")
+        prerequisites = workflow_records._delivery_prerequisites(conn, args.task, task_dir, db_path)
+        verification = prerequisites["verification"]
+        current_change_set_id = str(prerequisites["snapshot"].get("content_digest") or "")
         if str(request_detail.get("change_set_id") or "") != current_change_set_id:
             raise ValueError("Knowledge convergence request change_set is stale")
-        if int(request_detail.get("verification_event_id") or 0) != int(verification.row["id"]):
+        if int(request_detail.get("verification_event_id") or 0) != (int(verification.row["id"]) if verification else 0):
             raise ValueError("Knowledge convergence request verification binding is stale")
 
         cfg = _cfg(args)
@@ -471,7 +480,21 @@ def add_knowledge_subparsers(root_subparsers) -> None:
     p=sub.add_parser("audit",help="Create deterministic L4 semantic audit scope"); _common(p); p.add_argument("--full",action="store_true"); p.set_defaults(func=cmd_audit)
     p=sub.add_parser("audit-record",help="Record conversational-model L4 result"); _common(p); p.add_argument("--result",required=True,choices=["PASS","FAIL","pass","fail"]); p.add_argument("--summary",required=True); p.add_argument("--document",action="append",default=[]); p.set_defaults(func=cmd_audit_record)
 
-    p=sub.add_parser("task-converge",help="Evidence-backed task-scoped Knowledge convergence for one trusted request"); _common(p); p.add_argument("--task",required=True); p.add_argument("--task-dir",required=True); p.add_argument("--db",required=True); p.add_argument("--request-event-id",required=True,type=int); p.add_argument("--disposition",required=True,choices=["CREATED","UPDATED","DUPLICATE","NO_DURABLE_INSIGHT"]); p.add_argument("--reason-code",required=True); p.add_argument("--query",action="append",required=True); p.add_argument("--source",action="append",required=True); p.add_argument("--knowledge-ref"); p.set_defaults(func=cmd_task_converge)
+    from .convergence_cmd import cmd_inputs
+    p = sub.add_parser("task-inputs", help="Read-only Task input index and changed/reusable judgment navigation")
+    p.add_argument("--task", required=True); p.add_argument("--task-dir", required=True)
+    p.add_argument("--db", required=True); p.add_argument("--request-event-id", type=int)
+    p.add_argument("--item", help="Read an indexed Task, delivery, event or Work; files retain their source reference")
+    p.set_defaults(func=cmd_inputs)
+    p = sub.add_parser("task-converge", help="Record assessed Task inputs, targeted Knowledge results and Memory readback")
+    _common(p)
+    p.add_argument("--task", required=True); p.add_argument("--task-dir", required=True)
+    p.add_argument("--db", required=True); p.add_argument("--request-event-id", required=True, type=int)
+    p.add_argument("--assessment", help="Task learning JSON file, or - for stdin; required for new requests")
+    p.add_argument("--disposition", choices=["CREATED", "UPDATED", "DUPLICATE", "NO_DURABLE_INSIGHT"])
+    p.add_argument("--reason-code"); p.add_argument("--query", action="append")
+    p.add_argument("--source", action="append"); p.add_argument("--knowledge-ref")
+    p.set_defaults(func=cmd_task_converge)
 
     idx=sub.add_parser("index",help="Knowledge SQLite FTS5 projection"); idxsub=idx.add_subparsers(dest="index_cmd",required=True)
     p=idxsub.add_parser("build"); _common(p); p.set_defaults(func=cmd_index_build)

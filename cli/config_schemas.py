@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding governed-YAML schema registry (V5.3.4 C-01.4, decision D-07/T5).
+"""TP-Spec-Coding governed-YAML schema registry (C-01.4, decision D-07/T5).
 
 Schemas are plain Python dicts co-versioned with the loader: no external
 schema files (the ``.schema.yaml`` approach was retired by human_owner
@@ -12,11 +12,19 @@ Field entries support: type (Python type), required (bool), enum (list).
 Top-level fields must be exhaustive: unknown top-level keys are rejected in
 strict mode (UNKNOWN_FIELD). Deep structures are typed at the container
 level only; business semantics stay with the consumers.
+
+A schema whose governed file lives under the version-named active template
+directory does not hardcode that version: the ``file`` value carries the
+``<active-version>`` placeholder and consumers resolve it with
+``resolve_schema_file()`` (or their own ``cli.version.active_version()``).
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+
+# 活动契约模板目录的路径占位符：schema 里不写死版本号，解析时再替换。
+ACTIVE_VERSION_PLACEHOLDER = "<active-version>"
 
 SCHEMAS: Dict[str, Dict[str, Any]] = {
     "workflow": {
@@ -129,7 +137,9 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
         },
     },
     "status-template": {
-        "file": "templates/5.3.4/status.yaml",
+        # 指向活动契约模板目录（templates/<active-version>/status.yaml）。目录名随
+        # 每次 open release line 变化，所以这里不写死版本号：解析见 resolve_schema_file()。
+        "file": "templates/" + ACTIVE_VERSION_PLACEHOLDER + "/status.yaml",
         "version_field": "artifact_contract.version",
         "supported_versions": ["5.3.4"],
         "properties": {
@@ -183,3 +193,17 @@ def get_schema(name: str) -> Dict[str, Any]:
     if name not in SCHEMAS:
         raise KeyError(f"unknown schema: {name}")
     return SCHEMAS[name]
+
+
+def resolve_schema_file(name: str, base_root: "Optional[str | None]" = None) -> "Optional[str]":
+    """返回 schema 的仓库相对路径，并把 ``<active-version>`` 占位替换为活动契约版本。
+
+    本模块刻意不在模块级 import ``cli.version``：``cli.version`` → ``cli.config_loader``
+    → ``cli.config_schemas`` 已构成模块级导入链，反向 import 会在先导入 ``cli.version`` 时
+    命中半初始化模块并抛 ImportError，因此这里延迟到调用时导入。
+    """
+    rel = get_schema(name).get("file")
+    if not rel or ACTIVE_VERSION_PLACEHOLDER not in rel:
+        return rel
+    from cli.version import active_version  # 延迟导入：见 docstring（避免循环导入）
+    return rel.replace(ACTIVE_VERSION_PLACEHOLDER, active_version(base_root))

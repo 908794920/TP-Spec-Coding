@@ -87,6 +87,21 @@ def arm_stage_guard(
     """Snapshot the repo invariants for one dispatched workflow stage."""
     profile = autonomy_profile.load_profile(profile_id)
     effects = sorted({str(x) for x in declared_effects if str(x)})
+    from . import db as dbmod, security_authority as authority
+    runtime_id = str((profile.get("autonomous") or {}).get("runtime_project_id") or "")
+    db_path = _root(profile) / ".tp-spec" / "db" / (runtime_id + ".db")
+    conn = dbmod.connect_readonly(str(db_path))
+    try:
+        conn.execute("BEGIN")
+        task = conn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
+        if task is None:
+            raise AutonomyEffectError("SECURITY_TASK_UNBOUND")
+        rows = conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id,)).fetchall()
+        scoped = authority.check_dispatch(authority.read(conn, task_id), task, rows, stage=stage, effects=effects)
+        if "repo_mutation" in effects and scoped["effect_scope"] in authority.READ_EFFECTS:
+            raise AutonomyEffectError("SECURITY_EFFECT_MISMATCH: investigation does not grant repository mutation")
+    finally:
+        conn.close()
     mutable = {}
     if "repo_mutation" not in effects:
         mutable = {rid: autonomy_git.repo_state_fingerprint(repo) for rid, repo in _repos(profile, "mutable")}

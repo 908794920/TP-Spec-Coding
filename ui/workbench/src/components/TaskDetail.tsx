@@ -41,6 +41,7 @@ export function TaskDetail({ object, snapshot, details, onDetails, onRefreshDeta
   useEffect(() => { setTab('overview'); close.current?.focus(); }, [object.id]);
   function selectTab(next: Tab) { setTab(next); if (next !== 'overview') onDetails(); }
   const data = details.data?.data, task = record(snapshot.data.task), workflow = record(snapshot.data.workflow);
+  const terminal = task.state === 'COMPLETED' || task.state === 'CANCELLED' || workflow.retired === true;
   const mismatch = !!details.data && details.data.read.task_revision !== snapshot.read.task_revision;
   return <dialog className="task-detail" ref={dialog} aria-labelledby="detail-heading" onCancel={e => { e.preventDefault(); onClose(); }} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}>
     <header className="detail-heading"><div><span className="eyebrow">{object.kind === 'task' ? 'Task' : 'WorkItem'} 详情</span><h3 id="detail-heading">{object.title || '标题未记录'}</h3></div><Button size="small" ref={close} onClick={onClose} aria-label="关闭详情并返回节点">关闭</Button></header>
@@ -52,11 +53,12 @@ export function TaskDetail({ object, snapshot, details, onDetails, onRefreshDeta
       {tab === 'overview' ? <>
         <Fields value={{ object_type: object.kind, owner: object.owner, parent_task: object.parentTaskId,
           relationship: object.kind === 'task' ? '当前 Task' : object.belongs ? '由正式 task_id 确认' : '归属未确认', issues: object.issues }}
-          labels={{ object_type: '对象类型', owner: '对象负责人', parent_task: '父 Task', relationship: '归属依据', issues: '数据问题' }}/>
+          labels={{ object_type: '对象类型', owner: object.kind === 'task' && terminal ? 'Task 责任记录（历史，不是当前执行者）' : '对象负责人', parent_task: '父 Task', relationship: '归属依据', issues: '数据问题' }}/>
         <section className="detail-section"><h4>当前 Task 的实际流程</h4>
-          <Fields value={{ task_state: stateLabel('task', task.state), current: stageLabel(workflow.current_step) || '当前步骤未解析', next: stageLabel(workflow.next_step) || '下一步未解析',
+          <Fields value={{ task_state: stateLabel('task', task.state), current: terminal ? '无（任务已结束）' : stageLabel(workflow.current_step) || '当前步骤未解析', next: terminal ? '无（任务已结束）' : stageLabel(workflow.next_step) || '下一步未解析',
             current_source: workflow.current_step_source, next_source: workflow.next_step_source, effective_level: workflow.effective_level,
-            completed_at: task.completed_at, read_at: snapshot.read.completed_at }} labels={{ task_state: 'Task 正式状态', current: '当前步骤', next: '下一步', current_source: '当前步骤来源', next_source: '下一步来源', effective_level: '有效流程等级', completed_at: '正式结束时间', read_at: '读取时间' }}/>
+            coordinator: record(workflow.execution).coordinator,
+            completed_at: task.completed_at, read_at: snapshot.read.completed_at }} labels={{ task_state: 'Task 正式状态', current: '当前步骤', next: '下一步', current_source: '当前步骤来源', next_source: '下一步来源', effective_level: '有效流程等级', coordinator: 'Task 协调责任（独立于本步角色）', completed_at: '正式结束时间', read_at: '读取时间' }}/>
           <Disclosure label="路由与来源字段"><Fields value={{ current: workflow.current_step, next: workflow.next_step, route: workflow.route }}/></Disclosure>
         </section>
         <Disclosure label="Task 最近记录与工作段（只读）">
@@ -82,7 +84,7 @@ export function TaskDetail({ object, snapshot, details, onDetails, onRefreshDeta
         {tab === 'evidence' && data && <>
           <EvidenceList value={data.evidence}/><Outcome title="Delivery（不等于正式结单或已上线）" value={data.delivery}/>
           {/* `stateLabel` needs the object kind, which `Fields` cannot know, so the kind is applied here. */}
-          <Fields value={{ ...record(data.task), state: stateLabel('task', record(data.task).state) }} labels={{ task_id: '正式 Task', state: '正式状态', phase: '阶段', owner: 'Task 负责人', completed_at: '正式结束时间' }}/>
+          <Fields value={{ ...record(data.task), state: stateLabel('task', record(data.task).state) }} labels={{ task_id: '正式 Task', state: '正式状态', phase: '阶段', owner: terminal ? 'Task 责任记录（历史）' : 'Task 负责人', completed_at: '正式结束时间' }}/>
           <p className="muted">未取得单独的“用户接收交付”事实时保持未记录，不从 Owner accept、Delivery READY 或 WorkItem 完成推断。</p>
           <CloseoutPanel read={closeout} requested={closeoutRequested} onRequest={onCloseout} taskRevision={snapshot.read.task_revision}/>
         </>}

@@ -13,6 +13,7 @@ dependency_roles:
 - context
 - reference
 machine_owned_fields:
+- source
 - generated_at
 - provenance.manifest_refresh
 - source_change_set_id
@@ -23,6 +24,7 @@ machine_owned_fields:
 - documents[].dependencies[].normalized_hash
 notes:
 - branch is not emitted by deterministic refresh; Git branch names are not part of snapshot truth and stale copied values are removed.
-- last_commit_id is not required; Wiki maintenance is source-snapshot based and does not require Git.
+- source holds source_mode, stable_ref, commit and repo_prefix; GIT_REF citations bind that full commit, while FILESYSTEM retains hash/stability checks without Git.
+- Legacy source absence requires explicit initialization for formal Git maintenance; no dirty-worktree commit is fabricated.
 - A single manifest-level AI generator is not authoritative after incremental maintenance; semantic authorship is mixed/per-document
   and may be not-recorded.

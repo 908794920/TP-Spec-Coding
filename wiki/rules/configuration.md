@@ -46,6 +46,21 @@ Runtime/CLI 先解析 Wiki System Root，再通过 Repo Registry 解析当前 wo
 - 已存在 registry 但当前 workspace 无匹配项时 fail-closed；可由 `project-binding.yaml` 的显式 `wiki_id` 提供受控 fallback，不按目录名猜仓库；
 - 同一 physical path 通过 canonical path 去重/诊断。
 
+## 稳定源码配置
+
+`systems.wiki.source.source_mode` 默认为 `AUTO`：Git 用 `GIT_REF`，真正非 Git 用 `FILESYSTEM`。正式 Git Wiki 要有明确 `stable_ref` 或唯一的本地 remote HEAD；零配置存储路径不等于可猜测稳定分支。例：
+
+```yaml
+systems:
+  wiki:
+    source:
+      stable_ref: refs/heads/stable
+```
+
+多仓沿用 Registry 的 `workspaces[].workspace_root` / `repos[].repo_root`，允许每个 repo 在 `source` 中覆盖 `stable_ref` / include / exclude 等已有来源字段；未覆盖部分继承全局配置，不共享上一个 repo 的运行 SHA。此处 repo_root 是已有 Resolver 配置，不复制到通用 Skill。
+
+来源 pin、离线边界、非 Git 保留、迁移及失败恢复见 [Stable Source](stable-source.md)。
+
 ## 配置化与不变量
 
 适合配置：source include/exclude、mass-change threshold、citation coverage、L4 sample size 等。

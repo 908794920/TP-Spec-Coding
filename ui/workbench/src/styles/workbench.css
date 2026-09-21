@@ -307,3 +307,40 @@ main { min-width: 0; }
 .evidence-source { padding: 8px; margin: 8px 0; border-left: 2px solid var(--border); }
 .evidence-source>strong { display: block; margin-bottom: 8px; font-size: 12px; }
 .event-timeline .fields .ant-descriptions-item-label { width: 120px; }
+
+/* Execution facts reuse the existing workbench tokens and control vocabulary. */
+.execution-workflow { min-width: 0; }
+.execution-workflow .section-heading { margin-bottom: 8px; gap: 12px; flex-wrap: wrap; }
+.execution-workflow h3,.execution-workflow h4 { margin: 0; }
+.execution-coordinator { font-size: 12px; overflow-wrap: anywhere; margin: 8px 0 12px; }
+.execution-summary { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px 24px; padding: 10px 0; border-block: 1px solid var(--border); }
+.execution-summary p { display: flex; flex-direction: column; min-width: 0; margin: 0; gap: 3px; overflow-wrap: anywhere; }
+.execution-summary p>span:first-child { color: var(--muted); font-size: 12px; }
+.execution-steps { align-items: stretch; padding-bottom: 14px; }
+.execution-steps li { flex: 0 0 206px; max-width: 246px; scroll-margin-top: calc(var(--header-h) + 12px); }
+.execution-steps li[data-state='COMPLETED'] { border-left: 3px solid var(--good); }
+.execution-steps li[data-state='WAITING'] { border-left: 3px solid var(--warning); }
+.execution-step-title { display: flex; align-items: center; gap: 4px; }
+.execution-step-title .ant-tag { margin-inline-end: 0; }
+.execution-workflow .step-title-button { height: auto; white-space: normal; font-weight: 600; text-align: left; justify-content: flex-start; padding: 3px 0; }
+.participation-nodes { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.execution-workflow .participation-node { height: auto; min-height: 34px; white-space: normal; text-align: left; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 5px 7px; font-size: 12px; }
+.execution-workflow .participation-node>span { overflow-wrap: anywhere; }
+.execution-workflow .participation-node.planned-role { color: var(--muted); border-style: dashed; }
+.participation-detail { border-top: 1px solid var(--border); padding: 14px 0; margin-top: 6px; scroll-margin-top: calc(var(--header-h) + 12px); }
+.execution-timeline { border-top: 1px solid var(--border); padding-top: 12px; margin: 12px 0; min-width: 0; }
+.execution-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 10px 0; }
+.execution-filters label { width: 180px; min-width: 0; }
+.execution-filters .ant-select { width: 100%; }
+.execution-note { margin: 12px 0 0; }
+@media(max-width:600px) { .execution-summary { grid-template-columns: minmax(0,1fr); } .execution-filters label { flex: 1 1 130px; } .execution-workflow .participation-node { min-height: 44px; } }
+
+.skill-markdown { max-height: 65vh; overflow: auto; overflow-wrap: anywhere; line-height: 1.8; padding-right: 12px; }
+.skill-markdown h1 { font-size: 24px; }
+.skill-markdown h2 { font-size: 20px; border-bottom: 1px solid var(--node-border); padding-bottom: 8px; }
+.skill-markdown h3 { font-size: 17px; }
+.skill-markdown pre { padding: 12px; background: var(--surface); overflow: auto; border: 1px solid var(--node-border); border-radius: 6px; }
+.skill-markdown code { font-family: monospace; }
+.skill-markdown table { display: block; overflow-x: auto; border-collapse: collapse; }
+.skill-markdown th, .skill-markdown td { border: 1px solid var(--node-border); padding: 8px 12px; }
+.skill-markdown blockquote { margin-left: 0; padding-left: 14px; border-left: 3px solid var(--accent); color: var(--muted); }

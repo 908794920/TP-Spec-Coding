@@ -45,12 +45,21 @@ _EVENT_TYPES = {
 }
 
 # task_event.event_type → events.jsonl type 映射
-# WORK_SESSION_STARTED/ENDED/REWORK 不在 EventTypes 内，映射为 FACT
+# 执行计划、步骤、工作段和 REWORK 投影为 FACT，保留 detail 中的真实 event_type。
 _TYPE_MAP = {
     "STATE": "STATE",
+    "HUMAN_AUTHORITY_RECORDED": "FACT",
+    "SECURITY_PROPOSAL_RECORDED": "FACT",
+    "SECURITY_WORK_BOUND": "FACT",
+    "SECURITY_EVIDENCE_RECORDED": "FACT",
+    "EXECUTION_PLAN_RECORDED": "FACT",
+    "EXECUTION_STEP_RECORDED": "FACT",
+    "WORK_SESSION_UPDATED": "FACT",
     "WORK_SESSION_STARTED": "FACT",
     "WORK_SESSION_ENDED": "FACT",
     "REWORK": "FACT",
+    "WORK_ITEM_RECORDED": "FACT",
+    "WORK_INTEGRATION_RECORDED": "FACT",
     "ARTIFACT_REFRESH": "FACT",
     "PHASE_EXIT": "FACT",
     "HANDOFF": "HANDOFF",
@@ -65,13 +74,13 @@ _TYPE_MAP = {
     "KNOWLEDGE_CONVERGENCE_REQUEST": "KNOWLEDGE",
     "KNOWLEDGE_CONVERGENCE_RESULT": "KNOWLEDGE",
     "KNOWLEDGE": "KNOWLEDGE",
-    # V5.3.4 A-04：reconcile 追加的审计事件；投影为 FACT 保持
+    # A-04：reconcile 追加的审计事件；投影为 FACT 保持
     # events.jsonl 合法 type 集合不变（Test-TpSpecTask.ps1 EventTypes 零感知）。
     "RECONCILIATION": "FACT",
 }
 
 
-# V5.3.4 新工件（AI-B 模板定义；AI-C 可继续追加）：存在才纳入 source digest。
+# 新工件（AI-B 模板定义；AI-C 可继续追加）：存在才纳入 source digest。
 _V511_SOURCE_NAMES = (
     "requirement.md",
     "requirement-knowledge.md",
@@ -83,9 +92,9 @@ _V511_SOURCE_NAMES = (
 
 
 def projection_source_names() -> List[str]:
-    """current view source_files 集中注册表（V5.3.4 §10.2）。
+    """current view source_files 集中注册表（§10.2）。
 
-    AI-C 接入 V5.3.4 新工件规则时可追加文件名；commit 的
+    AI-C 接入新工件规则时可追加文件名；commit 的
     _continuation_sources 与 reconcile 共用本注册表，存在性过滤保证
     旧任务/低风险任务不受影响。
     """
@@ -161,6 +170,7 @@ def _format_status_yaml(
     scope_changes: List[str],
     quality_facts: Dict[str, str],
     next_responsibility: str,
+    presentation: Optional[Dict[str, Any]] = None,
 ) -> str:
     """手写兼容 status.yaml 投影。"""
     lines: List[str] = []
@@ -169,7 +179,7 @@ def _format_status_yaml(
         return json.dumps(items, ensure_ascii=False)
 
     def fmt_str(s: str) -> str:
-        return f'"{s}"'
+        return json.dumps(str(s), ensure_ascii=False)
 
     lines.append(f"task_id: {fmt_str(task_id)}")
     lines.append(f"task_name: {fmt_str(task_name)}")
@@ -186,13 +196,23 @@ def _format_status_yaml(
     lines.append(f"findings: {fmt_list(findings)}")
     lines.append(f"scope_changes: {fmt_list(scope_changes)}")
     lines.append(f"next_responsibility: {fmt_str(next_responsibility)}")
+    if presentation is not None:
+        from .task_views import SCHEMA
+        lines.append(f"projection_schema: {fmt_str(SCHEMA)}")
+        for key, value in presentation.items():
+            lines.append(f"{key}: {json.dumps(value, ensure_ascii=False)}")
     lines.append("quality_facts:")
     lines.append(f"  change_set_id: {fmt_str(quality_facts.get('change_set_id', 'NOT_RECORDED'))}")
-    for key in ("development", "verification", "review", "delivery", "knowledge"):
+    for key in ("development", "verification", "review", "delivery", "knowledge", "memory"):
         lines.append(f"  {key}: {fmt_str(quality_facts.get(key, 'NOT_RECORDED'))}")
     lines.append("artifacts:")
     lines.append('  event_log: "events.jsonl"')
     lines.append('  continuation: "generated/continuation.md"')
+    if current_state == "COMPLETED":
+        lines.append('  current_view: "generated/final-result.md"')
+        lines.append('  final_result: "generated/final-result.md"')
+    else:
+        lines.append('  current_view: "generated/continuation.md"')
     lines.append('  terminal_manifest: "generated/terminal-manifest.json"')
     lines.append('  acceptance: "acceptance.md"')
     lines.append('  task_document: "task.md"')
@@ -231,6 +251,8 @@ def _build_events_jsonl(events: List[Dict[str, Any]], task_id: str) -> Tuple[str
             "type": mapped_type,
             "actor": actor,
             "note": ev["summary"] or "",
+            "runtime_event_id": ev["id"],
+            "event_type": event_type,
         }
 
         # STATE 事件输出 state 和 next
@@ -271,6 +293,67 @@ def _build_events_jsonl(events: List[Dict[str, Any]], task_id: str) -> Tuple[str
             for key in ("verification_scope", "checks"):
                 if key in detail:
                     obj[key] = detail[key]
+
+        # Keep explicit execution identities and payloads in the existing derived log.
+        # The DB remains canonical; generic FACT imports cannot become governed events.
+        if event_type in {"EXECUTION_PLAN_RECORDED", "EXECUTION_STEP_RECORDED",
+                         "WORK_ITEM_RECORDED", "WORK_INTEGRATION_RECORDED",
+                          "WORK_SESSION_STARTED", "WORK_SESSION_UPDATED", "WORK_SESSION_ENDED"}:
+            raw_detail = ev["detail_json"] or "{}"
+            try:
+                execution_detail = json.loads(raw_detail)
+            except (TypeError, ValueError):
+                execution_detail = None
+            explicit_kind = event_type in {"EXECUTION_PLAN_RECORDED", "EXECUTION_STEP_RECORDED", "WORK_SESSION_UPDATED", "WORK_ITEM_RECORDED", "WORK_INTEGRATION_RECORDED"}
+            if explicit_kind or (isinstance(execution_detail, dict) and "execution_schema" in execution_detail):
+                obj.update(event_type=event_type, runtime_event_id=ev["id"],
+                           actor_role=ev["actor_role"], actor_agent=ev["actor_agent"],
+                           work_item_id=ev["work_item_id"])
+                if isinstance(execution_detail, dict):
+                    obj["detail"] = execution_detail
+                else:
+                    obj["detail_raw"] = raw_detail
+                    warnings.append(f"event #{ev['id']} has invalid execution detail; raw value preserved")
+
+        # Security provenance stays readable in the derived log, without granting
+        # generic imports permission to recreate governed facts.
+        if event_type in {"HUMAN_AUTHORITY_RECORDED", "SECURITY_PROPOSAL_RECORDED",
+                          "SECURITY_WORK_BOUND", "SECURITY_EVIDENCE_RECORDED", "SCOPE_CHANGE"}:
+            raw = ev["detail_json"] or "{}"
+            try:
+                security_detail = json.loads(raw)
+            except (TypeError, ValueError):
+                security_detail = None
+            if event_type != "SCOPE_CHANGE" or (isinstance(security_detail, dict) and "security_schema" in security_detail):
+                obj.update(event_type=event_type, runtime_event_id=ev["id"], work_item_id=ev["work_item_id"])
+                if isinstance(security_detail, dict):
+                    obj["detail"] = security_detail
+                else:
+                    obj["detail_raw"] = raw
+                    warnings.append(f"event #{ev['id']} has invalid security detail; raw value preserved")
+
+        # Compact learning outcomes stay navigable in the existing event projection.
+        # A projected receipt is history, not authorization or current applicability.
+        if event_type == "KNOWLEDGE_CONVERGENCE_RESULT":
+            from .task_views import learning_brief
+            try:
+                detail = json.loads(ev["detail_json"] or "{}")
+                if isinstance(detail, dict):
+                    obj["learning"] = learning_brief(detail)
+            except (ValueError, TypeError):
+                warnings.append(f"event #{ev['id']} has unreadable learning detail")
+
+        if event_type == "DELIVERY_RESULT":
+            from .task_views import excerpt
+            try:
+                delivery = json.loads(ev["detail_json"] or "{}")
+                if isinstance(delivery, dict):
+                    risks = delivery.get("residual_risks", [])
+                    obj["delivery"] = {"status": delivery.get("delivery_status"),
+                                       "reason": excerpt(delivery.get("reason")),
+                                       "residual_risks": [excerpt(risk) for risk in risks] if isinstance(risks, list) else None}
+            except (ValueError, TypeError):
+                warnings.append(f"event #{ev['id']} has unreadable delivery detail")
 
         # evidence
         evidence_list: List[str] = []
@@ -314,7 +397,7 @@ def _latest_code_review_fact(conn, task_id: str):
     from . import event_policies
 
     candidates = event_policies.load_trusted_governance_events(
-        conn, task_id, event_type="REVIEW_COMPLETED", actor="tp-code-reviewer",
+        conn, task_id, event_type="REVIEW_COMPLETED", actor="tp-code-reviewer", latest_only=True,
     )
     return next((item for item in candidates
                  if str(item.detail.get("review_kind") or "").upper() in {"CODE", "IMPLEMENTATION", "ULTRA_REVIEW"}), None)
@@ -326,7 +409,7 @@ def _extract_findings(conn, task_id: str) -> List[str]:
 
     findings: List[str] = []
     verification = event_policies.load_trusted_governance_event(
-        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer",
+        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer", latest_only=True,
     )
     if verification is not None:
         decision = str(verification.detail.get("decision") or "").upper()
@@ -355,7 +438,11 @@ def _extract_scope_changes(conn, task_id: str) -> List[str]:
         scope_id = str(event.detail.get("scope_id") or "").strip()
         summary = str(event.detail.get("summary") or event.row["summary"] or "").strip()
         if scope_id and summary:
-            out.append(f"{scope_id}: {summary}")
+            security = event.detail.get("security_payload") if event.detail.get("security_schema") else None
+            if isinstance(security, dict):
+                out.append(f"{scope_id} [{security.get('decision', 'UNKNOWN')}; scopes={','.join(security.get('scope_ids', []))}; source event:{security.get('human_event_id')}]: {summary}")
+            else:
+                out.append(f"{scope_id}: {summary}")
     return out
 
 
@@ -428,6 +515,7 @@ def _extract_quality_facts(conn, task_id: str) -> Dict[str, str]:
         "delivery": "NOT_RECORDED",
         # Task 7 会把这一占位投影替换为 typed Knowledge convergence 事实。
         "knowledge": "NOT_RECORDED",
+        "memory": "NOT_RECORDED",
     }
     location = conn.execute(
         "SELECT p.root_path FROM task t JOIN project p ON p.project_id=t.project_id WHERE t.task_id=?",
@@ -505,41 +593,34 @@ def _extract_quality_facts(conn, task_id: str) -> Dict[str, str]:
             stale=not delivery_current,
         )
 
-    if delivery is not None and delivery_current and str(delivery.detail.get("delivery_status") or "").upper() == "READY":
-        delivery_id = int(delivery.row["id"])
-        request = None
-        for item in event_policies.load_trusted_governance_events(
-            conn, task_id, event_type="KNOWLEDGE_CONVERGENCE_REQUEST", actor="tp-integration-engineer",
-        ):
-            try:
-                if int(item.detail.get("delivery_event_id") or 0) != delivery_id:
-                    continue
-            except (TypeError, ValueError):
-                continue
-            if str(item.detail.get("change_set_id") or "") != current_digest:
-                continue
-            request = item
-            break
-        if request is None:
-            out["knowledge"] = "NOT_REQUIRED"
-        else:
-            out["knowledge"] = "NOT_RUN"
-            request_id = int(request.row["id"])
-            allowed = {"CREATED", "UPDATED", "DUPLICATE", "NO_DURABLE_INSIGHT"}
-            for item in event_policies.load_trusted_governance_events(
-                conn, task_id, event_type="KNOWLEDGE_CONVERGENCE_RESULT", actor="tp-knowledge",
-            ):
-                try:
-                    if int(item.detail.get("request_event_id") or 0) != request_id:
-                        continue
-                except (TypeError, ValueError):
-                    continue
-                if str(item.detail.get("change_set_id") or "") != current_digest:
-                    continue
-                disposition = str(item.detail.get("knowledge_disposition") or "").upper()
-                if disposition in allowed:
-                    out["knowledge"] = disposition
-                    break
+    if delivery is not None and task_dir is not None:
+        from . import orchestration
+        from .knowledge import convergence
+        # Read the same current facts as closeout, including lightweight delivery.
+        facts, rows = orchestration._load_task_facts(task_id, connection=conn, task_dir=task_dir)
+        orchestration.resolve_route(task_id, _facts=(facts, rows), task_dir=task_dir)
+        terminal = facts.get("current_state") in {"COMPLETED", "CANCELLED"}
+        # Terminal receipts describe the accepted historical candidate; subsequent
+        # workspace edits do not impose new learning obligations on old tasks.
+        current_delivery = (dict(delivery.row) if terminal and delivery.detail.get("delivery_status") == "READY"
+                            else orchestration._delivery_completion_event(rows, task_dir, task=facts))
+        adopted = delivery.detail.get("closeout_schema") == "tp-spec.closeout/v1"
+        if current_delivery:
+            out["delivery"] = "READY"
+            request = orchestration._knowledge_request_for_delivery(rows, current_delivery)
+            if request is None:
+                out["knowledge"] = "NOT_RUN" if adopted else "NOT_REQUIRED"
+            elif adopted and not terminal and not convergence.current_request(request, rows, task_dir, facts):
+                out["knowledge"] = "STALE_INPUT"
+            else:
+                result = orchestration._knowledge_result_for_request(rows, request, task_dir, task=facts, historical=terminal)
+                out["knowledge"] = result["detail"].get("knowledge_disposition", "NOT_RUN") if result else "NOT_RUN"
+                if result and result["detail"].get("memory_assessment"):
+                    root = facts.get("project_root_path")
+                    out["memory"] = convergence.memory_status(result["detail"]["memory_assessment"], Path(root) if root and not terminal else None)["status"]
+            if adopted and out["memory"] == "NOT_RECORDED":
+                out["memory"] = "NOT_RUN"
+
     return out
 
 
@@ -555,7 +636,7 @@ def _extract_next_responsibility(conn, task_id: str, current_owner: str, waiting
         return "tp-development-engineer"
 
     verification = event_policies.load_trusted_governance_event(
-        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer",
+        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer", latest_only=True,
     )
     if verification is not None and str(verification.detail.get("decision") or "").upper() in {"NEEDS_FIX", "FAIL"}:
         return "tp-development-engineer"
@@ -586,10 +667,10 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
     """
     task_id = task["task_id"]
     base_version = str(task["base_version"] or "")
-    # V5.3.4 单一活动契约：旧契约非终态任务须先经官方 migrate/retire 处理；业务命令不直接在旧契约上重建投影。
+    # 单一活动契约：旧契约非终态任务须先经官方 migrate/retire 处理；业务命令不直接在旧契约上重建投影。
     if base_version != active_version():
         raise ValueError(
-            f"legacy contract task is a frozen static archive; the V5.3.4 runtime "
+            f"legacy contract task is a frozen static archive; the current runtime "
             f"rebuilds projections only for base_version={active_version()}"
         )
     events = conn.execute(
@@ -605,6 +686,19 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
     created_date = ""
     if task["created_at"]:
         created_date = task["created_at"][:10]
+    from .execution import read_execution
+    from .task_views import execution_brief, excerpt, TERMINAL
+    execution = execution_brief(read_execution(conn, task, rows=events))
+    latest = dict(events[-1]) if events else {}
+    next_role = ""
+    if state not in TERMINAL:
+        next_role = _extract_next_responsibility(conn, task_id, task["owner_role"] or DEFAULT_OWNER_ROLE, waiting_fact)
+        current_step = execution.get("current_step") or {}
+        next_step = execution.get("next_step") or {}
+        if not waiting_fact and execution["status"] == "RECORDED":
+            next_role = (current_step.get("expected_next_actor") or
+                         ", ".join(execution.get("current_roles") or current_step.get("roles") or next_step.get("roles") or [])
+                         or "unknown")
     status_yaml = _format_status_yaml(
         task_id=task_id,
         task_name=task["title"] or "",
@@ -619,9 +713,10 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
         findings=_extract_findings(conn, task_id),
         scope_changes=_extract_scope_changes(conn, task_id),
         quality_facts=_extract_quality_facts(conn, task_id),
-        next_responsibility=_extract_next_responsibility(
-            conn, task_id, task["owner_role"] or DEFAULT_OWNER_ROLE, waiting_fact
-        ),
+        next_responsibility=next_role,
+        presentation={"fact_revision": len(events), "execution": execution,
+                      "last_activity": {"event_id": latest.get("id"), "actor": latest.get("actor_role"),
+                                        "time": latest.get("created_at"), "summary": excerpt(latest.get("summary"))}},
     )
     events_jsonl, warnings = _build_events_jsonl(events, task_id)
     return status_yaml, events_jsonl, warnings
@@ -639,18 +734,40 @@ def write_projection_files(task_dir: Path, status_yaml: str, events_jsonl: str) 
 def cmd_projection_rebuild(args) -> int:
     task_id = args.task
     db_path = dbmod.resolve_db_path(args.db, project_id=getattr(args, "project", None), task_id=task_id)
-    conn = dbmod.connect(db_path)
+    conn = dbmod.connect_readonly(db_path)
     try:
         task = conn.execute("SELECT * FROM task WHERE task_id = ?", (task_id,)).fetchone()
         if task is None:
             print(f"ERROR: task not found: {task_id}", file=sys.stderr)
             return 4
+        from .task_views import TERMINAL, inspect_task_views
+        if str(task["current_state"] or "") in TERMINAL:
+            task_dir = _resolve_task_dir(args.task_dir, task_id, conn)
+            result = inspect_task_views(task_dir, task)
+            print(json.dumps({"view_status": "SEALED", "documents": result}, ensure_ascii=False))
+            return 0
         if getattr(args, "view_only", False):
+            # Only an unsealed view refresh needs the writer serialization lock.
+            conn.close()
+            conn = dbmod.connect(db_path)
             from .transaction_commit import refresh_current_view
             task_dir = _resolve_task_dir(args.task_dir, task_id, conn)
             result = refresh_current_view(conn, task_dir, task_id)
             print(json.dumps(result, ensure_ascii=False))
             return 0 if result["view_status"] in {"CURRENT", "SEALED"} else 5
+        # Serialize an explicitly requested projection write with terminal sealing.
+        # A read-only initial probe alone cannot prevent a concurrent completion.
+        conn.close()
+        conn = dbmod.connect(db_path)
+        conn.execute("BEGIN IMMEDIATE")
+        task = conn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
+        if task is None:
+            print("ERROR: task not found", file=sys.stderr)
+            return 4
+        if str(task["current_state"] or "") in TERMINAL:
+            task_dir = _resolve_task_dir(args.task_dir, task_id, conn)
+            print(json.dumps({"view_status": "SEALED", "documents": inspect_task_views(task_dir, task)}, ensure_ascii=False))
+            return 0
         try:
             status_yaml, events_jsonl, warnings = render_projection(conn, task)
         except ValueError as e:
@@ -688,7 +805,7 @@ def _parse_status_yaml(text: str) -> Dict[str, str]:
 def validate_projection_files(conn, task, task_dir: Path) -> List[str]:
     """校验投影文件与 DB 一致，返回错误列表（空列表 = 一致）。
 
-    V5.3.4 A-04：reconcile 复用本函数做漂移检测（与 cmd_projection_validate 同逻辑）。
+    A-04：reconcile 复用本函数做漂移检测（与 cmd_projection_validate 同逻辑）。
     """
     task_id = task["task_id"]
     status_path = task_dir / "status.yaml"
@@ -734,7 +851,7 @@ def validate_projection_files(conn, task, task_dir: Path) -> List[str]:
 def cmd_projection_validate(args) -> int:
     task_id = args.task
     db_path = dbmod.resolve_db_path(args.db, project_id=getattr(args, "project", None), task_id=task_id)
-    conn = dbmod.connect(db_path)
+    conn = dbmod.connect_readonly(db_path)
     try:
         task = conn.execute("SELECT * FROM task WHERE task_id = ?", (task_id,)).fetchone()
         if task is None:
@@ -753,9 +870,41 @@ def cmd_projection_validate(args) -> int:
         conn.close()
 
 
+def cmd_projection_inspect(args) -> int:
+    """Inspect an archive directly, or use an explicitly selected read-only Runtime."""
+    from .task_views import inspect_task_views
+    from .execution import read_execution
+    task_dir = Path(args.task_dir).resolve()
+    if not task_dir.is_dir():
+        print("ERROR: task-dir not found", file=sys.stderr)
+        return 4
+    if not args.db:
+        result = inspect_task_views(task_dir, task_id=args.task)
+    else:
+        conn = dbmod.connect_readonly(args.db)
+        try:
+            conn.execute("BEGIN")
+            task = conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
+            if task is None:
+                print("ERROR: task not found", file=sys.stderr)
+                return 4
+            events = conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (args.task,)).fetchall()
+            result = inspect_task_views(task_dir, task, events=events, execution=read_execution(conn, task, rows=events))
+        finally:
+            conn.close()
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
 def add_projection_subparsers(projection_parser) -> None:
     """注册 projection 命令组的子命令。"""
     sub = projection_parser.add_subparsers(dest="subcommand", required=True)
+
+    p_inspect = sub.add_parser("inspect", help="Read-only compact view/freshness; no DB required for an archive")
+    p_inspect.add_argument("--task", required=True)
+    p_inspect.add_argument("--task-dir", required=True)
+    p_inspect.add_argument("--db", default=None, help="optional existing Runtime; never creates or migrates")
+    p_inspect.set_defaults(func=cmd_projection_inspect)
 
     # projection rebuild
     p_rebuild = sub.add_parser("rebuild", help="Rebuild status.yaml and events.jsonl from DB")

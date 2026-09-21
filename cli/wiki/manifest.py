@@ -11,7 +11,8 @@ import re
 import yaml
 
 from .anchors import apply_cosmetic_citation_relocations
-from .source import fingerprint_file, resolve_repo_relative
+from .source import fingerprint_file, source_is_file
+from .stable_source import source_view
 from .snapshot import snapshot_paths
 
 MANIFEST_SCHEMA = "tp-spec.wiki-manifest/v1"
@@ -220,6 +221,7 @@ def refresh_manifest(
     manifest["workspace_id"] = workspace_id
     manifest["repo_id"] = repo_id
     manifest["repo_root"] = str(repo_root)
+    manifest["source"] = source_view(repo_root, source_cfg).identity()
     manifest["generated_at"] = utc_now()
     # A single manifest-level AI generator is not truthful after incremental maintenance:
     # documents may come from different models/runs.  Keep deterministic refresh provenance
@@ -295,7 +297,7 @@ def refresh_manifest(
                 continue
             dep_file = str(d.get("file")).replace("\\", "/")
             try:
-                source_exists = resolve_repo_relative(repo_root, dep_file).is_file()
+                source_exists = source_is_file(repo_root, dep_file, source_cfg)
             except ValueError:
                 source_exists = False
             # Preserve cited/unsafe missing edges so L1 can report them instead of
@@ -331,10 +333,10 @@ def refresh_manifest(
             if not file:
                 continue
             try:
-                src = resolve_repo_relative(repo_root, file)
+                exists = source_is_file(repo_root, file, source_cfg)
             except ValueError:
-                src = None
-            if src is not None and src.is_file():
+                exists = False
+            if exists:
                 fp = fingerprint_file(repo_root, file, source_cfg)
                 dep["content_hash"] = fp.content_hash
                 dep["normalized_hash"] = fp.normalized_hash

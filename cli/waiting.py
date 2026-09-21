@@ -299,6 +299,13 @@ def result_wait(conn, task_id: str, events: Iterable, *, task_dir: Path | None =
         if lane != "delivery" and status != "BLOCKED" and not detail.get("evidence"):
             continue
         seen.add(lane)
+        if lane != "delivery" and task_dir is not None:
+            from . import security_authority as authority
+            try:
+                if not authority.formal_record_current(authority.read(conn, task_id, task_dir), task_dir, detail):
+                    continue
+            except (ValueError, OSError, KeyError, TypeError):
+                continue
         if status != "BLOCKED":
             continue
         stage = "delivery" if lane == "delivery" else ("architecture_review" if actor == "tp-software-architect" else "review")

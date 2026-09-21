@@ -40,7 +40,10 @@ def build_delivery_detail(*, task_id: str, transaction_id: str, flush_id: str,
                           repo_snapshot: Optional[Dict[str, Any]] = None,
                           recovery_condition: Optional[str] = None,
                           blocker_kind: Optional[str] = None,
-                          responsibility: Optional[str] = None) -> Dict[str, Any]:
+                          responsibility: Optional[str] = None,
+                          delivery_mode: str = "full", applicability: Optional[Dict[str, str]] = None,
+                          acceptance_digest: str = "",
+                          acceptance_evidence_items: Optional[Iterable[Dict[str, Any]]] = None) -> Dict[str, Any]:
     delivery_status0 = str(delivery_status or '').upper()
     detail: Dict[str, Any] = {
         'schema': event_contract.EVENT_SCHEMA,
@@ -60,8 +63,14 @@ def build_delivery_detail(*, task_id: str, transaction_id: str, flush_id: str,
         'review_change_set_id': str(review_change_set_id),
         'change_set_id': str(change_set_id),
         'delivery_status': delivery_status0,
+        'delivery_mode': delivery_mode,
+        'closeout_schema': 'tp-spec.closeout/v1',
+        'acceptance_digest': acceptance_digest,
+        'acceptance_evidence_items': list(acceptance_evidence_items or []),
         'reason': str(reason or '').strip(),
     }
+    if applicability is not None:
+        detail["applicability"] = dict(applicability)
     for key, values in {
         'evidence': evidence, 'residual_risks': residual_risks,
         'evidence_items': evidence_items, 'context_usage': context_usage,
@@ -263,8 +272,9 @@ def _normalize_knowledge_reason_code(value: object) -> str:
 
 
 def _task_knowledge_request_input(conn, *, task_id: str, verification_detail: Dict[str, Any],
-                                  delivery_evidence: Iterable[str]) -> Optional[Dict[str, Any]]:
-    """从可信 Runtime 事实提取 Knowledge 请求输入；没有显式信号时返回 None。"""
+                                  delivery_evidence: Iterable[str], task_dir: Optional[Path] = None,
+                                  delivery_detail: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """Signals are optional hints; each new READY delivery must assess Task inputs."""
     triggers: list[Dict[str, Any]] = []
     source_refs: list[str] = []
     verified_facts: list[str] = []
@@ -334,8 +344,18 @@ def _task_knowledge_request_input(conn, *, task_id: str, verification_detail: Di
         if text and text not in verified_facts:
             verified_facts.append(text)
 
+    if task_dir is not None and delivery_detail is not None:
+        from .knowledge import convergence
+        index = convergence.load_index(conn, task_id, task_dir, delivery_detail)
+        # Missing explicit inputs are visible in the request; they do not become
+        # an empty no-value success. task-inputs explains the recovery work.
+        source_refs = [item["ref"] for item in index["items"] if item["id"].startswith("file:")]
+        return {"learning_schema": convergence.SCHEMA, "input_index": index,
+                "applicability": dict(delivery_detail.get("applicability") or {}),
+                "trigger_reason_codes": sorted({"TASK_DELIVERY_REQUIRED", *[x["reason_code"] for x in triggers]}),
+                "triggers": triggers, "source_refs": source_refs, "verified_facts": verified_facts}
     if not triggers:
-        return None
+        return None  # Compatibility-only callers without a new delivery context.
     # Request 需要可追溯来源。Verification PASS 本身应提供 evidence；若没有则 fail-closed。
     if not source_refs:
         raise ValueError("knowledge convergence request requires task/evidence source refs")
@@ -369,6 +389,10 @@ def build_knowledge_request_detail(*, task_id: str, transaction_id: str, created
         "source_refs": list(request_input.get("source_refs") or []),
         "verified_facts": list(request_input.get("verified_facts") or []),
     }
+    if request_input.get("learning_schema"):
+        detail["learning_schema"] = request_input["learning_schema"]
+        detail["input_index"] = request_input["input_index"]
+        detail["applicability"] = dict(request_input["applicability"])
     return event_contract.add_event_semantics(
         detail,
         event_type="KNOWLEDGE_CONVERGENCE_REQUEST",
@@ -376,6 +400,39 @@ def build_knowledge_request_detail(*, task_id: str, transaction_id: str, created
         result_status="PENDING",
         producer="delivery_converge",
     )
+
+
+def _delivery_prerequisites(conn, task_id: str, task_dir: Path, db_path: str):
+    """Resolve actual duties once; L0/L1 don't inherit the full L2/L3 review chain."""
+    from . import orchestration, record_first
+    from .change_set import capture_change_set, same_bound_product_content
+    from .digest import compute_verification_subject_digest
+    from .delivery_contract import require_full_scope
+    facts = orchestration._load_task_facts(task_id, db_path, connection=conn, task_dir=task_dir)
+    route = orchestration.resolve_route(task_id, db_path=db_path, _facts=facts, task_dir=task_dir)
+    selected = set(route.get("included_stages") or [])
+    if not selected:
+        raise ValueError("DELIVERY_APPLICABILITY_UNKNOWN: current routing did not resolve obligations")
+    level = route["effective_level"]
+    need_verify, need_review = bool(selected & {"verification", "review"}), "review" in selected
+    verification = review = None
+    development = record_first._latest_development_change_set(conn, task_id)
+    if not development or not development["repo_roots"]:
+        raise ValueError("DELIVERY_CHANGE_SET_REQUIRED: a development candidate must be recorded")
+    require_full_scope(conn, task_id, development["detail"], development_event_id=development["event_id"])
+    snapshot = capture_change_set(development["repo_roots"])
+    if not same_bound_product_content(development["detail"], snapshot):
+        raise ValueError("DELIVERY_CHANGE_SET_MISMATCH: current product differs from development candidate")
+    subject = compute_verification_subject_digest(task_dir)
+    if need_verify:
+        verification, subject, snapshot, _ = _latest_trusted_verification(conn, task_id, task_dir)
+    if need_review:
+        review = _latest_trusted_code_review(conn, task_id, task_dir=task_dir, subject_digest=subject,
+            change_set_id=snapshot["content_digest"], verification_event_id=int(verification.row["id"]))
+    return {"verification": verification, "review": review, "subject_digest": subject,
+            "snapshot": snapshot, "mode": "full" if level in {"L2", "L3"} else "lightweight",
+            "applicability": {"verification": "REQUIRED" if need_verify else "NOT_REQUIRED",
+                              "review": "REQUIRED" if need_review else "NOT_REQUIRED"}}
 
 
 def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
@@ -388,173 +445,168 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
                            residual_risks: Optional[Iterable[str]] = None,
                            context_usage: Optional[Iterable[Dict[str, Any]]] = None,
                            db: Optional[str] = None) -> Dict[str, Any]:
-    """Record Integration-owned delivery facts bound to the latest Test PASS.
+    """Record/reuse the same verified delivery, without re-running professional work.
 
-    Delivery 只记录已验证的交付事实；存在显式长期知识信号时，同事务写入
-    KNOWLEDGE_CONVERGENCE_REQUEST，由 tp-knowledge 独立收敛。
+    The receipt's identity includes the effective prerequisites, acceptance outcomes,
+    optional evidence bytes and current knowledge inputs. A later BLOCKED result is
+    never skipped to find an older READY. No second receipt store is created.
     """
-    from . import db as dbmod
-    from . import record_first
-    from . import context_usage as context_usage_mod
+    from . import db as dbmod, record_first, recording, context_usage as usage_mod
+    from .digest import compute_text_artifact_file_digest
     from .version import active_version
-
-    caller_usage, caller_warnings = context_usage_mod.normalize_context_usage(context_usage)
-    context_usage_mod.emit_warnings(caller_warnings)
+    from .delivery_contract import _concrete_reason
+    status = str(delivery_status or "").upper()
+    errors = []
+    if status not in {"READY", "BLOCKED"}:
+        errors.append("delivery_status must be READY|BLOCKED")
+    if not _concrete_reason(reason):
+        errors.append("concrete reason is required")
+    if status == "BLOCKED":
+        from .delivery_contract import DELIVERY_BLOCKER_KINDS
+        if str(blocker_kind or "").upper() not in DELIVERY_BLOCKER_KINDS:
+            errors.append("BLOCKED blocker_kind is required")
+        if not str(recovery_condition or "").strip():
+            errors.append("BLOCKED recovery_condition is required")
+        if not str(responsibility or "").strip():
+            errors.append("BLOCKED responsibility is required")
+    if errors:
+        raise ValueError("invalid Delivery Result: " + "; ".join(errors))
+    paths = list(evidence or [])
+    risks = list(residual_risks or [])
+    if any(not isinstance(v, str) or not v.strip() for v in risks):
+        raise ValueError("residual_risks must contain non-empty strings")
+    usage, warnings = usage_mod.normalize_context_usage(context_usage)
+    usage_mod.emit_warnings(warnings)
     tdir = record_first._task_dir(task_dir)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
     conn = dbmod.connect(db_path)
     try:
         task = record_first._load(conn, task_id)
-        current = str(task['current_state'] or '')
-        if current in record_first.TERMINAL_STATES:
-            raise ValueError(f'terminal task cannot accept delivery result: {current}')
-        if current == 'BLOCKED':
-            raise ValueError('task is BLOCKED; resolve the blocker before delivery convergence')
-        effective_level = max(
-            str(task['risk_level'] or 'L0'), str(task['flow_level'] or 'L0'),
-            key=lambda value: ('L0', 'L1', 'L2', 'L3').index(value) if value in ('L0', 'L1', 'L2', 'L3') else -1,
-        )
-        if effective_level not in {'L2', 'L3'}:
-            raise ValueError('structured delivery convergence applies only to L2/L3 tasks')
+        if task["current_state"] in record_first.TERMINAL_STATES or task["current_state"] == "BLOCKED":
+            raise ValueError(f"task cannot accept delivery result in {task['current_state']}")
+        now, flush_id = dbmod.now_iso(), f"DELIVERY-{uuid.uuid4().hex}"
 
-        if str(delivery_status or '').upper() == 'READY':
-            from . import temp_artifacts
-            from .delivery_contract import validate_task_temp_artifacts
-            temp_errors = validate_task_temp_artifacts(
-                temp_artifacts.records_for_task(
-                    task_id=task_id, project_id=str(task['project_id'] or '') or None
-                )
-            )
-            if temp_errors:
-                raise ValueError('; '.join(temp_errors))
-
-        verification, subject_digest, current_change_set, repo_roots = _latest_trusted_verification(conn, task_id, tdir)
-        verification_detail = dict(verification.detail or {})
-        change_set_id = str(verification_detail.get('change_set_id') or '')
-        review = _latest_trusted_code_review(
-            conn, task_id, subject_digest=subject_digest, change_set_id=change_set_id,
-            verification_event_id=int(verification.row['id']), task_dir=tdir,
-        )
-        review_detail = dict(review.detail or {})
-        if str(delivery_status or '').upper() == 'READY':
-            record_first.validate_final_acceptance(conn, task_id, tdir)
-        evidence_paths, evidence_items = _checked_evidence_items(tdir, evidence)
-        residual_risk_list = list(residual_risks or [])
-        now = dbmod.now_iso()
-        flush_id = f'DELIVERY-{uuid.uuid4().hex}'
-        verification_id = int(verification.row['id'])
-        review_id = int(review.row['id'])
-        repo_snapshot = {
-            'before_head': str(before_head).strip() if before_head else None,
-            'after_head': str(after_head).strip() if after_head else None,
-            'merge_commit': str(merge_commit).strip() if merge_commit else None,
-        }
-        knowledge_request_input = _task_knowledge_request_input(
-            conn, task_id=task_id, verification_detail=verification_detail,
-            delivery_evidence=evidence_paths,
-        ) if str(delivery_status or '').upper() == 'READY' else None
-        detail_args = dict(
-            task_id=task_id,
-            flush_id=flush_id,
-            created_at=now,
-            schema_version=active_version(),
-            verification_event_id=verification_id,
-            verification_subject_digest=subject_digest,
-            verification_change_set_id=change_set_id,
-            review_event_id=review_id,
-            review_change_set_id=str(review_detail.get('change_set_id') or ''),
-            change_set_id=str(current_change_set.get('content_digest') or ''),
-            delivery_status=delivery_status,
-            reason=reason,
-            evidence=evidence_paths,
-            residual_risks=residual_risk_list,
-            evidence_items=evidence_items,
-            context_usage=caller_usage,
-            repo_snapshot=repo_snapshot,
-            recovery_condition=recovery_condition,
-            blocker_kind=blocker_kind,
-            responsibility=responsibility,
-        )
-
-        # Validate before entering the durable write so bad Integration facts do
-        # not create half-written state/events.
-        preview = build_delivery_detail(transaction_id='preview', **detail_args)
-        errors = validate_delivery_result(preview)
-        if errors:
-            raise ValueError('invalid Delivery Result: ' + '; '.join(errors))
-
-        written: Dict[str, Any] = {}
-
-        def writer(dbconn, transaction_id=''):
-            from .recording import validate_bound_items
-            validate_bound_items(tdir, evidence_items)
-            # The result must bind the prerequisites checked under the write lock,
-            # not an earlier preflight that another caller/file edit invalidated.
-            checked_verification, checked_subject, checked_change_set, _ = _latest_trusted_verification(
-                dbconn, task_id, tdir
-            )
-            checked_review = _latest_trusted_code_review(
-                dbconn, task_id, task_dir=tdir, subject_digest=checked_subject,
-                change_set_id=str(checked_change_set.get('content_digest') or ''),
-                verification_event_id=int(checked_verification.row['id']),
-            )
-            if (int(checked_verification.row['id']) != verification_id
-                    or int(checked_review.row['id']) != review_id
-                    or checked_subject != subject_digest
-                    or str(checked_change_set.get('content_digest') or '') != change_set_id):
-                raise ValueError('DELIVERY_CHANGE_SET_MISMATCH: prerequisites changed before write')
-            if str(delivery_status or '').upper() == 'READY':
+        def inputs(dbconn):
+            refreshed = record_first._load(dbconn, task_id)
+            if refreshed["current_state"] not in {"NEW", "ACTIVE"}:
+                raise ValueError(f"DELIVERY_STATE_CHANGED: {refreshed['current_state']}")
+            prerequisites = _delivery_prerequisites(dbconn, task_id, tdir, db_path)
+            verification, review = prerequisites["verification"], prerequisites["review"]
+            cs = str(prerequisites["snapshot"]["content_digest"])
+            evidence_paths, items = _checked_evidence_items(tdir, paths)
+            if status == "READY":
+                from .temp_artifacts import records_for_task
+                from .delivery_contract import validate_task_temp_artifacts
+                from .workitem_cmd import summarize_work_items
+                problems = validate_task_temp_artifacts(records_for_task(task_id=task_id, project_id=task["project_id"]))
+                works = summarize_work_items(dbconn, refreshed)
+                problems.extend(works["issues"])
+                from .work_units import integration_status
+                problems.extend(integration_status(dbconn, refreshed)["issues"])
+                problems.extend(f"WORK_PENDING: {w['item_id']}" for w in works["items"] if w["status"] != "COMPLETED")
+                if problems:
+                    raise ValueError("; ".join(problems))
                 record_first.validate_final_acceptance(dbconn, task_id, tdir)
-            detail = build_delivery_detail(transaction_id=transaction_id, **detail_args)
-            status = str(detail['delivery_status']).upper()
+            from .delivery_contract import acceptance_evidence_items
+            # BLOCKED can report an incomplete matrix; READY binds its actual
+            # positive claims and executed SQL/results, including implicit refs.
+            acceptance_items = acceptance_evidence_items(tdir) if status == "READY" else []
+            args = dict(task_id=task_id, flush_id=flush_id, created_at=now, schema_version=active_version(),
+                verification_event_id=int(verification.row["id"]) if verification else 0,
+                verification_subject_digest=prerequisites["subject_digest"],
+                verification_change_set_id=cs if verification else "",
+                review_event_id=int(review.row["id"]) if review else 0, review_change_set_id=cs if review else "",
+                change_set_id=cs, delivery_status=status, reason=reason, evidence=evidence_paths,
+                evidence_items=items, residual_risks=risks, context_usage=usage,
+                repo_snapshot={"before_head": before_head, "after_head": after_head, "merge_commit": merge_commit},
+                recovery_condition=recovery_condition, blocker_kind=blocker_kind, responsibility=responsibility,
+                delivery_mode=prerequisites["mode"], applicability=prerequisites["applicability"],
+                acceptance_digest=compute_text_artifact_file_digest(tdir / "acceptance.md"),
+                acceptance_evidence_items=acceptance_items)
+            preview = build_delivery_detail(transaction_id="preview", **args)
+            request = _task_knowledge_request_input(dbconn, task_id=task_id,
+                verification_detail=dict(verification.detail) if verification else {},
+                delivery_evidence=evidence_paths, task_dir=tdir, delivery_detail=preview) if status == "READY" else None
+            stable = {k: v for k, v in preview.items() if k not in {
+                "created_at", "flush_id", "transaction_id", "context_usage"}}
+            # Knowledge source contents also participate in delivery-request reuse.
+            sources = []
+            if request and not request.get("learning_schema"):
+                from .evidence import validate_evidence_path
+                for ref in request["source_refs"]:
+                    item = validate_evidence_path(tdir, ref)
+                    if not item.ok:
+                        raise ValueError(f"KNOWLEDGE_SOURCE_INVALID: {ref}: {item.error}")
+                    sources.append(item.item)
+            stable["knowledge_request_input"], stable["knowledge_source_items"] = request, sources
+            digest = hashlib.sha256(json.dumps(stable, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            return args, request, digest
+
+        args, request_input, digest = inputs(conn)
+        def replay(dbconn, current_digest):
+            from .workflow_controls import trusted_event_detail
+            row = dbconn.execute("SELECT * FROM task_event WHERE task_id=? AND event_type='DELIVERY_RESULT' "
+                                 "AND actor_role='tp-integration-engineer' ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+            if row is None:
+                return None
+            detail = trusted_event_detail(dict(row), event_type="DELIVERY_RESULT", producer="delivery_converge", actor="tp-integration-engineer")
+            if detail is None or validate_delivery_result(detail) or detail.get("delivery_input_digest") != current_digest:
+                return None
+            from .delivery_contract import delivery_evidence_matches
+            if not isinstance(detail.get("receipt"), dict) or not delivery_evidence_matches(detail, tdir):
+                return None
+            return {**detail["receipt"], "replayed": True, "facts_committed": False,
+                    "delivery_event_id": int(row["id"]), "view_status": "NOT_REFRESHED"}
+
+        previous = replay(conn, digest)
+        if previous is not None:
+            return previous
+        written = {}
+        response = {"task_id": task_id, "state": "ACTIVE", "phase": "delivery", "delivery_status": status,
+                    "delivery_mode": args["delivery_mode"], "verification_event_id": args["verification_event_id"],
+                    "verification_subject_digest": args["verification_subject_digest"], "review_event_id": args["review_event_id"],
+                    "change_set_id": args["change_set_id"], "flush_id": flush_id}
+
+        def recheck(dbconn):
+            _, _, current_digest = inputs(dbconn)
+            saved = replay(dbconn, current_digest)
+            if saved is not None:
+                raise recording.RequestReplay(saved)
+            if current_digest != digest:
+                raise ValueError("DELIVERY_INPUT_CHANGED: re-read prerequisites before convergence")
+
+        def writer(dbconn, transaction_id=""):
+            recheck(dbconn)
+            detail = build_delivery_detail(transaction_id=transaction_id, **args)
+            detail["delivery_input_digest"] = digest
+            # Insert the request in this same transaction; the receipt never claims
+            # Knowledge execution or Memory persistence merely from dispatching it.
             cursor = dbconn.execute(
                 'INSERT INTO task_event (task_id,event_type,from_stage,to_stage,actor_role,reason_code,summary,detail_json,evidence_path,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-                (task_id, 'DELIVERY_RESULT', task['current_stage'], 'delivery', 'tp-integration-engineer',
-                 status,
-                 f"delivery status: {status} — {detail['reason']}",
-                 json.dumps(detail, ensure_ascii=False),
-                 (detail.get('evidence') or [None])[0],
-                 active_version(), now),
-            )
-            delivery_event_id = int(cursor.lastrowid)
-            if status == 'READY' and knowledge_request_input is not None:
-                request_detail = build_knowledge_request_detail(
-                    task_id=task_id, transaction_id=transaction_id, created_at=now,
-                    schema_version=active_version(), delivery_event_id=delivery_event_id,
-                    verification_event_id=verification_id, review_event_id=review_id,
-                    change_set_id=str(current_change_set.get('content_digest') or ''),
-                    request_input=knowledge_request_input,
-                )
-                request_cursor = dbconn.execute(
+                (task_id, 'DELIVERY_RESULT', task['current_stage'], 'delivery', 'tp-integration-engineer', status,
+                 f"delivery status: {status} — {detail['reason']}", json.dumps(detail, ensure_ascii=False),
+                 (detail.get('evidence') or [None])[0], active_version(), now))
+            eid = int(cursor.lastrowid)
+            request_id = None
+            if request_input is not None:
+                kd = build_knowledge_request_detail(task_id=task_id, transaction_id=transaction_id, created_at=now,
+                    schema_version=active_version(), delivery_event_id=eid,
+                    verification_event_id=args["verification_event_id"], review_event_id=args["review_event_id"],
+                    change_set_id=args["change_set_id"], request_input=request_input)
+                req = dbconn.execute(
                     'INSERT INTO task_event (task_id,event_type,from_stage,to_stage,actor_role,reason_code,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                    (task_id, 'KNOWLEDGE_CONVERGENCE_REQUEST', 'delivery', 'delivery',
-                     'tp-integration-engineer', 'KNOWLEDGE_REQUIRED',
-                     'Knowledge convergence requested from verified delivery facts',
-                     json.dumps(request_detail, ensure_ascii=False), active_version(), now),
-                )
-                written['knowledge_request_event_id'] = int(request_cursor.lastrowid)
-            dbconn.execute(
-                "UPDATE task SET current_state='ACTIVE', current_stage='delivery', owner_role='tp-integration-engineer', updated_at=? WHERE task_id=?",
-                (now, task_id),
-            )
+                    (task_id, 'KNOWLEDGE_CONVERGENCE_REQUEST', 'delivery', 'delivery', 'tp-integration-engineer',
+                     'KNOWLEDGE_REQUIRED', 'Knowledge convergence requested from verified delivery facts',
+                     json.dumps(kd, ensure_ascii=False), active_version(), now))
+                request_id = int(req.lastrowid)
+            written.update(response, knowledge_request_event_id=request_id, delivery_event_id=eid)
+            detail["receipt"] = dict(written)
+            dbconn.execute("UPDATE task_event SET detail_json=? WHERE id=?", (json.dumps(detail, ensure_ascii=False), eid))
+            dbconn.execute("UPDATE task SET current_state='ACTIVE', current_stage='delivery', owner_role='tp-integration-engineer', updated_at=? WHERE task_id=?", (now, task_id))
 
-        record_first._write_with_projection(
-            conn, tdir, task, operation='delivery_converge', target_state='ACTIVE',
-            owner_after='tp-integration-engineer', flush_id=flush_id, writer=writer,
-            summary=f'delivery status: {str(delivery_status).upper()}',
-        )
-        return {
-            'task_id': task_id,
-            'state': 'ACTIVE',
-            'phase': 'delivery',
-            'delivery_status': str(delivery_status).upper(),
-            'verification_event_id': verification_id,
-            'verification_subject_digest': subject_digest,
-            'review_event_id': review_id,
-            'change_set_id': change_set_id,
-            'knowledge_request_event_id': written.get('knowledge_request_event_id'),
-            'flush_id': flush_id,
-        }
+        projection = record_first._write_with_projection(conn, tdir, task, operation="delivery_converge",
+            target_state="ACTIVE", owner_after="tp-integration-engineer", flush_id=flush_id, writer=writer,
+            summary=f"delivery status: {status}", before_prepare=recheck)
+        return projection if projection.get("replayed") else {**written, **projection}
     finally:
         conn.close()
-

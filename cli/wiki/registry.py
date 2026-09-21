@@ -25,6 +25,7 @@ class RepoTarget:
     frontend: bool = False
     multimodule: bool = False
     coverage: Optional[Dict[str, Any]] = None
+    source: Optional[Dict[str, Any]] = None
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -37,6 +38,7 @@ class RepoTarget:
             "frontend": self.frontend,
             "multimodule": self.multimodule,
             "coverage": dict(self.coverage or {}),
+            "source": dict(self.source or {}),
         }
 
 
@@ -115,6 +117,7 @@ def resolve_targets(
                 frontend=bool(repo.get("frontend", False)),
                 multimodule=bool(repo.get("multimodule", False)),
                 coverage=dict(repo.get("coverage") or {}),
+                source=dict(repo.get("source") or {}),
             ))
     elif registry.get("workspaces") and not repo_root:
         raise ValueError(f"workspace not registered in wiki registry: {config.paths.workspace_root}")

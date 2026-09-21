@@ -31,7 +31,8 @@ import json
 import re
 
 from .manifest import extract_citations, load_manifest, resolve_wiki_relative
-from .source import discover_source_files, fingerprint_file, resolve_repo_relative
+from .source import discover_source_files, fingerprint_file, source_is_file
+from .stable_source import source_view
 
 COVERAGE_SCHEMA = "tp-spec.wiki-coverage/v1"
 
@@ -125,10 +126,10 @@ def _trusted_dependency(
     """Return whether a manifest edge still represents the current semantic source."""
     rel = _norm(rel)
     try:
-        source = resolve_repo_relative(repo_root, rel)
+        exists = source_is_file(repo_root, rel, source_cfg)
     except ValueError:
         return False, "unsafe"
-    if not source.is_file():
+    if not exists:
         return False, "missing"
     if rel not in fp_cache:
         fp_cache[rel] = fingerprint_file(repo_root, rel, source_cfg)
@@ -272,6 +273,7 @@ def compute_wiki_coverage(
     report: Dict[str, Any] = {
         "schema": COVERAGE_SCHEMA,
         "repo_root": str(repo_root),
+        "source": source_view(repo_root, source_cfg).identity(),
         "wiki_repo_root": str(wiki_repo_root),
         "summary": {
             "discovered_source_files": len(discovered),

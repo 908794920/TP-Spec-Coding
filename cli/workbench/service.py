@@ -172,6 +172,36 @@ class WorkbenchService:
                                   if database else "配置、注册表和工作区清单是实时文件读取，不承诺多个文件的原子快照。")},
                 "data": data})
 
+    def skill_document(self, node_id: str, document_path: str = "") -> dict[str, Any]:
+        topology, error = snapshot._read_skill_topology(BASE_ROOT)
+        if error:
+            raise ReadError("TOPOLOGY_UNAVAILABLE", "能力目录读取失败")
+        node = topology["nodes"].get(node_id)
+        if not node:
+            raise ReadError("NOT_FOUND", "未找到对应能力设定", 404)
+        relative = document_path or str(node.get("path") or "")
+        if document_path:
+            try:
+                published = {line.split("  ", 1)[1] for line in
+                             (BASE_ROOT / "manifest.sha256").read_text(encoding="utf-8").splitlines()
+                             if "  " in line and not line.startswith("#")}
+            except OSError:
+                raise ReadError("DOCUMENT_INDEX_UNAVAILABLE", "文档目录不可读取")
+            if relative not in published:
+                raise ReadError("DOCUMENT_NOT_PUBLISHED", "该链接不在公开文档目录中", 404)
+        path = (BASE_ROOT / relative).resolve()
+        if not path.is_relative_to(BASE_ROOT.resolve()) or path.suffix.lower() != ".md":
+            raise ReadError("INVALID_DOCUMENT", "设定文档路径不受支持", 400)
+        try:
+            with path.open("rb") as handle:
+                raw = handle.read(512 * 1024 + 1)
+            if len(raw) > 512 * 1024:
+                raise ReadError("DOCUMENT_TOO_LARGE", "设定文档超过读取大小限制", 413)
+            content = raw.decode("utf-8-sig")
+        except (OSError, UnicodeError):
+            raise ReadError("DOCUMENT_UNREADABLE", "设定文档不存在或无法读取", 404)
+        return {"schema": SCHEMA, "id": node_id, "path": path.relative_to(BASE_ROOT.resolve()).as_posix(), "content": content}
+
     def global_view(self) -> dict[str, Any]:
         started = timestamp()
         data = snapshot.build_global_snapshot(active_base_root=BASE_ROOT)
@@ -203,6 +233,13 @@ class WorkbenchService:
             # not the current-subject verdict consumed by the Runtime itself.
             data["verification"] = {**data.get("verification", {}), "current_applicability": "not_evaluated",
                                     "source": "historical_task_event"}
+            from cli.task_views import inspect_task_views
+            from cli.execution import read_execution
+            rows = conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id,)).fetchall()
+            task_dir = Path(context.project_root) / ".tp-spec" / "tasks" / task_id
+            data["documents"] = inspect_task_views(task_dir, task, events=rows,
+                                                   execution=read_execution(conn, task, rows=rows))
+            data["problems"] = [*data.get("problems", []), *data["documents"]["problems"]]
             data["timeline_scope"] = {"limit": 50, "returned": len(data.get("timeline", [])),
                 "total": conn.execute("SELECT count(*) FROM task_event WHERE task_id=?", (task_id,)).fetchone()[0]}
         return self._response(data, context, started, database=True, task_revision=revision)
@@ -230,7 +267,6 @@ class WorkbenchService:
             except (OSError, UnicodeError, ValueError) as exc:
                 raise ReadError("CLOSEOUT_UNAVAILABLE", f"既有结单预检未能完成：{exc}", 409) from exc
         data["source"] = "record_first.completion_check"
-        data["coverage_note"] = "完整保留既有预检返回的 blockers/acceptance_issues/route；不承诺它已穷举 Runtime 的全部独立门禁。责任方与恢复条件仅使用返回的结构化字段。"
-        if any(str(value).startswith("ROUTE_CHECK_FAILED") for value in data.get("blockers", [])):
-            data["problems"] = [{"code": "CLOSEOUT_PARTIAL", "message": "路由预检未完成，其他已返回问题仍保留。"}]
+        if data.get("unknowns"):
+            data["problems"] = [{"code": "CLOSEOUT_PARTIAL", "message": "部分必需检查尚未取得确定结果；已知问题保留，未知项不会视为通过。"}]
         return self._response(data, context, started, database=True, task_revision=revision)

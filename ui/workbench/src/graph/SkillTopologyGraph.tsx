@@ -1,5 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Button, Tag, Typography } from 'antd';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Button, Modal, Spin, Tag, Typography } from 'antd';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeSlug from 'rehype-slug';
+import { api } from '../api';
 import { Background, Handle, MarkerType, Position, ReactFlow, ReactFlowProvider, useNodesState, type Edge, type Node, type NodeProps } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { explainValue } from '../facts';
@@ -80,6 +84,47 @@ function Canvas({ topology }: { topology: Topology }) {
     const seeded = useMemo(() => buildNodes(topology), [topology]);
     const [nodes, setNodes, onNodesChange] = useNodesState<SkillFlowNode>(seeded);
     const [selected, setSelected] = useState('');
+    const [documentId, setDocumentId] = useState('');
+    const [document, setDocument] = useState<{ content: string; path: string } | null>(null);
+    const [documentError, setDocumentError] = useState('');
+    const [history, setHistory] = useState<{ path: string; hash: string }[]>([]);
+    const location = history.at(-1);
+    const article = useRef<HTMLElement>(null);
+    const openDocument = () => {
+        setHistory([{ path: '', hash: '' }]);
+        setDocumentId(selected);
+    };
+    const follow = (href: string) => {
+        if (!document) return;
+        try {
+            const base = new URL(document.path, 'https://local-doc.invalid/');
+            const target = new URL(href, base);
+            if (target.origin !== base.origin) return;
+            setHistory(current => [...current, { path: decodeURIComponent(target.pathname.slice(1)), hash: decodeURIComponent(target.hash.slice(1)) }]);
+        } catch { setDocumentError('文档链接格式无效'); }
+    };
+    useEffect(() => {
+        if (!document || !article.current) return;
+        article.current.scrollTop = 0;
+        if (location?.hash) {
+            const target = [...article.current.querySelectorAll('[id]')].find(element => element.id === location.hash);
+            target?.scrollIntoView({ block: 'start' });
+        }
+    }, [document, location]);
+    useEffect(() => {
+        setDocumentId('');
+    }, [topology]);
+    useEffect(() => {
+        setDocument(null); setDocumentError('');
+        if (!documentId) return;
+        const controller = new AbortController();
+        api.skillDocument(documentId, controller.signal, location?.path).then(value => {
+            if (!controller.signal.aborted) setDocument(value);
+        }).catch(error => {
+            if (!controller.signal.aborted) setDocumentError(String(error.message ?? error));
+        });
+        return () => controller.abort();
+    }, [documentId, location?.path]);
     useEffect(() => { setNodes(seeded); setSelected(''); }, [seeded, setNodes]);
     /* Selecting a node marks it and its direct relations, which is how a shared skill shows its owners. */
     const related = useMemo(() => {
@@ -122,7 +167,19 @@ function Canvas({ topology }: { topology: Topology }) {
         <Button size="small" disabled={!selected} onClick={() => setSelected('')}>清除选中</Button>
       </div><Typography.Text type="secondary" className="graph-summary">
         第 0 层入口 → {counts.slice(1).map(([level, count]) => `第 ${level} 层 ${count} 个`).join(' · ')}；共 {topology.nodes.size} 个节点、{topology.edges.length} 条关系
-      </Typography.Text></div>
+      </Typography.Text>
+        <Button size="small" disabled={!selected} title={selected ? '查看选中节点的设定文档' : '请先选择一个节点'} onClick={openDocument}>查看设定</Button>
+      </div>
+      <Modal title={`${topology.nodes.get(documentId)?.name ?? ''} · 设定详情`} open={!!documentId} onCancel={() => setDocumentId('')} footer={null} width={900}>
+        <Button size="small" disabled={history.length < 2} onClick={() => setHistory(current => current.slice(0, -1))}>返回上一篇</Button>
+        <Typography.Paragraph type="secondary">{document?.path || location?.path}</Typography.Paragraph>
+        {documentError ? <Alert type="error" showIcon title="设定读取失败" description={documentError}/> : !document ? <Spin description="正在读取设定…"/> : <>
+          <article ref={article} className="skill-markdown"><Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSlug]} skipHtml components={{
+            a: ({ children, href }) => href && /^(https?:|mailto:)/i.test(href) ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : href && !/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(href) ? <a href={href} onClick={event => { event.preventDefault(); follow(href); }}>{children}</a> : <span title={href}>{children}</span>,
+            img: ({ alt }) => <span>{alt ? `[图片：${alt}]` : '[图片]'}</span>,
+          }}>{document.content.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '')}</Markdown></article>
+        </>}
+      </Modal>
       <div className="graph-canvas">
         <ReactFlow<SkillFlowNode, Edge> nodes={display} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange}
           onNodeClick={(_, node) => setSelected(current => current === node.id ? '' : node.id)}

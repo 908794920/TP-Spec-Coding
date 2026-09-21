@@ -8,6 +8,8 @@ import { buildGraph, type GraphObject } from '../graph/model';
 import type { GraphHandle } from '../graph/TaskGraph';
 import { TaskDetail } from '../components/TaskDetail';
 import { WorkflowStrip, type WorkflowHandle } from '../components/WorkflowStrip';
+import { WorkResults } from '../components/WorkResults';
+import { TaskDocuments } from '../components/TaskDocuments';
 import { EventTimeline } from '../components/EventTimeline';
 import { Empty, Problems, ReadStatus } from '../components/Facts';
 /* The graph pulls in @xyflow/react and its stylesheet, which the first screen never shows; loading it
@@ -39,8 +41,10 @@ function TaskWorkspace({ context, snapshot, revision }: {
     const support = record(data.data_support), task = record(data.task);
     return <>
     <WorkflowStrip workflow={record(data.workflow)} task={task} ref={workflow}/>
+    <WorkResults value={data.work_items}/>
+    <TaskDocuments value={data.documents}/>
     <div className="section-heading"><h3>工作关系</h3><div className="graph-actions"><Button size="small" onClick={() => workflow.current?.locateCurrent()}>定位当前步骤</Button><Button size="small" disabled={task.state !== 'BLOCKED'} onClick={() => graph.current?.locate(model.taskNodeId)}>定位阻塞 Task</Button><Button size="small" onClick={() => graph.current?.locate(model.taskNodeId)}>Task 概况</Button></div></div>
-    {support.work_unit !== 'provided' && <p className="support-note">当前展示 Task 与已登记的 WorkItem；基线没有提供完整 Work Unit 模型，不把 WorkItem、Work Session 或 Agent Thread 混为一类。</p>}
+    <p className="support-note">Task / WorkItem 关系来自账本；新版结果契约见上方子工作详情，旧记录缺失字段不补造。Agent Thread 绑定：{text(support.agent_thread_binding) || '未提供'}。</p>
     <div className={`task-workspace ${detailOpen && selected ? 'with-detail' : ''}`}>
       <Suspense fallback={<div className="graph-canvas graph-loading" role="status">正在加载关系图…</div>}>
         <TaskGraph ref={graph} model={model} selectedId={selectedId} onOpen={onOpen}/>

@@ -165,7 +165,7 @@ def checkpoint_request(task_id: str, task_dir: Path, request_id: str | None, *,
                        actor: str, phase: str, summary: str, evidence=(),
                        knowledge_signals=(), delivery_signals=(), repo_roots=(),
                        collect=(), context_usage=(), result_reports=(), recorded_result_ids=(),
-                       report_artifact_root=None) -> LogicalRequest:
+                       report_artifact_root=None, security_context=None) -> LogicalRequest:
     """One payload definition for checkpoint writes and read-only recovery."""
     return LogicalRequest(task_id, task_dir, "checkpoint", {
         "actor": actor, "phase": phase, "summary": summary, "evidence": list(evidence),
@@ -174,6 +174,7 @@ def checkpoint_request(task_id: str, task_dir: Path, request_id: str | None, *,
         **({"result_reports": list(result_reports)} if result_reports else {}),
         **({"recorded_result_ids": list(recorded_result_ids)} if recorded_result_ids else {}),
         **({"report_artifact_root": report_artifact_root} if report_artifact_root is not None else {}),
+        **({"security_context": security_context} if security_context is not None else {}),
     }, request_id)
 
 

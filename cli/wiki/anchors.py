@@ -23,7 +23,8 @@ import unicodedata
 
 import yaml
 
-from .source import decode_text, normalize_text, resolve_repo_relative
+from .source import decode_text, normalize_text, read_source_bytes, source_is_file
+from .stable_source import source_view
 
 ANCHOR_SCHEMA = "tp-spec.wiki-cite-anchors/v1"
 ANCHOR_HEALTH_SCHEMA = "tp-spec.wiki-anchor-health/v1"
@@ -85,8 +86,7 @@ def _line_signature(path: str, raw: str, properties_mode: str) -> str:
 
 
 def source_line_entries(repo_root: Path, rel: str, source_cfg: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], str, str]:
-    full = resolve_repo_relative(repo_root, rel)
-    data = full.read_bytes()
+    data = read_source_bytes(repo_root, rel, source_cfg)
     text, encoding, status = decode_text(data)
     if text is None or status == "uncertain":
         raise ValueError(f"cannot build citation anchors for uncertain encoding: {rel}")
@@ -146,13 +146,12 @@ def build_anchor_state(
 
     sources: Dict[str, Any] = {}
     for source in sorted(cited_sources):
-        full = resolve_repo_relative(repo_root, source)
-        if not full.is_file():
+        if not source_is_file(repo_root, source, source_cfg):
             # Quality verification should already have failed. Keep commit fail-closed
             # if this function is called despite a forged receipt.
             raise ValueError(f"cannot commit citation anchors: source missing: {source}")
         entries, encoding, status = source_line_entries(repo_root, source, source_cfg)
-        data = full.read_bytes()
+        data = read_source_bytes(repo_root, source, source_cfg)
         from .source import normalized_hash, sha256_bytes
         norm, _, _ = normalized_hash(source, data, str(source_cfg.get("properties_normalization") or "keys"))
         sources[source] = {
@@ -165,6 +164,7 @@ def build_anchor_state(
 
     return {
         "schema": ANCHOR_SCHEMA,
+        "source": source_view(repo_root, source_cfg).identity(),
         "snapshot_id": snapshot_id,
         "documents": document_hashes,
         "sources": sources,

@@ -13,7 +13,7 @@ class AutonomyContextError(RuntimeError):
 
 
 _KNOWLEDGE_READ_ONLY = {"doctor", "lint", "status", "search", "telemetry", "eval", "migrate-plan"}
-_WIKI_READ_ONLY = {"doctor", "coverage", "anchors-doctor", "status"}
+_WIKI_READ_ONLY = {"doctor", "coverage", "anchors-doctor", "status", "source-read"}
 
 
 def context_mode(workspace_root: str | Path) -> str:

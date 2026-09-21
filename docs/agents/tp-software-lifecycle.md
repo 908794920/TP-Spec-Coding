@@ -48,7 +48,7 @@ Role 是能力集合，不是固定流程包。工作流按任务复杂度、风
 
 `governance/orchestration.yaml` 是 Base 默认政策，现有 Runtime `config` 表只保存项目少量覆盖，不新增配置文件/数据库。`workflow next --json` 正常读取并校验有效配置；`policy_sources` 标明 Base 与项目来源，`included_stages` 也供进度投影复用。只读路由不启动角色进程、测试或浏览器，不新增 Task、业务事件，也不启动工作台。
 
-L1–L3 在没有范围事实及下游工作时仍先澄清；已有相关工作不要求倒补需求事件。需求明确后，架构/架构复审由实际风险、既有活动或显式信号选择，不因 L3 标签自动启用；规划由显式需求、既有活动或真实上游返修触发。没有新问题时不制造下一轮开发。新的可选备注不会仅凭事件编号使完成的开发重新开始；真实架构 REVISE、失败后上游重评、产品/证据主体变化仍重新评估。L1+ Verify、L2/L3 CODE Review 与 Delivery 必要要求保持，未修改 Q01 独立审查频度或身份边界。
+L1–L3 在没有范围事实及下游工作时仍先澄清；已有相关工作不要求倒补需求事件。需求明确后，架构/架构复审由实际风险、既有活动或显式信号选择，不因 L3 标签自动启用；规划由显式需求、既有活动或真实上游返修触发。没有新问题时不制造下一轮开发。新的可选备注不会仅凭事件编号使完成的开发重新开始；真实架构 REVISE、失败后上游重评、产品/证据主体变化仍重新评估。L1+ Verify、L2/L3 CODE Review 的必要要求保持，未修改 Q01 独立审查频度或身份边界。新记录的 L0/L1 也需轻量 Delivery 及知识/记忆评估；未采用新标记的旧事实不追补。显式计划的父步骤不倒退，修复和失效证据通过子工作/原步骤复验收敛，详见 [Work 结果契约](../WORK_UNITS.md)。
 
 开发、验证和审查建议携带 `context.validation`：已有 ChangeSet 标识、HEAD→工作区实际变更路径（最多64项）、acceptance.md 候选（最多12项）、风险信号及未确定的调用关系。列表同时返回总数，`coverage_complete: false`、`authorization_granted: false` 明确这不是覆盖证明/操作许可。历史已提交变化不在这个 Diff 内，不能据此缩小最终任务范围；实际调用方、当前部署、测试选择仍由执行者定向核对。不做 AST/依赖图，不根据路径、行数或单条测试自动授予全局 PASS。
 
@@ -99,16 +99,18 @@ Base 中已有的信号名、条件角色 phases 和受角色能力约束的 mod
 
 ## 工作段、里程碑与运行状态
 
+已评估的具体执行计划、独立协调责任、步骤边界与角色参与，按需读 [执行事实契约](../EXECUTION_FACTS.md)。`work show`、报告、路由上下文与工作台共用正式事件，不另建手写角色日志。
+
 `report task-summary --task <TASK> --db <DB>`、`report stage-time --task <TASK> --db <DB>`、`workitem list --task <TASK> --db <DB>` 只读账本，不启动工作台、不修订 WorkItem 或历史工作段。路由进度与本地工作台复用相同解释：
 
-- WorkItem 的待处理/已认领/已完成仅表示该任务里程碑登记。Task 已结单而 WorkItem 未完成、已完成项仍依赖未完成/不存在项、历史任务仍有 ACTIVE 项或损坏依赖，显示 `NEEDS_RECONCILIATION`，不自动补完成或计算项目百分比。同任务依赖由既有 `--depends` 表达；跨任务等待沿用已有 `block/resume`，不新增调度器。
+- WorkItem 的待处理/已认领/已完成仅表示该任务里程碑登记。Task 已结单而 WorkItem 未完成、已完成项仍依赖未完成/不存在项、历史任务仍有 ACTIVE 项或损坏依赖，显示 `NEEDS_RECONCILIATION`，不自动补完成或计算项目百分比。旧式同任务依赖由 `--depends` 表达；采用显式计划的范围/依赖、Fix、结果与候选使用 [Work 结果契约](../WORK_UNITS.md)。跨任务等待沿用已有 `block/resume`，不新增调度器。
 - WP-0 等子范围结单不证明大型项目完成；取消/退休记录保持历史性质，不继续派发。非 Git 原型的获准 SHA-256 冻结仍按 canonical 当前范围及原证据表达；声明不代替哈希/授权核验，不强迫初始化 Git 或软件交付 Complete。
 - 工作段的 Task、角色、执行者、模型和时间只来自真实记录；未知不补造。ACTIVE 或未闭合 START 不能证明进程运行，END 也不能证明所有相关进程已停止。无可靠进程观察统一为 `UNKNOWN`，同时显示最后工作段记录、未闭合数和损坏/未配对/无法计时诊断。
 - START/END 按已记录的 Task、session、角色与执行者配对，必要时核对 `start_event_id`。重复、损坏或身份冲突不按最后一条修复；仅明确且唯一的旧记录可配对。无时区、时间倒退或缺失 END 不估算工作时长。已配对间隔按状态边界分摊，可能跨角色重叠；`active` 是已记录间隔之和，不是 CPU/模型工时，也不是 CLI 内部分段计时或 Token。等待结束原因不提供等待时长，未观察到的值显示 `-`。
 
-新 `work start` 拒绝终态/退休任务及不属于该任务或已完成的 WorkItem；选择与重复检查在同一既有事务内进行。`work end` 必须与开始记录的角色和执行者一致，沿用其 WorkItem 引用。`--agent` 是记录一致性约束，不是新增身份认证，也不能证明独立 Reviewer 已实际执行。没有传 `--agent` 时仍沿用 Task owner；原记录不同就明确拒绝，不默默关闭其他执行者的段。
+新 `work start` 拒绝终态/退休任务及不属于该任务或已完成的 WorkItem；选择与重复检查在同一既有事务内进行。`work end` 必须与开始记录的角色和执行者一致，沿用其 WorkItem 引用。`--agent` 是记录一致性约束，不是新增身份认证，也不能证明独立 Reviewer 已实际执行。未指定 `--session` 时仍用显式角色/执行者或 Task owner 选择唯一未结束记录；不匹配或歧义即拒绝。显式 `--session` 则绑定该 START 的角色、执行者及 WorkItem；另传身份仍必须匹配，不能据此宣称宿主身份认证。
 
-只有已知中断且 ownership/授权成立，才能显式结束原工作段；原任务已终止时，仍可按相同约束补记已知结束，不会重开 Task 或自动改写工作项。未知/歧义历史只读报告，现场修订按 Q06 另行限定对象及授权。新规则不迁移历史、不自动杀进程；临时工件仍按原 ownership 清理。正常生命周期 Markdown 使用已有结果，用户不必为每条命令查报告或手写机器事实。
+只有已知中断且 ownership/授权成立，才能显式结束原工作段；无步骤关联的旧式工作段在原任务已终止时，仍可按相同约束补记已知结束，不会重开 Task 或自动改写工作项。新显式计划的终态步骤/参与只读；未结束记录保留为历史未知，不据此重开任务。未知/歧义历史只读报告，现场修订按 Q06 另行限定对象及授权。新规则不迁移历史、不自动杀进程；临时工件仍按原 ownership 清理。正常生命周期 Markdown 使用已有结果，用户不必为每条命令查报告或手写机器事实。
 
 ### 临时工件与已知中断恢复（按需）
 
@@ -130,7 +132,7 @@ tp-spec temp cleanup --project <PROJECT> --task <TASK> --run-id <RUN>
 
 这不是三步必跑脚本：`temp orphan-check` 只报告 owned/unmanaged 候选，可加 `--project/--task/--workspace-root` 收窄；**不得自动删除**历史 `.tmp` 或无 ownership manifest 路径。`temp cleanup` 仅显式重试已登记且获准的自有路径。`CLEANUP_PENDING` 表示本机清理未完成，不新增 Task state、不逆改已提交事实；依赖必要清理证据的 Delivery 门禁仍有效。未知、重复或损坏的 START 不选最后一条、不自动修历史，不杀进程。
 
-## v5.3.4 记账入口与恢复
+## 记账入口与恢复
 
 普通命令不启动工作台。会话基于本轮 CLI 回执简短说明结果、下一责任和等待条件；需要可视化时，在 TP-Spec-Coding 自身根目录使用 `npm run dev`，见 [本地工作台](../WORKBENCH.md)。机器 stdout 保持 JSON/YAML，不插入展示 marker。
 
@@ -303,3 +305,61 @@ Runtime 只知道已登记仓库，不能从自然语言自动证明“所有获
 ChangeSet 原内容 ID 保持原格式；正式新记录额外保留既有快照内的逐仓 `product_digest`，按**仓库身份→内容**校验，避免两个仓库交换内容而总 ID 恰好不变。selected pytest 的 `subject_unchanged` 同样检查逐仓绑定。旧单仓仍可按原内容 ID 校验；旧多仓记录缺逐仓摘要时必须重新登记当前 checkpoint 和实际适用证据，不能补写历史摘要或复用旧 PASS。仅历史提交元数据变化、产品内容未变的原有兼容语义保留；未验证混用旧二进制读取新记录。
 
 最终结单重新检查最新 Delivery 及其原始附件；较新的损坏/失败结果不能回退到旧 READY。必要人验/视觉、独立 CODE、临时绕过清理和可信 AC 处置仍执行。范围历史损坏时报告具体阻塞，不静默丢掉较早仓库；提交前主体变化拒绝入账，但不撤销用户的产品修改。普通流转不启动工作台或触发页面刷新。
+
+## 安全增强的范围与来源
+
+需要改变当前未授权的可观察行为时，定向读 [Security Change Authority](../security-change-authority.md)。`task security` 记录提案/原始人工来源/调查证据，决定复用 `task scope-change` 的具体版本、scope 与 source event 绑定；`workflow next` 可返回 `await_security_decision`。这与普通范围记录、宿主 effect 许可和人工验收分开；actor 名称不是身份认证。已授权必要修复不因安全标签重复审批。
+
+### 确定性结单预检与结果复用（P5A）
+
+`task complete --task <ID> --task-dir <DIR> --check` 只读返回 `tp-spec.closeout/v1`。
+`checks` 逐项列出判定、适用性、真实依据、问题、`responsibility` 和 `depends_on`；
+`blockers` 保留扁平兼容字段，`unknowns` 明示未取得确定结果的必需项，`next_actions`
+列出尚未满足的依赖。有效等级和适用步骤来自统一 Runtime，不以裸 `flow_level` 推断。
+检查范围包括步骤与 Work、AC/Owner、数据库操作、Visual Manifest、候选/Subject、
+当前 Verification/Review/Delivery、临时工件以及知识/记忆处置。文件不可读或信息缺失
+不会当作通过，也不因为其中一项失败而隐藏独立的其他缺口。
+
+数据库事实来自同一只读事务，文件是实时读取，不承诺文件系统锁定或自动证明业务语义。
+预检不写事件、不刷新摘要、不创建 Change Set、不运行测试/审查、不补录或清理工件。
+正式 `complete` 在既有写事务内使用同一检查，依赖变更即停止；投影失败沿用事务恢复。
+`ready=true` 只表示本次已登记检查允许尝试结单，不代表已完成或拥有发布/合并权限。
+已完成或取消的任务直接返回真实终态；重复命令不追加终态事件、不改终态文件和 manifest，
+`view_status=NOT_REFRESHED` 不表示生成视图已修复。非终态仍需非空 `--summary` 和合法 actor。
+
+L0/L1 也有轻量 Delivery，但只要求实际适用的 Verification/Review；不适用结果明确记录为
+`NOT_REQUIRED`，对应 event ID 为 0，而不是伪造 PASS。L2/L3 沿用正式完整绑定。
+`task delivery-converge` 对相同有效输入复用最新 receipt，不重建 Delivery 或重复
+Knowledge Request。后来的 BLOCKED、候选/范围、验收处置或绑定证据变化不能复用旧 READY。
+receipt 是交付事实，不是知识/记忆执行成功的证明。
+
+普通 checkpoint、接续摘要、非主体证据的增加不会仅因事件 ID 更新就强迫重跑有效
+Verification/Review。原绑定的源码、完整范围、AC 实质或证据变化仍使相应结果失效；
+不得把整个 task.md、正式规则、数据库声明或验收条件排除成“metadata”。Owner 结果只覆盖
+其 AC 和真实来源，不能推导数据库已执行；后来的来源失效不能复活被其替代的旧人验。
+Delivery 另外绑定验收结果文件、实际 PASS 所引用的证据、已执行 SQL/结果文件及显式附件；
+验收处置变化仅在原专业证据仍适用时复用它们。Owner 专用 YAML 块仍保留原归一化；
+混入数据库/视觉等业务键的块不再整块排除。旧任务使用混合块或缺省 `witness_evidence`
+时可能需要一次受影响结果重绑；不回写旧记录、不用旧 digest 兜底放行。
+
+**每 Task 知识/记忆：** 新 Delivery 带 `closeout_schema`，READY 为 L0–L3 创建或复用
+带 `learning_schema=tp-spec.task-learning/v1` 的 Knowledge Request，即使没有 knowledge_signals。
+只读 `knowledge task-inputs --task <ID> --task-dir <DIR> --db <DB>` 获取当前输入和变化，
+按需实际阅读；tp-knowledge 使用 `knowledge task-converge --assessment FILE|-` 记录逐项
+覆盖、定向检索/目标与 Memory 评估。字段、来源绑定、部分复用和错误处理见
+[Task 收敛契约](../../agents/tp-knowledge/references/task-convergence.md)。
+
+相同有效输入复用原 Result，不重复查询或写事件；知识用非主体材料变化只重评相关结论。
+缺必要知识环境/来源/结果保持待处理；Memory 的已判断和已保存分别记录，
+可选保存失败披露责任和恢复条件，不无关阻塞完整研发。
+仅应用过 P5A 的在途新契约任务，重新通过正式 delivery-converge 生成学习请求并接续，
+不能填写假信号、改事件或删除 marker 来结单。
+旧 markerless Delivery 维持原信号契约，其缺少提炼记录显示“不适用/历史未记录”，
+不解释为已评估无价值；旧终态不追补新义务。
+
+
+## 紧凑任务入口与生成视图
+
+接续和结项摘要不再重复展开 `task.md`/`requirement.md` 的 current 正文，只链接唯一业务来源。`workflow next` 的 `context.current_effective` 仍保留原读取能力；展示摘录不改变 Subject、AC 或证据绑定。任务进行中先确认正式状态、当前步骤/参与与下一责任，再按导航读取范围和历史。
+
+`projection inspect --task TASK-ID --task-dir <目录>` 是无 DB 的归档只读观察；加 `--db <既有 Runtime>` 使用真实账本状态，二者的来源强度不混淆。结果包括生成缺失、来源/正文摘要变化、状态不一致及只读导航，不据此产生授权或新门禁。终态只读，旧接续只标过期，不覆盖旧清单；在途任务才通过 `projection rebuild --view-only` 或既有 `reconcile` 恢复派生物。详见 [任务视图契约](../TASK_VIEWS.md)。

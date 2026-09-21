@@ -9,6 +9,8 @@ systems:
     layout: auto
     workspace_dir_template: projects/{workspace_id}
     source:
+      source_mode: AUTO
+      stable_ref: ''
       include_extensions:
       - .py
       - .java

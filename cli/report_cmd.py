@@ -65,12 +65,13 @@ def task_progress_facts(conn, task, *, events=None, retired: bool = False) -> di
     """One read-only interpretation shared by CLI summaries and explicit views."""
     from .workitem_cmd import summarize_work_items
     from .work_session_cmd import summarize_work_sessions
+    from .execution import read_execution
     if events is None:
-        events = conn.execute("SELECT * FROM task_event WHERE task_id=? "
-                              "AND event_type IN ('WORK_SESSION_STARTED','WORK_SESSION_ENDED') ORDER BY id",
+        events = conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id",
                               (task["task_id"],)).fetchall()
     return {"work_items": summarize_work_items(conn, task, retired=retired),
-            "work_sessions": summarize_work_sessions(events)}
+            "work_sessions": summarize_work_sessions(events),
+            "execution": read_execution(conn, task, rows=events, retired=retired)}
 
 
 def cmd_report_task_summary(args) -> int:
@@ -109,7 +110,8 @@ def cmd_report_task_summary(args) -> int:
         print(f"  title:         {task['title'] or ''}")
         print(f"  project:       {task['project_id']}")
         print(f"  risk/flow:     {task['risk_level']} / {task['flow_level']}")
-        print(f"  current_state: {task['current_state']} (owner={task['owner_role']})")
+        owner_label = "historical_owner" if task["current_state"] in {"COMPLETED", "CANCELLED"} else "owner_record"
+        print(f"  current_state: {task['current_state']} ({owner_label}={task['owner_role']})")
         print(f"  base_version:  {task['base_version']}")
         print(f"  created_at:    {task['created_at']}")
         print(f"  updated_at:    {task['updated_at']}")
@@ -562,7 +564,7 @@ def _fmt_value(v: float | None, fmt: str = _FMT_MONEY, na: str = "N/A") -> str:
 
 
 def cmd_report_cost_benefit(args) -> int:
-    """V5.3.4 B-15 成本披露报表（强制四列 + W1-W4 告警 + 净亏独立列）。
+    """B-15 成本披露报表（强制四列 + W1-W4 告警 + 净亏独立列）。
 
     对齐升级计划 §3.5（L180-189）与 B-13 设计文档。
     仅披露不阻断：不改变 workflow 状态、不改变风险等级。
@@ -829,7 +831,7 @@ def add_report_subparsers(report_parser) -> None:
     p_cross.add_argument("--db", required=False, default=None)
     p_cross.set_defaults(func=cmd_report_cross)
 
-    # report context-effectiveness (V5.3.4 Context Effectiveness)
+    # report context-effectiveness (Context Effectiveness)
     p_ctx = sub.add_parser(
         "context-effectiveness",
         help="Read-only Task-bound Context Effectiveness report",
@@ -840,8 +842,8 @@ def add_report_subparsers(report_parser) -> None:
     p_ctx.add_argument("--db", default=None)
     p_ctx.set_defaults(func=cmd_report_context_effectiveness)
 
-    # report cost-benefit（V5.3.4 B-15 成本披露报表）
-    p_cb = sub.add_parser("cost-benefit", help="Cost-benefit disclosure report (V5.3.4 B-15)")
+    # report cost-benefit（B-15 成本披露报表）
+    p_cb = sub.add_parser("cost-benefit", help="Cost-benefit disclosure report (B-15)")
     p_cb.add_argument("--task", required=True, help="task id")
     p_cb.add_argument("--output", required=True, help="persist report to JSON file path")
     # 四列强制字段

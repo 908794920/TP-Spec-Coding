@@ -26,12 +26,59 @@ def validate_task_temp_artifacts(records: List[Dict[str, Any]]) -> List[str]:
     return errors
 
 
+def database_disposition(task_dir, acceptance):
+    """Declared DB outcomes and their actual artifacts; never infer from UI PASS."""
+    from .evidence import validate_evidence_path
+    issues = [i for i in acceptance.issues if "database_" in i]
+    items = {}
+    for op in acceptance.database_operations:
+        oid, status = op.get("id"), op["status"]
+        if status in {"PLANNED", "NOT_EXECUTED"} and not op["acceptance_refs"]:
+            issues.append(f"DATABASE_DISPOSITION_REQUIRED: {oid} {status}; no AC disposition is recorded")
+        if status == "NOT_REQUIRED" and not str(op.get("reason") or op.get("residual_risk") or "").strip():
+            issues.append(f"DATABASE_SKIP_REASON_REQUIRED: {oid}")
+        if status == "EXECUTED":
+            for key in ("execution_evidence", "artifact_ref"):
+                if key == "artifact_ref" and op["type"] == "READ" and not op.get(key):
+                    continue
+                checked = validate_evidence_path(task_dir, op.get(key), require_evidence_dir=True)
+                if checked.ok:
+                    items[checked.path] = checked.item
+                else:
+                    issues.append(f"DATABASE_EVIDENCE_INVALID: {oid}.{key}: {checked.error}")
+    return issues, [items[key] for key in sorted(items)]
+
+
+def acceptance_evidence_items(task_dir):
+    """Bind only declared positive AC/DB artifacts, not the whole evidence folder."""
+    import re
+    from .evidence import validate_evidence_path
+    from .yaml_checks import check_acceptance_yaml
+    text = (task_dir / "acceptance.md").read_text(encoding="utf-8-sig")
+    acceptance = check_acceptance_yaml(text, enforce_completion=True, allow_human_pending=False)
+    errors, db_items = database_disposition(task_dir, acceptance)
+    items = {item["path"]: item for item in db_items}
+    for line in text.splitlines():
+        if not re.match(r"^\s*\|\s*AC-[^|\s]+\s*\|", line):
+            continue
+        cells = [cell.strip() for cell in line.split("|")]
+        if len(cells) > 8 and cells[8] == "PASS":
+            checked = validate_evidence_path(task_dir, cells[6])
+            if checked.ok:
+                items[checked.path] = checked.item
+            else:
+                errors.append(f"{cells[1]} PASS evidence invalid: {checked.error}")
+    if errors:
+        raise ValueError("INTEGRITY_ACCEPTANCE_EVIDENCE: " + "; ".join(errors))
+    return [items[key] for key in sorted(items)]
+
+
 def validate_delivery_result(detail: Dict[str, Any]) -> List[str]:
     """Validate Integration-owned delivery facts.
 
-    Knowledge convergence is deliberately not part of this contract. A READY
-    delivery may complete the Task while tp-knowledge processes its compact
-    handoff separately.
+    READY is a delivery fact, not a Task completion or Knowledge/Memory result.
+    Lightweight delivery may omit inapplicable professional results explicitly;
+    routing recomputes applicability instead of trusting these declarations.
     """
     errors: List[str] = []
     status = str(detail.get("delivery_status") or "").upper()
@@ -39,28 +86,35 @@ def validate_delivery_result(detail: Dict[str, Any]) -> List[str]:
         return ["delivery_status must be READY|BLOCKED"]
     if not _concrete_reason(detail.get("reason")):
         errors.append("concrete reason is required")
-    try:
-        if int(detail.get("verification_event_id") or 0) <= 0:
-            errors.append("verification_event_id is required")
-    except (TypeError, ValueError):
-        errors.append("verification_event_id is invalid")
+    if detail.get("closeout_schema") == "tp-spec.closeout/v1":
+        import re
+        if not re.fullmatch(r"[0-9a-f]{64}", str(detail.get("acceptance_digest") or "")):
+            errors.append("current delivery requires a readable acceptance_digest")
+        if not isinstance(detail.get("acceptance_evidence_items"), list):
+            errors.append("current delivery requires acceptance_evidence_items")
+    mode = detail.get("delivery_mode", "full")
+    if mode not in {"full", "lightweight"}:
+        errors.append("delivery_mode must be full|lightweight")
+    applicable = detail.get("applicability", {})
+    if mode == "lightweight" and (not isinstance(applicable, dict) or
+            set(applicable) != {"verification", "review"} or
+            any(v not in {"REQUIRED", "NOT_REQUIRED"} for v in applicable.values())):
+        errors.append("lightweight delivery requires explicit verification/review applicability")
+        applicable = {}
+    for kind in ("verification", "review"):
+        required = mode != "lightweight" or applicable.get(kind) != "NOT_REQUIRED"
+        event_id = detail.get(kind + "_event_id")
+        if type(event_id) is not int or (event_id <= 0 if required else event_id != 0):
+            errors.append(f"{kind}_event_id must be positive when required, otherwise exactly 0")
+        bound = str(detail.get(kind + "_change_set_id") or "")
+        if required and (not bound or bound != detail.get("change_set_id")):
+            errors.append(f"{kind}/delivery change_set_id must match")
+        if not required and bound:
+            errors.append(f"inapplicable {kind} must not claim a change_set binding")
     if not str(detail.get("verification_subject_digest") or "").strip():
-        errors.append("verification_subject_digest is required")
-    for key in ("verification_change_set_id", "review_change_set_id", "change_set_id"):
-        if not str(detail.get(key) or "").strip():
-            errors.append(f"{key} is required")
-    try:
-        if int(detail.get("review_event_id") or 0) <= 0:
-            errors.append("review_event_id is required")
-    except (TypeError, ValueError):
-        errors.append("review_event_id is invalid")
-    ids = {
-        str(detail.get("verification_change_set_id") or ""),
-        str(detail.get("review_change_set_id") or ""),
-        str(detail.get("change_set_id") or ""),
-    }
-    if "" not in ids and len(ids) != 1:
-        errors.append("verification/review/delivery change_set_id must match")
+        errors.append("verification_subject_digest (delivery subject) is required")
+    if not str(detail.get("change_set_id") or "").strip():
+        errors.append("change_set_id is required")
     snap = detail.get("repo_snapshot")
     if snap is not None:
         if not isinstance(snap, dict):
@@ -103,6 +157,16 @@ def disposition_allows_pipeline_completion(detail: Dict[str, Any], *, deferred_a
 def delivery_evidence_matches(detail: Dict[str, Any], task_dir) -> bool:
     """Recheck the original optional delivery attachments, never just their receipt."""
     from .evidence import validate_evidence_path
+    if detail.get("acceptance_digest"):
+        from .digest import compute_text_artifact_file_digest
+        if compute_text_artifact_file_digest(task_dir / "acceptance.md") != detail["acceptance_digest"]:
+            return False
+    if detail.get("delivery_status") == "READY" and "acceptance_evidence_items" in detail:
+        try:
+            if acceptance_evidence_items(task_dir) != detail["acceptance_evidence_items"]:
+                return False
+        except (OSError, UnicodeError, ValueError):
+            return False
     paths, items = detail.get("evidence", []), detail.get("evidence_items", [])
     if not isinstance(paths, list) or not isinstance(items, list) or len(paths) != len(items):
         return False
@@ -144,6 +208,43 @@ def find_delivery_completion_event(events: List[Dict[str, Any]], *, verification
             return None
         return event if str(detail.get("delivery_status") or "").upper() == "READY" else None
     return None
+
+
+def current_lightweight_delivery(event, task, task_dir):
+    """Validate the latest light receipt against the *current* resolved duties."""
+    if task is None or task_dir is None or not task.get("_effective_contract"):
+        return None
+    from . import orchestration
+    from .digest import compute_verification_subject_digest
+    from .workflow_controls import trusted_event_detail
+    detail = trusted_event_detail(event, event_type="DELIVERY_RESULT", producer="delivery_converge", actor="tp-integration-engineer")
+    if detail is None or validate_delivery_result(detail) or detail["delivery_status"] != "READY":
+        return None
+    # The rule and risk scan used by resolve_route remain authoritative.
+    level = task.get("_effective_level")
+    if level not in {"L0", "L1"}:
+        return None
+    selected = {step["stage"] for step in task["_effective_contract"]["pipelines"][level]
+                if orchestration._stage_included(step, level, task, task["_events"], task["_signals"])}
+    required = {"verification": "REQUIRED" if selected & {"verification", "review"} else "NOT_REQUIRED",
+                "review": "REQUIRED" if "review" in selected else "NOT_REQUIRED"}
+    if detail.get("applicability") != required:
+        return None
+    current = task.get("_current_change_set") or {}
+    if not current or detail["change_set_id"] != current.get("content_digest"):
+        return None
+    if detail["verification_subject_digest"] != compute_verification_subject_digest(task_dir):
+        return None
+    for kind in ("verification", "review"):
+        if required[kind] == "NOT_REQUIRED":
+            continue
+        binding = task.get("_current_verification" if kind == "verification" else "_current_code_review") or {}
+        if binding.get("event_id") != detail[kind + "_event_id"]:
+            return None
+        if kind == "verification" and (binding.get("verification_scope", "full") != "full"
+                or binding.get("change_set_id") != current["content_digest"]):
+            return None
+    return event if delivery_evidence_matches(detail, task_dir) else None
 
 
 def repository_scope(events: List[Dict[str, Any]]) -> Dict[str, Any]:

@@ -8,7 +8,7 @@ import json
 import os
 import signal
 import sys
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 import uuid
 
 from .service import BASE_ROOT, ReadError, SCHEMA, WorkbenchService, timestamp
@@ -45,6 +45,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         try:
             if path == ["api", "health"]:
                 result = service.health()
+            elif len(path) == 3 and path[:2] == ["api", "skill-documents"]:
+                result = service.skill_document(path[2], parse_qs(urlsplit(self.path).query).get("path", [""])[0])
             elif path == ["api", "global"]:
                 result = service.global_view()
             elif len(path) >= 3 and path[:2] == ["api", "projects"]:

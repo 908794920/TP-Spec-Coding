@@ -3,10 +3,11 @@ import { Collapse, Typography } from 'antd';
 import { record, records, stageLabel, text } from '../facts';
 import { Disclosure, Fields } from './Facts';
 import type { FactRecord } from '../types';
+import { ExecutionWorkflow } from './ExecutionWorkflow';
 export interface WorkflowHandle {
     locateCurrent: () => void;
 }
-export const WorkflowStrip = forwardRef<WorkflowHandle, {
+const LegacyWorkflowStrip = forwardRef<WorkflowHandle, {
     workflow: FactRecord;
     task: FactRecord;
 }>(({ workflow, task }, ref) => {
@@ -28,9 +29,11 @@ export const WorkflowStrip = forwardRef<WorkflowHandle, {
             }));
         }
     }), [currentId]);
+    const terminal = task.state === 'COMPLETED' || task.state === 'CANCELLED' || workflow.retired === true;
     return <section className="workflow-strip" aria-label="当前适用流程"><h3 ref={heading} tabIndex={-1}>实际流程 <small>有效等级 {text(workflow.effective_level) || '未解析'}</small></h3>
-    <div className="step-summary"><p><span>当前步骤</span><strong>{stageLabel(current) || '当前步骤未解析'}</strong><small>来源：{text(workflow.current_step_source) || '未记录'}</small></p>
-      <p><span>下一步</span><strong>{stageLabel(next) || '未提供下一步'}</strong><small>来源：{text(workflow.next_step_source) || '未记录'}</small></p></div>
+    <p className="muted">历史未记录具体执行计划与独立角色参与；以下只展示可解析的既有流程事实。</p>
+    <div className="step-summary"><p><span>当前步骤</span><strong>{terminal ? '已结束；无当前执行步骤' : stageLabel(current) || '当前步骤未解析'}</strong><small>来源：{text(workflow.current_step_source) || '未记录'}</small></p>
+      <p><span>下一步</span><strong>{terminal ? '无' : stageLabel(next) || '未提供下一步'}</strong><small>来源：{text(workflow.next_step_source) || '未记录'}</small></p></div>
     {/* The contract-version guard blocks INFERRING the route; it does not make the task unreadable.
         So when no current step resolves, the RECORDED facts stay on screen instead of disappearing
         together with the inference — a task older than the active contract still shows where it is.
@@ -45,4 +48,11 @@ export const WorkflowStrip = forwardRef<WorkflowHandle, {
         <strong>{stageLabel(step)}</strong><span>{text(step.status) || '状态未记录'}</span><small>{text(record(step.role_display).label) || text(step.role) || '负责人未记录'}</small></li>)}</ol> : <p>当前未取得适用流程；不按参考阶段补齐 L3。</p> }]}/>
     <Disclosure className="compact-details" label="流程定义与解析来源"><Fields value={{ effective_level: workflow.effective_level, current_step: current, next_step: next, conditional_roles: workflow.conditional_roles, route: workflow.route, error: workflow.error }}/></Disclosure>
   </section>;
+});
+
+export const WorkflowStrip = forwardRef<WorkflowHandle, { workflow: FactRecord; task: FactRecord }>((props, ref) => {
+    const execution = record(props.workflow.execution);
+    return execution.status && execution.status !== 'NOT_RECORDED'
+        ? <ExecutionWorkflow {...props} ref={ref}/>
+        : <LegacyWorkflowStrip {...props} ref={ref}/>;
 });

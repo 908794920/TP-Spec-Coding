@@ -8,6 +8,7 @@ artifact_contract:
 # Task
 
 <!-- 有真实内容时只在 task.md 或已有 requirement.md 的一处当前区维护；空区不构成门禁。 -->
+<!-- 长需求可放在已有 requirement.md；此处只留准确导航，不复制第二份 current 正文。 -->
 <!-- tp-spec:current:start -->
 
 ## 目标
@@ -23,6 +24,15 @@ artifact_contract:
 <!-- 区分确认事实、假设、未知与真实用户决定；保留适用范围、验收和操作授权来源，不由摘要授予权限。 -->
 
 <!-- tp-spec:current:end -->
+
+## 当前记录导航
+
+- [验收与操作声明](./acceptance.md)：AC、人验、数据库处置，以实际登记为准。
+- [接续入口](./generated/continuation.md)：生成视图，不手写当前角色、进度或下一责任。
+- [事件投影](./events.jsonl)：有意义工作批次、角色参与、决定与提炼结果；按来源定向读取。
+
+<!-- 只有实际已有的独立需求/设计/证据才添加链接；不为填模板另建报告。 -->
+<!-- COMPLETED/CANCELLED 以 Runtime 为准。旧进度与下面的历史不表示任务仍在执行。 -->
 
 ## 历史决策 / 备注
 

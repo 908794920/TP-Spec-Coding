@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""V5.3.4 架构评审 Subject Digest 单一来源（第三轮 P0-2）。
+"""架构评审 Subject Digest 单一来源（第三轮 P0-2）。
 
-《V5.3.4 Final Hardening 外部源码复审报告》P0-2：第一轮 design digest 只含
+《Final Hardening 外部源码复审报告》P0-2：第一轮 design digest 只含
 task/decisions/test-guide/acceptance，篡改 requirement-knowledge.md 或
 requirement-clarifications.md 不会使旧架构 PASS 失效。
 
@@ -91,8 +91,26 @@ def _normalize_subject_part(name: str, text: str) -> str:
         text = "\n".join(lines)
         text = re.sub(r"(?m)^(\s*human_witness\s*:\s*).*$", r"\1<runtime-result>", text)
         text = re.sub(r"(?m)^(\s*witness_evidence\s*:\s*).*$", r"\1<runtime-result>", text)
-        # Owner defer/waive records are audited Runtime outcomes, not review subject.
-        text = re.sub(r"(?ms)```yaml\s*\n(?:deferred_acceptance|owner_waivers):.*?```", "```yaml\n<owner-acceptance-result>\n```", text)
+        # The Owner writer may insert this optional result field. Canonicalize
+        # its absent slot as well, without dropping any acceptance requirement.
+        if not re.search(r"(?m)^[ \t]*witness_evidence[ \t]*:", text):
+            text = re.sub(r"(?m)^([ \t]*human_witness[ \t]*:[^\n]*)(\n|$)",
+                          r"\1\n  witness_evidence: <runtime-result>\2", text, count=1)
+
+        # Preserve the established digest for dedicated Owner-result blocks.
+        # A mixed block may contain DB/visual/business obligations: never erase
+        # that whole block merely because its first key is Owner metadata.
+        def owner_block(match):
+            import yaml
+            body = match.group(0).split("\n", 1)[1].rsplit("```", 1)[0]
+            try:
+                parsed = yaml.safe_load(body)
+            except yaml.YAMLError:
+                return match.group(0)
+            if isinstance(parsed, dict) and set(parsed).issubset({"deferred_acceptance", "owner_waivers"}):
+                return "```yaml\n<owner-acceptance-result>\n```"
+            return match.group(0)
+        text = re.sub(r"(?ms)```yaml\s*\n(?:deferred_acceptance|owner_waivers):.*?```", owner_block, text)
         return text
     if name != "requirement-test-guide.md":
         return text

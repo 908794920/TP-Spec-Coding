@@ -50,7 +50,7 @@ def _fields(value: Any, path: str, required: set[str], optional: set[str] | None
 
 def protected_stages(level: str) -> set[str]:
     # Q01 未变：项目偏好不能将最终必要义务改成可选项。
-    return {"development"} | ({"verification"} if level != "L0" else set()) | (
+    return {"development", "delivery"} | ({"verification"} if level != "L0" else set()) | (
         {"review", "delivery"} if level in {"L2", "L3"} else set()
     )
 

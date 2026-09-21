@@ -1,11 +1,11 @@
-# AI Knowledge Rule Definition — V5.3.4 Record-first
+# AI Knowledge Rule Definition — Record-first
 #
 # Purpose:
 #   Define when long-lived Knowledge is worth capturing and which component owns
 #   retrieval/canonical maintenance.  Physical paths and retrieval implementation
 #   are owned by governance/content-systems.yaml, not this rule file.
 #
-# Compatibility version remains 2.1.0 for active V5.3.4 tasks; semantics are
+# Compatibility version remains 2.1.0 for active tasks; semantics are
 # additive/Record-first；Knowledge 仅在存在可信 task-scoped Request 时成为条件性完成门禁。
 version: "2.1.0"
 
