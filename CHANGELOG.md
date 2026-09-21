@@ -13,6 +13,13 @@
 - P6：修复有效 Work 集成候选在结单预检中因重复 `issues` 参数变成 UNKNOWN 的错误；补验实际 Fix→候选→提炼→正式结单及终态重放，候选缺失/产品或证据变化仍正确拦截。同步公共 Runtime API、安装兼容与能力导航，保留既有 5.3.4 版本和 SQLite schema。
 - 本轮只做影响范围内的临时检查并清理，不恢复全仓测试/CI。锁定 npm 依赖在云端不可取得，前端类型检查、构建和真实工作台浏览器交互尚未通过；Windows、现场安装与业务人验另行记录，不以源码交付代签。
 
+### 迁移源支持扩展 — 2026-09-21
+
+- `cli/migrations/__init__.py` 的 `SOURCE_CONTRACTS` 增加 **5.3.2**：`project upgrade-contract` 与 `task migrate` 现可从 5.3.2 收敛到活动契约 5.3.4。此前 5.3.2 不在表内，已升至 5.3.2 的项目只能停在旧契约（`UNSUPPORTED_MIGRATION_SOURCE`），并经 binding/doctor 长期报告 `SYNC_REQUIRED`。
+- 依据：在**隔离副本**上用真实项目数据（idc 的 DB 与 `TASK-22513`）完成端到端干跑，`SOURCE_CONTRACTS` 注释要求的四条同时成立 —— schema（副本 `integrity_check=ok`、`schema_version=1`）、身份（project/task 身份与 `status.yaml` 一致）、角色/工件形态（`task.md`/`status.yaml`/`requirement-clarifications.md` 三件 5.3.2 → 5.3.4；`map_active_owner` 对规范角色为 no-op）、事务（journal + 迁移事件 + 非追溯祖父化）。迁移后任务四方校验（`status`/`event_ledger`/`handoff`/`generated`）全 `ok`、`issues=[]`，`release_gate` 由 `BLOCKED` 转 `PASS`，未产生新漂移。
+- 语义不变：`SOURCE_CONTRACTS` 仍是"有限支持"集合，采用仍以可信事件为准，不因版本字符串放行；`governance/compat-matrix.yaml` 只声明活动契约，未新增字段（其 schema 拒绝未知顶层键），`schema`/公共 Task 状态未变。
+- 已知差异（cosmetic，不影响任何门禁）：模板 footer 的 prose 版本标记（如 `task.md` 的 `> V5.3.2：…`）不随迁移改写 —— 该函数只重写精确的契约/模板引用，按设计不处理自由文本。
+
 ### 原开放版本线记录
 
 - 从 **5.3.3** 收敛到 **5.3.4** 版本线：`VERSION`、治理契约、Role Catalog、Agent/Skill frontmatter、CLI/schema 声明与活动模板统一升级；活动模板目录切换为 `templates/5.3.4`，不再保留 `templates/5.3.3`。
