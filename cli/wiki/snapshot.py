@@ -13,7 +13,7 @@ import tempfile
 from .source import (discover_source_files, normalized_hash,
                      read_source_bytes, resolve_repo_relative, sha256_bytes,
                      source_selected, _is_excluded)
-from .stable_source import SourceError, bind_source, source_view
+from .stable_source import SourceError, bind_source, source_view, remote_ref_name
 
 SNAPSHOT_SCHEMA = "tp-spec.wiki-snapshot/v1"
 CHANGESET_SCHEMA = "tp-spec.wiki-changeset/v1"
@@ -118,6 +118,13 @@ def prepare_source_config(
         recorded = _read_json(paths["pending"]) or _read_json(paths["baseline"])
     public = {k: v for k, v in source_cfg.items() if not k.startswith("_")}
     result = bind_source(repo_root, public, identity=recorded.get("source") or None)
+    view = source_view(repo_root, result)
+    if recorded.get("source") and not committed and view.mode == "GIT_REF":
+        # Follow-up work checks configured identity, never re-resolves a moved ref.
+        # Historical reads explicitly use committed=True instead.
+        ref = remote_ref_name(view.root, public.get("stable_ref"))
+        if view.stable_ref != ref:
+            raise SourceError("SOURCE_INITIALIZATION_REQUIRED: configured branch differs from recorded source; prepare a new scan with --initialize-source")
     source_rules = {name: sha256_bytes((Path(__file__).parent / name).read_bytes())
                     for name in ("source.py", "stable_source.py")}
     result["_source_policy_digest"] = _digest({"config": public, "rules": source_rules})
@@ -290,9 +297,12 @@ def stage_scan(
     migration = bool(baseline and (
         (not prior_source and view.mode == "GIT_REF") or
         (prior_source and (prior_source.get("source_mode") != view.mode or
-                           prior_source.get("repo_prefix", "") != view.prefix))))
+                           prior_source.get("repo_prefix", "") != view.prefix or
+                           (view.mode == "GIT_REF" and prior_source.get("stable_ref") != view.stable_ref)))))
     if migration and not initialize_source:
         raise SourceError("SOURCE_INITIALIZATION_REQUIRED: legacy/changed source identity; run wiki scan/maintain --initialize-source; old baseline is preserved until validation succeeds")
+    if migration and view.mode == "GIT_REF" and prior_source.get("source_mode") == "GIT_REF":
+        view.require_ancestor(prior_source)
     if documents and not repair:
         raise ValueError("--document requires --repair")
     if repair:

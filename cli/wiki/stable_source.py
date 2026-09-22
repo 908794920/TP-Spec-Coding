@@ -51,6 +51,21 @@ def _commit(root: Path, ref: str) -> str:
     return value
 
 
+def remote_ref_name(root: Path, value: Any) -> str:
+    """Validate configuration without resolving a potentially moved pinned ref."""
+    if value is None or value == "":
+        raise SourceError("STABLE_REF_REQUIRED: configure source.stable_ref as refs/remotes/<remote>/<branch>; Wiki does not choose or synchronize a branch")
+    if not isinstance(value, str):
+        raise SourceError("STABLE_REF_INVALID: source.stable_ref must be a full remote-tracking reference")
+    ref = value.strip()
+    if not ref:
+        raise SourceError("STABLE_REF_REQUIRED: configure source.stable_ref as refs/remotes/<remote>/<branch>")
+    if (not re.fullmatch(r"refs/remotes/[^/]+/.+", ref) or "\x00" in ref or ref.endswith("/HEAD") or
+            git(root, "check-ref-format", ref, check=False).returncode):
+        raise SourceError(f"STABLE_REF_INVALID: {ref!r}; use refs/remotes/<remote>/<branch>, not a local branch, tag, SHA or revision expression")
+    return ref
+
+
 @dataclass
 class SourceView:
     root: Path
@@ -121,10 +136,9 @@ class SourceView:
             raise SourceError(f"GIT_ENTRY_UNSUPPORTED: {rel} mode={row[0]}")
         return self.blob(row[2])
 
-    def diff(self, previous: dict[str, Any]) -> list[dict[str, str]]:
+    def require_ancestor(self, previous: dict[str, Any]) -> str:
+        """Initialization must not bypass the existing Git history boundary."""
         old = str(previous.get("commit") or "")
-        if previous.get("source_mode") != "GIT_REF" or previous.get("repo_prefix", "") != self.prefix:
-            raise SourceError("SOURCE_INITIALIZATION_REQUIRED: prior source identity is not comparable")
         if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", old):
             raise SourceError("BASELINE_COMMIT_UNAVAILABLE: no valid prior commit")
         _commit(self.root, old)  # No fetching, even for shallow/partial repositories.
@@ -133,6 +147,12 @@ class SourceView:
             raise SourceError("NON_ANCESTOR_HISTORY: stable source is not a descendant of the successful baseline; review history before rebuilding")
         if ancestry.returncode:
             raise SourceError("HISTORY_UNAVAILABLE: cannot establish baseline ancestry locally")
+        return old
+
+    def diff(self, previous: dict[str, Any]) -> list[dict[str, str]]:
+        if previous.get("source_mode") != "GIT_REF" or previous.get("repo_prefix", "") != self.prefix:
+            raise SourceError("SOURCE_INITIALIZATION_REQUIRED: prior source identity is not comparable")
+        old = self.require_ancestor(previous)
         data = git(self.root, "diff-tree", "-r", "--raw", "--no-abbrev", "--no-renames",
                    "--no-ext-diff", "--no-textconv", "-z", old, self.commit, "--").stdout
         parts = data.split(b"\x00")
@@ -192,17 +212,25 @@ def resolve_source(root: Path, config: dict[str, Any], *, identity: dict[str, An
         if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", oid):
             raise SourceError("BASELINE_COMMIT_UNAVAILABLE: recorded full commit is missing")
         return SourceView(git_root, "GIT_REF", str(identity.get("stable_ref") or ""), _commit(git_root, oid), prefix)
-    ref = str(config.get("stable_ref") or "").strip()
-    if not ref:
-        output = git(git_root, "for-each-ref", "--format=%(refname)%09%(symref)", "refs/remotes/").stdout.decode("utf-8")
-        defaults = {line.split("\t", 1)[1] for line in output.splitlines()
-                    if "\t" in line and line.split("\t", 1)[0].endswith("/HEAD") and line.split("\t", 1)[1]}
-        if len(defaults) != 1:
-            raise SourceError("STABLE_REF_NEEDS_REVIEW: configure stable_ref or a unique local remote HEAD; current branch is not a default")
-        ref = defaults.pop()
-    if ref == "HEAD" or ref.startswith(("HEAD~", "HEAD^", "HEAD@", "@")):
-        raise SourceError("STABLE_REF_NEEDS_REVIEW: HEAD/current-branch expressions are not stable source configuration")
-    return SourceView(git_root, "GIT_REF", ref, _commit(git_root, ref), prefix)
+    ref = remote_ref_name(git_root, config.get("stable_ref"))
+    symbolic = git(git_root, "symbolic-ref", "-q", ref, check=False)
+    if symbolic.returncode == 0:
+        raise SourceError(f"STABLE_REF_SYMBOLIC: {ref}; configure the concrete remote-tracking branch, not an alias")
+    if symbolic.returncode != 1:
+        raise SourceError(f"STABLE_REF_UNAVAILABLE: cannot inspect {ref}; review the local repository")
+    # Read the ref identity separately from its object so missing commits are
+    # distinguishable from missing refs. Exact matching avoids prefix/DWIM fallbacks.
+    resolved = git(git_root, "for-each-ref", "--format=%(refname)%09%(objectname)", ref, check=False)
+    rows = [line.split("\t", 1) for line in resolved.stdout.decode("utf-8").splitlines()]
+    matches = [row[1] for row in rows if len(row) == 2 and row[0] == ref]
+    if resolved.returncode or len(matches) != 1:
+        raise SourceError(f"STABLE_REF_UNAVAILABLE: {ref} is missing or unreadable locally; the user controls synchronization, Wiki will not fetch or pull")
+    oid = matches[0]
+    try:
+        commit = _commit(git_root, oid)
+    except SourceError as exc:
+        raise SourceError(f"STABLE_REF_OBJECT_UNAVAILABLE: {ref}; required commit is unavailable locally, no objects will be downloaded") from exc
+    return SourceView(git_root, "GIT_REF", ref, commit, prefix)
 
 
 def bind_source(root: Path, config: dict[str, Any], *, identity: dict[str, Any] | None = None) -> dict[str, Any]:

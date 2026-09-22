@@ -2,6 +2,8 @@
 
 一次只处理一个 repo。
 
+Git 首建/重建与日常维护使用同一来源规则：必须配置本地已有的完整远程跟踪引用，用户控制代码同步，Wiki 不 fetch/pull、不选默认分支、不读取工作区或本地未推送提交。来源切换与历史兼容遵循 `wiki/rules/stable-source.md`，缺失引用/对象停止，不用全量重建绕过。
+
 1. `wiki doctor`
 2. `wiki init --repo <id>`
 3. 没有 baseline 时 `wiki build --repo <id>`；已有成功 baseline 的明确全量复核用 `wiki maintain --repo <id> --repair`，不删除旧 baseline；旧身份缺 commit 时使用 `--initialize-source` 并按初次范围验证。先固定来源，初次 scan 将 scanner-visible source 记为 STRUCTURAL/added，plan 标注 `wiki_eligibility`，initial 不触发 mass-change guard。

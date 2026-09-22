@@ -11,12 +11,14 @@ systems:
   wiki:
     source:
       source_mode: AUTO
-      stable_ref: refs/heads/stable
+      stable_ref: refs/remotes/origin/dev
 ```
 
-`stable` 仅为例子，不是内置默认分支。`AUTO` 在真实 Git 仓库使用 `GIT_REF`，非 Git 使用 `FILESYSTEM`。Git 必须先采用明确 `stable_ref`；未配置时只接受本地 `refs/remotes/*/HEAD` 中唯一的符号默认分支映射。没有或有多份候选时返回 `STABLE_REF_NEEDS_REVIEW`，不猜 main/master、当前分支、HEAD 或工作区内容。明确配置可使用分支、tag 或完整 commit SHA。
+`origin/dev` 仅为例子，不是内置远程或默认分支。`AUTO` 在真实 Git 仓库使用 `GIT_REF`，非 Git 使用 `FILESYSTEM`。Git 必须显式配置合法、本地存在且非符号引用的 `refs/remotes/<remote>/<branch>`。不接受短分支名、本地分支、tag、直接配置的 SHA、HEAD、修订表达式或 remote HEAD 别名；未配置即停止该仓库，不猜默认分支。配置合并后逐仓检查，旧 Registry `branch` 不参与选择。内部读取已固定的完整 SHA 仍是必要能力，不受配置值限制影响。
 
-不自动 fetch、checkout、reset、merge、创建 worktree 或切换用户分支。读取 Git 对象时禁用 replace objects、隐式 lazy fetch、外部 diff/textconv 和网络 transport；缺失本地对象明确失败。远程跟踪 ref 只代表本地已有状态，不声称已联网同步远端最新提交。需要同步时由当次授权覆盖的操作另行完成。
+Wiki 不执行 fetch、pull、checkout、reset、merge、创建 worktree 或其他源码仓库写入。读取 Git 对象时禁用 replace objects、隐式 lazy fetch、外部 diff/textconv 和网络 transport；缺失本地引用或对象明确失败，不以同步作为自动修复。远程跟踪 ref 只代表本地已有状态，允许落后于服务器，不声称已联网同步远端最新提交。用户自行决定何时同步；更新引用后下一轮维护采用新提交。工作区、暂存区、未跟踪文件及本地分支未推送提交不进入来源。真正非 Git 的 FILESYSTEM 仍按实际文件读取，不提供指定分支保证；Git 不能降级为 FILESYSTEM。
+
+诊断区分 `STABLE_REF_REQUIRED`（未配置）、`STABLE_REF_INVALID`（类型/格式不符）、`STABLE_REF_SYMBOLIC`（符号别名）、`STABLE_REF_UNAVAILABLE`（本地引用不可用）和 `STABLE_REF_OBJECT_UNAVAILABLE`（提交对象不可用）；文件对象或历史读取失败沿用既有 Git 来源错误。只报告对应仓库和恢复条件，不代替用户执行同步。
 
 Git 检出目录、linked worktree、bare repo 和仓库子目录均使用同一对象读取机制。子目录以 `repo_prefix` 限定范围；单仓 Wiki 不跨 Registry scope。选中的 symlink 不跟随 dirty 工作区；未排除的 gitlink 返回需核对错误。确需子模块时独立注册实际仓库并在父仓明确排除其路径，不能把未获取的 submodule 当成已扫描源码。
 
@@ -61,7 +63,9 @@ Snapshot v1 增加兼容字段：`source`（source_mode / stable_ref / commit / 
 
 多仓独立 pin / staging / commit。某仓 ref、历史或配置失败，在结构化结果中明确列出，健康仓仍可处理；`committed_repos` 是实际成功集合，不宣称跨仓原子事务。本协议沿用单 repo 串行写入，不提供多个并行作者修改同一 Wiki 的隔离保证。
 
-非 Git 的旧 hash baseline 可直接进入正常扫描和验证，以实际字节补记 FILESYSTEM 身份；不要求无意义的 commit 初始化。正式 Git 的旧 baseline 没有 commit 身份时不猜测来源：
+历史 baseline 和证据保留：`source-read --baseline`（无 pending 时的 source-read 同样读取 baseline）与既有 anchor doctor/repair 可回读对象仍在的历史 SHA，即使旧 stable_ref 已不符合新配置要求；这不允许继续推进旧来源。旧策略 pending 由维护摘要检查阻止续用，需重新准备。新策略的合法 pending 不因引用移动而换 SHA，配置或规则变化仍使其失效。
+
+非 Git 的旧 hash baseline 可直接进入正常扫描和验证，以实际字节补记 FILESYSTEM 身份；不要求无意义的 commit 初始化。正式 Git 的旧 baseline 没有来源身份、由本地分支/tag/SHA 改为远程跟踪引用，或更换已登记的远程/分支时，显式初始化：
 
 ```text
 tp-spec wiki maintain --workspace-root <workspace> --repo <id> --initialize-source

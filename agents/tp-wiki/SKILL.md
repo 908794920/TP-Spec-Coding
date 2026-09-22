@@ -14,7 +14,7 @@ description: >
 
 ## 0. 定位
 
-Wiki 是**稳定源码的结构化理解与导航层**，不是源码本身。正式 Git Wiki 绑定明确 commit，不描述未接受的 Work / dirty workspace；非 Git 保留文件 hash/stability 来源：
+Wiki 是**稳定源码的结构化理解与导航层**，不是源码本身。正式 Git Wiki 只从用户指定、本地已有的 `refs/remotes/<remote>/<branch>` 固定 commit，排除工作区和本地未推送提交；不自行 fetch/pull 或选择默认分支，缺失来源则报告。非 Git 保留文件 hash/stability 来源，不提供指定分支保证；详细规则见 [Stable Source](../../wiki/rules/stable-source.md)：
 
 ```text
 Source Code = 当前技术事实

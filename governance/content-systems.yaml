@@ -10,6 +10,7 @@ systems:
     workspace_dir_template: projects/{workspace_id}
     source:
       source_mode: AUTO
+      # Git requires an explicit local refs/remotes/<remote>/<branch>; no automatic synchronization.
       stable_ref: ''
       include_extensions:
       - .py

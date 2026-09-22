@@ -11,7 +11,7 @@
 5. `UNCERTAIN` 不得推进 baseline。
 6. 只有当前 change-set 的 L1-L3 `verify=PASS`，且需要 L4 时 `audit=PASS`，才执行 `snapshot-commit`。
 7. baseline 替换前失败/中断：停止当前 repo 并保留旧 baseline；提交成功后的 cleanup_pending 单独报告，不谎称未推进。其他 repo 独立处理。
-8. Git 所有 source/cite/coverage/audit 均使用同一 staged SHA；未知 ref、不可用对象和非祖先历史不能退回工作区。具体规则见 `wiki/rules/stable-source.md`。
+8. Git 只从用户指定、本地已有的 `refs/remotes/<remote>/<branch>` 固定来源；所有 source/cite/coverage/audit 均使用同一 staged SHA。用户控制同步时间，Wiki 不 fetch/pull，不选择默认分支；未知 ref、不可用对象和非祖先历史停止该仓库，不能退回工作区或本地未推送提交。本地引用落后于服务器可正常维护，不宣称远端最新。具体规则见 `wiki/rules/stable-source.md`。
 
 ## 标准步骤
 

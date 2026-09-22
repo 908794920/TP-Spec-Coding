@@ -512,7 +512,7 @@ def cmd_source_read(args) -> int:
         recorded = paths["baseline"] if args.baseline else (paths["pending"] if paths["pending"].is_file() else paths["baseline"])
         if not recorded.is_file():
             raise ValueError("source-read needs a staged or successful source snapshot; run wiki scan first")
-        source_cfg = _source_cfg(cfg, target, committed=args.baseline)
+        source_cfg = _source_cfg(cfg, target, committed=recorded == paths["baseline"])
         rel = relative_path(args.path)
         data = read_source_bytes(target.repo_root, rel, source_cfg)
         if source_view(target.repo_root, source_cfg).mode == "FILESYSTEM":
