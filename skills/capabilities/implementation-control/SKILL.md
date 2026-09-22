@@ -17,6 +17,8 @@ description: Use while implementing an TP-Spec-Coding task when code changes, re
 ### THINK — 事实先于简化
 找到真实入口、当前实现、调用链、可验证目标和关键假设。仅相关事实存在缺口时定向调查，不为凑清单扫描全仓。
 
+需要 Wiki 导航时按 [统一检索与使用记录](../../../docs/WIKI_USAGE.md) 查询；已知文档直接读取，采用时记录真实 Task Context Usage。不为记录使用量增加无关检索，Wiki 结论仍回当前源码核验。
+
 | 触发条件 | 必要核对 |
 | --- | --- |
 | 删除、接口、配置驱动或共享行为改动 | 形成必要的 Usage Footprint：真实静态调用及适用的 Spring/反射、XML/配置、模板/JSP、消息/定时任务、序列化、外部契约；全文搜索无引用不等于可安全删除。 |

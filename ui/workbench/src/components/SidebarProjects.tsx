@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { Alert, Button, Skeleton, Typography } from 'antd';
-import { DashboardOutlined, DownOutlined, FolderOutlined, RightOutlined, SettingOutlined } from '@ant-design/icons';
+import { DashboardOutlined, DownOutlined, FolderOpenOutlined, FolderOutlined, RightOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import { useRead } from '../useRead';
 import { stateLabel, timestampRaw, timestampText } from '../facts';
@@ -50,7 +50,7 @@ function ProjectRow({ context, expanded, selected, selectedTask, revision, onTog
         <button type="button" className="project-toggle" aria-expanded={expanded} aria-controls={listId}
           title={context.workspace_root || undefined} onClick={onToggle}>
           {expanded ? <DownOutlined className="caret"/> : <RightOutlined className="caret"/>}
-          <FolderOutlined className="folder"/>
+          {expanded ? <FolderOpenOutlined className="folder"/> : <FolderOutlined className="folder"/>}
           <span className="project-name">{name}</span>
         </button>
         {/* The icon action is laid over the row instead of taking flow space, so the row itself stays
@@ -78,13 +78,12 @@ function ProjectRow({ context, expanded, selected, selectedTask, revision, onTog
       </div>}
     </li>;
 }
-export function SidebarProjects({ contexts, selectedKey, selectedTask, revision, onOpenProject, onOpenConfig, onOpenTask }: {
+export function SidebarProjects({ contexts, selectedKey, selectedTask, revision, onOpenProject, onOpenTask }: {
     contexts: Context[];
     selectedKey: string;
     selectedTask: string;
     revision: number;
     onOpenProject: (contextKey: string) => void;
-    onOpenConfig: () => void;
     onOpenTask: (contextKey: string, taskId: string) => void;
 }) {
     /* Expanding is transient view state, not a persisted preference: it follows whatever the user is
@@ -100,11 +99,10 @@ export function SidebarProjects({ contexts, selectedKey, selectedTask, revision,
       <div className="nav-section-head">
         <button type="button" className="nav-section-toggle" aria-expanded={treeOpen} aria-controls={listId}
           title={treeOpen ? '收起项目列表' : '展开项目列表'} onClick={() => setTreeOpen(open => !open)}>
+          {treeOpen ? <FolderOpenOutlined/> : <FolderOutlined/>}
           <Typography.Text className="nav-section-title" type="secondary">项目 · {contexts.length}</Typography.Text>
           {treeOpen ? <DownOutlined className="caret"/> : <RightOutlined className="caret"/>}
         </button>
-        <Button size="small" type="text" className="section-config" icon={<SettingOutlined/>}
-          aria-label="查看全局配置" title="查看全局配置" onClick={onOpenConfig}/>
       </div>
       {treeOpen && <ul className="project-tree" id={listId} aria-label="已注册项目">{contexts.map(context => <ProjectRow key={context.context_key}
         context={context} expanded={openKeys.includes(context.context_key)} selected={context.context_key === selectedKey}

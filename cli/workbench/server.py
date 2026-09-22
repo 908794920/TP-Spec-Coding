@@ -25,18 +25,26 @@ class WorkbenchServer(ThreadingHTTPServer):
 class WorkbenchHandler(BaseHTTPRequestHandler):
     server: WorkbenchServer
 
+    def log_request(self, code="-", size="-") -> None:
+        # Wiki searches may contain private terms. HTTP diagnostics need the route/status,
+        # not another unbounded plaintext query log outside the 90-day usage store.
+        if urlsplit(self.path).path.startswith("/api/wiki/"):
+            self.log_message('"%s %s" %s %s', self.command, urlsplit(self.path).path, code, size)
+        else:
+            super().log_request(code, size)
+
     def _send(self, status: int, payload: dict, *, allow: bool = False) -> None:
         body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        if allow:
-            self.send_header("Allow", "GET")
-        self.end_headers()
         try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            if allow:
+                self.send_header("Allow", "GET")
+            self.end_headers()
             self.wfile.write(body)
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:
             pass  # Navigation may cancel a read; it never requires a retry/write.
 
     def do_GET(self) -> None:
@@ -49,6 +57,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 result = service.skill_document(path[2], parse_qs(urlsplit(self.path).query).get("path", [""])[0])
             elif path == ["api", "global"]:
                 result = service.global_view()
+            elif len(path) == 3 and path[:2] == ["api", "wiki"]:
+                result = service.wiki_view(path[2], parse_qs(urlsplit(self.path).query, keep_blank_values=True))
             elif len(path) >= 3 and path[:2] == ["api", "projects"]:
                 if len(path) == 3:
                     result = service.project_view(path[2])

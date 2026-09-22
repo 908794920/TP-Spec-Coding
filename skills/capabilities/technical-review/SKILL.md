@@ -10,6 +10,8 @@ description: 对真实 Diff 和 subject 做独立代码审查；保留 Finding�
 ## 使用边界
 只对真实实现 subject 做独立审查；技术主管调用本方法不自动获得正式 Reviewer 身份。修改/审查基座先读 [本仓验证策略](../../../docs/TESTING.md)，业务项目遵守自身规则。
 
+需要 Wiki 缩小范围时按 [低成本检索与使用记录](../../../docs/WIKI_USAGE.md) 按需查询或读取；上下文足够可跳过，真实采用并入已有任务记录，不为计数新增调用。
+
 ## Review Contract
 1. 固定 review subject（workspace snapshot / commit / base-head digest）；subject 实质变化后旧 PASS 不可复用。
 2. Reviewer 默认只读，不修改文件、不创建 commit，不把 Review 变成第二轮 Development。Reviewer 逻辑身份与实现者隔离；只读取 canonical Requirement、Architecture、Project Rules、Diff、Test Evidence 与必要代码事实。

@@ -15,6 +15,8 @@ description: Use when a requirement is ambiguous, incomplete, conflicts with pro
 
 输入成熟度分流、产品定义或输出范围不明确时读 [产品定义](references/product-definition.md)；只澄清一个问题不展开该参考。原型、UI、交互或动效任务读 [原型与交互设计](../ui-prototype-design/SKILL.md)，不把产品方法自动变成新阶段。
 
+需要 Wiki 缩小范围时按 [低成本检索与使用记录](../../../docs/WIKI_USAGE.md) 按需查询或读取；上下文足够可跳过，真实采用并入已有任务记录，不为计数新增调用。
+
 ## 基础方法
 
 1. 将信息分为：确认事实、AI 假设、待确认决策、未知现状。

@@ -30,18 +30,16 @@ li:not([class*="ant-"]) { overflow-wrap: anywhere; }
 .brand .ant-typography-secondary,.header-meta { color: var(--muted); }
 .app-header .header-right { margin-left: auto; }
 .app-header .refresh-button { white-space: nowrap; }
-/* The fold control and the task search sit together at the left edge, so they get the pair gap
-   rather than the header's own. */
+/* Header icon actions share the same spacing and button dimensions. */
 .header-actions { display: flex; align-items: center; gap: 4px; }
 /* Header task search: the icon opens a query panel for TASK ID / title across every registered
    project. The panel is positioned under the header, so opening it never reflows the header. It
-   anchors to its own left edge — it now lives at the left of the bar — and is capped so it cannot
-   run past the viewport's right edge. */
+   anchors to the right action group and is capped to stay within the viewport. */
 .task-search { position: relative; display: flex; align-items: center; }
 /* The button itself is a plain antd outlined button, matching the fold control and 重新读取: only the
    open state is ours to state, and it mirrors the accent antd uses on hover. */
 .task-search-toggle[aria-expanded='true'] { color: var(--accent); border-color: var(--accent); }
-.task-search-panel { position: absolute; left: 0; top: calc(100% + 10px); z-index: 40; width: min(440px, calc(100vw - 60px)); display: grid; gap: 8px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--panel-shadow); }
+.task-search-panel { position: absolute; right: -72px; top: calc(100% + 10px); z-index: 40; width: min(440px, calc(100vw - 60px)); display: grid; gap: 8px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--panel-shadow); }
 .task-search-panel p.muted { margin: 0; font-size: 12px; }
 .task-search-hits { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 320px; overflow-y: auto; }
 .task-hit { font: inherit; cursor: pointer; width: 100%; min-width: 0; display: grid; gap: 3px; border: 0; border-radius: var(--radius); background: transparent; color: var(--text); padding: 6px 8px; text-align: left; }
@@ -72,15 +70,12 @@ li:not([class*="ant-"]) { overflow-wrap: anywhere; }
    the sidebar longer. */
 /* Sidebar project tree: a project is a folder row that expands to its most recent tasks. Rows are
    native buttons, so each one declares its own base styling — the element-level fallback is gone. */
-/* The「项目」group header is the control that shows or hides the whole project list, and the icon on
-   its right opens 全局配置 — the same shape as the editor's own sidebar: title, fold caret, actions. */
+/* The project group header shows or hides the whole project list. */
 .nav-section-head { display: flex; align-items: center; gap: 2px; margin: 0 0 6px; }
 .nav-section-toggle { font: inherit; cursor: pointer; flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); padding: 3px 4px; text-align: left; }
 .nav-section-toggle:hover { background: var(--muted-surface); }
 .nav-section-title { font-size: 12px; }
 .nav-section-toggle .caret { font-size: 10px; flex: none; }
-.section-config { flex: none; color: var(--muted); }
-.section-config:hover { color: var(--accent); }
 /* Two things here are load-bearing rather than cosmetic:
    - the generic `ul:not([class*="ant-"])` content-list padding must not apply, or the tree is
      indented away from the sidebar's own left edge;
@@ -102,19 +97,16 @@ li:not([class*="ant-"]) { overflow-wrap: anywhere; }
 .project-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Revealed on hover or keyboard focus. Kept focusable while transparent so Tab still reaches them
    instead of the controls being unreachable without a pointer. */
-.project-actions { position: absolute; right: 0; top: 2px; display: flex; align-items: center; gap: 2px; opacity: 0; pointer-events: none; }
+.project-actions { position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 2px; opacity: 0; pointer-events: none; }
 .project-head:hover .project-actions,.project-actions:focus-within { opacity: 1; pointer-events: auto; }
 .project-actions .ant-btn { color: var(--muted); }
 .project-actions .ant-btn:hover { color: var(--accent); }
 /* Fold carets and the group's action icon stay quiet until the pointer — or keyboard focus — is on
    their row, so the list reads as folders and names and each affordance appears where the user
    already is. Opacity, never `display`, because `display` would reflow the row on every hover. */
-.project-toggle .caret,.nav-section-toggle .caret,.section-config { opacity: 0; }
-.section-config { pointer-events: none; }
+.project-toggle .caret,.nav-section-toggle .caret { opacity: 0; }
 .project-head:hover .caret,.project-toggle:focus-visible .caret,
 .nav-section-head:hover .caret,.nav-section-toggle:focus-visible .caret,
-.nav-section-head:hover .section-config,.section-config:focus-visible { opacity: 1; }
-.nav-section-head:hover .section-config,.section-config:focus-visible { pointer-events: auto; }
 /* A folded group keeps its caret on screen: with the list gone, that caret is the only thing still
    saying where the list went. */
 .nav-section-toggle[aria-expanded='false'] .caret { opacity: 1; }
@@ -280,7 +272,7 @@ main { min-width: 0; }
    and the collapse toggle stays the only way to reclaim the space. */
 /* Touch and narrow screens have no hover, so every hover-revealed control is pinned on instead —
    otherwise the fold carets and the action icons would be unreachable there. */
-@media(max-width:800px){ .shell {grid-template-columns:minmax(0,1fr);} .navigation {position:static;max-height:60vh;border-bottom:1px solid var(--border);} .nav-resizer {display:none;} .project-actions,.project-toggle .caret,.nav-section-toggle .caret,.section-config {opacity:1;pointer-events:auto;} .app-header {padding:10px 12px;gap:10px;} .header-meta {font-size:12px;} .brand {font-size:12px;} .brand strong {font-size:15px;} }
+@media(max-width:800px){ .shell {grid-template-columns:minmax(0,1fr);} .navigation {position:static;max-height:60vh;border-bottom:1px solid var(--border);} .nav-resizer {display:none;} .project-actions,.project-toggle .caret,.nav-section-toggle .caret {opacity:1;pointer-events:auto;} .app-header {padding:10px 12px;gap:10px;} .header-meta {font-size:12px;} .brand {font-size:12px;} .brand strong {font-size:15px;} }
 @media(max-width:520px){ .page {padding:12px;} .brand .ant-typography-secondary,.header-meta {display:none;} .brand strong {font-size:14px;} .app-header {gap:8px;} .refresh-button {font-size:12px;} h2 {font-size:18px;} .field {grid-template-columns:minmax(85px,30%) minmax(0,1fr);gap:8px;} .filters {flex-direction:column;} .filters label:last-child {min-width:0;} .step-summary {flex-direction:column;gap:0;} .flow-steps li {min-width:132px;} .workflow-strip {padding:12px;} .graph-search .graph-query {min-width:130px;} .graph-canvas {height:460px;} .task-detail {inset:8px;width:calc(100vw - 16px);height:calc(100vh - 16px);max-height:calc(100vh - 16px);} .graph-actions button {padding:5px 7px;} .page-heading {margin-bottom:12px;} }
 @media(prefers-reduced-motion:reduce){ * {scroll-behavior:auto!important;} }
 /* W04 details: text-first facts, no outcome inferred from green containers. */
@@ -468,7 +460,7 @@ button,a,summary { -webkit-tap-highlight-color: transparent; }
 .task-search-panel,.project-tasks,.execution-step[open]>.execution-step-body,.role-participation-detail { animation: workbench-enter var(--motion-panel) var(--motion-ease); }
 .task-detail[open] { animation: workbench-drawer var(--motion-panel) var(--motion-ease); }
 .mobile-nav-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-@media(hover:none) { .project-actions,.project-toggle .caret,.nav-section-toggle .caret,.section-config { opacity: 1; pointer-events: auto; } }
+@media(hover:none) { .project-actions,.project-toggle .caret,.nav-section-toggle .caret { opacity: 1; pointer-events: auto; } }
 @media(max-width:800px) {
   .shell,.shell.nav-collapsed { grid-template-columns: minmax(0,1fr); transition: none; }
   .shell .nav-resizer,.shell.nav-collapsed .nav-resizer { display: none; }
@@ -479,6 +471,7 @@ button,a,summary { -webkit-tap-highlight-color: transparent; }
   .brand .ant-typography-secondary { display: none; }
 }
 @media(max-width:520px) {
+  .task-search-panel { position: fixed; top: var(--header-h); right: 12px; width: calc(100vw - 24px); }
   .app-header { padding-inline: 8px; }
   .brand strong { font-size: 15px; }
   .header-meta { display: none; }

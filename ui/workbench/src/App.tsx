@@ -1,16 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, PointerEvent } from 'react';
 import { Alert, Button, Space, Tag, Typography } from 'antd';
-import { MenuFoldOutlined, MenuUnfoldOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DatabaseOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ReadOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { api } from './api';
 import { useRead } from './useRead';
 import { ProjectPage } from './pages/ProjectPage';
 import { GlobalConfigPage } from './pages/GlobalConfigPage';
 import { TaskPage } from './pages/TaskPage';
+import { WikiPage } from './pages/WikiPage';
 import { SidebarProjects } from './components/SidebarProjects';
 import { TaskSearch } from './components/TaskSearch';
 import { ThemeControl } from './components/ThemeControl';
-type Page = 'project' | 'task' | 'global';
+type Page = 'project' | 'task' | 'global' | 'wiki';
 /* Sidebar width and collapse are presentation preferences, so they live in local storage — never in
    Runtime facts. Both are clamped on read: a stored value must not be able to break the layout. */
 const NAV_KEY = 'tp-spec.workbench.nav', NAV_DEFAULT = 260, NAV_MIN = 180, NAV_MAX = 420;
@@ -111,14 +112,10 @@ export default function App() {
     return <div className="app"><a className="skip-link" href="#main-content">跳到主内容</a>
     {/* An icon-only control: the fold/unfold pair reads as "导航" without spending header width on a
         label, so the accessible name comes from `aria-label` plus the native tooltip. */}
-    <header className="app-header">{/* The fold control and the task search read as one pair of chrome actions, so they
-        share a tighter gap than the header's own. */}
-      <span className="header-actions"><Button ref={navButton} type="text" className="nav-toggle" icon={nav.collapsed ? <MenuUnfoldOutlined/> : <MenuFoldOutlined/>} aria-expanded={!nav.collapsed} aria-controls="workbench-navigation" aria-label={nav.collapsed ? '显示导航' : '隐藏导航'} title={nav.collapsed ? '显示导航' : '隐藏导航'} onClick={() => setNav(prev => ({ ...prev, collapsed: !prev.collapsed }))}/>
-        {/* `openTaskInProject` carries the context with the click, which is what a search hit needs:
-            the hit may live in another project than the one currently selected. */}
-        <TaskSearch contexts={contexts} revision={revision} onOpenTask={openTaskInProject}/></span>
+    <header className="app-header">
+      <span className="header-actions"><Button ref={navButton} type="text" className="nav-toggle" icon={nav.collapsed ? <MenuUnfoldOutlined/> : <MenuFoldOutlined/>} aria-expanded={!nav.collapsed} aria-controls="workbench-navigation" aria-label={nav.collapsed ? '显示导航' : '隐藏导航'} title={nav.collapsed ? '显示导航' : '隐藏导航'} onClick={() => setNav(prev => ({ ...prev, collapsed: !prev.collapsed }))}/></span>
       <div className="brand"><Typography.Text strong>TP-Spec</Typography.Text><Typography.Text type="secondary">本地工作台</Typography.Text></div>
-      <Space className="header-right" size={8}><Space className="header-meta" size={8}><Tag variant="filled">只读</Tag><Typography.Text type="secondary">{health.data?.version ?? '版本未读取'}</Typography.Text></Space><ThemeControl/><Button type="text" className="refresh-button" icon={<ReloadOutlined/>} onClick={() => refresh(n => n + 1)}>重新读取</Button></Space>
+      <Space className="header-right" size={8}><Space className="header-meta" size={8}><Tag variant="filled">只读</Tag><Typography.Text type="secondary">{health.data?.version ?? '版本未读取'}</Typography.Text></Space><span className="header-actions"><TaskSearch contexts={contexts} revision={revision} onOpenTask={openTaskInProject}/><Button type="text" icon={<SettingOutlined/>} aria-label="查看全局配置" title="查看全局配置" aria-pressed={page === 'global'} onClick={() => switchPage('global')}/><ThemeControl/></span><Button type="text" className="refresh-button" icon={<ReloadOutlined/>} onClick={() => refresh(n => n + 1)}>重新读取</Button></Space>
     </header>
     {health.error && <Alert className="app-alert" banner role="alert" type="error" showIcon title={health.error}/>}
     <div className={`shell${nav.collapsed ? ' nav-collapsed' : ''}${resizing ? ' is-resizing' : ''}`} style={{ '--nav-w': `${nav.width}px` } as CSSProperties}>
@@ -132,11 +129,14 @@ export default function App() {
         {global.error && <Alert role="alert" type="error" showIcon title={global.error}/>}
         {!global.loading && global.data && !contexts.length && <Typography.Text type="secondary">没有已注册项目。工作台不会自动初始化。</Typography.Text>}
         {contextKey && !context && global.data && <Alert role="alert" type="error" showIcon title="原选中上下文已不在注册表，请重新选择。"/>}
-        {/* The project tree and its two icons now reach every page, so the separate page menu that
-            used to sit here was a second, redundant path to the same three views. */}
-        <SidebarProjects contexts={contexts} selectedKey={page === 'global' ? '' : contextKey} selectedTask={page === 'task' ? selectedTask : ''} revision={revision}
+        <nav className="wiki-global-nav" aria-label="全局页面">
+          <Button type="text" icon={<ReadOutlined/>} aria-current={page === 'wiki' ? 'page' : undefined} onClick={() => { selectContext(''); selectTask(''); switchPage('wiki'); }}>Wiki</Button>
+          <Button type="text" icon={<DatabaseOutlined/>} disabled><span>知识库</span><Tag>待开放</Tag></Button>
+        </nav>
+        {/* The project tree opens project and task pages; global configuration remains in the header. */}
+        <SidebarProjects contexts={contexts} selectedKey={page === 'global' || page === 'wiki' ? '' : contextKey} selectedTask={page === 'task' ? selectedTask : ''} revision={revision}
           onOpenProject={key => { selectContext(key); selectTask(''); switchPage('project'); }}
-          onOpenConfig={() => switchPage('global')} onOpenTask={openTaskInProject}/>
+          onOpenTask={openTaskInProject}/>
         {/* The task index now lives under each project; the selected project's read error stays here
             as well because it is otherwise invisible while the task or config page is open. */}
         {context && project.error && <Alert role="alert" type="error" showIcon title={project.error}/>}
@@ -146,7 +146,7 @@ export default function App() {
           would be clipped by its own overflow. */}
       <div className="nav-resizer" role="separator" aria-orientation="vertical" aria-label="调整导航宽度" aria-valuenow={nav.width} aria-valuemin={NAV_MIN} aria-valuemax={NAV_MAX} tabIndex={0} title="拖动调整宽度，双击恢复默认，方向键微调"
         onPointerDown={startResize} onPointerMove={dragResize} onPointerUp={stopResize} onPointerCancel={stopResize} onKeyDown={keyResize} onDoubleClick={() => setNav(prev => ({ ...prev, width: NAV_DEFAULT }))}/>
-      <main id="main-content" tabIndex={-1}>{page === 'global' ? <GlobalConfigPage read={global} health={health}/> : page === 'task' ? <TaskPage context={context} taskId={selectedTask} read={task} revision={revision}/> : <ProjectPage context={context} read={project} onSelectTask={openTask}/>}</main>
+      <main id="main-content" tabIndex={-1}>{page === 'global' ? <GlobalConfigPage read={global} health={health}/> : page === 'wiki' ? <WikiPage revision={revision}/> : page === 'task' ? <TaskPage context={context} taskId={selectedTask} read={task} revision={revision}/> : <ProjectPage context={context} read={project} onSelectTask={openTask}/>}</main>
     </div>
   </div>;
 }

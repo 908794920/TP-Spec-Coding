@@ -211,6 +211,50 @@ class WorkbenchService:
         data["problems"] = [*data.get("problems", []), *issues]
         return self._response(data, None, started)
 
+    def wiki_view(self, operation: str, parameters: dict[str, list[str]]) -> dict[str, Any]:
+        if operation not in {"overview", "documents", "document", "search", "records"}:
+            raise ReadError("NOT_FOUND", "Wiki 接口不存在", 404)
+        from .wiki_view import WikiView
+        started = timestamp()
+
+        def value(name, default=""):
+            values = parameters.get(name, [default])
+            if len(values) != 1:
+                raise ReadError("INVALID_QUERY", f"参数不能重复：{name}", 400)
+            return values[0]
+
+        try:
+            days, page = int(value("days", "30")), int(value("page", "1"))
+        except ValueError as exc:
+            raise ReadError("INVALID_QUERY", "时间范围和页码必须为整数", 400) from exc
+        if days not in {7, 30, 90} or not 1 <= page <= 100000:
+            raise ReadError("INVALID_QUERY", "时间范围或页码不受支持", 400)
+        query, status, date = value("q").strip(), value("status", "all"), value("date")
+        if len(query) > 512 or status not in {"all", "hit", "zero", "failed"}:
+            raise ReadError("INVALID_QUERY", "查询内容或状态不受支持", 400)
+        if date:
+            try:
+                datetime.strptime(date, "%Y-%m-%d")
+            except ValueError as exc:
+                raise ReadError("INVALID_QUERY", "日期须为 YYYY-MM-DD", 400) from exc
+        contexts, issues = read_contexts()
+        view = WikiView(self, contexts, issues, days=days, project=value("project"))
+        if operation == "overview":
+            data = view.overview()
+        elif operation in {"documents", "search"}:
+            data = view.documents_view(page=page, query=query, repo=value("repo"), kind=value("kind"),
+                                       adopted=value("adopted") == "1")
+        elif operation == "document":
+            data = view.document_view(value("id"))
+        elif operation == "records":
+            data = view.records_view(page=page, status=status, date=date, query=query)
+        else:
+            raise ReadError("NOT_FOUND", "Wiki 接口不存在", 404)
+        result = self._response(data, None, started)
+        result["read"].update(consistency="independent_readonly_snapshots+live_files",
+            note="各项目 Runtime、Wiki 索引及日志分别只读；跨来源与实时文件不承诺原子快照。页面读取不会采集使用量。")
+        return result
+
     def project_view(self, key: str) -> dict[str, Any]:
         started, context = timestamp(), self._context(key)
         with self._database(context) as conn:

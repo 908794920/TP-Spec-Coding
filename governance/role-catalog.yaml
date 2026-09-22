@@ -1,6 +1,6 @@
 catalog_version: "5.3.4"
 base_version: "5.3.4"
-generated_utc: 20260922T053638Z
+generated_utc: 20260922T163853Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -64,7 +64,7 @@ roles:
   phases: [other]
   capabilities: [wiki.plan, wiki.update, wiki.audit, wiki.search]
   owns_states: []
-  content_sha256: 48B6901796E0F475D86D6B02CFC524C9498AF9283B5F44A1132CA70D01358446
+  content_sha256: 31D11466B810B4988FD70C9C00986F7BC76B42B3B5087F005A31E8FE8AA50D00
 - workflow_role: tp-product-manager
   display_name: tp-产品经理
   type: workflow-role

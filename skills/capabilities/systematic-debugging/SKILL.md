@@ -7,6 +7,8 @@ description: Use when a test, build, runtime behavior, integration, or verificat
 
 # 系统化调试 — Record-first
 
+需要 Wiki 缩小范围时按 [低成本检索与使用记录](../../../docs/WIKI_USAGE.md) 按需查询或读取；上下文足够可跳过，真实采用并入已有任务记录，不为计数新增调用。
+
 ## 修改前门禁：Tight Red Feedback Loop
 
 面对 Bug、测试失败、运行异常、集成失败或性能回退时，**修改产品代码之前**必须先建立一个针对用户实际症状的反馈回路，并且已经实际执行至少一次、观察到当前失败。仅证明“命令能运行”“没有抛异常”或附近测试失败，不算捕获当前症状。
