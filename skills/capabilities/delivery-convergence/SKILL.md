@@ -32,7 +32,7 @@ Integration 发现当前范围内真实产品 Finding 交父 Task 下的 Fix Wor
 ## 每 Task 知识与项目记忆
 每次交付都由 [knowledge-capture](../knowledge-capture/SKILL.md) 覆盖本任务有效需求和各步骤材料；knowledge_signals 是线索，不决定是否跳过。经可信 Request 把候选交 [tp-knowledge](../../../agents/tp-knowledge/SKILL.md) 定向检索、判重/维护及最终 Result；Integration 不检索全库、不签 DUPLICATE/NO_DURABLE_INSIGHT，不维护第二份 canonical。
 
-同时调用唯一 [tp-memory-capture](../tp-memory-capture/SKILL.md) 判断各步骤稳定 Rule/Fact/Procedure、临时与已替代内容的归位。必做的是阅读、判断和处置，不是强制新建知识/记忆条目。Work 只提供紧凑结果供父 Task 汇总，不每个 Work 再跑全套收敛。
+同时调用唯一 [tp-memory-capture](../tp-memory-capture/SKILL.md) 判断各步骤稳定 Rule/Fact/Procedure、临时与已替代内容的归位，并核对值得沉淀的问题是否需要新增/更新 AGENTS 触发入口及其可发现性。正文保存、入口保存/已覆盖/无需新增及失败分别记录，不能用 Memory 已保存代替入口核对。必做的是阅读、判断和处置，不是强制新建条目或修改所有 Memory 文件。Work 只提供紧凑结果供父 Task 汇总，不每个 Work 再跑全套收敛。
 
 存在交互测试时，按 [Visual QA](../testing-strategy/references/visual-qa.md) 核对脚本保存/更新/已覆盖/不保留的实际处置、目标导航与回放状态；未回放不得报可稳定复用，不因交付重复运行有效测试。
 

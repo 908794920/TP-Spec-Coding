@@ -117,6 +117,13 @@ Runtime/FTS 是两个存储。命令不写 canonical 或 Memory 正文；索引�
 保护托管区、先保存目标并读回再精简源条目，由共享方法负责，CLI 不自行改写或移动。
 完整 Knowledge 正文不再复制到 Memory。属于本次产品交付物的规则/方法改动仍纳入产品主体。
 
+AGENTS 薄入口的维护与可发现性核对统一按 [项目记忆捕获](../../../skills/capabilities/tp-memory-capture/SKILL.md) 执行。沿用 `memory.summary`、各项 `reason` 和既有 disposition 记录正文与入口的各自处置，不新增 schema 字段：
+
+- 正文与 AGENTS 均有保存/覆盖事实时，分为不同 `id` 的条目，分别填写真实 `target`、`excerpt`，可绑定相同的相关 `input_ids`。各项 `kind` 按实际内容判断，仍满足上表的来源、授权或重发现成本要求，不为增加入口伪造规则授权或新建 Procedure。
+- 正文已保存但必要入口未保存时，保留正文的实际结果，入口另记 `NOT_PERSISTED`、责任与恢复条件，不能合并成全部成功。
+- 已有入口足够时记录实际覆盖；无需新增入口在 `reason` 中说明，无可沉淀项沿用 `items=[]` 与具体 `no_items_reason`，不制造空条目或强制修改文件。
+- `summary`/`reason` 如实说明可发现性核对结果。CLI 的片段读回和 SHA256 不校验问题词语义或目标锚点，不证明宿主发现或 AI 遵守；未核对不能声称通过。
+
 必做评估缺失会待处理；**可选记忆未保存或保存目标后来变化，显示
 `ASSESSED_WITH_UNPERSISTED` 和责任/恢复条件，不把它说成未评估，也不无关阻塞全部研发。**
 重要规则尚未保存时当前已知约束仍然遵守；授权不清只停止相应行为。

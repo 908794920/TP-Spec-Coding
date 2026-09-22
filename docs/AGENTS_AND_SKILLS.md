@@ -75,7 +75,7 @@ Role 只留职责、边界和准确触发指针，方法由 Capability/其按需
 | 合并实现、测试与完整审查细则 | 开发、测试、代码审查员原正文及各自已挂能力 | `implementation-control`、`testing-strategy`、`technical-review` 单处维护；debugging、test-value、visual-qa 继续按需引用，不另造同义 Skill |
 | 补关系，不退役 | `knowledge-capture` 原文件及其 agents metadata 存在，原 catalog 无该关系；`tp-knowledge` 是实际长期知识维护入口 | 集成交付工程师挂载 `knowledge-capture` 和新 `delivery-convergence`；候选经可信 Request 交 `tp-knowledge`，不复制 canonical 写入职责 |
 | 适配并挂载视觉方法 | 产品经理原产品方法和开发/测试已有 UI 边界；来源/取舍见第三方声明 | 新 `ui-prototype-design` 挂产品经理与开发；测试复用 `testing-strategy/references/visual-qa.md`，不增加 UI 角色或上游引擎 |
-| 单一共享 Memory | 九角色原重复段落、已有 tp-memory-capture、project-entry 模板 | 角色仅短触发指针；`tp-memory-capture` 统一规则/事实/方法归位，交付每 Task 必评估；模板不改项目自有区 |
+| 单一共享 Memory | 九角色原重复段落、已有 tp-memory-capture、project-entry 模板 | 角色仅短触发指针；`tp-memory-capture` 统一规则/事实/方法归位及 AGENTS 入口可发现性，交付每 Task 必评估正文与入口处置；模板不改项目自有区 |
 | 原样保留领域专项 | tp-project-autonomy 的 domain_skills 及 scripts/update_role_catalog.py 生成路径 | 四个 `skills/autonomy/` 能力保留，无使用关系被批量删掉；topology/文档仍由既有工具生成 |
 
 上述 Capability 路径以 `skills/capabilities/` 为根，具体可点击路径从生命周期导航或对应 Role 进入。Runtime 的[执行事实](EXECUTION_FACTS.md)、[Work/Fix 与集成候选](WORK_UNITS.md)、[来源审批](security-change-authority.md)和[结单/提炼](agents/tp-software-lifecycle.md)分别承载实际行为；本章与拓扑只负责导航，不能代替运行验证或真实验收。新旧事实按各自标记解释，不由角色关系推断过去已执行。

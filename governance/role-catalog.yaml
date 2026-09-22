@@ -1,6 +1,6 @@
 catalog_version: "5.3.4"
 base_version: "5.3.4"
-generated_utc: 20260921T093539Z
+generated_utc: 20260922T053638Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -182,7 +182,7 @@ roles:
     - {id: knowledge-capture, path: skills/capabilities/knowledge-capture/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: FAC61A63527F67AA370299C3EAFF20DAE4D30A228E91F2B9C4852B3013944C5A
+  content_sha256: 4D830325706AEAA0A52CB8829CF7256B8EE5F493A1AAEF918A7F1CDADD91502F
 topology:
   schema: tp-spec.role-topology/v1
   generated: true

@@ -4,7 +4,7 @@
 
 ## 权威边界
 
-- 每会话不可遗漏的稳定授权/范围不变量归项目根 `AGENTS.md` 自有区短句（Base 托管标记外）；详细长期规则/方法归项目 Memory/Skill，临时事实留 Task。同步 Base 只更新托管内容，不覆盖自有规则，也不把 Memory 整体搬入入口。
+- 项目根 `AGENTS.md` 自有区（Base 托管标记外）保留必要硬约束和高价值经验的薄入口，以问题现象/关键术语指向详细内容；详细稳定规则归 Memory `PROJECT.md` 相应分节，可复用方法归项目 Skill，临时事实留 Task。沉淀时同时评估入口是否需要新增或更新，已有覆盖则复用；具体格式与可发现性核对统一见 `tp-memory-capture`。同步 Base 只更新托管内容，不覆盖自有规则，也不把 Memory 整体搬入入口。
 - `config/project-binding.yaml`：项目身份与当前 Base contract 绑定；不得写入其他机器的 Base/Wiki/Knowledge 绝对路径。
 - `config/content-systems.yaml`：仅保存本项目真正需要的 Content Systems override；机器级 Wiki/Knowledge 根由 Installation/Resolver 提供。
 - `db/`：项目 Runtime SQLite；其中 `project.root_path` 是当前机器 locator/cache，可由 Base 安全 rebind，不是 portable identity；`*.db-wal` / `*.db-shm` 是 transient。
@@ -12,7 +12,7 @@
 - `tasksHistory/`：已归档任务历史。
 - `.execution/`：持久执行辅助状态；不替代任务账本。
 - 历史 `card/`：旧展示文件不再生成或更新，不属于 Runtime/Task truth；不要因升级批量删除其中的用户历史文件。
-- `memory/`：项目 Git 可携带的轻量热记忆与项目级 Skill；`INDEX.md` 是目标未知时的可选导航，`PROJECT.md` 不是事实真源，不保存敏感或 machine-local 信息。
+- `memory/`：项目 Git 可携带的轻量热记忆与项目级 Skill；`INDEX.md` 是目标未知时的可选导航，不承载正文；`PROJECT.md` 保存详细稳定规则和有来源、适用条件的事实线索，方法正文归项目 Skill。Memory 不是当前技术事实真源，不保存敏感或 machine-local 信息。
 
 ## 使用方式
 
@@ -32,6 +32,6 @@
 
 ## 按需读取与记录
 - 角色与能力：Resolver 定位的 Base 内 `governance/role-catalog.yaml` 是唯一挂载源，角色入口提供触发/边界；方法只在实际使用时读取，故障手工加载不绕过 Runtime 或身份隔离。
-- Memory：Rule 要有来源、范围与写入授权，不受重发现成本限制；Fact/Procedure 需证据、稳定、可复用且重发现成本高。重要规则写失败说明未持久化、责任与恢复条件，当前已知规则仍遵守；可选缓存失败不无关阻塞。先保存并验证目标再薄化源条目，不改托管标记和项目自有原文。
+- Memory：Rule 要有来源、范围与写入授权，不受重发现成本限制；Fact/Procedure 需证据、稳定、可复用且重发现成本高。按共享方法先保存并读回正文，再在授权范围内维护 AGENTS 自有区的相关触发入口并核对可发现性；不改托管标记或无关自有原文。分别记录正文与入口的实际处置，重要规则或必要入口写失败说明未持久化、责任与恢复条件，当前已知规则仍遵守；可选缓存失败不无关阻塞。INDEX 只在导航变化时更新，不要求每次交付修改所有 Memory 文件。
 - Telemetry：本阶段真实使用 Wiki/Knowledge/Memory/项目 Skill 时，才在原有 checkpoint/review/verify/delivery 附 `--context-usage-json`。不得为遥测额外搜索、扫描、读取或调用模型；source_followup 默认 unknown，仅有实际 tool-call/source-read 证据才写 none/targeted/broad；失败不阻塞研发。
 - 状态面：`.tp-spec/` 保存 binding、Runtime/Task、Memory 和配置 override；Base 程序/公共方法不复制到项目、不依赖 Junction。进入 Task 读取真实 status/events/正式工件，派生视图过期不推翻已提交事实。
