@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -227,8 +228,13 @@ def cmd_verify(args) -> int:
         reports = []
         failed = False
         for t in targets:
+            print(f"[wiki verify] {t.repo_id}: starting", file=sys.stderr, flush=True)
             source_cfg = _source_cfg(cfg, t)
-            report = verify_repo(repo_root=t.repo_root, wiki_repo_root=t.wiki_repo_root, source_cfg=source_cfg, quality_cfg=cfg.quality, coverage_cfg=_coverage_cfg(cfg, t))
+            def progress(message: str) -> None:
+                print(f"[wiki verify] {t.repo_id}: {message}", file=sys.stderr, flush=True)
+            report = verify_repo(repo_root=t.repo_root, wiki_repo_root=t.wiki_repo_root,
+                                 source_cfg=source_cfg, quality_cfg=cfg.quality,
+                                 coverage_cfg=_coverage_cfg(cfg, t), progress=progress)
             reports.append({"repo_id": t.repo_id, "report": report})
             failed = failed or report.get("result") != "PASS"
         _emit({"schema": "tp-spec.wiki-verify-run/v1", "status": "FAIL" if failed else "PASS", "results": reports})

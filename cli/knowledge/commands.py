@@ -15,7 +15,9 @@ from .ingest import convert_batch, disposition, finalize_batch, ingest_status, r
 from .migration import migration_plan
 from .normalization import normalization_plan, apply_normalization
 from .lint import lint_knowledge, lint_canonical_note
-from .projection import build_projection, projection_status, search, telemetry_summary, update_projection, update_canonical_note_projection
+from .projection import build_projection, projection_status, search, search_documents, telemetry_summary, update_projection, update_canonical_note_projection
+from .reading import read_document
+from .telemetry import CONTRACT as USAGE_CONTRACT, KnowledgeError
 from .state import commit_snapshot, create_audit_plan, maintain, record_audit, stage_scan, status as knowledge_status, verify
 
 
@@ -103,15 +105,35 @@ def cmd_index_status(args) -> int:
     except Exception as exc: _emit({"schema":"tp-spec.knowledge-index-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
+def _call_context(args):
+    return {"request_id": getattr(args, "request_id", None), "task_id": getattr(args, "task", None),
+            "actor_role": getattr(args, "role", None), "purpose": getattr(args, "purpose", "development"),
+            "record_telemetry": not args.no_telemetry}
+
+
+def _usage_error(schema, exc):
+    code = exc.code if isinstance(exc, KnowledgeError) else "KNOWLEDGE_OPERATION_FAILED"
+    _emit({"schema": schema, "status": "FAIL", "error": code, **getattr(exc, "collection", {})})
+    return 1
+
+
 def cmd_search(args) -> int:
     try:
-        cfg=_cfg(args)
-        resolved = None
-        if not args.project and args.scope != "global":
-            resolved = resolve_knowledge_project(cfg, require=True)
-        hits=search(cfg,args.query,project=args.project,kind=args.kind,layer=args.layer,limit=args.limit,record_telemetry=not args.no_telemetry,scope=args.scope)
-        _emit({"schema":"tp-spec.knowledge-search/v1","status":"PASS","query_hash_only":True,"strategy":cfg.knowledge_retrieval.get("strategy"),"scope":args.scope or cfg.knowledge_retrieval.get("default_scope","project"),"resolved_project":(resolved or {}).get("project_id") if resolved else args.project,"count":len(hits),"results":hits}); return 0
-    except Exception as exc: _emit({"schema":"tp-spec.knowledge-search/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+        _emit(search_documents(_cfg(args), args.query, project=args.project, scope=args.scope,
+            kind=args.kind, layer=args.layer, limit=args.limit if args.limit is not None else 5,
+            **_call_context(args)))
+        return 0
+    except Exception as exc:
+        return _usage_error("tp-spec.knowledge-search/v1", exc)
+
+
+def cmd_read(args) -> int:
+    try:
+        _emit(read_document(_cfg(args), args.document_id, project=args.project, scope=args.scope,
+            start_line=args.start_line, end_line=args.end_line, full=args.full, **_call_context(args)))
+        return 0
+    except Exception as exc:
+        return _usage_error("tp-spec.knowledge-read/v1", exc)
 
 
 def cmd_telemetry(args) -> int:
@@ -194,10 +216,15 @@ def _task_convergence_sources(task_dir: Path, values: List[str]) -> tuple[List[s
     return refs, items
 
 
-def _search_receipt(cfg, query: str) -> Dict[str, Any]:
+def _search_receipt(cfg, query: str, *, task_id=None) -> Dict[str, Any]:
     from cli.delivery_contract import validate_receipt_payload
 
-    hits = search(cfg, query, scope="project", record_telemetry=True)
+    from dataclasses import replace
+    cfg = replace(cfg, knowledge_retrieval={**cfg.knowledge_retrieval, "include_shared": True, "global_fallback": False})
+    collected = {}
+    hits = search(cfg, query, scope="project", record_telemetry=True,
+                  purpose="delivery_convergence", caller="task_convergence", task_id=task_id,
+                  actor_role="tp-knowledge", telemetry_out=collected)
     matched = sorted({
         str(hit.get("id") or "").strip()
         for hit in hits
@@ -207,13 +234,15 @@ def _search_receipt(cfg, query: str) -> Dict[str, Any]:
         "schema": "tp-spec.knowledge-search/v1",
         "status": "PASS",
         "scope": "project+shared",
-        "query": query,
+        "query_hash_only": True,
+        "receipt_contract": USAGE_CONTRACT,
         "query_hash": hashlib.sha256(query.encode("utf-8")).hexdigest(),
         "count": len(hits),
         "results": hits,
         "matched_canonical_refs": matched,
+        **collected,
     }
-    errors = validate_receipt_payload("search", receipt)
+    errors = validate_receipt_payload("search", receipt, expected_query=query)
     if errors:
         raise ValueError("invalid Knowledge search receipt: " + "; ".join(errors))
     return receipt
@@ -335,7 +364,7 @@ def cmd_task_converge(args) -> int:
         queries = [str(q or "").strip() for q in (args.query or []) if str(q or "").strip()]
         if not queries:
             raise ValueError("Knowledge convergence requires at least one targeted query")
-        receipts = [_search_receipt(cfg, query) for query in queries]
+        receipts = [_search_receipt(cfg, query, task_id=args.task) for query in queries]
         disposition = str(args.disposition or "").upper()
         knowledge_ref = str(args.knowledge_ref or "").strip()
         canonical_receipt = _validate_knowledge_ref(
@@ -472,7 +501,26 @@ def add_knowledge_subparsers(root_subparsers) -> None:
         ("status","Show Knowledge truth/projection/baseline state",cmd_status),("snapshot-commit","Advance trusted Knowledge baseline after bound PASS",cmd_snapshot_commit),
     ]:
         p=sub.add_parser(name,help=help_text); _common(p); p.set_defaults(func=fn)
-    p=sub.add_parser("search",help="Project-scoped canonical-first FTS5 retrieval with source fallback"); _common(p); p.add_argument("-q","--query",required=True); p.add_argument("--project"); p.add_argument("--scope",choices=["project","global"],default=None,help="default comes from Content Systems; global must be explicit when project scope is active"); p.add_argument("--kind"); p.add_argument("--layer",choices=["canonical","source"]); p.add_argument("--limit",type=int); p.add_argument("--no-telemetry",action="store_true"); p.set_defaults(func=cmd_search)
+    def usage_options(parser):
+        parser.add_argument("--project")
+        parser.add_argument("--scope", choices=["project", "global"], default=None,
+                            help="default current project + registered shared; global must be explicit")
+        parser.add_argument("--task", help="optional caller task identity; does not create/adopt a Task")
+        parser.add_argument("--role", help="optional caller role")
+        parser.add_argument("--purpose", choices=["development", "delivery_convergence", "maintenance", "unknown"], default="development")
+        parser.add_argument("--request-id", help="reuse only for the same logical request and identical parameters")
+        parser.add_argument("--no-telemetry", action="store_true")
+    p = sub.add_parser("search", help="5 deduplicated candidates, 200 characters each; no body-read receipt")
+    _common(p); usage_options(p)
+    p.add_argument("-q", "--query", required=True); p.add_argument("--kind")
+    p.add_argument("--layer", choices=["canonical", "source"]); p.add_argument("--limit", type=int)
+    p.set_defaults(func=cmd_search)
+    p = sub.add_parser("read", help="Registered Knowledge body preview, explicit lines or full text")
+    _common(p); usage_options(p)
+    p.add_argument("--document-id", required=True)
+    p.add_argument("--start-line", type=int); p.add_argument("--end-line", type=int)
+    p.add_argument("--full", action="store_true", help="mutually exclusive with line range arguments")
+    p.set_defaults(func=cmd_read)
     p=sub.add_parser("telemetry",help="Summarize hashed retrieval telemetry"); _common(p); p.add_argument("--days",type=int,default=7); p.set_defaults(func=cmd_telemetry)
     p=sub.add_parser("eval",help="Run local Golden Query evaluation without retrieval telemetry pollution"); _common(p); p.add_argument("--golden",help="golden JSONL path; defaults to Content Systems evaluation.golden_set"); p.add_argument("--output",help="result JSON path; defaults to configured evaluation.output_root"); p.add_argument("--mode",choices=["all","filename_search","source_only_fts","canonical_first_fts"],default="all"); p.set_defaults(func=cmd_eval)
     p=sub.add_parser("migrate-plan",help="Read-only plan for legacy Knowledge Vault runtime/rule assets"); _common(p); p.set_defaults(func=cmd_migrate_plan)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 import hashlib
 import json
 import re
@@ -28,7 +28,7 @@ from .manifest import (
 )
 from .snapshot import snapshot_paths, utc_now, wiki_subject_digest, validate_staged_source
 from .source import decode_text, discover_source_files, fingerprint_file, read_source_bytes, source_is_file
-from .stable_source import source_view
+from .stable_source import relative_path, source_view
 
 REQUIRED_CONTENT_SECTIONS = ("概述", "模块结构", "核心逻辑", "数据流", "接口", "配置", "依赖")
 STRONG_FILLER_SIGNALS = ("该文件是本仓的核心实现", "承载主要业务逻辑", "其类与方法实现细节")
@@ -74,6 +74,7 @@ def verify_repo(
     source_cfg: Dict[str, Any],
     quality_cfg: Dict[str, Any],
     coverage_cfg: Dict[str, Any] | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> Dict[str, Any]:
     paths = snapshot_paths(wiki_repo_root)
     changeset = json.loads(paths["changeset"].read_text(encoding="utf-8")) if paths["changeset"].is_file() else {}
@@ -171,7 +172,35 @@ def verify_repo(
         if idx not in actual_wiki_docs:
             issues.append(_issue("L1", "ERROR", "NAV_INDEX_MISSING", f"Wiki navigation index missing: {idx}", document=idx))
 
-    for doc in docs:
+    view = source_view(repo_root, source_cfg)
+    if view.mode == "GIT_REF":
+        if progress:
+            progress("loading pinned source tree")
+        referenced_files: set[str] = set()
+        for item in docs:
+            if not isinstance(item, dict):
+                continue
+            for field in ("dependencies", "citations"):
+                rows = item.get(field)
+                if not isinstance(rows, list):
+                    continue
+                for row in rows:
+                    if isinstance(row, dict) and row.get("file"):
+                        referenced_files.add(str(row["file"]).replace("\\", "/"))
+        if progress:
+            progress(f"batch-loading {len(referenced_files)} referenced source paths")
+        loaded = view.preload_blobs(sorted(referenced_files))
+        if progress:
+            progress(f"cached {loaded} pinned Git blobs")
+
+    line_counts: dict[str, int] = {}
+    total_docs = len(docs)
+    progress_stride = max(10, total_docs // 20)
+    if not total_docs and progress:
+        progress("checking 0 documents")
+    for doc_index, doc in enumerate(docs, start=1):
+        if progress and (doc_index == 1 or doc_index % progress_stride == 0 or doc_index == total_docs):
+            progress(f"checking document {doc_index}/{total_docs}")
         if not isinstance(doc, dict):
             issues.append(_issue("L1", "ERROR", "MANIFEST_DOCUMENT_INVALID", "manifest document entry is not a mapping"))
             continue
@@ -306,7 +335,13 @@ def verify_repo(
                 continue
             start = cite.get("line_start")
             end = cite.get("line_end")
-            count = _line_count(repo_root, file, source_cfg)
+            if view.mode == "GIT_REF":
+                cache_key = relative_path(file)
+                if cache_key not in line_counts:
+                    line_counts[cache_key] = _line_count(repo_root, file, source_cfg)
+                count = line_counts[cache_key]
+            else:
+                count = _line_count(repo_root, file, source_cfg)
             # V3.4 iron rule: line-level provenance is the default. A genuinely
             # single-line source is the only deterministic exception.
             if count > 1:
@@ -387,6 +422,8 @@ def verify_repo(
     if line_eligible_cites and cite_coverage < cite_target:
         issues.append(_issue("L2", "ERROR", "CITATION_LINE_COVERAGE_LOW", f"citation line coverage {cite_coverage:.1%} below required target {cite_target:.1%}", coverage=cite_coverage, target=cite_target, eligible=line_eligible_cites))
 
+    if progress:
+        progress("checking source coverage")
     source_files = set(discover_source_files(repo_root, source_cfg))
     if source_files and not docs:
         issues.append(_issue("L1", "ERROR", "NO_WIKI_DOCUMENTS", "source repo is non-empty but manifest has no Wiki documents"))
@@ -462,6 +499,8 @@ def verify_repo(
         },
         "issues": issues,
     }
+    if progress:
+        progress("writing verification receipt")
     paths["verification"].parent.mkdir(parents=True, exist_ok=True)
     paths["verification"].write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     return report

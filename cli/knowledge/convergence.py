@@ -411,7 +411,7 @@ def valid_result(detail: dict, request: dict) -> bool:
             receipts = result.get("query_receipts")
             if not isinstance(receipts, list) or len(receipts) != len(candidate["queries"]):
                 return False
-            if any(validate_receipt_payload("search", receipt) or receipt.get("query") != query
+            if any(validate_receipt_payload("search", receipt, expected_query=query)
                    for receipt, query in zip(receipts, candidate["queries"])):
                 return False
             if candidate["disposition"] in {"DUPLICATE", "UPDATED"}:

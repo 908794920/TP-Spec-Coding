@@ -1,4 +1,4 @@
-import { Card, Collapse, Tag } from 'antd';
+import { Card, Tag } from 'antd';
 import { Fields, Empty, Problems, ReadStatus } from '../components/Facts';
 import { TaskIndex } from '../components/TaskIndex';
 import { record, text } from '../facts';
@@ -24,21 +24,26 @@ function versionPresentation(project: Record<string, unknown>): { label: string;
         : { label: `版本不一致 · ${base} / ${contract}`, color: 'error' };
 }
 
-function systemPresentation(value: unknown): { label: string; color: string; raw: string; source: string } {
-    const system = record(value), raw = text(system.status).toLowerCase(), identity = record(system.identity);
-    const status = raw === 'available' ? { label: '可用', color: 'success' }
-        : raw === 'unavailable' || raw === 'unconfigured' ? { label: raw === 'unconfigured' ? '未配置' : '不可用', color: 'warning' }
-        : { label: raw ? '状态未确认' : '未记录', color: 'warning' };
-    return { ...status, raw, source: text(system.registry) || text(identity.source) || '来源未记录' };
+function systemAvailability(value: unknown): string {
+    const raw = text(record(value).status).toLowerCase();
+    if (raw === 'available') return '可用';
+    if (raw === 'unavailable') return '不可用';
+    if (raw === 'unconfigured') return '未配置';
+    return raw ? '状态未确认' : '未记录';
 }
 
-function ProjectSystemSummary({ name, value }: { name: string; value: unknown }) {
-    const presentation = systemPresentation(value);
-    return <section className="project-system-summary" aria-label={`${name}可用性`}>
-      <div className="project-system-summary-heading"><h3>{name}</h3><Tag color={presentation.color} title={presentation.raw || '未记录'}>{presentation.label}</Tag></div>
-      <p className="muted">来源：{presentation.source}</p>
-      <Collapse className="project-system-details" size="small" items={[{ key: 'fields', label: `查看${name}全部字段`, children: <Fields value={value}/> }]}/>
-    </section>;
+function uniqueContextFields(context: Context | null | undefined, project: Record<string, unknown>, registry: unknown): Record<string, string> {
+    if (!context) return {};
+    const same = (left: string, right: unknown) => left.replaceAll('\\', '/').toLowerCase() === text(right).replaceAll('\\', '/').toLowerCase();
+    const result: Record<string, string> = { context_key: context.context_key };
+    if (context.project_id && !same(context.project_id, project.project_id)) result.context_project_id = context.project_id;
+    if (context.name && !same(context.name, project.name)) result.context_name = context.name;
+    if (context.project_root && !same(context.project_root, project.root_path)) result.context_project_root = context.project_root;
+    if (context.workspace_root && !same(context.workspace_root, project.root_path) && !same(context.workspace_root, context.project_root)) result.context_workspace_root = context.workspace_root;
+    if (context.db_path && !same(context.db_path, project.runtime_db)) result.context_db_path = context.db_path;
+    if (context.registry_path && !same(context.registry_path, record(registry).path)) result.context_registry_path = context.registry_path;
+    if (context.source && !same(context.source, project.identity_source)) result.context_source = context.source;
+    return result;
 }
 
 export function ProjectPage({ context, read, onSelectTask }: {
@@ -63,20 +68,22 @@ export function ProjectPage({ context, read, onSelectTask }: {
             <span>版本 <Tag color={version.color}>{version.label}</Tag></span>
           </div>
         </div>
+        <ReadStatus {...read} showDetails={false}/>
       </div>
-      <ReadStatus {...read}/>
       {data && <>
         <Problems items={data.problems}/>
         <Card className="project-task-progress" size="small" title="任务进展">
           <TaskIndex key={context.context_key} rows={taskIndexAvailable ? data.task_index : []} available={taskIndexAvailable} onSelect={onSelectTask}/>
-          <Collapse className="compact-details project-statistics" size="small" items={[{ key: 'statistics', label: '已记录状态统计', children: <>{!!text(data.summary) && <p className="project-task-summary muted">{text(data.summary)}</p>}<Fields value={data.task_statistics}/></> }]}/>
         </Card>
         <Card className="project-details" size="small" title="项目资料与环境详情">
-          <Collapse className="project-identity-details" size="small" items={[{ key: 'identity', label: '身份、Binding、数据库与注册表', children: <Fields value={{ ...project, registry: data.registry }}/> }]}/>
-          <div className="project-system-summaries">
-            <ProjectSystemSummary name="Wiki" value={data.wiki}/>
-            <ProjectSystemSummary name="Knowledge" value={data.knowledge}/>
-          </div>
+          <Fields value={{ ...project, registry: data.registry, wiki: systemAvailability(data.wiki), knowledge: systemAvailability(data.knowledge),
+            ...uniqueContextFields(read.data?.context, project, data.registry),
+            ...(read.data?.read.note ? { read_note: read.data.read.note } : {}),
+            ...(read.data?.read.consistency ? { read_consistency: read.data.read.consistency } : {}),
+            ...(read.data?.read.task_revision ? { read_task_revision: read.data.read.task_revision } : {}) }}
+            labels={{ context_project_id: '上下文项目 ID', context_name: '上下文名称', context_project_root: '上下文项目根',
+              context_workspace_root: '上下文工作区', context_db_path: '上下文 Runtime', context_registry_path: '上下文注册表',
+              context_source: '上下文来源', read_note: '读取说明', read_consistency: '一致性边界', read_task_revision: '账本观察标识' }}/>
         </Card>
       </>}
     </div>;

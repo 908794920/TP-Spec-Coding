@@ -255,6 +255,56 @@ class WorkbenchService:
             note="各项目 Runtime、Wiki 索引及日志分别只读；跨来源与实时文件不承诺原子快照。页面读取不会采集使用量。")
         return result
 
+    def knowledge_view(self, operation: str, parameters: dict[str, list[str]]) -> dict[str, Any]:
+        if operation not in {"overview", "documents", "document", "records"}:
+            raise ReadError("NOT_FOUND", "知识库接口不存在", 404)
+        from .knowledge_view import KnowledgeView
+        from cli.knowledge.telemetry import KnowledgeError, PURPOSES
+        started = timestamp()
+
+        def value(name, default="", maximum=256):
+            values = parameters.get(name, [default])
+            if len(values) != 1 or len(values[0]) > maximum:
+                raise ReadError("INVALID_QUERY", "参数重复或超出长度限制", 400)
+            return values[0]
+
+        try:
+            days, page = int(value("days", "30")), int(value("page", "1"))
+        except ValueError as exc:
+            raise ReadError("INVALID_QUERY", "时间范围和页码必须为整数", 400) from exc
+        if days not in {7, 30, 90} or not 1 <= page <= 100000:
+            raise ReadError("INVALID_QUERY", "时间范围或页码不受支持", 400)
+        purpose, status, layer = value("purpose", "development"), value("status", "all"), value("layer")
+        if purpose not in PURPOSES | {"all"} or status not in {"all", "hit", "zero", "failed"} or layer not in {"", "canonical", "source"}:
+            raise ReadError("INVALID_QUERY", "用途、状态或层级不受支持", 400)
+        query, date, query_hash = value("q", maximum=512).strip(), value("date"), value("hash", maximum=64)
+        if query_hash and (len(query_hash) < 4 or any(c not in "0123456789abcdef" for c in query_hash)):
+            raise ReadError("INVALID_QUERY", "查询哈希须为至少四位的小写十六进制前缀", 400)
+        if date:
+            try:
+                datetime.strptime(date, "%Y-%m-%d")
+            except ValueError as exc:
+                raise ReadError("INVALID_QUERY", "日期须为 YYYY-MM-DD", 400) from exc
+        contexts, issues = read_contexts()
+        try:
+            view = KnowledgeView(self, contexts, issues, days=days, project=value("project"), purpose=purpose)
+            if operation == "overview":
+                data = view.overview()
+            elif operation == "documents":
+                data = view.documents_view(page=page, query=query, layer=layer, kind=value("kind"),
+                    maintenance=value("maintenance"), adopted=value("adopted") == "1")
+            elif operation == "document":
+                data = view.document_view(value("id"))
+            else:
+                data = view.records_view(page=page, status=status, date=date, task=value("task", maximum=128),
+                    query_hash=query_hash, receipt=value("receipt"))
+        except KnowledgeError as exc:
+            raise ReadError(exc.code, "知识读取失败；来源、文档或版本可能已变化，请重新读取。", 409) from None
+        result = self._response(data, None, started)
+        result["read"].update(consistency="independent_readonly_snapshots+live_files",
+            note="知识索引、日志和任务记录分别只读；跨来源与实时文件不承诺原子快照。人工搜索和页面全文读取不采集使用量。")
+        return result
+
     def project_view(self, key: str) -> dict[str, Any]:
         started, context = timestamp(), self._context(key)
         with self._database(context) as conn:

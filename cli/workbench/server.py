@@ -28,7 +28,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
     def log_request(self, code="-", size="-") -> None:
         # Wiki searches may contain private terms. HTTP diagnostics need the route/status,
         # not another unbounded plaintext query log outside the 90-day usage store.
-        if urlsplit(self.path).path.startswith("/api/wiki/"):
+        if urlsplit(self.path).path.startswith(("/api/wiki/", "/api/knowledge/")):
             self.log_message('"%s %s" %s %s', self.command, urlsplit(self.path).path, code, size)
         else:
             super().log_request(code, size)
@@ -59,6 +59,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 result = service.global_view()
             elif len(path) == 3 and path[:2] == ["api", "wiki"]:
                 result = service.wiki_view(path[2], parse_qs(urlsplit(self.path).query, keep_blank_values=True))
+            elif len(path) == 3 and path[:2] == ["api", "knowledge"]:
+                result = service.knowledge_view(path[2], parse_qs(urlsplit(self.path).query, keep_blank_values=True))
             elif len(path) >= 3 and path[:2] == ["api", "projects"]:
                 if len(path) == 3:
                     result = service.project_view(path[2])
@@ -77,8 +79,9 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             self._send(exc.status, {"schema": SCHEMA, "error": {"code": exc.code, "message": str(exc)},
                                     "failed_at": timestamp()})
         except Exception as exc:
-            self.log_error("read failed: %s: %s", type(exc).__name__, exc)
-            self._send(500, {"schema": SCHEMA, "error": {"code": "READ_FAILED", "message": str(exc)},
+            message = "知识读取失败，未修改索引或日志。" if path[:2] == ["api", "knowledge"] else str(exc)
+            self.log_error("read failed: %s: %s", type(exc).__name__, message)
+            self._send(500, {"schema": SCHEMA, "error": {"code": "READ_FAILED", "message": message},
                              "failed_at": timestamp()})
 
     def _read_only(self) -> None:

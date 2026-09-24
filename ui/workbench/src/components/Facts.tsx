@@ -13,7 +13,7 @@ export function Problems({ items = [] }: {
     return <Alert className="problems" type="warning" showIcon title={`本次读取提示 · ${items.length}`}
     description={<ul>{rows.map((p, i) => <li key={`${p.code}:${i}`}><Typography.Text code>{valueText(p.code)}</Typography.Text> {valueText(p.message)}</li>)}</ul>}/>;
 }
-export function ReadStatus({ data, error, loading }: ReadState<Envelope<unknown>>) {
+export function ReadStatus({ data, error, loading, showDetails = true }: ReadState<Envelope<unknown>> & { showDetails?: boolean }) {
     return <div className="read-status" aria-live="polite" aria-busy={loading}>
     {/* Static skeleton on purpose: `active` would be a looping pulse, which the workbench's motion
         rules forbid. The sentence moves into a visually-hidden copy so assistive technology still
@@ -21,11 +21,11 @@ export function ReadStatus({ data, error, loading }: ReadState<Envelope<unknown>
     {loading && <div className="read-loading"><Skeleton active={false} title={false} paragraph={{ rows: 2 }}/><span className="visually-hidden">正在读取当前事实…</span></div>}
     {error && <Alert role="alert" type="error" showIcon title={`读取失败：${error}${data ? '。保留上次内容及原读取时间。' : ''}`}/>}
     {data && <Space size={8} wrap><Tag variant="filled" color={error || data.read.completeness === 'partial' ? 'warning' : undefined}>读取于 <time dateTime={data.read.completed_at} title={data.read.completed_at}>{timestampText(data.read.completed_at)}</time> · {error ? '上次读取快照' : loading ? '正在重新读取' : data.read.completeness === 'partial' ? '部分数据缺失' : '本次读取完成'}</Tag>
-      <Collapse className="read-details" size="small" ghost items={[{ key: 'read', label: '读取说明与一致性边界', children: <div className="read-details-body">
+      {showDetails && <Collapse className="read-details" size="small" ghost items={[{ key: 'read', label: '读取说明与一致性边界', children: <div className="read-details-body">
         <p>{data.read.note}</p><p>一致性边界：<Typography.Text code>{data.read.consistency}</Typography.Text></p>
         {data.read.task_revision && <p>账本观察标识（不含文件原子性保证）：<CopyText value={data.read.task_revision}/></p>}
         {data.context && <Fields value={data.context} labels={{ context_key: '上下文键', project_id: '项目 ID', project_root: '项目根', workspace_root: '工作区', db_path: 'Runtime', source: '上下文来源', registry_path: '注册表' }}/>}
-      </div>}]}/></Space>}
+      </div>}]}/>}</Space>}
   </div>;
 }
 export function Empty({ title, children, action }: {

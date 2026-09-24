@@ -140,7 +140,7 @@ systems:
       source_fallback: true
       limit_default: 20
       telemetry: true
-      telemetry_retention_days: 30
+      telemetry_retention_days: 90
     ingest:
       manifest_root: .ai-kb/ingest
       max_text_bytes: 1048576

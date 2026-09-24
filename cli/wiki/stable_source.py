@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Iterable
+from tempfile import TemporaryFile
 import os
 import re
 import subprocess
@@ -14,7 +15,7 @@ class SourceError(ValueError):
     """An unavailable/ambiguous source needs review, not a filesystem fallback."""
 
 
-def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
+def _git_environment() -> dict[str, str]:
     env = os.environ.copy()
     for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"):
         env.pop(key, None)
@@ -24,8 +25,12 @@ def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
     env.update(GIT_OPTIONAL_LOCKS="0", GIT_NO_REPLACE_OBJECTS="1",
                GIT_NO_LAZY_FETCH="1", GIT_ALLOW_PROTOCOL="", GIT_TERMINAL_PROMPT="0",
                GIT_LITERAL_PATHSPECS="1")
+    return env
+
+
+def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
     try:
-        result = subprocess.run(["git", "-C", str(root), *args], env=env,
+        result = subprocess.run(["git", "-C", str(root), *args], env=_git_environment(),
                                 stdin=subprocess.DEVNULL, capture_output=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise SourceError(f"GIT_UNAVAILABLE: {exc}") from exc
@@ -127,6 +132,65 @@ class SourceView:
         if oid not in self._blobs:
             self._blobs[oid] = git(self.root, "cat-file", "blob", oid).stdout
         return self._blobs[oid]
+
+    def preload_blobs(self, paths: Iterable[str]) -> int:
+        """Batch-load referenced regular blobs from the pinned commit, without a worktree fallback."""
+        if self.mode != "GIT_REF":
+            return 0
+        entries = self.tree()
+        oids: list[str] = []
+        pending: set[str] = set()
+        for rel in paths:
+            try:
+                row = entries.get(relative_path(rel))
+            except ValueError:
+                continue  # Verification reports unsafe paths in their original context.
+            if not row or row[0] not in {"100644", "100755"} or row[1] != "blob":
+                continue
+            oid = row[2]
+            if oid not in self._blobs and oid not in pending:
+                if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", oid):
+                    raise SourceError("GIT_OBJECT_ID_INVALID: pinned tree contains an invalid blob ID")
+                pending.add(oid)
+                oids.append(oid)
+        if not oids:
+            return 0
+
+        # Direct stdout to an automatically removed temporary file so one large
+        # batch does not duplicate the full source corpus in process memory.
+        request = "".join(oid + "\n" for oid in oids).encode("ascii")
+        try:
+            with TemporaryFile() as output:
+                result = subprocess.run(
+                    ["git", "-C", str(self.root), "cat-file", "--batch"],
+                    env=_git_environment(), input=request, stdout=output,
+                    stderr=subprocess.PIPE, timeout=60,
+                )
+                if result.returncode:
+                    detail = result.stderr.decode("utf-8", errors="replace").strip()
+                    raise SourceError(f"GIT_SOURCE_UNAVAILABLE: cat-file --batch: {detail}")
+                output.seek(0)
+                loaded: dict[str, bytes] = {}
+                for oid in oids:
+                    header = output.readline().rstrip(b"\n").split(b" ")
+                    if len(header) != 3 or header[0] != oid.encode("ascii") or header[1] != b"blob":
+                        raise SourceError(f"GIT_BATCH_OBJECT_UNAVAILABLE: {oid}")
+                    try:
+                        size = int(header[2])
+                    except ValueError as exc:
+                        raise SourceError(f"GIT_BATCH_SIZE_INVALID: {oid}") from exc
+                    if size < 0:
+                        raise SourceError(f"GIT_BATCH_SIZE_INVALID: {oid}")
+                    data = output.read(size)
+                    if len(data) != size or output.read(1) != b"\n":
+                        raise SourceError(f"GIT_BATCH_CONTENT_INCOMPLETE: {oid}")
+                    loaded[oid] = data
+                if output.read(1):
+                    raise SourceError("GIT_BATCH_EXTRA_OUTPUT: unexpected bytes after pinned blobs")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SourceError(f"GIT_BATCH_UNAVAILABLE: {exc}") from exc
+        self._blobs.update(loaded)
+        return len(loaded)
 
     def read_bytes(self, rel: str) -> bytes:
         row = self.file_entry(rel)

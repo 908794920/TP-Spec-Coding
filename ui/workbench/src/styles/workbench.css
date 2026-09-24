@@ -484,18 +484,23 @@ button,a,summary { -webkit-tap-highlight-color: transparent; }
   *,*::before,*::after { animation-duration: 0ms !important; transition-duration: 0ms !important; scroll-behavior: auto !important; }
 }
 
-/* 项目总览：计数与筛选共用一行，技术来源按需展开。 */
+/* 项目总览：任务筛选与项目资料。 */
+.project-overview-heading { align-items: flex-start; flex-wrap: wrap; }
+.project-overview-heading .read-status { margin: 0 0 0 auto; max-width: min(420px,100%); text-align: right; }
+.project-overview-heading .read-status .ant-space { justify-content: flex-end; }
 .project-overview-heading .project-id { margin-left: 8px; font-weight: 400; }
 .project-overview-status { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--muted); }
 .project-overview-status .ant-tag { margin: 0 0 0 4px; }
 .project-task-progress,.project-details { margin-top: 16px; }
-.task-index-filter-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.task-index-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; margin-bottom: 12px; }
+.task-index-filter-bar { display: flex; flex: 1 1 400px; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .task-index-filter-bar .ant-btn { height: 30px; border-color: transparent; box-shadow: none; background: var(--muted-surface); color: var(--muted); padding-inline: 12px; }
 .task-index-filter-bar .ant-btn[aria-pressed='true'] { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 .task-filter-count { font-variant-numeric: tabular-nums; margin-left: 4px; }
-.task-index-search-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-.task-index-search-row label { width: min(360px,100%); }
-.task-index-search-row .result-count { flex: none; margin: 0 0 5px; }
+.task-index-query { flex: 0 1 360px; min-width: min(240px,100%); }
+.task-index-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; min-height: 32px; margin-top: 8px; }
+.task-index-footer .result-count { margin: 0; }
+.task-index-footer .ant-pagination { margin: 0 0 0 auto; }
 .task-index-table table { table-layout: fixed; }
 .task-index-table .ant-table-cell { overflow-wrap: anywhere; }
 .task-index-table .ant-table-cell:nth-child(2) { width: 88px; }
@@ -510,13 +515,6 @@ button,a,summary { -webkit-tap-highlight-color: transparent; }
 .task-index-status .ant-tag { margin: 0; }
 .task-index-date-column time { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .task-index-mobile-responsibility { display: none; }
-.project-statistics { margin-top: 12px; }
-.project-task-summary { margin-top: 12px; }
-.project-system-summaries { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; margin-top: 16px; }
-.project-system-summary { min-width: 0; padding-top: 12px; border-top: 1px solid var(--border); }
-.project-system-summary-heading { display: flex; align-items: baseline; gap: 8px; }
-.project-system-summary-heading h3 { font-size: 14px; margin-bottom: 8px; }
-.project-system-summary>p { overflow-wrap: anywhere; }
 .navigation { top: var(--header-h); align-self: start; }
 @media(max-width:1100px) {
   .task-index-table .task-index-responsibility-column { display: none; }
@@ -525,11 +523,11 @@ button,a,summary { -webkit-tap-highlight-color: transparent; }
 @media(max-width:600px) {
   .task-index-filter-bar { gap: 4px; }
   .task-index-filter-bar .ant-btn { padding-inline: 8px; }
-  .task-index-search-row { flex-wrap: wrap; gap: 8px; }
-  .task-index-search-row label { width: 100%; }
+  .task-index-query { flex: 1 1 100%; min-width: 0; }
+  .project-overview-heading .read-status { margin-left: 0; text-align: left; }
+  .project-overview-heading .read-status .ant-space { justify-content: flex-start; }
   .task-index-table .task-index-date-column { width: 76px; }
   .task-index-table .ant-table-cell:nth-child(2) { width: 64px; }
-  .project-system-summaries { grid-template-columns: minmax(0,1fr); }
 }
 
 .skill-usage { flex: none; color: var(--accent); font-size: 10px; line-height: 16px; white-space: nowrap; }

@@ -376,7 +376,7 @@ def validate_canonical_binding(frontmatter: Dict[str, Any], *, task_id: str,
             errors.append(f'canonical missing source/code ref: {ref}')
     return errors
 
-def validate_receipt_payload(kind: str, payload: Dict[str, Any]) -> List[str]:
+def validate_receipt_payload(kind: str, payload: Dict[str, Any], *, expected_query: str | None = None) -> List[str]:
     errors: List[str] = []
     if not isinstance(payload, dict):
         return [f'{kind} receipt must be a JSON object']
@@ -389,10 +389,21 @@ def validate_receipt_payload(kind: str, payload: Dict[str, Any]) -> List[str]:
         if str(payload.get('scope') or '').lower() not in {'project', 'project+shared'}:
             errors.append('search receipt must use project/current project + shared scope, not global')
         query = str(payload.get('query') or '').strip()
-        if not query:
-            errors.append('search receipt must include the executed query')
-        expected_hash = hashlib.sha256(query.encode('utf-8')).hexdigest() if query else ''
-        if not expected_hash or str(payload.get('query_hash') or '') != expected_hash:
+        query_hash = str(payload.get('query_hash') or '')
+        if payload.get('query_hash_only') is True:
+            # New receipts retain a digest, not query plaintext. At execution and
+            # Task-result validation the caller still binds it to the actual query.
+            if (payload.get('receipt_contract') != 'tp-spec.knowledge-usage/v2'
+                    or 'query' in payload or len(query_hash) != 64
+                    or any(char not in '0123456789abcdef' for char in query_hash)):
+                errors.append('hash-only search receipt requires the v2 collection contract and a SHA-256 digest')
+        else:
+            if not query:
+                errors.append('search receipt must include the executed query')
+            expected_hash = hashlib.sha256(query.encode('utf-8')).hexdigest() if query else ''
+            if not expected_hash or query_hash != expected_hash:
+                errors.append('search receipt query_hash must match the executed query')
+        if expected_query is not None and query_hash != hashlib.sha256(expected_query.encode('utf-8')).hexdigest():
             errors.append('search receipt query_hash must match the executed query')
         results = payload.get('results')
         if not isinstance(results, list):

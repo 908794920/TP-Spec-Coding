@@ -304,7 +304,7 @@ def cmd_converge(args):
                     if query not in query_cache:
                         effect = {"effect": "targeted_search", "query_hash": learning.digest(query), "status": "ATTEMPTED"}
                         external_effects.append(effect)
-                        query_cache[query] = _search_receipt(cfg, query)
+                        query_cache[query] = _search_receipt(cfg, query, task_id=args.task)
                         effect["status"] = "PASS"
                     receipts.append(query_cache[query])
             note, readback = _canonical(cfg, item, receipts, args.task, _candidate_sources(item, index, request))

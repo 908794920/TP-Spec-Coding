@@ -42,7 +42,7 @@ External docs / Task evidence / code evidence
                Retrieval
 ```
 
-Canonical Markdown + 注册 evidence 是 Knowledge truth。Knowledge projection DB 是可删除重建的检索投影，不是事实源。
+Canonical Markdown + 注册 evidence 是 Knowledge truth。Knowledge 的内容投影可通过 index build/update 重建，不是事实源；同库的检索/读取日志是使用证据，重建须保留，不可直接删除数据库。
 
 默认检索必须是：
 
@@ -124,6 +124,8 @@ maintain
 
 
 ## 6. 检索与可观测性
+
+页面、5 篇候选/200 字摘要、80 行/4000 字预览、只读边界和显式日志升级见 [Knowledge 使用说明](../../docs/KNOWLEDGE_USAGE.md)。按需通过 `tp-spec knowledge read --document-id <document_key>` 读取正文；普通文件工具读取不在采集范围。
 
 优先通过 `tp-spec knowledge search` 使用标准投影。标准搜索只记录 query hash、模式、候选/结果数量、fallback、耗时等轻量 telemetry，不保存原始 query 正文。
 

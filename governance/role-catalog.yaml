@@ -1,6 +1,6 @@
 catalog_version: "5.3.4"
 base_version: "5.3.4"
-generated_utc: 20260922T163853Z
+generated_utc: 20260922T180711Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -55,7 +55,7 @@ roles:
   phases: [other, delivery]
   capabilities: [knowledge.search, knowledge.ingest, knowledge.converge, knowledge.audit]
   owns_states: []
-  content_sha256: 3560A06A65A2DA90E785DD316F5BF8A902D49611E644A7B7A8F5CFDA9C1E1304
+  content_sha256: 4024BA66CB3A301A5B4305CA9A9F0A3C72B90179DB2AD43F689C1B70D734AC15
 - workflow_role: tp-wiki
   display_name: tp-wiki
   type: human-owner-skill
