@@ -2,15 +2,18 @@
 """Snapshot scanning, change classification, and fail-safe baseline staging."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 import hashlib
 import json
 import os
+import tempfile
 
-from .source import discover_source_files, fingerprint_file, normalized_hash, resolve_repo_relative, sha256_bytes
+from .source import (discover_source_files, normalized_hash,
+                     read_source_bytes, resolve_repo_relative, sha256_bytes,
+                     source_selected, _is_excluded)
+from .stable_source import SourceError, bind_source, source_view, remote_ref_name
 
 SNAPSHOT_SCHEMA = "tp-spec.wiki-snapshot/v1"
 CHANGESET_SCHEMA = "tp-spec.wiki-changeset/v1"
@@ -28,9 +31,15 @@ def _read_json(path: Path) -> Dict[str, Any]:
 
 def _write_json(path: Path, data: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
-    os.replace(tmp, path)
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False) as stream:
+            tmp = Path(stream.name)
+            stream.write(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+        os.replace(tmp, path)
+    finally:
+        if tmp is not None and tmp.exists():
+            tmp.unlink()
 
 
 
@@ -91,47 +100,126 @@ def _snapshot_id(repo_id: str, files: Dict[str, Any]) -> str:
     return digest.hexdigest()[:24]
 
 
-def build_current_snapshot(repo_id: str, repo_root: Path, source_cfg: Dict[str, Any], old: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    """Build a source snapshot without trusting mtime/size as content identity.
+def _digest(value: Any) -> str:
+    return sha256_bytes(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8"))
 
-    Re-downloads, archive extraction and sync tools can preserve timestamps while replacing
-    bytes. We therefore SHA-256 every eligible file on each scan. If the raw hash is still
-    identical, the prior normalized fingerprint/encoding result is reused so unchanged files
-    are not decoded/normalized again. This keeps the old fast-metadata information without
-    allowing same-size/same-mtime edits to disappear.
-    """
-    old_files = (old or {}).get("files", {}) if isinstance(old, dict) else {}
+
+def prepare_source_config(
+    repo_root: Path, wiki_repo_root: Path, source_cfg: Dict[str, Any],
+    snapshot_cfg: Dict[str, Any], quality_cfg: Dict[str, Any], coverage_cfg: Dict[str, Any],
+    *, staged: bool = False, committed: bool = False,
+) -> Dict[str, Any]:
+    """Resolve once. Follow-up commands consume the staged SHA, not a moved ref."""
+    paths = snapshot_paths(wiki_repo_root)
+    recorded = {}
+    if committed:
+        recorded = _read_json(paths["baseline"])
+    elif staged:
+        recorded = _read_json(paths["pending"]) or _read_json(paths["baseline"])
+    public = {k: v for k, v in source_cfg.items() if not k.startswith("_")}
+    result = bind_source(repo_root, public, identity=recorded.get("source") or None)
+    view = source_view(repo_root, result)
+    if recorded.get("source") and not committed and view.mode == "GIT_REF":
+        # Follow-up work checks configured identity, never re-resolves a moved ref.
+        # Historical reads explicitly use committed=True instead.
+        ref = remote_ref_name(view.root, public.get("stable_ref"))
+        if view.stable_ref != ref:
+            raise SourceError("SOURCE_INITIALIZATION_REQUIRED: configured branch differs from recorded source; prepare a new scan with --initialize-source")
+    source_rules = {name: sha256_bytes((Path(__file__).parent / name).read_bytes())
+                    for name in ("source.py", "stable_source.py")}
+    result["_source_policy_digest"] = _digest({"config": public, "rules": source_rules})
+    base = Path(__file__).resolve().parents[2]
+    rule_paths = set((base / "cli/wiki").glob("*.py"))
+    for folder in ("wiki/rules", "agents/tp-wiki", "automation/wiki"):
+        rule_paths.update((base / folder).rglob("*.md"))
+    rule_paths.update((base / "wiki/schema").glob("*.yaml"))
+    rules = {path.relative_to(base).as_posix(): sha256_bytes(path.read_bytes()) for path in sorted(rule_paths)}
+    result["_maintenance_digest"] = _digest({"source": public, "snapshot": snapshot_cfg,
+        "quality": quality_cfg, "coverage": coverage_cfg, "rules": rules})
+    if (staged and not committed and paths["pending"].is_file() and
+            recorded.get("maintenance_digest") != result["_maintenance_digest"]):
+        raise SourceError("MAINTENANCE_POLICY_CHANGED: run wiki scan/maintain again before consuming staged results")
+    if recorded and not recorded.get("source") and source_view(repo_root, result).mode == "GIT_REF":
+        raise SourceError("SOURCE_INITIALIZATION_REQUIRED: legacy baseline has no commit; run wiki maintain --initialize-source")
+    return result
+
+
+def build_current_snapshot(repo_id: str, repo_root: Path, source_cfg: Dict[str, Any], old: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    """Git reuses unchanged blob fingerprints; filesystem always hashes actual bytes."""
+    view = source_view(repo_root, source_cfg)
+    old = old or {}
+    source_policy = source_cfg.get("_source_policy_digest") or _digest({k: v for k, v in source_cfg.items() if not k.startswith("_")})
+    same_policy = old.get("source_policy_digest") == source_policy
+    old_files = old.get("files") or {}
     files: Dict[str, Any] = {}
     properties_mode = str(source_cfg.get("properties_normalization") or "keys")
-    for rel in discover_source_files(repo_root, source_cfg):
-        full = resolve_repo_relative(repo_root, rel)
-        stat = full.stat()
-        data = full.read_bytes()
-        raw_hash = sha256_bytes(data)
-        previous = old_files.get(rel) if isinstance(old_files, dict) else None
-        if previous and str(previous.get("content_hash") or "").lower() == raw_hash:
-            row = dict(previous)
-            row["size"] = stat.st_size
-            row["mtime_ns"] = stat.st_mtime_ns
-            row["content_hash"] = raw_hash
+    git_changes = None
+    if view.mode == "GIT_REF" and old.get("source"):
+        # Check history even when a config change requires a fresh inventory.
+        git_changes = view.diff(old["source"])
+    incremental = git_changes is not None and same_policy
+    if incremental:
+        files = {rel: dict(row) for rel, row in old_files.items()}
+        for change in git_changes:
+            rel = change["file"]
+            if change["after_mode"] == "160000" and not _is_excluded(rel, source_cfg):
+                raise SourceError(f"GITLINK_NEEDS_REVIEW: {rel}; register and scope it explicitly")
+            if change["after_mode"] == "000000" or not source_selected(rel, source_cfg):
+                files.pop(rel, None)
+                continue
+            if change["after_mode"] not in {"100644", "100755"}:
+                raise SourceError(f"GIT_ENTRY_UNSUPPORTED: {rel} mode={change['after_mode']}")
+            data = view.blob(change["after_oid"])
+            norm, encoding, decode_status = normalized_hash(rel, data, properties_mode)
+            files[rel] = {"size": len(data), "mtime_ns": 0, "content_hash": sha256_bytes(data),
+                          "normalized_hash": norm, "encoding": encoding, "decode_status": decode_status,
+                          "git_blob": change["after_oid"], "git_mode": change["after_mode"]}
+    else:
+        for rel in discover_source_files(repo_root, source_cfg):
+            data = read_source_bytes(repo_root, rel, source_cfg)
+            raw_hash = sha256_bytes(data)
+            mtime_ns = 0 if view.mode == "GIT_REF" else resolve_repo_relative(repo_root, rel).stat().st_mtime_ns
+            previous = old_files.get(rel) or {}
+            if same_policy and previous.get("content_hash") == raw_hash:
+                row = dict(previous)
+                row.update(size=len(data), mtime_ns=mtime_ns)
+            else:
+                norm, encoding, decode_status = normalized_hash(rel, data, properties_mode)
+                row = {"size": len(data), "mtime_ns": mtime_ns, "content_hash": raw_hash,
+                       "normalized_hash": norm, "encoding": encoding, "decode_status": decode_status}
+            if view.mode == "GIT_REF":
+                mode, _, oid = view.tree()[rel]
+                row.update(git_blob=oid, git_mode=mode)
             files[rel] = row
-            continue
-        norm, encoding, decode_status = normalized_hash(rel, data, properties_mode=properties_mode)
-        files[rel] = {
-            "size": stat.st_size,
-            "mtime_ns": stat.st_mtime_ns,
-            "content_hash": raw_hash,
-            "normalized_hash": norm,
-            "encoding": encoding,
-            "decode_status": decode_status,
-        }
     return {
-        "schema": SNAPSHOT_SCHEMA,
-        "repo_id": repo_id,
-        "captured_at": utc_now(),
-        "snapshot_id": _snapshot_id(repo_id, files),
-        "files": files,
+        "schema": SNAPSHOT_SCHEMA, "repo_id": repo_id, "captured_at": utc_now(),
+        "snapshot_id": _snapshot_id(repo_id, files), "files": files,
+        "source": view.identity(), "source_policy_digest": source_policy,
+        "maintenance_digest": source_cfg.get("_maintenance_digest", ""),
+        "scan_mode": "COMMIT_DIFF" if incremental else ("GIT_INVENTORY" if view.mode == "GIT_REF" else "FILESYSTEM_HASH"),
     }
+
+
+def no_change_fast_path(wiki_repo_root: Path, repo_root: Path, source_cfg: Dict[str, Any], *, repair: bool = False) -> Dict[str, Any] | None:
+    """No source discovery, planner or AI dispatch is reachable on this path."""
+    if repair:
+        return None
+    paths = snapshot_paths(wiki_repo_root)
+    view = source_view(repo_root, source_cfg)
+    if view.mode != "GIT_REF":
+        return None
+    if any(paths[name].exists() for name in ("pending", "changeset", "plan", "verification", "audit_plan", "audit")):
+        return None
+    baseline = _read_json(paths["baseline"])
+    completion = baseline.get("completion") or {}
+    if (baseline.get("source") != view.identity() or not baseline.get("maintenance_digest") or
+            baseline["maintenance_digest"] != source_cfg.get("_maintenance_digest") or
+            completion.get("status") != "SUCCESS" or
+            completion.get("subject_digest") != wiki_subject_digest(wiki_repo_root)):
+        return None
+    return {"state": "NO_CHANGE", "fast_path": True, "source": view.identity(),
+            "snapshot_id": baseline.get("snapshot_id"), "plan": None,
+            "requires_ai_update": False, "llm_dispatch": False, "source_scanned": False}
 
 
 def classify_changes(old: Dict[str, Any], current: Dict[str, Any], snapshot_cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -195,32 +283,106 @@ def classify_changes(old: Dict[str, Any], current: Dict[str, Any], snapshot_cfg:
     }
 
 
-def stage_scan(repo_id: str, repo_root: Path, wiki_repo_root: Path, source_cfg: Dict[str, Any], snapshot_cfg: Dict[str, Any]) -> Dict[str, Any]:
+def stage_scan(
+    repo_id: str, repo_root: Path, wiki_repo_root: Path,
+    source_cfg: Dict[str, Any], snapshot_cfg: Dict[str, Any], *,
+    initialize_source: bool = False, repair: bool = False, documents: List[str] | None = None,
+) -> Dict[str, Any]:
     paths = snapshot_paths(wiki_repo_root)
     baseline = _read_json(paths["baseline"])
-    current = build_current_snapshot(repo_id, repo_root, source_cfg, old=baseline)
-    classified = classify_changes(baseline, current, snapshot_cfg)
-    change_set_id = hashlib.sha256((str(baseline.get("snapshot_id", "none")) + ":" + current["snapshot_id"]).encode("utf-8")).hexdigest()[:24]
+    view = source_view(repo_root, source_cfg)
+    prior_source = baseline.get("source") or {}
+    # Legacy non-Git hashes remain usable without inventing a commit or requiring
+    # an extra migration permission. Git adoption/scope changes need explicit init.
+    migration = bool(baseline and (
+        (not prior_source and view.mode == "GIT_REF") or
+        (prior_source and (prior_source.get("source_mode") != view.mode or
+                           prior_source.get("repo_prefix", "") != view.prefix or
+                           (view.mode == "GIT_REF" and prior_source.get("stable_ref") != view.stable_ref)))))
+    if migration and not initialize_source:
+        raise SourceError("SOURCE_INITIALIZATION_REQUIRED: legacy/changed source identity; run wiki scan/maintain --initialize-source; old baseline is preserved until validation succeeds")
+    if migration and view.mode == "GIT_REF" and prior_source.get("source_mode") == "GIT_REF":
+        view.require_ancestor(prior_source)
+    if documents and not repair:
+        raise ValueError("--document requires --repair")
+    if repair:
+        from .manifest import load_manifest
+        declared = {d.get("path") for d in load_manifest(wiki_repo_root).get("documents", []) if isinstance(d, dict)}
+        if set(documents or []) - declared:
+            raise ValueError("repair document is not declared in the current Wiki manifest")
+    current = build_current_snapshot(repo_id, repo_root, source_cfg, old={} if migration else baseline)
+    classified = classify_changes({} if migration else baseline, current, snapshot_cfg)
+    classified["initial"] = not bool(baseline) or migration
+    policy_changed = bool(baseline and baseline.get("maintenance_digest") != current.get("maintenance_digest"))
+    completion = baseline.get("completion") or {}
+    subject_changed = bool(completion.get("subject_digest") and completion["subject_digest"] != wiki_subject_digest(wiki_repo_root))
+    reasons = []
+    if migration:
+        reasons.append("SOURCE_INITIALIZATION")
+    if policy_changed:
+        reasons.append("MAINTENANCE_POLICY_CHANGED")
+    if subject_changed:
+        reasons.append("WIKI_SUBJECT_CHANGED")
+    if baseline and completion.get("status") != "SUCCESS":
+        reasons.append("PREVIOUS_SUCCESS_NOT_RECORDED")
+    if repair:
+        reasons.append("EXPLICIT_REPAIR")
+    if not paths["changeset"].is_file() and any(
+            _read_json(paths[name]).get("result") == "FAIL" for name in ("verification", "audit")):
+        reasons.append("PREVIOUS_VALIDATION_FAILED")
+    request = {"baseline": baseline.get("snapshot_id"), "candidate": current["snapshot_id"],
+               "source": current["source"], "maintenance_digest": current["maintenance_digest"],
+               "refresh_reasons": reasons, "repair_documents": sorted(set(documents or []))}
+    change_set_id = _digest(request)[:24]
+    existing = _read_json(paths["changeset"])
+    previous_pending = _read_json(paths["pending"])
+    # A retry keeps the original repair scope and its receipts. Wiki edits during
+    # a pending run are expected, not a reason to restage and lose a valid audit.
+    resumable = (existing and previous_pending and
+        existing.get("baseline_snapshot_id") == baseline.get("snapshot_id") and
+        existing.get("candidate_snapshot_id") == previous_pending.get("snapshot_id") and
+        existing.get("source") == previous_pending.get("source") and
+        existing.get("maintenance_digest") == previous_pending.get("maintenance_digest") and
+        previous_pending.get("snapshot_id") == _snapshot_id(repo_id, previous_pending.get("files") or {}) and
+        previous_pending.get("snapshot_id") == current["snapshot_id"] and
+        previous_pending.get("source") == current["source"] and
+        previous_pending.get("maintenance_digest") == current["maintenance_digest"])
+    if resumable and (not repair or existing.get("repair_documents", []) == request["repair_documents"] and "EXPLICIT_REPAIR" in existing.get("refresh_reasons", [])):
+        return existing
     changeset = {
-        "schema": CHANGESET_SCHEMA,
-        "repo_id": repo_id,
-        "repo_root": str(repo_root),
-        "wiki_repo_root": str(wiki_repo_root),
-        "created_at": utc_now(),
-        "change_set_id": change_set_id,
-        "baseline_snapshot_id": baseline.get("snapshot_id"),
-        "candidate_snapshot_id": current["snapshot_id"],
-        **classified,
+        "schema": CHANGESET_SCHEMA, "repo_id": repo_id, "repo_root": str(repo_root),
+        "wiki_repo_root": str(wiki_repo_root), "created_at": utc_now(),
+        "change_set_id": change_set_id, "baseline_snapshot_id": baseline.get("snapshot_id"),
+        "candidate_snapshot_id": current["snapshot_id"], "baseline_source": baseline.get("source"),
+        "source": current["source"], "maintenance_digest": current["maintenance_digest"],
+        "refresh_reasons": reasons, "repair_documents": request["repair_documents"],
+        "scan_mode": current["scan_mode"], **classified,
     }
     wiki_repo_root.mkdir(parents=True, exist_ok=True)
     _write_json(paths["pending"], current)
     _write_json(paths["changeset"], changeset)
-    # Any previous plan/verification/audit belongs to a different staged scan.
     for name in ("plan", "verification", "audit_plan", "audit"):
-        p = paths[name]
-        if p.exists():
-            p.unlink()
+        if paths[name].exists():
+            paths[name].unlink()
     return changeset
+
+
+def validate_staged_source(wiki_repo_root: Path, repo_root: Path, source_cfg: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    paths = snapshot_paths(wiki_repo_root)
+    changeset = _read_json(paths["changeset"])
+    pending = _read_json(paths["pending"])
+    if not changeset or not pending:
+        raise ValueError("no complete staged Wiki scan; run wiki scan first")
+    if (changeset.get("candidate_snapshot_id") != pending.get("snapshot_id") or
+            changeset.get("source") != pending.get("source") or
+            changeset.get("maintenance_digest") != pending.get("maintenance_digest") or
+            pending.get("snapshot_id") != _snapshot_id(str(pending.get("repo_id") or ""), pending.get("files") or {})):
+        raise ValueError("staged Wiki scan is inconsistent; run wiki scan again")
+    if pending.get("source") != source_view(repo_root, source_cfg).identity():
+        raise ValueError("source is not pinned to the staged snapshot")
+    if pending.get("maintenance_digest") != source_cfg.get("_maintenance_digest", ""):
+        raise ValueError("maintenance configuration/rules changed after scan; run wiki scan again")
+    return changeset, pending
 
 
 def discard_staged(wiki_repo_root: Path) -> None:
@@ -243,6 +405,8 @@ def commit_baseline(wiki_repo_root: Path, *, repo_id: str | None = None, repo_ro
     pending = _read_json(paths["pending"])
     if not changeset or not pending:
         raise ValueError("no staged wiki scan; run wiki scan first")
+    if repo_root is not None and source_cfg is not None:
+        changeset, pending = validate_staged_source(wiki_repo_root, repo_root, source_cfg)
     guard_status = str((changeset.get("guard") or {}).get("status") or "OK")
     if guard_status == "MASS_CHANGE_REVIEW_REQUIRED":
         plan = _read_json(paths["plan"])
@@ -255,11 +419,16 @@ def commit_baseline(wiki_repo_root: Path, *, repo_id: str | None = None, repo_ro
         current = build_current_snapshot(rid, repo_root, source_cfg, old=pending)
         if current.get("snapshot_id") != pending.get("snapshot_id"):
             raise ValueError("baseline blocked: source changed after staged scan; run wiki scan again")
+    verification: Dict[str, Any] = {}
+    audit: Dict[str, Any] = {}
+    current_subject = wiki_subject_digest(wiki_repo_root)
     if require_verification:
         verification = _read_json(paths["verification"])
         if verification.get("change_set_id") != changeset.get("change_set_id") or verification.get("result") != "PASS":
             raise ValueError("baseline blocked: current change set has no PASS verification")
         current_subject = wiki_subject_digest(wiki_repo_root)
+        if verification.get("source") != pending.get("source") or verification.get("maintenance_digest") != pending.get("maintenance_digest"):
+            raise ValueError("baseline blocked: verification does not bind the staged source and maintenance policy")
         if verification.get("subject_digest") != current_subject:
             raise ValueError("baseline blocked: Wiki/manifest changed after verification; run wiki verify again")
         requires_audit = bool(verification.get("semantic_audit_required"))
@@ -267,6 +436,8 @@ def commit_baseline(wiki_repo_root: Path, *, repo_id: str | None = None, repo_ro
             audit = _read_json(paths["audit"])
             if audit.get("change_set_id") != changeset.get("change_set_id") or audit.get("result") != "PASS":
                 raise ValueError("baseline blocked: semantic audit PASS required for this change set")
+            if audit.get("source") != pending.get("source") or audit.get("maintenance_digest") != pending.get("maintenance_digest"):
+                raise ValueError("baseline blocked: semantic audit does not bind the staged source and policy")
             if audit.get("subject_digest") != current_subject:
                 raise ValueError("baseline blocked: semantic audit does not bind the current Wiki subject")
     # Build the next cite-anchor baseline *before* advancing the source snapshot.
@@ -280,9 +451,24 @@ def commit_baseline(wiki_repo_root: Path, *, repo_id: str | None = None, repo_ro
             snapshot_id=str(pending.get("snapshot_id") or ""),
         )
         write_anchor_state(wiki_repo_root, anchor_state)
+    plan = _read_json(paths["plan"])
+    pending["completion"] = {
+        "status": "SUCCESS" if require_verification else "UNVERIFIED",
+        "committed_at": utc_now(), "change_set_id": changeset.get("change_set_id"),
+        "subject_digest": current_subject,
+        "verification": {k: verification.get(k) for k in ("result", "verified_at", "subject_digest", "semantic_audit_required")},
+        "audit": {k: audit.get(k) for k in ("result", "recorded_at", "subject_digest", "documents", "topology_reviewed")} if audit else None,
+        "affected_documents": [d.get("document") for d in plan.get("affected_documents", [])],
+    }
     _write_json(paths["baseline"], pending)
-    for name in ("pending", "changeset", "plan", "verification", "audit_plan", "audit"):
-        p = paths[name]
-        if p.exists():
-            p.unlink()
-    return {"result": "COMMITTED", "snapshot_id": pending.get("snapshot_id")}
+    # The baseline is already committed. A failed receipt cleanup must not be
+    # reported as an uncommitted run; maintain will revalidate remaining state.
+    cleanup_pending = []
+    for name in ("verification", "audit_plan", "audit", "plan", "changeset", "pending"):
+        try:
+            paths[name].unlink(missing_ok=True)
+        except OSError as exc:
+            cleanup_pending.append({"name": name, "error": str(exc)})
+    return {"result": "COMMITTED", "snapshot_id": pending.get("snapshot_id"),
+            "source": pending.get("source"), "baseline_advanced": True,
+            "cleanup_pending": cleanup_pending}

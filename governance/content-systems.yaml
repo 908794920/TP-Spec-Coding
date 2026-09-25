@@ -9,6 +9,9 @@ systems:
     layout: auto
     workspace_dir_template: projects/{workspace_id}
     source:
+      source_mode: AUTO
+      # Git requires an explicit local refs/remotes/<remote>/<branch>; no automatic synchronization.
+      stable_ref: ''
       include_extensions:
       - .py
       - .java
@@ -137,7 +140,7 @@ systems:
       source_fallback: true
       limit_default: 20
       telemetry: true
-      telemetry_retention_days: 30
+      telemetry_retention_days: 90
     ingest:
       manifest_root: .ai-kb/ingest
       max_text_bytes: 1048576

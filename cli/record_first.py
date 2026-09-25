@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.3.3 Record-first task operations.
+"""Record-first task operations.
 
 The public workflow records business facts instead of forcing role-authored
 workflow bookkeeping. SQLite remains authoritative; readable projections are
@@ -81,13 +81,17 @@ def _semantic_detail(event_type: str, operation: str, flush_id: str, result_stat
 
 def _write_with_projection(conn, task_dir: Path, task, *, operation: str,
                            target_state: str, owner_after: str, flush_id: str,
-                           writer, summary: str, logical_request=None) -> Dict[str, Any]:
+                           writer, summary: str, logical_request=None, before_prepare=None) -> Dict[str, Any]:
     """Reuse the durable journal without exposing commit/handoff semantics."""
     from . import transaction_commit
 
+    from .execution import recorded_coordinator
+    coordinator = recorded_coordinator(conn, task)
+    if coordinator:
+        owner_after = coordinator["role"]
     current = str(task["current_state"] or "")
     view_rel = transaction_commit._current_view_rel(target_state)
-    terminal = target_state == "COMPLETED"
+    terminal = target_state in TERMINAL_STATES
     revision_after = 0
 
     def db_and_render(dbconn, transaction_id=""):
@@ -98,6 +102,14 @@ def _write_with_projection(conn, task_dir: Path, task, *, operation: str,
                 raise ValueError("TASK_FACTS_CHANGED: re-read current facts before retrying")
         with command_context.span("db_write"):
             writer(dbconn, transaction_id)
+            if coordinator:
+                # Role activity stays on the event; it must not overwrite the Task coordinator.
+                dbconn.execute("UPDATE task SET owner_role=?,owner_agent=? WHERE task_id=?",
+                               (coordinator["role"], coordinator.get("agent") or "", task["task_id"]))
+                from .execution import read_execution
+                parent = read_execution(dbconn, task)["current_step"]
+                if parent:
+                    dbconn.execute("UPDATE task SET current_stage=? WHERE task_id=?", (parent["phase"], task["task_id"]))
         refreshed = dbconn.execute("SELECT * FROM task WHERE task_id=?", (task["task_id"],)).fetchone()
         status_yaml, events_jsonl, warnings = projection_cmd.render_projection(dbconn, refreshed)
         transaction_commit._warn_projection(warnings)
@@ -113,6 +125,12 @@ def _write_with_projection(conn, task_dir: Path, task, *, operation: str,
             lambda: transaction_commit._rebuild_current_view_text(task_dir, refreshed, summary, flush_id),
         )
 
+    def prepare(dbconn):
+        if before_prepare is not None:
+            before_prepare(dbconn)
+        if logical_request is not None:
+            logical_request.reject_duplicate(dbconn)
+
     try:
         transaction_commit._commit_with_recovery(
             task_dir, conn, ["status.yaml", "events.jsonl"] + ([view_rel] if terminal else []), db_and_render,
@@ -120,7 +138,7 @@ def _write_with_projection(conn, task_dir: Path, task, *, operation: str,
             db_state_before=current, target_state=target_state,
             owner_before=str(task["owner_role"] or ""), owner_after=owner_after,
             flush_id=flush_id,
-            before_prepare=logical_request.reject_duplicate if logical_request else None,
+            before_prepare=prepare,
         )
     except recording.RequestReplay as replay:
         return replay.result
@@ -235,6 +253,7 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
                result_reports: Optional[Iterable[str]] = None,
                report_artifact_root: Optional[str] = None,
                recorded_result_ids: Optional[Iterable[int]] = None,
+               security_context: Optional[Dict[str, Any]] = None,
                db: Optional[str] = None) -> Dict[str, Any]:
     if phase not in PHASES:
         raise ValueError(f"invalid phase {phase!r}; choose one of: {', '.join(PHASES)}")
@@ -262,7 +281,7 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
         knowledge_signals=knowledge_signals, delivery_signals=delivery_signals,
         repo_roots=repo_roots, collect=collect, context_usage=usage,
         result_reports=result_reports, recorded_result_ids=recorded_result_ids,
-        report_artifact_root=report_artifact_root)
+        report_artifact_root=report_artifact_root, security_context=security_context)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
     conn = dbmod.connect(db_path)
     try:
@@ -277,21 +296,19 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
             raise ValueError(f"terminal task cannot accept checkpoint: {current}")
         if current == "BLOCKED":
             raise ValueError("task is BLOCKED; use 'task resume' after the blocker is resolved")
+        from .evidence import validate_evidence_path
+
+        def validate_explicit_evidence():
+            for item in evidence:
+                checked = validate_evidence_path(tdir, item)
+                if not checked.ok:
+                    raise ValueError(f"CHECKPOINT_EVIDENCE_INVALID: {checked.error}")
+
+        # Validate new references before collection; replay above preserves old receipts.
+        validate_explicit_evidence()
         target = "ACTIVE"
         now = dbmod.now_iso()
         flush_id = f"CHECKPOINT-{uuid.uuid4().hex}"
-        references = recording.recorded_results(conn, task_id, tdir, recorded_result_ids)
-        collected = recording.collect_artifacts(tdir, request.request_id, collect + result_reports)
-        observations = []
-        if result_reports:
-            from .execution_reports import read_report
-            observations = [read_report(tdir, item, task_id=task_id) for item in collected[len(collect):]]
-        if report_artifact_root is not None:
-            from .browser_reports import collect_attachments, bind_attachments
-            collected += collect_attachments(tdir, request.request_id, report_artifact_root,
-                                             observations, existing_count=len(collected))
-            observations = [bind_attachments(tdir, obs, collected) for obs in observations]
-        ev = list(evidence or []) + [item["path"] for item in collected]
         knowledge = _normalize_knowledge_signals(knowledge_signals)
         delivery = _normalize_delivery_signals(delivery_signals)
         risk_escalation = None
@@ -320,6 +337,28 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
             change_set = capture_change_set(roots)
             roots = [str(repo["root_locator"]) for repo in change_set["repositories"]]
 
+        from . import security_authority as authority
+        security = authority.normalize_context(security_context or {
+            "effect_scope": "implementation" if phase == "development" else "record_only"})
+        if change_set and not security["paths"]:
+            security["paths"] = authority.changed_paths(change_set)
+        authority.check_effect(conn, task_id, security, task_dir=tdir)
+        if phase == "development" and security["effect_scope"] in authority.READ_EFFECTS:
+            raise ValueError("SECURITY_INVESTIGATION_NOT_DEVELOPMENT: record the observation in phase=other, not as product implementation")
+
+        references = recording.recorded_results(conn, task_id, tdir, recorded_result_ids)
+        collected = recording.collect_artifacts(tdir, request.request_id, collect + result_reports)
+        observations = []
+        if result_reports:
+            from .execution_reports import read_report
+            observations = [read_report(tdir, item, task_id=task_id) for item in collected[len(collect):]]
+        if report_artifact_root is not None:
+            from .browser_reports import collect_attachments, bind_attachments
+            collected += collect_attachments(tdir, request.request_id, report_artifact_root,
+                                             observations, existing_count=len(collected))
+            observations = [bind_attachments(tdir, obs, collected) for obs in observations]
+        ev = list(evidence or []) + [item["path"] for item in collected]
+
         result = {"task_id": task_id, "state": target, "phase": phase, "actor": actor,
                   "risk_level": effective_risk, "flush_id": flush_id, "summary": summary,
                   "request_id": request.request_id, "replayed": False, "collected_artifacts": collected}
@@ -332,6 +371,10 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
             result["change_set_snapshot_digest"] = str(change_set["snapshot_digest"])
 
         def writer(dbconn, transaction_id=""):
+            # A referenced file may have moved while outputs were being collected.
+            validate_explicit_evidence()
+            authority.check_effect(dbconn, task_id, security, task_dir=tdir)
+            authority.classify_evidence(dbconn, task_id, tdir, security, ev, actor=actor, transaction_id=transaction_id)
             recording.validate_bound_items(tdir, collected)
             if recording.recorded_results(dbconn, task_id, tdir, recorded_result_ids) != references:
                 raise ValueError("RECORDED_RESULT_CHANGED: original result changed before batch commit")
@@ -358,6 +401,7 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
                      "FACT", "CHECKPOINT", flush_id, "COMPLETED",
                      transaction_id=transaction_id, phase=phase, evidence=ev,
                      evidence_items=collected, logical_request=request.detail(result), recorded_results=references,
+                     security_context=security,
                      risk_escalation=risk_escalation, knowledge_signals=knowledge,
                      delivery_signals=delivery, context_usage=usage,
                      change_set_id=(change_set or {}).get("content_digest"),
@@ -493,11 +537,14 @@ def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
 def _latest_development_change_set(conn, task_id: str) -> Optional[Dict[str, Any]]:
     """返回最近一次可信 Development checkpoint 绑定的产品 Change Set。"""
     rows = conn.execute(
-        "SELECT id, actor_role, detail_json FROM task_event "
-        "WHERE task_id=? AND event_type='FACT' ORDER BY id DESC",
+        "SELECT * FROM task_event "
+        "WHERE task_id=? AND event_type IN ('FACT','WORK_INTEGRATION_RECORDED') ORDER BY id DESC",
         (task_id,),
     ).fetchall()
     for row in rows:
+        if row["event_type"] == "WORK_INTEGRATION_RECORDED":
+            from .work_units import candidate_binding
+            return candidate_binding([dict(row)])
         if str(row["actor_role"] or "") != "tp-development-engineer":
             continue
         try:
@@ -562,6 +609,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
            context_usage: Optional[Iterable[Dict[str, Any]]] = None,
            request_id: Optional[str] = None,
            scope: str = "full", checks: Optional[Iterable[str]] = None,
+           security_context: Optional[Dict[str, Any]] = None,
            db: Optional[str] = None) -> Dict[str, Any]:
     """Record an actual technical verification result without adding a workflow gate."""
     if actor != "tp-test-engineer":
@@ -593,6 +641,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         "verification_scope": scope, "checks": checks,
         "knowledge_signals": knowledge_signals, "delivery_signals": delivery_signals,
         "context_usage": usage,
+        **({"security_context": security_context} if security_context is not None else {}),
     }, request_id)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
     conn = dbmod.connect(db_path)
@@ -627,6 +676,14 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         if development and development.get("repo_roots"):
             from .change_set import capture_change_set
             current_change_set = capture_change_set(development["repo_roots"])
+        from . import security_authority as authority
+        security = authority.normalize_context(security_context or {"effect_scope": "regression"})
+        if security["effect_scope"] != "regression":
+            raise ValueError("SECURITY_FORMAL_RESULT_REQUIRED: investigative PoC belongs in observation records")
+        if current_change_set and not security["paths"]:
+            security["paths"] = authority.changed_paths(current_change_set)
+        authority.check_effect(conn, task_id, security, task_dir=tdir)
+        authority.check_formal_evidence(authority.read(conn, task_id, tdir), tdir, evidence)
         visual_summary = None
         owner_visual_items: List[Dict[str, Any]] = []
         if decision0 == "PASS":
@@ -643,6 +700,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                     acceptance_path.read_text(encoding="utf-8-sig"),
                     enforce_completion=False,
                     allow_human_pending=True,
+                    require_visual_evidence=True,
                 )
                 visual_issues = [
                     issue for issue in acceptance.issues
@@ -712,6 +770,8 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
             result["change_set_snapshot_digest"] = str(current_change_set["snapshot_digest"])
 
         def writer(dbconn, transaction_id=""):
+            authority.check_effect(dbconn, task_id, security, task_dir=tdir)
+            authority.check_formal_evidence(authority.read(dbconn, task_id, tdir), tdir, items)
             recording.validate_bound_items(tdir, items)
             if decision0 == "PASS":
                 from .change_set import capture_change_set
@@ -758,7 +818,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                 "verification_scope": scope, "checks": checks,
                 "subject_digest": subject_digest, "evidence": [i["path"] for i in items],
                 "evidence_items": items, "knowledge_signals": knowledge, "delivery_signals": delivery,
-                "logical_request": request.detail(result),
+                "logical_request": request.detail(result), "security_context": security,
             }
             if development and current_change_set:
                 detail_obj["development_event_id"] = int(development["event_id"])
@@ -794,7 +854,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
 def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
     """Validate only acceptance claims that would become false history if forged.
 
-    V5.3.3 deliberately does *not* require every AC to be complete.  PENDING is a
+    deliberately does *not* require every AC to be complete.  PENDING is a
     valid factual outcome.  This check therefore ignores completeness/formality and
     protects only positive/owner-authority claims: PASS evidence, human witness, and
     DEFERRED_ACCEPTED/OWNER_WAIVED ledger authority.
@@ -811,11 +871,6 @@ def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
     )
     deferred_entries = {str(x.get("ac") or "") for x in parsed.deferred_entries}
     waiver_entries = {str(x.get("ac") or "") for x in parsed.owner_waiver_entries}
-    trusted_pairs = set()
-    for item in event_policies.load_owner_acceptance_decisions(conn, task_id):
-        mode = str(item.get("mode") or "").lower()
-        for ac in item.get("acs") or []:
-            trusted_pairs.add((str(ac), mode))
     effective_owner = event_policies.effective_owner_acceptance(
         conn, task_id, task_dir=task_dir,
     )
@@ -849,10 +904,10 @@ def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
                 if str(owner_decision.get("mode") or "").lower() != "accept":
                     issues.append(f"{ac} owner acceptance evidence lacks a current trusted OWNER_ACCEPTANCE_DECISION(accept)")
         elif verdict == "DEFERRED_ACCEPTED":
-            if ac not in deferred_entries or (ac, "defer") not in trusted_pairs:
+            if ac not in deferred_entries or (effective_owner.get("by_ac", {}).get(ac) or {}).get("mode") != "defer":
                 issues.append(f"{ac} DEFERRED_ACCEPTED lacks trusted human_owner decision")
         elif verdict == "OWNER_WAIVED":
-            if ac not in waiver_entries or (ac, "waive") not in trusted_pairs:
+            if ac not in waiver_entries or (effective_owner.get("by_ac", {}).get(ac) or {}).get("mode") != "waive":
                 issues.append(f"{ac} OWNER_WAIVED lacks trusted human_owner decision")
     return issues
 
@@ -904,6 +959,8 @@ def _owner_visual_acceptance_covers(conn, task_id: str, task_dir: Path, acceptan
 def validate_final_acceptance(conn, task_id: str, task_dir: Path) -> None:
     """READY and Complete share the same required acceptance/owner-authority checks."""
     path = task_dir / "acceptance.md"
+    if not path.is_file():
+        raise ValueError("INTEGRITY_ACCEPTANCE: acceptance.md is missing")
     if path.is_file():
         from . import yaml_checks
         checked = yaml_checks.check_acceptance_yaml(
@@ -919,56 +976,23 @@ def validate_final_acceptance(conn, task_id: str, task_dir: Path) -> None:
 
 def completion_check(*, task_id: str, task_dir: str, db: Optional[str] = None,
                      connection=None, base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
-    """Read-only completion preflight shared with the terminal write path."""
+    """The sole read-only preflight; Complete reuses it inside the write lock."""
+    from .closeout import collect
     tdir = _task_dir(task_dir)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
     conn = connection if connection is not None else dbmod.connect_readonly(db_path)
+    started = not conn.in_transaction
     try:
-        if not conn.in_transaction:
+        if started:
             conn.execute("BEGIN")
-        task = _load(conn, task_id)
-        state = str(task["current_state"] or "")
-        result: Dict[str, Any] = {
-            "task_id": task_id,
-            "state": state,
-            "ready": True,
-            "blockers": [],
-            "route": None,
-            "acceptance_issues": [],
-        }
-        if state in TERMINAL_STATES:
-            result["ready"] = False
-            result["blockers"].append(f"TASK_TERMINAL: task is already {state}")
-            return result
-        from . import orchestration
-        try:
-            facts = orchestration._load_task_facts(task_id, db_path, connection=conn)
-            route = orchestration.resolve_route(task_id, db_path=db_path, base_root=base_root, _facts=facts)
-        except Exception as exc:
-            result["ready"] = False
-            result["blockers"].append(f"ROUTE_CHECK_FAILED: {type(exc).__name__}: {exc}")
-        else:
-            result["route"] = route
-            if (state == "BLOCKED"
-                    or route.get("recommended_action") != "task_complete"
-                    or route.get("next_stage") != "complete"):
-                result["ready"] = False
-                if state == "BLOCKED":
-                    result["blockers"].append("INTEGRITY_BLOCKED: explicit task blocker must be resolved before COMPLETED")
-                else:
-                    result["blockers"].append(
-                        "INTEGRITY_PIPELINE_PENDING: "
-                        f"next_stage={route.get('next_stage')} role={route.get('role_id')} "
-                        f"reason={','.join(route.get('reason_codes') or [])}"
-                    )
-        try:
-            validate_final_acceptance(conn, task_id, tdir)
-        except ValueError as exc:
-            result["ready"] = False
-            result["acceptance_issues"].append(str(exc))
-            result["blockers"].append(str(exc))
-        return result
+        # Historical terminal tasks do not need migration or new obligations to be read.
+        task = conn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
+        if task is None:
+            raise ValueError(f"task not found: {task_id}")
+        return collect(conn, task, tdir, db_path=db_path, base_root=base_root)
     finally:
+        if started and conn.in_transaction:
+            conn.execute("ROLLBACK")
         if connection is None:
             conn.close()
 
@@ -994,49 +1018,52 @@ def _cleanup_terminal_temp_artifacts(task) -> Dict[str, Any]:
 
 def complete(*, task_id: str, task_dir: str, actor: Optional[str], summary: str,
              db: Optional[str] = None) -> Dict[str, Any]:
+    from .closeout import terminal_result
     tdir = _task_dir(task_dir)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
+    # Terminal replay is genuinely read-only, including older contract tasks.
+    read_conn = dbmod.connect_readonly(db_path)
+    try:
+        existing = read_conn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
+        if existing is not None and existing["current_state"] in TERMINAL_STATES:
+            return terminal_result(read_conn, existing)
+    finally:
+        read_conn.close()
+    if not isinstance(summary, str) or not summary.strip():
+        raise ValueError("complete requires a non-empty --summary unless already terminal")
     conn = dbmod.connect(db_path)
     try:
         task = _load(conn, task_id)
         actor0 = str(actor or task["owner_role"] or "").strip()
         if actor0 not in ACTORS:
             raise ValueError(f"invalid actor: {actor0 or '<missing>'}")
-        current = str(task["current_state"] or "")
-        if current == "BLOCKED":
-            raise ValueError("INTEGRITY_BLOCKED: explicit task blocker must be resolved before COMPLETED")
-        if current in TERMINAL_STATES:
-            raise ValueError(f"task is already terminal: {current}")
-        # Zero-token invariant: a role may never bypass remaining workflow stages.
-        from . import orchestration
-        route = orchestration.resolve_route(task_id, db_path=db_path)
-        if route.get("recommended_action") != "task_complete" or route.get("next_stage") != "complete":
-            raise ValueError(
-                "INTEGRITY_PIPELINE_PENDING: "
-                f"next_stage={route.get('next_stage')} role={route.get('role_id')} "
-                f"reason={','.join(route.get('reason_codes') or [])}"
-            )
-        validate_final_acceptance(conn, task_id, tdir)
-        verification = _latest_verification(conn, task_id, tdir)
+
+        def checked(dbconn):
+            preflight = completion_check(task_id=task_id, task_dir=str(tdir), db=db_path, connection=dbconn)
+            if preflight.get("already_terminal"):
+                raise recording.RequestReplay(preflight)
+            if not preflight["ready"]:
+                raise ValueError("COMPLETION_BLOCKED: " + "; ".join(preflight["blockers"]))
+            return preflight
+
+        try:
+            checked(conn)
+        except recording.RequestReplay as replay:
+            return replay.result
+        current = str(task["current_state"])
         now = dbmod.now_iso(); flush_id = f"COMPLETE-{uuid.uuid4().hex}"
         phase0 = str(task["current_stage"] or "delivery")
+        verification = _latest_verification(conn, task_id, tdir)
 
         def writer(dbconn, transaction_id=""):
-            # Files/evidence may change after preflight. Recheck the final gate
-            # under the existing write boundary, not only its earlier route.
-            checked_route = orchestration.resolve_route(task_id, db_path=db_path)
-            if (checked_route.get("recommended_action") != "task_complete"
-                    or checked_route.get("next_stage") != "complete"):
-                raise ValueError("INTEGRITY_PIPELINE_PENDING: final prerequisites changed before write")
-            validate_final_acceptance(dbconn, task_id, tdir)
-            detail = _detail(
-                "COMPLETE", flush_id, transaction_id=transaction_id, phase=phase0,
-                verification=verification,
-            )
+            # Same connection as BEGIN IMMEDIATE: no stale, independent reader.
+            preflight = checked(dbconn)
+            detail = _detail("COMPLETE", flush_id, transaction_id=transaction_id, phase=phase0,
+                             verification=verification, closeout_schema=preflight["schema"])
             dbconn.execute(
                 "INSERT INTO task_event (task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (task_id, "STATE", current, "COMPLETED", task["current_stage"], phase0,
-                 actor0, summary, detail, active_version(), now),
+                 actor0, summary.strip(), detail, active_version(), now),
             )
             dbconn.execute(
                 "UPDATE task SET current_state='COMPLETED', owner_role=?, updated_at=?, completed_at=? WHERE task_id=?",
@@ -1044,10 +1071,12 @@ def complete(*, task_id: str, task_dir: str, actor: Optional[str], summary: str,
             )
 
         projection = _write_with_projection(conn, tdir, task, operation="complete", target_state="COMPLETED",
-                               owner_after=actor0, flush_id=flush_id, writer=writer, summary=summary)
+            owner_after=actor0, flush_id=flush_id, writer=writer, summary=summary.strip(), before_prepare=checked)
+        if projection.get("replayed"):
+            return projection
         temp_summary = _cleanup_terminal_temp_artifacts(task)
         return {**projection, "task_id": task_id, "state": "COMPLETED", "phase": phase0,
-                "verification": verification["decision"], "flush_id": flush_id, "summary": summary,
+                "verification": verification["decision"], "flush_id": flush_id, "summary": summary.strip(),
                 "temp_artifacts": temp_summary}
     finally:
         conn.close()

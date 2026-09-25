@@ -19,6 +19,8 @@ import re
 import tokenize
 import unicodedata
 
+from .stable_source import SourceError, relative_path, source_view
+
 
 @dataclass(frozen=True)
 class FileFingerprint:
@@ -221,7 +223,40 @@ def _is_excluded(rel: str, cfg: Dict[str, Any]) -> bool:
     return False
 
 
+def source_selected(rel: str, cfg: Dict[str, Any]) -> bool:
+    path = PurePosixPath(rel)
+    return not _is_excluded(rel, cfg) and (
+        path.name in cfg.get("include_names", []) or
+        path.suffix.lower() in {str(x).lower() for x in cfg.get("include_extensions", [])}
+    )
+
+
+def source_is_file(repo_root: Path, rel: str, cfg: Dict[str, Any]) -> bool:
+    view = source_view(repo_root, cfg)
+    if view.mode == "GIT_REF":
+        return view.is_file(rel)
+    return resolve_repo_relative(repo_root, rel).is_file()
+
+
+def read_source_bytes(repo_root: Path, rel: str, cfg: Dict[str, Any]) -> bytes:
+    view = source_view(repo_root, cfg)
+    if view.mode == "GIT_REF":
+        return view.read_bytes(rel)
+    return resolve_repo_relative(repo_root, rel).read_bytes()
+
+
 def discover_source_files(repo_root: Path, cfg: Dict[str, Any]) -> List[str]:
+    view = source_view(repo_root, cfg)
+    if view.mode == "GIT_REF":
+        out = []
+        for rel, (mode, kind, _) in view.tree().items():
+            if kind == "commit" and not _is_excluded(rel, cfg):
+                raise SourceError(f"GITLINK_NEEDS_REVIEW: {rel}; register submodule as a separate repo and explicitly exclude its parent entry")
+            if source_selected(rel, cfg):
+                if mode not in {"100644", "100755"}:
+                    raise SourceError(f"GIT_ENTRY_UNSUPPORTED: {rel} mode={mode}")
+                out.append(rel)
+        return sorted(out)
     repo_root = repo_root.resolve(strict=False)
     extensions = {str(x).lower() for x in cfg.get("include_extensions", [])}
     names = {str(x) for x in cfg.get("include_names", [])}
@@ -252,10 +287,8 @@ def resolve_repo_relative(repo_root: Path, rel: str) -> Path:
     rejected so quality/manifest refresh cannot accidentally read outside the
     registered source repository.
     """
-    text = str(rel or "").replace("\\", "/").strip()
+    text = relative_path(rel)
     pure = PurePosixPath(text)
-    if not text or pure.is_absolute() or ".." in pure.parts:
-        raise ValueError(f"unsafe repo-relative path: {rel!r}")
     root = repo_root.resolve(strict=False)
     candidate = (root / pure).resolve(strict=False)
     try:
@@ -265,14 +298,14 @@ def resolve_repo_relative(repo_root: Path, rel: str) -> Path:
     return candidate
 
 def fingerprint_file(repo_root: Path, rel: str, cfg: Dict[str, Any]) -> FileFingerprint:
-    full = resolve_repo_relative(repo_root, rel)
-    data = full.read_bytes()
-    stat = full.stat()
+    view = source_view(repo_root, cfg)
+    data = read_source_bytes(repo_root, rel, cfg)
+    mtime_ns = 0 if view.mode == "GIT_REF" else resolve_repo_relative(repo_root, rel).stat().st_mtime_ns
     norm, encoding, decode_status = normalized_hash(rel, data, str(cfg.get("properties_normalization") or "keys"))
     return FileFingerprint(
         path=rel,
-        size=stat.st_size,
-        mtime_ns=stat.st_mtime_ns,
+        size=len(data),
+        mtime_ns=mtime_ns,
         content_hash=sha256_bytes(data),
         normalized_hash=norm,
         encoding=encoding,

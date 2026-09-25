@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""V5.3.3 可信事件注册表（Final Hardening 单一来源）。
+"""可信事件注册表（Final Hardening 单一来源）。
 
-依据：《V5.3.3 Final Hardening Invariant 修复任务》Task 1（§3）与《V5.3.3
+依据：《Final Hardening Invariant 修复任务》Task 1（§3）与《
 HARDENING 源码复审报告》P0-1/P0-2。INV-02：治理事件只能由可信生产者产生；
 INV-03：门禁不信任 type/actor/summary 三元组，只接受含完整身份链的可信事件。
 
@@ -81,7 +81,7 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
     "REVIEW_COMPLETED": _policy("governance", ("review_record", "commit"), True, _REVIEW_IDENTITY_FIELDS),
     "REVIEW": _policy("governance", ("review_record", "commit"), True, _EVENT_SCHEMA_FIELDS),
     "VERIFICATION": _policy("governance", ("commit",), True, _EVENT_SCHEMA_FIELDS),
-    # V5.3.3 Record-first verification is a trusted fact but no longer a state gate.
+    # Record-first verification is a trusted fact but no longer a state gate.
     # It binds decision + current technical subject digest + real evidence without
     # requiring a role-authored review artifact.
     "VERIFICATION_COMPLETED": _policy(
@@ -118,13 +118,31 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
         _EVENT_SCHEMA_FIELDS + ("request_event_id", "change_set_id", "knowledge_disposition",
                                 "query_receipts", "source_refs", "source_items", "reason_code"),
     ),
+    "HUMAN_AUTHORITY_RECORDED": _policy("governance", ("security_authority",), True,
+        _EVENT_SCHEMA_FIELDS + ("security_schema", "security_payload", "security_digest")),
+    "SECURITY_PROPOSAL_RECORDED": _policy("governance", ("security_authority",), True,
+        _EVENT_SCHEMA_FIELDS + ("security_schema", "security_payload", "security_digest")),
+    "SECURITY_WORK_BOUND": _policy("governance", ("security_authority",), True,
+        _EVENT_SCHEMA_FIELDS + ("security_schema", "security_payload", "security_digest")),
+    "SECURITY_EVIDENCE_RECORDED": _policy("governance", ("security_authority",), True,
+        _EVENT_SCHEMA_FIELDS + ("security_schema", "security_payload", "security_digest")),
     "SCOPE_CHANGE": _policy("governance", ("task_scope_change",), True, _EVENT_SCHEMA_FIELDS + ("scope_id", "summary")),
     "AUDIT": _policy("governance", ("admin_recovery", "reconcile"), True, _EVENT_SCHEMA_FIELDS),
     "PHASE_EXIT": _policy("governance", ("commit",), False, _EVENT_SCHEMA_FIELDS),
-    # 工作会话 / 返工：正式命令产生的动作记录，投影为 FACT；不影响状态机门禁，
-    # 但只允许正式命令产生（不允许 event add/sync 伪造审计噪声）。
+    # 执行计划 / 工作段 / 返工：正式命令产生的 FACT，不是专业 PASS。
+    # 显式计划有独立记录完整性检查；旧任务不追补。不允许 event add/sync 冒充生产者。
+    "EXECUTION_PLAN_RECORDED": _policy("governance", ("execution",), False,
+        _EVENT_SCHEMA_FIELDS + ("execution_schema", "plan_version", "plan_digest", "plan")),
+    "EXECUTION_STEP_RECORDED": _policy("governance", ("execution",), False,
+        _EVENT_SCHEMA_FIELDS + ("execution_schema", "plan_version", "step_id", "action")),
+    "WORK_SESSION_UPDATED": _policy("governance", ("work_session",), False,
+        _EVENT_SCHEMA_FIELDS + ("execution_schema", "session_id", "start_event_id", "step_id", "action")),
     "WORK_SESSION_STARTED": _policy("governance", ("work_session",), False, _EVENT_SCHEMA_FIELDS),
     "WORK_SESSION_ENDED": _policy("governance", ("work_session",), False, _EVENT_SCHEMA_FIELDS),
+    "WORK_ITEM_RECORDED": _policy("governance", ("workitem",), False,
+        _EVENT_SCHEMA_FIELDS + ("execution_schema", "work_schema", "work_payload", "work_digest")),
+    "WORK_INTEGRATION_RECORDED": _policy("governance", ("workitem",), False,
+        _EVENT_SCHEMA_FIELDS + ("execution_schema", "work_schema", "work_payload", "work_digest")),
     "REWORK": _policy("governance", ("rework",), False, _EVENT_SCHEMA_FIELDS),
 }
 
@@ -245,6 +263,10 @@ def effective_owner_acceptance(
     by_ac: Dict[str, Dict[str, Any]] = {}
     for item in load_owner_acceptance_decisions(conn, task_id):
         mode = str(item.get("mode") or "").lower()
+        # A newer scoped decision supersedes the old one even when its evidence
+        # is now unavailable. Never resurrect an older acceptance after corruption.
+        for raw_ac in item.get("acs") or []:
+            by_ac.pop(str(raw_ac).strip(), None)
         if mode == "accept":
             if not base or not current_change_set or not current_subject:
                 continue
@@ -364,6 +386,7 @@ def load_trusted_governance_events(
     当前门禁不能跳过较新的失败、损坏证据或失效主体去复用历史 PASS。
     默认保留历史检索语义，审计调用不因当前门禁策略而丢失旧事实。
     """
+    from .event_contract import inapplicable_prerequisite_binding
     policy = EVENT_POLICIES.get(event_type)
     if not policy or policy["authority"] != "governance":
         return []
@@ -387,6 +410,8 @@ def load_trusted_governance_events(
             continue
         invalid = False
         for req in fields:
+            if inapplicable_prerequisite_binding(event_type, detail, req):
+                continue
             if detail.get(req):
                 continue
             if req in row.keys() and row[req]:
@@ -429,6 +454,17 @@ def load_trusted_governance_events(
                     evidence_ok = False
                     break
             if not evidence_ok:
+                continue
+        if event_type in {"VERIFICATION_COMPLETED", "REVIEW_COMPLETED"} and (latest_only or evidence_dir is not None):
+            # A history query preserves recorded facts. Current consumers (or
+            # an evidence-bound reuse) also require applicable scope authority.
+            from . import security_authority as authority
+            try:
+                security = authority.read(conn, task_id, evidence_dir)
+                directory = evidence_dir or security["task_dir"]
+                if not authority.formal_record_current(security, directory, detail):
+                    continue
+            except (ValueError, OSError, KeyError, TypeError):
                 continue
         trusted.append(TrustedEvent(row=row, detail=detail, policy=policy))
     return trusted

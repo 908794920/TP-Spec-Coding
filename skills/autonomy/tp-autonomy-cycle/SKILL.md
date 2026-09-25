@@ -1,7 +1,7 @@
 ---
 name: tp-autonomy-cycle
 display_name: 自治周期
-version: 5.3.3
+version: 5.3.4
 description: 外部 Scheduler/本地 Executor 唤起的一次无人值守 Autonomous Maintenance Cycle；使用 generation fencing，复用普通 Task 与当前 tp-software-lifecycle。
 ---
 

@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.3.3 work 命令组（M2）。
+"""TP-Spec-Coding work 命令组（M2）。
 
 包含：
-- work start / end
+- work plan / step / show / start / update / end
 
 核心保证：
 - work start：单事务插入 WORK_SESSION_STARTED 事件
 - work end：单事务插入 WORK_SESSION_ENDED 事件，reason 受控
 - reason=blocked 不自动转 BLOCKED（状态流转必须显式 task transition）
 - actor_role 默认回退到 task.owner_role；actor_agent 可显式记录，缺省沿用 task.owner_agent
-- 新事件用 detail_json.session_id 关联 START/END；同一 task+role 只允许一个未结束会话
+- 新事件用 session_id 关联 START/UPDATE/END；已采用计划的任务按角色/执行者/步骤/Work 区分参与
 """
 
 from __future__ import annotations
@@ -96,7 +96,7 @@ def pair_work_sessions(rows) -> dict:
             continue
         start = candidates[0]
         if any((start.get(key) or "") != (row.get(key) or "")
-               for key in ("actor_role", "actor_agent")):
+               for key in ("actor_role", "actor_agent", "work_item_id")):
             unmatched_ends.append(row)
             continue
         opened.pop(start["id"])
@@ -117,7 +117,7 @@ def pair_work_sessions(rows) -> dict:
 def summarize_work_sessions(rows) -> dict:
     """Compact read-only observations; START/END do not observe an agent process."""
     rows = [dict(row) for row in rows
-            if row["event_type"] in {"WORK_SESSION_STARTED", "WORK_SESSION_ENDED"}]
+            if row["event_type"] in {"WORK_SESSION_STARTED", "WORK_SESSION_UPDATED", "WORK_SESSION_ENDED"}]
     paired = pair_work_sessions(rows)
     opened = [{key: row.get(key) or "" for key in
                ("id", "actor_role", "actor_agent", "model_used", "work_item_id", "created_at")}
@@ -144,198 +144,284 @@ def summarize_work_sessions(rows) -> dict:
     }
 
 
+def _open_sessions(conn, task_id: str):
+    rows = conn.execute("SELECT * FROM task_event WHERE task_id=? "
+                        "AND event_type IN ('WORK_SESSION_STARTED','WORK_SESSION_ENDED') ORDER BY id",
+                        (task_id,)).fetchall()
+    return pair_work_sessions(rows)["unmatched_starts"]
+
+
 def _open_session_for_role(conn, task_id: str, actor_role: str):
-    rows = conn.execute(
-        "SELECT * FROM task_event WHERE task_id=? "
-        "AND event_type IN ('WORK_SESSION_STARTED','WORK_SESSION_ENDED') ORDER BY id",
-        (task_id,),
-    ).fetchall()
-    paired = pair_work_sessions(rows)
-    opened = [row for row in paired["unmatched_starts"] if row.get("actor_role") == actor_role]
+    # Kept for legacy callers. Multiple explicit participations must be selected by ID.
+    opened = [row for row in _open_sessions(conn, task_id) if row.get("actor_role") == actor_role]
     if len(opened) > 1 or any(_event_detail(row) is None for row in opened):
-        raise ValueError("WORK_SESSION_AMBIGUOUS: inspect original START/END records; history was not changed")
-    if not opened:
-        return None
-    return (_event_detail(opened[0]).get("session_id", ""), opened[0])
+        raise ValueError("WORK_SESSION_AMBIGUOUS: select --session; history was not changed")
+    return ((_event_detail(opened[0]).get("session_id", ""), opened[0]) if opened else None)
+
+
+def _selected_start(conn, task, args):
+    opened = _open_sessions(conn, task["task_id"])
+    sid = getattr(args, "session", None)
+    if sid:
+        candidates = [row for row in opened if (_event_detail(row) or {}).get("session_id") == sid]
+    else:
+        actor = args.role or task["owner_role"] or DEFAULT_ROLE
+        agent = args.agent if args.agent is not None else (task["owner_agent"] or "")
+        candidates = [row for row in opened if row.get("actor_role") == actor and (row.get("actor_agent") or "") == agent]
+    if len(candidates) != 1 or _event_detail(candidates[0]) is None:
+        raise ValueError("WORK_SESSION_AMBIGUOUS_OR_MISSING: use the exact open --session ID from work show/START")
+    row = candidates[0]
+    if ((args.role is not None and args.role != row.get("actor_role"))
+            or (args.agent is not None and args.agent != (row.get("actor_agent") or ""))):
+        raise ValueError("WORK_SESSION_OWNER_MISMATCH: actor must match the recorded START")
+    return row
+
+
+def _outcome(args, conn, task_id):
+    from .execution_cmd import validate_refs, _strings
+    return {"result": getattr(args, "result", "") or "",
+            "findings": _strings(getattr(args, "finding", []) or [], "findings"),
+            "decisions": _strings(getattr(args, "decision", []) or [], "decisions"),
+            "evidence_refs": validate_refs(conn, task_id, getattr(args, "evidence", []) or [])}
+
+
+def _session_event(conn, task, kind, *, actor, agent, summary, detail, item=None, model=None,
+                   tokens_in=None, tokens_out=None, now=None, transaction_id=None):
+    from . import execution
+    from .execution_cmd import append_event
+    statuses = {"completed": "COMPLETED", "handed_off": "COMPLETED", "cancelled": "CANCELLED", "blocked": "BLOCKED"}
+    status = ("STARTED" if kind == "WORK_SESSION_STARTED" or detail.get("action") == "resume" else
+              "PENDING" if kind == "WORK_SESSION_UPDATED" else statuses.get(detail.get("reason"), "PENDING"))
+    operation = "START" if kind == "WORK_SESSION_STARTED" else "END" if kind == "WORK_SESSION_ENDED" else "RECORD"
+    if detail.get("execution_schema") == execution.SCHEMA:
+        event_id = append_event(conn, task, kind, actor=actor, agent=agent, summary=summary, payload=detail,
+                                item=item, producer="work_session", operation=operation, result_status=status,
+                                now=now, transaction_id=transaction_id)
+        conn.execute("UPDATE task_event SET model_used=?,tokens_input=?,tokens_output=? WHERE id=?",
+                     (model or "", tokens_in, tokens_out, event_id))
+    else:
+        # Existing unscoped sessions keep their legacy representation and pairing semantics.
+        now = now or dbmod.now_iso()
+        data = event_contract.add_event_semantics(detail, event_type=kind, operation=operation,
+                                                 result_status=status, producer="work_session")
+        event_id = conn.execute("INSERT INTO task_event (task_id,event_type,actor_role,actor_agent,model_used,tokens_input,tokens_output,work_item_id,detail_json,summary,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+             (task["task_id"], kind, actor, agent, model or "", tokens_in, tokens_out, item,
+              json.dumps(data, ensure_ascii=False), summary, now)).lastrowid
+        conn.execute("UPDATE task SET updated_at=? WHERE task_id=?", (now, task["task_id"]))
+    return event_id
 
 
 def cmd_work_start(args) -> int:
-    task_id = args.task
-    db_path = dbmod.resolve_db_path(args.db, project_id=getattr(args, "project", None), task_id=task_id)
-    conn = dbmod.connect(db_path)
-    try:
-        with dbmod.transactional(conn):
-            task = conn.execute("SELECT * FROM task WHERE task_id = ?", (task_id,)).fetchone()
-            if task is None:
-                print(f"ERROR: task not found: {task_id}", file=sys.stderr)
-                return 4
-            from .event_policies import is_task_retired
-            if task["current_state"] in {"COMPLETED", "CANCELLED"} or is_task_retired(conn, task_id):
-                print("ERROR: TASK_NOT_CURRENT: cannot start work on terminal/retired task", file=sys.stderr)
-                return 5
-            if args.item:
-                item = conn.execute("SELECT status FROM work_item WHERE task_id=? AND item_id=?",
-                                    (task_id, args.item)).fetchone()
-                if item is None or item["status"] == "COMPLETED":
-                    print("ERROR: WORK_ITEM_UNAVAILABLE: item must belong to this task and not be completed", file=sys.stderr)
-                    return 5
-            actor_role = args.role or task["owner_role"] or DEFAULT_ROLE
-            actor_agent = args.agent if args.agent is not None else (task["owner_agent"] or "")
-            open_session = _open_session_for_role(conn, task_id, actor_role)
-            if open_session is not None:
-                sid, row = open_session
-                label = sid or f"legacy-event-{row['id']}"
-                print(
-                    f"ERROR: open work session already exists for {actor_role}: {label}; "
-                    "end it explicitly before starting another",
-                    file=sys.stderr,
-                )
-                return 5
-            session_id = f"WORK-{uuid.uuid4().hex}"
-            detail = event_contract.add_event_semantics({"session_id": session_id, "producer": "work_session"}, event_type="WORK_SESSION_STARTED", operation="START", result_status="STARTED", producer="work_session")
-            now = dbmod.now_iso()
-            cur = conn.execute(
-                """
-                INSERT INTO task_event
-                  (task_id, event_type, actor_role, actor_agent, model_used,
-                   work_item_id, detail_json, summary, created_at)
-                VALUES (?, 'WORK_SESSION_STARTED', ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    task_id, actor_role, actor_agent, args.model or "", args.item,
-                    json.dumps(detail, ensure_ascii=False), args.summary, now,
-                ),
-            )
-            event_id = cur.lastrowid
-        print(f"Work session started: {event_id} (session_id={session_id})")
-        return 0
-    finally:
-        conn.close()
+    from . import execution
+    from .execution_cmd import _write_command, record_step, _text
+    def write(conn, task, facts):
+        actor = args.role or task["owner_role"] or DEFAULT_ROLE
+        agent = args.agent if args.agent is not None else (task["owner_agent"] or "")
+        item = getattr(args, "item", None)
+        if item:
+            row = conn.execute("SELECT status FROM work_item WHERE task_id=? AND item_id=?", (args.task, item)).fetchone()
+            if row is None or row["status"] == "COMPLETED":
+                raise ValueError("WORK_ITEM_UNAVAILABLE: item must belong to this task and not be completed")
+        from . import security_authority as authority
+        if item:
+            authority.check_work(conn, args.task, item)
+        elif facts["plan"] is None:
+            authority.check_effect(conn, args.task, authority.context_from_args(args))
+        sid = f"WORK-{uuid.uuid4().hex}"
+        payload = {"session_id": sid, "producer": "work_session"}
+        if facts["plan"] is None and not item:
+            payload["security_context"] = authority.context_from_args(args)
+        now, transaction_id = dbmod.now_iso(), uuid.uuid4().hex
+        step_id = getattr(args, "step", None)
+        if facts["plan"] is not None:
+            if getattr(args, "plan_version", None) != facts["plan_version"]:
+                raise ValueError("PLAN_VERSION_CHANGED: pass --plan-version from work show")
+            if not step_id:
+                step_id = (facts["current_step"] or {}).get("id")
+            step = next((s for s in facts["steps"] if s["id"] == step_id), None)
+            if step is None:
+                raise ValueError("STEP_REQUIRED: select an explicit --step from the plan")
+            from .work_units import read as read_units, checked_item, require_dependencies
+            unit = read_units(conn, args.task)["units"].get(item) if item else None
+            linked = bool(unit and unit["waiting_step_id"] == step_id)
+            fix = linked and unit["spec"]["kind"] == "FIX"
+            if linked:
+                row = checked_item(conn, args.task, item)
+                if row["status"] != "ACTIVE":
+                    raise ValueError("WORK_NOT_CLAIMED: claim before starting a scoped Work participation")
+                require_dependencies(conn, args.task, row)
+            if not fix:
+                authority.check_step(conn, args.task, step)
+            if actor not in (unit["spec"]["roles"] if linked else step["roles"]):
+                raise ValueError("PARTICIPATION_ROLE_MISMATCH: role must belong to this step or scoped Fix")
+            if item and item not in step["work_item_ids"] and not linked:
+                raise ValueError("WORK_ITEM_STEP_MISMATCH: explicitly associate this WorkItem")
+            summary = _text(args.summary, "session summary")
+            scope = _text(getattr(args, "scope", None) or step["scope"], "participation scope")
+            if step["status"] == "PLANNED":
+                record_step(conn, task, facts, step_id=step_id, plan_version=facts["plan_version"], action="start",
+                            actor=actor, summary=summary, now=now, transaction_id=transaction_id)
+            elif step["status"] != "ACTIVE" and not (fix and step["status"] == "WAITING"):
+                raise ValueError("STEP_NOT_ACTIVE: only scoped Fix participants run while the parent waits")
+            if task["current_state"] == "BLOCKED":
+                raise ValueError("TASK_BLOCKED: resolve the existing Task wait first")
+            payload.update(execution_schema=execution.SCHEMA, plan_version=facts["plan_version"], step_id=step_id,
+                           scope=scope, effect_scope="record_only")
+        elif step_id or getattr(args, "plan_version", None) is not None:
+            raise ValueError("EXECUTION_PLAN_REQUIRED: record work plan first")
+        for opened in _open_sessions(conn, args.task):
+            if opened.get("actor_role") != actor:
+                continue
+            detail = _event_detail(opened)
+            if detail is None:
+                raise ValueError("WORK_SESSION_AMBIGUOUS: inspect damaged START metadata")
+            if (facts["plan"] is None or not detail.get("step_id") or
+                    (detail.get("step_id") == step_id and opened.get("work_item_id") == item
+                     and (opened.get("actor_agent") or "") == agent)):
+                raise ValueError("WORK_SESSION_ALREADY_OPEN: end or resume the existing participation")
+        event_id = _session_event(conn, task, "WORK_SESSION_STARTED", actor=actor, agent=agent, item=item,
+                    summary=args.summary, detail=payload, model=args.model, now=now, transaction_id=transaction_id)
+        if facts["plan"] is None:
+            return f"Work session started: {event_id} (session_id={sid})"
+        return {"event_id": event_id, "session_id": sid, "participation_id": sid if step_id else None,
+                "plan_version": facts["plan_version"] or None, "step_id": step_id, "runtime_status": "UNKNOWN"}
+    return _write_command(args, write, allow_legacy=True)
+
+
+def cmd_work_update(args) -> int:
+    from . import execution
+    from .execution_cmd import _write_command, _text
+    def write(conn, task, facts):
+        start = _selected_start(conn, task, args)
+        detail = _event_detail(start)
+        if detail.get("execution_schema") != execution.SCHEMA:
+            raise ValueError("LEGACY_SESSION: finish it explicitly; do not invent a past step binding")
+        participation = next((p for p in facts["participations"] if p["participation_id"] == detail["session_id"]), None)
+        if participation is None:
+            raise ValueError("PARTICIPATION_UNAVAILABLE")
+        target = {"wait": "ACTIVE", "resume": "WAITING"}[args.action]
+        if participation["status"] != target:
+            raise ValueError(f"PARTICIPATION_TRANSITION_INVALID: {participation['status']} -> {args.action}")
+        step = next(s for s in facts["steps"] if s["id"] == detail["step_id"])
+        from .work_units import read as read_units
+        unit = read_units(conn, args.task)["units"].get(start.get("work_item_id"))
+        fix = bool(unit and unit["spec"]["kind"] == "FIX" and unit["waiting_step_id"] == step["id"])
+        if args.action == "resume" and ((step["status"] != "ACTIVE" and not (fix and step["status"] == "WAITING")) or task["current_state"] == "BLOCKED"):
+            raise ValueError("STEP_NOT_ACTIVE: resolve the Task/step wait before resuming a participation")
+        if args.action == "resume":
+            from . import security_authority as authority
+            if start.get("work_item_id"):
+                authority.check_work(conn, args.task, start["work_item_id"])
+            else:
+                authority.check_step(conn, args.task, step)
+        summary = _text(args.summary, "session summary")
+        wait_reason = _text(args.wait_reason, "wait_reason", required=args.action == "wait")
+        expected = _text(args.expected_next, "expected_next_actor", required=args.action == "wait")
+        if args.action == "resume" and (wait_reason or expected):
+            raise ValueError("wait fields only apply to action=wait")
+        payload = {key: detail[key] for key in ("execution_schema", "session_id", "step_id", "plan_version")}
+        payload.update(start_event_id=start["id"], action=args.action, wait_reason=wait_reason,
+                       expected_next_actor=expected, **_outcome(args, conn, args.task))
+        event_id = _session_event(conn, task, "WORK_SESSION_UPDATED", actor=start["actor_role"],
+                    agent=start.get("actor_agent") or "", item=start.get("work_item_id"), summary=summary, detail=payload)
+        return {"event_id": event_id, "participation_id": detail["session_id"], "action": args.action}
+    return _write_command(args, write)
 
 
 def cmd_work_end(args) -> int:
-    task_id = args.task
-    if args.reason not in _REASON_CODES:
-        print(
-            f"ERROR: invalid reason '{args.reason}' (must be one of: {', '.join(_REASON_CODES)})",
-            file=sys.stderr,
-        )
-        return 2
-    db_path = dbmod.resolve_db_path(args.db, project_id=getattr(args, "project", None), task_id=task_id)
-    conn = dbmod.connect(db_path)
-    try:
-        with dbmod.transactional(conn):
-            task = conn.execute("SELECT * FROM task WHERE task_id = ?", (task_id,)).fetchone()
-            if task is None:
-                print(f"ERROR: task not found: {task_id}", file=sys.stderr)
-                return 4
-            actor_role = args.role or task["owner_role"] or DEFAULT_ROLE
-            actor_agent = args.agent if args.agent is not None else (task["owner_agent"] or "")
-            open_session = _open_session_for_role(conn, task_id, actor_role)
-            if open_session is None:
-                print(
-                    f"ERROR: no open work session for {actor_role}; run 'tp-spec work start' first",
-                    file=sys.stderr,
-                )
-                return 5
-            session_id, start_row = open_session
-            if actor_agent != (start_row.get("actor_agent") or ""):
-                print("ERROR: WORK_SESSION_OWNER_MISMATCH: END must match the recorded START agent", file=sys.stderr)
-                return 5
-            # 旧账本可能没有 session_id；新 END 明确记录关联 start_event_id，避免伪造 ID。
-            end_status = {
-                "blocked": "BLOCKED",
-                "cancelled": "CANCELLED",
-                "paused": "PENDING",
-                "waiting_human": "PENDING",
-                "waiting_agent": "PENDING",
-                "interrupted": "PENDING",
-                "completed": "COMPLETED",
-                "handed_off": "COMPLETED",
-            }[str(args.reason).lower()]
-            detail = event_contract.add_event_semantics({
-                "session_id": session_id,
-                "start_event_id": start_row["id"],
-                "reason": args.reason,
-                "wait_reason": args.wait_reason or "",
-                "expected_next_actor": args.expected_next or "",
-                "producer": "work_session",
-            }, event_type="WORK_SESSION_ENDED", operation="END", result_status=end_status, producer="work_session")
-            now = dbmod.now_iso()
-            cur = conn.execute(
-                """
-                INSERT INTO task_event
-                  (task_id, event_type, actor_role, actor_agent, model_used,
-                   tokens_input, tokens_output, work_item_id, detail_json, summary, created_at)
-                VALUES (?, 'WORK_SESSION_ENDED', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    task_id,
-                    actor_role,
-                    actor_agent,
-                    args.model or "",
-                    args.tokens_in,
-                    args.tokens_out,
-                    start_row.get("work_item_id"),
-                    json.dumps(detail, ensure_ascii=False),
-                    args.summary,
-                    now,
-                ),
-            )
-            event_id = cur.lastrowid
-        # reason=blocked 仅记录事件，不自动转 BLOCKED（状态流转必须显式 task transition）
-        print(f"Work session ended: {event_id} (reason={args.reason})")
+    from . import execution
+    from .execution_cmd import _write_command, _text
+    cleanup_binding = {}
+    def write(conn, task, facts):
+        if args.reason not in _REASON_CODES:
+            raise ValueError("invalid work end reason")
+        start = _selected_start(conn, task, args)
+        source = _event_detail(start)
+        sid = source.get("session_id", "")
+        payload = {"session_id": sid, "start_event_id": start["id"], "reason": args.reason,
+                   "wait_reason": args.wait_reason or "", "expected_next_actor": args.expected_next or "",
+                   "producer": "work_session", **_outcome(args, conn, args.task)}
+        if source.get("execution_schema") == execution.SCHEMA:
+            if facts["terminal"]:
+                raise ValueError("TASK_NOT_CURRENT: explicit-plan terminal participation is historical")
+            _text(args.summary, "session end summary")
+            if args.reason in {"waiting_human", "waiting_agent", "blocked"}:
+                _text(payload["wait_reason"], "wait_reason")
+            if args.reason in {"waiting_human", "waiting_agent", "blocked", "handed_off"}:
+                _text(payload["expected_next_actor"], "expected_next_actor")
+            payload.update({key: source[key] for key in ("execution_schema", "step_id", "plan_version")})
+            payload["result"] = payload["result"] or args.summary
+        from . import security_authority as authority
+        ctx = source.get("security_context")
+        if start.get("work_item_id"):
+            _, ctx = authority.work_context(conn, args.task, start["work_item_id"])
+        elif source.get("step_id") and facts.get("plan"):
+            step = next(s for s in facts["steps"] if s["id"] == source["step_id"])
+            ctx = authority.step_context(step)
+        if ctx:
+            refs = [ref for ref in payload.get("evidence_refs", []) if ref.startswith("evidence/")]
+            authority.classify_evidence(conn, args.task, authority.task_directory(conn, args.task), ctx, refs, actor=start["actor_role"])
+        event_id = _session_event(conn, task, "WORK_SESSION_ENDED", actor=start["actor_role"],
+            agent=start.get("actor_agent") or "", item=start.get("work_item_id"), summary=args.summary,
+            detail=payload, model=args.model, tokens_in=args.tokens_in, tokens_out=args.tokens_out)
+        cleanup_binding.update(project_id=str(task["project_id"] or ""), task_id=args.task, run_id=sid)
+        if source.get("execution_schema") != execution.SCHEMA:
+            return f"Work session ended: {event_id} (reason={args.reason})"
+        return {"event_id": event_id, "session_id": sid, "reason": args.reason}
+    # Preserve the existing owned legacy-END recovery, without reopening a terminal Task.
+    code = _write_command(args, write, allow_legacy=True, allow_legacy_end=True)
+    # Cleanup remains after the committed END, and cannot falsify/roll back that observation.
+    if code == 0 and cleanup_binding.get("run_id"):
+        from . import temp_artifacts
+        try:
+            cleanup = temp_artifacts.cleanup_run_if_registered(**cleanup_binding)
+            if cleanup.get("status") == temp_artifacts.STATUS_CLEANUP_PENDING:
+                print(f"TEMP_CLEANUP_PENDING: {cleanup.get('error') or 'cleanup failed'}", file=sys.stderr)
+        except Exception as exc:
+            print(f"TEMP_CLEANUP_PENDING: {type(exc).__name__}: {exc}", file=sys.stderr)
+    return code
 
-        # Runtime END 已提交后再清理展示/测试临时工件；清理失败不得回滚真实 END 事实。
-        if session_id:
-            from . import temp_artifacts
-            try:
-                cleanup = temp_artifacts.cleanup_run_if_registered(
-                    project_id=str(task["project_id"] or ""),
-                    task_id=task_id,
-                    run_id=session_id,
-                )
-                if cleanup.get("status") == temp_artifacts.STATUS_CLEANUP_PENDING:
-                    print(
-                        f"TEMP_CLEANUP_PENDING: run_id={session_id}: {cleanup.get('error') or 'cleanup failed'}",
-                        file=sys.stderr,
-                    )
-            except Exception as exc:
-                print(
-                    f"TEMP_CLEANUP_PENDING: run_id={session_id}: {type(exc).__name__}: {exc}",
-                    file=sys.stderr,
-                )
-        return 0
-    finally:
-        conn.close()
+
+def _outcome_arguments(parser):
+    parser.add_argument("--result", default="", help="actual result, not a formal Verification/Review PASS")
+    parser.add_argument("--finding", action="append", default=[])
+    parser.add_argument("--decision", action="append", default=[], help="decision notes; not human approval")
+    parser.add_argument("--evidence", action="append", default=[], help="recorded reference; event:ID must belong to this Task")
 
 
 def add_work_subparsers(work_parser) -> None:
-    """注册 work 命令组的子命令。"""
     sub = work_parser.add_subparsers(dest="subcommand", required=True)
-
-    # work start
-    p_start = sub.add_parser("start", help="Start a work session")
-    p_start.add_argument("--task", required=True, help="task id")
-    p_start.add_argument("--role", required=False, default=None, help="actor role (default: task.owner_role; subroles should pass explicitly)")
-    p_start.add_argument("--agent", required=False, default=None, help="actor agent (default: task.owner_agent)")
-    p_start.add_argument("--item", required=False, default=None, help="work item id")
-    p_start.add_argument("--model", required=False, default=None, help="model used")
-    p_start.add_argument("--summary", required=False, default="", help="session summary")
-    p_start.add_argument("--db", required=False, default=None)
-    p_start.set_defaults(func=cmd_work_start)
-
-    # work end
-    p_end = sub.add_parser("end", help="End a work session")
-    p_end.add_argument("--task", required=True, help="task id")
-    p_end.add_argument("--reason", required=True, choices=list(_REASON_CODES), help="end reason")
-    p_end.add_argument("--wait-reason", required=False, default=None, help="wait reason code")
-    p_end.add_argument("--expected-next", required=False, default=None, help="expected next actor role")
-    p_end.add_argument("--model", required=False, default=None, help="model used")
-    p_end.add_argument("--tokens-in", required=False, default=None, type=int, help="input tokens")
-    p_end.add_argument("--tokens-out", required=False, default=None, type=int, help="output tokens")
-    p_end.add_argument("--role", required=False, default=None, help="actor role (default: task.owner_role)")
-    p_end.add_argument("--agent", required=False, default=None, help="actor agent (default: task.owner_agent)")
-    p_end.add_argument("--summary", required=False, default="", help="session end summary")
-    p_end.add_argument("--db", required=False, default=None)
-    p_end.set_defaults(func=cmd_work_end)
+    from .execution_cmd import add_execution_subparsers
+    add_execution_subparsers(sub)
+    start = sub.add_parser("start", help="Start a distinct work participation (does not observe agent liveness)")
+    start.add_argument("--item", default=None)
+    start.add_argument("--step", default=None)
+    start.add_argument("--plan-version", type=int, default=None)
+    start.add_argument("--scope", default=None)
+    start.add_argument("--model", default=None)
+    start.add_argument("--summary", default="")
+    from .security_authority import add_context_args
+    add_context_args(start, investigation=True)
+    end = sub.add_parser("end", help="End one explicit work participation; does not complete its step or Task")
+    end.add_argument("--session", default=None, help="required when actor has several open participations")
+    end.add_argument("--reason", required=True, choices=list(_REASON_CODES))
+    end.add_argument("--wait-reason", default=None)
+    end.add_argument("--expected-next", default=None)
+    end.add_argument("--model", default=None)
+    end.add_argument("--tokens-in", type=int, default=None)
+    end.add_argument("--tokens-out", type=int, default=None)
+    end.add_argument("--summary", default="")
+    update = sub.add_parser("update", help="Record waiting/resumption within an existing participation")
+    update.add_argument("--session", required=True)
+    update.add_argument("--action", required=True, choices=["wait", "resume"])
+    update.add_argument("--summary", required=True)
+    update.add_argument("--wait-reason", default="")
+    update.add_argument("--expected-next", default="")
+    for parser in (end, update):
+        _outcome_arguments(parser)
+    for parser, command in ((start, cmd_work_start), (end, cmd_work_end), (update, cmd_work_update)):
+        parser.add_argument("--task", required=True)
+        parser.add_argument("--role", default=None, help="actor role; named --session defaults to its recorded role")
+        parser.add_argument("--agent", default=None, help="actor agent; named --session defaults to its recorded agent")
+        parser.add_argument("--db", default=None)
+        parser.set_defaults(func=command)

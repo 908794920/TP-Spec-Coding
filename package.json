@@ -1,6 +1,6 @@
 {
   "name": "tp-spec-workbench",
-  "version": "5.3.3",
+  "version": "5.3.4",
   "private": true,
   "type": "module",
   "engines": {
@@ -16,7 +16,10 @@
     "@xyflow/react": "12.10.1",
     "antd": "6.6.4",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "react-markdown": "^10.1.0",
+    "rehype-slug": "^6.0.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/node": "22.20.1",

@@ -716,6 +716,10 @@ def _event_view(row: Dict[str, Any]) -> Dict[str, Any]:
         "to_stage": str(row.get("to_stage") or ""),
         "actor": str(row.get("actor_role") or ""),
         "work_item_id": row.get("work_item_id"),
+        "actor_agent": row.get("actor_agent"),
+        "step_id": detail.get("step_id"),
+        "participation_id": detail.get("session_id"),
+        "plan_version": detail.get("plan_version"),
         "evidence_path": row.get("evidence_path"),
         "detail": detail,
         "summary": summary,
@@ -795,6 +799,10 @@ def build_task_snapshot(
                     "route": {}, "error": str(exc),
                 }
                 problems.append(_problem("WORKFLOW_UNRESOLVED", f"工作流无法可靠解析：{exc}"))
+            if workflow.get("error") and not any(p["code"] == "WORKFLOW_UNRESOLVED" for p in problems):
+                problems.append(_problem("WORKFLOW_UNRESOLVED", str(workflow["error"])))
+            for issue in progress_facts["execution"]["issues"]:
+                problems.append(_problem("EXECUTION_FACTS_INVALID", issue))
         finally:
             if connection is None:
                 conn.close()
@@ -899,7 +907,7 @@ def build_task_snapshot(
             {**item, "task_id": task_id0} for item in progress_facts["work_items"]["items"]
         ]},
         "work_sessions": progress_facts["work_sessions"],
-        "data_support": {"work_unit": "not_provided", "agent_thread_binding": "not_provided",
+        "data_support": {"work_unit": "work_item + tp-spec.work-unit/v1 when recorded; legacy metadata unknown", "agent_thread_binding": "not_provided",
                          "work_item_parent": "work_item.task_id", "dependencies": "work_item.depends_on_json"},
         "latest_checkpoint": latest_checkpoint,
         "blockers": blockers,

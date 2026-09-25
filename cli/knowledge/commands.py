@@ -15,7 +15,9 @@ from .ingest import convert_batch, disposition, finalize_batch, ingest_status, r
 from .migration import migration_plan
 from .normalization import normalization_plan, apply_normalization
 from .lint import lint_knowledge, lint_canonical_note
-from .projection import build_projection, projection_status, search, telemetry_summary, update_projection, update_canonical_note_projection
+from .projection import build_projection, projection_status, search, search_documents, telemetry_summary, update_projection, update_canonical_note_projection
+from .reading import read_document
+from .telemetry import CONTRACT as USAGE_CONTRACT, KnowledgeError
 from .state import commit_snapshot, create_audit_plan, maintain, record_audit, stage_scan, status as knowledge_status, verify
 
 
@@ -103,15 +105,35 @@ def cmd_index_status(args) -> int:
     except Exception as exc: _emit({"schema":"tp-spec.knowledge-index-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
+def _call_context(args):
+    return {"request_id": getattr(args, "request_id", None), "task_id": getattr(args, "task", None),
+            "actor_role": getattr(args, "role", None), "purpose": getattr(args, "purpose", "development"),
+            "record_telemetry": not args.no_telemetry}
+
+
+def _usage_error(schema, exc):
+    code = exc.code if isinstance(exc, KnowledgeError) else "KNOWLEDGE_OPERATION_FAILED"
+    _emit({"schema": schema, "status": "FAIL", "error": code, **getattr(exc, "collection", {})})
+    return 1
+
+
 def cmd_search(args) -> int:
     try:
-        cfg=_cfg(args)
-        resolved = None
-        if not args.project and args.scope != "global":
-            resolved = resolve_knowledge_project(cfg, require=True)
-        hits=search(cfg,args.query,project=args.project,kind=args.kind,layer=args.layer,limit=args.limit,record_telemetry=not args.no_telemetry,scope=args.scope)
-        _emit({"schema":"tp-spec.knowledge-search/v1","status":"PASS","query_hash_only":True,"strategy":cfg.knowledge_retrieval.get("strategy"),"scope":args.scope or cfg.knowledge_retrieval.get("default_scope","project"),"resolved_project":(resolved or {}).get("project_id") if resolved else args.project,"count":len(hits),"results":hits}); return 0
-    except Exception as exc: _emit({"schema":"tp-spec.knowledge-search/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+        _emit(search_documents(_cfg(args), args.query, project=args.project, scope=args.scope,
+            kind=args.kind, layer=args.layer, limit=args.limit if args.limit is not None else 5,
+            **_call_context(args)))
+        return 0
+    except Exception as exc:
+        return _usage_error("tp-spec.knowledge-search/v1", exc)
+
+
+def cmd_read(args) -> int:
+    try:
+        _emit(read_document(_cfg(args), args.document_id, project=args.project, scope=args.scope,
+            start_line=args.start_line, end_line=args.end_line, full=args.full, **_call_context(args)))
+        return 0
+    except Exception as exc:
+        return _usage_error("tp-spec.knowledge-read/v1", exc)
 
 
 def cmd_telemetry(args) -> int:
@@ -194,10 +216,15 @@ def _task_convergence_sources(task_dir: Path, values: List[str]) -> tuple[List[s
     return refs, items
 
 
-def _search_receipt(cfg, query: str) -> Dict[str, Any]:
+def _search_receipt(cfg, query: str, *, task_id=None) -> Dict[str, Any]:
     from cli.delivery_contract import validate_receipt_payload
 
-    hits = search(cfg, query, scope="project", record_telemetry=True)
+    from dataclasses import replace
+    cfg = replace(cfg, knowledge_retrieval={**cfg.knowledge_retrieval, "include_shared": True, "global_fallback": False})
+    collected = {}
+    hits = search(cfg, query, scope="project", record_telemetry=True,
+                  purpose="delivery_convergence", caller="task_convergence", task_id=task_id,
+                  actor_role="tp-knowledge", telemetry_out=collected)
     matched = sorted({
         str(hit.get("id") or "").strip()
         for hit in hits
@@ -207,13 +234,15 @@ def _search_receipt(cfg, query: str) -> Dict[str, Any]:
         "schema": "tp-spec.knowledge-search/v1",
         "status": "PASS",
         "scope": "project+shared",
-        "query": query,
+        "query_hash_only": True,
+        "receipt_contract": USAGE_CONTRACT,
         "query_hash": hashlib.sha256(query.encode("utf-8")).hexdigest(),
         "count": len(hits),
         "results": hits,
         "matched_canonical_refs": matched,
+        **collected,
     }
-    errors = validate_receipt_payload("search", receipt)
+    errors = validate_receipt_payload("search", receipt, expected_query=query)
     if errors:
         raise ValueError("invalid Knowledge search receipt: " + "; ".join(errors))
     return receipt
@@ -282,7 +311,10 @@ def _validate_knowledge_ref(cfg, *, disposition: str, knowledge_ref: str,
 
 
 def cmd_task_converge(args) -> int:
-    """执行一次带证据的 Task-scoped Knowledge 收敛 effect。"""
+    """Execute a typed Task-scoped effect; legacy receipts keep their old contract."""
+    if getattr(args, "assessment", None):
+        from .convergence_cmd import cmd_converge
+        return cmd_converge(args)
     from cli import db as dbmod, event_contract, orchestration, record_first, workflow_records
     from cli.version import active_version
 
@@ -299,18 +331,24 @@ def cmd_task_converge(args) -> int:
 
         request = _task_convergence_request(conn, args.task, int(args.request_event_id))
         request_detail = dict(request.detail or {})
-        task_facts, events = orchestration._load_task_facts(args.task, db_path=db_path)
-        delivery_event = orchestration._delivery_completion_event(events, task_dir)
+        if request_detail.get("learning_schema"):
+            raise ValueError("Task learning requires --assessment FILE|- with input coverage, Knowledge and Memory")
+        if task["current_state"] in record_first.TERMINAL_STATES:
+            raise ValueError("legacy terminal task is read-only")
+        if not all(getattr(args, field, None) for field in ("disposition", "reason_code", "query", "source")):
+            raise ValueError("legacy task-converge requires disposition, reason-code, query and source")
+        task_facts, events = orchestration._load_task_facts(args.task, db_path=db_path, connection=conn, task_dir=task_dir)
+        orchestration.resolve_route(args.task, db_path=db_path, _facts=(task_facts, events), task_dir=task_dir)
+        delivery_event = orchestration._delivery_completion_event(events, task_dir, task=task_facts)
         if delivery_event is None or int(request_detail.get("delivery_event_id") or 0) != int(delivery_event.get("id") or 0):
             raise ValueError("Knowledge convergence request is stale: current READY delivery differs")
 
-        verification, _subject, current_change_set, _roots = workflow_records._latest_trusted_verification(
-            conn, args.task, task_dir,
-        )
-        current_change_set_id = str(current_change_set.get("content_digest") or "")
+        prerequisites = workflow_records._delivery_prerequisites(conn, args.task, task_dir, db_path)
+        verification = prerequisites["verification"]
+        current_change_set_id = str(prerequisites["snapshot"].get("content_digest") or "")
         if str(request_detail.get("change_set_id") or "") != current_change_set_id:
             raise ValueError("Knowledge convergence request change_set is stale")
-        if int(request_detail.get("verification_event_id") or 0) != int(verification.row["id"]):
+        if int(request_detail.get("verification_event_id") or 0) != (int(verification.row["id"]) if verification else 0):
             raise ValueError("Knowledge convergence request verification binding is stale")
 
         cfg = _cfg(args)
@@ -326,7 +364,7 @@ def cmd_task_converge(args) -> int:
         queries = [str(q or "").strip() for q in (args.query or []) if str(q or "").strip()]
         if not queries:
             raise ValueError("Knowledge convergence requires at least one targeted query")
-        receipts = [_search_receipt(cfg, query) for query in queries]
+        receipts = [_search_receipt(cfg, query, task_id=args.task) for query in queries]
         disposition = str(args.disposition or "").upper()
         knowledge_ref = str(args.knowledge_ref or "").strip()
         canonical_receipt = _validate_knowledge_ref(
@@ -463,7 +501,26 @@ def add_knowledge_subparsers(root_subparsers) -> None:
         ("status","Show Knowledge truth/projection/baseline state",cmd_status),("snapshot-commit","Advance trusted Knowledge baseline after bound PASS",cmd_snapshot_commit),
     ]:
         p=sub.add_parser(name,help=help_text); _common(p); p.set_defaults(func=fn)
-    p=sub.add_parser("search",help="Project-scoped canonical-first FTS5 retrieval with source fallback"); _common(p); p.add_argument("-q","--query",required=True); p.add_argument("--project"); p.add_argument("--scope",choices=["project","global"],default=None,help="default comes from Content Systems; global must be explicit when project scope is active"); p.add_argument("--kind"); p.add_argument("--layer",choices=["canonical","source"]); p.add_argument("--limit",type=int); p.add_argument("--no-telemetry",action="store_true"); p.set_defaults(func=cmd_search)
+    def usage_options(parser):
+        parser.add_argument("--project")
+        parser.add_argument("--scope", choices=["project", "global"], default=None,
+                            help="default current project + registered shared; global must be explicit")
+        parser.add_argument("--task", help="optional caller task identity; does not create/adopt a Task")
+        parser.add_argument("--role", help="optional caller role")
+        parser.add_argument("--purpose", choices=["development", "delivery_convergence", "maintenance", "unknown"], default="development")
+        parser.add_argument("--request-id", help="reuse only for the same logical request and identical parameters")
+        parser.add_argument("--no-telemetry", action="store_true")
+    p = sub.add_parser("search", help="5 deduplicated candidates, 200 characters each; no body-read receipt")
+    _common(p); usage_options(p)
+    p.add_argument("-q", "--query", required=True); p.add_argument("--kind")
+    p.add_argument("--layer", choices=["canonical", "source"]); p.add_argument("--limit", type=int)
+    p.set_defaults(func=cmd_search)
+    p = sub.add_parser("read", help="Registered Knowledge body preview, explicit lines or full text")
+    _common(p); usage_options(p)
+    p.add_argument("--document-id", required=True)
+    p.add_argument("--start-line", type=int); p.add_argument("--end-line", type=int)
+    p.add_argument("--full", action="store_true", help="mutually exclusive with line range arguments")
+    p.set_defaults(func=cmd_read)
     p=sub.add_parser("telemetry",help="Summarize hashed retrieval telemetry"); _common(p); p.add_argument("--days",type=int,default=7); p.set_defaults(func=cmd_telemetry)
     p=sub.add_parser("eval",help="Run local Golden Query evaluation without retrieval telemetry pollution"); _common(p); p.add_argument("--golden",help="golden JSONL path; defaults to Content Systems evaluation.golden_set"); p.add_argument("--output",help="result JSON path; defaults to configured evaluation.output_root"); p.add_argument("--mode",choices=["all","filename_search","source_only_fts","canonical_first_fts"],default="all"); p.set_defaults(func=cmd_eval)
     p=sub.add_parser("migrate-plan",help="Read-only plan for legacy Knowledge Vault runtime/rule assets"); _common(p); p.set_defaults(func=cmd_migrate_plan)
@@ -471,7 +528,21 @@ def add_knowledge_subparsers(root_subparsers) -> None:
     p=sub.add_parser("audit",help="Create deterministic L4 semantic audit scope"); _common(p); p.add_argument("--full",action="store_true"); p.set_defaults(func=cmd_audit)
     p=sub.add_parser("audit-record",help="Record conversational-model L4 result"); _common(p); p.add_argument("--result",required=True,choices=["PASS","FAIL","pass","fail"]); p.add_argument("--summary",required=True); p.add_argument("--document",action="append",default=[]); p.set_defaults(func=cmd_audit_record)
 
-    p=sub.add_parser("task-converge",help="Evidence-backed task-scoped Knowledge convergence for one trusted request"); _common(p); p.add_argument("--task",required=True); p.add_argument("--task-dir",required=True); p.add_argument("--db",required=True); p.add_argument("--request-event-id",required=True,type=int); p.add_argument("--disposition",required=True,choices=["CREATED","UPDATED","DUPLICATE","NO_DURABLE_INSIGHT"]); p.add_argument("--reason-code",required=True); p.add_argument("--query",action="append",required=True); p.add_argument("--source",action="append",required=True); p.add_argument("--knowledge-ref"); p.set_defaults(func=cmd_task_converge)
+    from .convergence_cmd import cmd_inputs
+    p = sub.add_parser("task-inputs", help="Read-only Task input index and changed/reusable judgment navigation")
+    p.add_argument("--task", required=True); p.add_argument("--task-dir", required=True)
+    p.add_argument("--db", required=True); p.add_argument("--request-event-id", type=int)
+    p.add_argument("--item", help="Read an indexed Task, delivery, event or Work; files retain their source reference")
+    p.set_defaults(func=cmd_inputs)
+    p = sub.add_parser("task-converge", help="Record assessed Task inputs, targeted Knowledge results and Memory readback")
+    _common(p)
+    p.add_argument("--task", required=True); p.add_argument("--task-dir", required=True)
+    p.add_argument("--db", required=True); p.add_argument("--request-event-id", required=True, type=int)
+    p.add_argument("--assessment", help="Task learning JSON file, or - for stdin; required for new requests")
+    p.add_argument("--disposition", choices=["CREATED", "UPDATED", "DUPLICATE", "NO_DURABLE_INSIGHT"])
+    p.add_argument("--reason-code"); p.add_argument("--query", action="append")
+    p.add_argument("--source", action="append"); p.add_argument("--knowledge-ref")
+    p.set_defaults(func=cmd_task_converge)
 
     idx=sub.add_parser("index",help="Knowledge SQLite FTS5 projection"); idxsub=idx.add_subparsers(dest="index_cmd",required=True)
     p=idxsub.add_parser("build"); _common(p); p.set_defaults(func=cmd_index_build)

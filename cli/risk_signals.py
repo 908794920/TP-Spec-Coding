@@ -17,6 +17,17 @@ _LEVELS = ("L0", "L1", "L2", "L3")
 _FORMAL_SUFFIXES = {".md", ".yaml", ".yml"}
 _MAX_SCAN_CHARS = 512_000
 
+# A standalone administrative label is not a business authorization change.
+# Match the whole heading: a named user/model/rule or appended business clause
+# must remain scannable, as must every line below this heading.
+_EXECUTION_PERMISSION_HEADING = re.compile(
+    r"^[ \t]{0,3}#{1,6}[ \t]+"
+    r"(?:本(?:次|轮)(?:接续|执行|操作)的?[ \t]*)?"
+    r"(?:新增)?(?:执行|操作)?授权(?:与|及|和)验收(?:安排|说明)"
+    r"[ \t]*(?:#+[ \t]*)?\r?$",
+    re.MULTILINE,
+)
+
 
 def _rank(level: Optional[str]) -> int:
     try:
@@ -80,6 +91,9 @@ def scan_texts(texts: Iterable[str], *, base_root: Optional["str | Path"] = None
     hits: List[str] = []
     seen: set[str] = set()
     for text in texts:
+        # Remove only the neutral heading, never its section or an approved
+        # operation's body; approval cannot exempt a real permission change.
+        text = _EXECUTION_PERMISSION_HEADING.sub("", str(text or ""))
         # ``、`` is a semantic list/clause separator in Task prose.  Splitting
         # it prevents a verb in one negated item (e.g. 接口契约变更) from
         # leaking through ``.*`` into another item (e.g. 无定时任务).

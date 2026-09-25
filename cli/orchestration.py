@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""V5.3.3 deterministic, read-only workflow orchestration.
+"""deterministic, read-only workflow orchestration.
 
 Workflow chooses *when* to invoke a role.  Skills choose *how* to do the work.
 The existing Task Runtime remains the only durable fact ledger.
@@ -370,7 +370,7 @@ def _parse_detail(raw: Any) -> Dict[str, Any]:
 
 
 def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_progress: bool = False,
-                     connection: Optional[sqlite3.Connection] = None) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+                     connection: Optional[sqlite3.Connection] = None, task_dir: Optional[Path] = None) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     if connection is None:
         path = dbmod.resolve_db_path(db_path, task_id=task_id)
         if not Path(path).is_file():
@@ -378,8 +378,9 @@ def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_pro
         conn = dbmod.connect_readonly(path)
     else:
         conn = connection
+    started = not conn.in_transaction
     try:
-        if not conn.in_transaction:
+        if started:
             conn.execute("BEGIN")
         row = conn.execute(
             "SELECT t.*, p.root_path AS project_root_path FROM task t "
@@ -389,10 +390,12 @@ def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_pro
         if row is None:
             raise OrchestrationError(f"task not found: {task_id}")
         events = conn.execute(
-            "SELECT id,task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,actor_agent,model_used,work_item_id,reason_code,summary,detail_json,workflow_version,created_at "
+            "SELECT id,task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,actor_agent,model_used,work_item_id,reason_code,summary,detail_json,evidence_path,workflow_version,created_at "
             "FROM task_event WHERE task_id=? ORDER BY id", (task_id,),
         ).fetchall()
         task, facts = dict(row), [dict(e) for e in events]
+        task["_knowledge_work_items"] = [dict(item) for item in conn.execute(
+            "SELECT * FROM work_item WHERE task_id=? ORDER BY item_id", (task_id,))]
         task["_orchestration_overrides"] = orchestration_policy.read_rows(conn)
         from . import event_policies
         task["_retired"] = event_policies.is_task_retired(conn, task_id)
@@ -400,9 +403,19 @@ def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_pro
             from .report_cmd import task_progress_facts
             task["_progress_facts"] = task_progress_facts(conn, task, events=facts, retired=task["_retired"])
         project_root = str(task.get("project_root_path") or "").strip()
-        task_dir = Path(project_root) / ".tp-spec" / "tasks" / task_id if project_root else None
+        task_dir = task_dir or (Path(project_root) / ".tp-spec" / "tasks" / task_id if project_root else None)
         from . import event_policies
         if task_dir is not None:
+            from . import security_authority as authority
+            try:
+                security = authority.project(facts, task_id, task_dir)
+                for event in facts:
+                    if event["event_type"] in {"VERIFICATION_COMPLETED", "REVIEW_COMPLETED"}:
+                        event["_security_current"] = authority.formal_record_current(security, task_dir, _parse_detail(event["detail_json"]))
+            except (ValueError, OSError, KeyError, TypeError):
+                for event in facts:
+                    if event["event_type"] in {"VERIFICATION_COMPLETED", "REVIEW_COMPLETED"}:
+                        event["_security_current"] = False
             task["_owner_acceptance"] = event_policies.effective_owner_acceptance(
                 conn, task_id, task_dir=task_dir,
             )
@@ -429,6 +442,8 @@ def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_pro
                         task["_current_code_review"] = {"event_id": int(reviewed.row["id"])}
         return task, facts
     finally:
+        if started and conn.in_transaction:
+            conn.execute("ROLLBACK")
         if connection is None:
             conn.close()
 
@@ -468,6 +483,8 @@ def _latest_verification(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str,
         if e.get("event_type") != "VERIFICATION_COMPLETED" or e.get("actor_role") != "tp-test-engineer":
             continue
         d = _parse_detail(e.get("detail_json"))
+        if e.get("_security_current") is False:
+            return None
         decision = event_contract.normalize_event_semantics(str(e.get("event_type") or ""), d)["decision"]
         return {"decision": decision, "detail": d, "event": e}
     return None
@@ -480,6 +497,8 @@ def _latest_arch_review(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, 
         d = _parse_detail(e.get("detail_json"))
         if str(d.get("review_kind") or "").upper() != "ARCHITECTURE":
             continue
+        if e.get("_security_current") is False:
+            return None
         decision = event_contract.normalize_event_semantics(str(e.get("event_type") or ""), d)["decision"]
         return {"decision": decision, "detail": d, "event": e}
     return None
@@ -492,6 +511,8 @@ def _latest_code_review(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, 
         kind = str(d.get("review_kind") or "CODE").upper()
         if kind not in {"CODE", "IMPLEMENTATION", "ULTRA_REVIEW"}:
             continue
+        if e.get("_security_current") is False:
+            return None
         decision = event_contract.normalize_event_semantics(str(e.get("event_type") or ""), d)["decision"]
         return {"decision": decision, "detail": d, "event": e}
     return None
@@ -515,7 +536,12 @@ def _latest_checkpoint(events: Iterable[Dict[str, Any]], *, actor: str, phase: s
 
 
 def _development_change_set_binding(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    events = list(events)
     activity = _latest_checkpoint_activity(events, actor="tp-development-engineer", phase="development")
+    from .work_units import candidate_binding
+    candidate = candidate_binding(events)
+    if candidate and (not activity or candidate["event_id"] > int(activity["event"]["id"])):
+        return candidate
     if not activity or activity["semantics"]["result_status"] != "COMPLETED":
         return None
     detail = activity["detail"]
@@ -633,6 +659,10 @@ def _reassessment_id(events: List[Dict[str, Any]]) -> int:
     failed_verification = 0
     for event in events:
         detail = _parse_detail(event.get("detail_json"))
+        if event.get("_security_current") is False:
+            if event.get("event_type") == "VERIFICATION_COMPLETED":
+                failed_verification = 0
+            continue
         if event.get("event_type") == "VERIFICATION_COMPLETED" and event.get("actor_role") == "tp-test-engineer":
             decision = event_contract.normalize_event_semantics("VERIFICATION_COMPLETED", detail)["decision"]
             failed_verification = int(event["id"]) if decision == "FAIL" else 0
@@ -664,10 +694,23 @@ def _current_verification_for_delivery(events: List[Dict[str, Any]], task_dir: O
             return None
     return verification
 
-def _delivery_completion_event(events: List[Dict[str, Any]], task_dir: Optional[Path]) -> Optional[Dict[str, Any]]:
+def _delivery_completion_event(events: List[Dict[str, Any]], task_dir: Optional[Path], *, task=None) -> Optional[Dict[str, Any]]:
+    latest = next((e for e in reversed(events) if e.get("event_type") == "DELIVERY_RESULT"
+                   and e.get("actor_role") == "tp-integration-engineer"), None)
+    if latest and _parse_detail(latest.get("detail_json")).get("delivery_mode") == "lightweight":
+        return delivery_contract.current_lightweight_delivery(latest, task, task_dir)
     verification = _current_verification_for_delivery(events, task_dir)
     if not verification:
         return None
+    if task is not None:
+        current_pass = task.get("_current_verification") or {}
+        current_review = task.get("_current_code_review") or {}
+        snapshot = task.get("_current_change_set") or {}
+        from .change_set import same_bound_product_content
+        if (current_pass.get("event_id") != int(verification["event"]["id"])
+                or not snapshot or not same_bound_product_content(current_pass, snapshot)
+                or not latest or _parse_detail(latest.get("detail_json")).get("review_event_id") != current_review.get("event_id")):
+            return None
     subject_digest = str((verification.get("detail") or {}).get("subject_digest") or "")
     return delivery_contract.find_delivery_completion_event(
         events,
@@ -727,7 +770,7 @@ def _knowledge_result_sources_current(detail: Dict[str, Any], task_dir: Optional
 
 
 def _knowledge_result_for_request(events: List[Dict[str, Any]], request: Dict[str, Any],
-                                  task_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+                                  task_dir: Optional[Path] = None, *, task=None, historical=False) -> Optional[Dict[str, Any]]:
     request_event = request["event"]
     request_detail = request["detail"]
     request_id = int(request_event.get("id") or 0)
@@ -747,6 +790,16 @@ def _knowledge_result_for_request(events: List[Dict[str, Any]], request: Dict[st
                 continue
         except (TypeError, ValueError):
             continue
+        if request_detail.get("learning_schema"):
+            from .knowledge import convergence
+            # The latest result for this request is authoritative; invalid new
+            # claims cannot revive an older result. Old requests stay legacy.
+            if (str(detail.get("change_set_id") or "") != change_set_id
+                    or (not (historical and task and task.get("current_state") in {"COMPLETED", "CANCELLED"})
+                        and not convergence.current_request(request, events, task_dir, task))
+                    or not convergence.valid_result(detail, request)):
+                return None
+            return {"event": event, "detail": detail}
         if str(detail.get("change_set_id") or "") != change_set_id:
             continue
         disposition = str(detail.get("knowledge_disposition") or "").upper()
@@ -913,6 +966,7 @@ def _decision_for_action(action: Optional[str]) -> str:
         "dispatch_effect": "DISPATCH_EFFECT",
         "await_confirmation": "AWAIT_CONFIRMATION",
         "await_effect_approval": "BOUNDARY_REACHED",
+        "await_security_decision": "BOUNDARY_REACHED",
         "task_complete": "TASK_COMPLETE",
         "none": "NONE",
         "task_resume_after_resolution": "TASK_BLOCKED",
@@ -1023,6 +1077,36 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
     if task.get("_current_effective", {}).get("status", "ABSENT") != "ABSENT":
         context = dict(context or {})
         context["current_effective"] = task["_current_effective"]
+    from .execution import project_execution
+    execution_facts = project_execution(task, task.get("_events") or [], retired=bool(task.get("_retired")))
+    if execution_facts["status"] != "NOT_RECORDED":
+        context = dict(context or {})
+        context["execution"] = {key: execution_facts[key] for key in (
+            "schema", "status", "plan_version", "coordinator", "current_step", "next_step", "issues", "terminal")}
+    from . import security_authority as authority
+    try:
+        security = authority.project(task.get("_events") or [], str(task.get("task_id") or ""), task.get("_task_dir"))
+        if security["proposals"]:
+            context = dict(context or {})
+            context["security_changes"] = authority.summary(security)
+        if action in {"dispatch_role", "dispatch_effect"}:
+            scoped = authority.check_dispatch(security, task, task.get("_events") or [], stage=next_stage, effects=effects)
+            if security["proposals"] or scoped["security_changes"]:
+                context = dict(context or {})
+                context["security_effect"] = scoped
+            if scoped["effect_scope"] in authority.READ_EFFECTS:
+                # A declared investigation does not mutate the product. Other
+                # host effects (execution, network, push, etc.) remain required.
+                data["required_effects"] = [effect for effect in effects if effect != "repo_mutation"]
+    except ValueError as exc:
+        if action in {"dispatch_role", "dispatch_effect"}:
+            data.update(decision="BOUNDARY_REACHED", recommended_action="await_security_decision",
+                requires_human=True, role_id=None, skill_path=None, confirmation_required=False,
+                confirmation_reason="SECURITY_APPROVAL_REQUIRED", blocker=str(exc), reason="scoped_security_decision_required")
+            data["reason_codes"] = list(data["reason_codes"]) + ["SECURITY_APPROVAL_REQUIRED"]
+            wake_prompt, confirmation_binding = None, None
+        context = dict(context or {})
+        context["security_issue"] = str(exc)
     if context is not None:
         data["context"] = context
     if confirmation_binding is not None:
@@ -1032,7 +1116,70 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
     if transition_from_role and role_id and transition_from_role != role_id:
         data["transition_from_role"] = transition_from_role
         data["transition_notice_required"] = True
+    return _forward_execution_route(data, execution_facts)
+
+
+def _forward_execution_route(data, facts):
+    """Keep an adopted parent cursor forward; quality operations retain their own scope.
+
+    Does not complete a step or mint dispatch/approval. Required effects and denied
+    boundaries are preserved from the normal routing/authority calculation.
+    """
+    if not facts.get("plan") or facts.get("terminal") or data["current_state"] == "BLOCKED":
+        return data
+    current = facts.get("current_step")
+    if not current:
+        return data
+    operation = data.get("next_stage")
+    if not operation:
+        return data
+    context = data.setdefault("context", {})
+    context["operation_stage"] = operation
+    data["current_phase"] = current["phase"]
+    data["next_stage"] = current["phase"]
+    codes = set(data.get("reason_codes") or [])
+    failures = {"CODE_REVIEW_REWORK", "VERIFICATION_NEEDS_FIX", "VERIFICATION_FAIL_REASSESS", "ARCHITECTURE_REVIEW_REVISE"}
+    # An out-of-scope security enhancement remains a security decision, not a Fix.
+    if codes & failures and data["recommended_action"] not in {"await_security_decision", "await_effect_approval", "await_confirmation"}:
+        context["repair_role"] = data.get("role_id")
+        data.update(decision="NO_ACTION", recommended_action="rework_fix", role_id=(facts.get("coordinator") or {}).get("role"),
+            skill_path=None, reason="scoped_fix_required", required_effects=[])
+        data.pop("wake_prompt", None)
+        data.pop("transition_notice_required", None)
+        data["reason_codes"] = list(data["reason_codes"]) + ["PARENT_STEP_PRESERVED"]
+    elif codes & {"CHANGE_SET_STALE", "CHANGE_SET_REQUIRED"} and data["recommended_action"] == "dispatch_role":
+        data.update(decision="NO_ACTION", recommended_action="workitem_candidate", skill_path=None,
+            role_id=(facts.get("coordinator") or {}).get("role"), required_effects=[])
+        context["instructions"] = "核对实际范围与集成主体；未登记子工作时先登记有来源的 Work，不回退或伪造开发完成。"
+        data.pop("wake_prompt", None)
+    elif operation != current["phase"] and data["recommended_action"] in {"dispatch_role", "task_complete"}:
+        phases = [s["phase"] for s in facts["steps"]]
+        position = next(i for i, s in enumerate(facts["steps"]) if s["id"] == current["id"])
+        if operation == "complete" or operation in phases[position + 1:]:
+            context["after_step"] = {"phase": operation, "role": data.get("role_id")}
+            data.update(decision="NO_ACTION", recommended_action="work_step_complete", skill_path=None,
+                role_id=(facts.get("coordinator") or {}).get("role"), required_effects=[])
+            data.pop("wake_prompt", None)
+        # Earlier verification/review is still required when stale. It is an
+        # operation at this parent cursor, never a rewrite of finished history.
     return data
+
+def _scoped_stage_effects(task: Dict[str, Any], stage: str, effects: Iterable[str]) -> List[str]:
+    """Remove only the product-write effect from a valid investigation plan."""
+    effects = list(effects)
+    from . import security_authority as authority
+    try:
+        events = task.get("_events") or []
+        state = authority.project(events, str(task.get("task_id") or ""), task.get("_task_dir"))
+        scoped = authority.check_dispatch(state, task, events, stage=stage, effects=effects)
+        if scoped["effect_scope"] in authority.READ_EFFECTS:
+            return [effect for effect in effects if effect != "repo_mutation"]
+    except (ValueError, OSError):
+        # Do not turn invalid/missing authority into permission. The dispatch
+        # boundary reports its scoped reason; host-effect limits still apply.
+        pass
+    return effects
+
 
 def _route_role_boundary(task: Dict[str, Any], level: str, events: List[Dict[str, Any]], *,
                          policy: str, next_stage: str, role_id: str, skill_path: str,
@@ -1047,6 +1194,7 @@ def _route_role_boundary(task: Dict[str, Any], level: str, events: List[Dict[str
                          recommended_roles: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     # 返修早返回与常规流水段使用同一执行边界；角色名不授予写权限。
     required_effects = list(required_effects) if required_effects is not None else (["repo_mutation"] if next_stage == "development" else [])
+    required_effects = _scoped_stage_effects(task, next_stage, required_effects)
     if allowed_effects is not None:
         missing = sorted(set(required_effects) - set(allowed_effects))
         if missing:
@@ -1107,7 +1255,8 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                   base_root: Optional["str | Path"] = None,
                   confirmation_policy: Optional[str] = None,
                   allowed_effects: Optional[Iterable[str]] = None,
-                  _facts: Optional[Tuple[Dict[str, Any], List[Dict[str, Any]]]] = None) -> Dict[str, Any]:
+                  _facts: Optional[Tuple[Dict[str, Any], List[Dict[str, Any]]]] = None,
+                  task_dir: Optional[Path] = None) -> Dict[str, Any]:
     root = _root(base_root)
     contract = load_contract(root)
     catalog = load_role_catalog(root)
@@ -1116,7 +1265,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
         unknown_allowed = sorted(allowed_set - KNOWN_EFFECTS)
         if unknown_allowed:
             raise OrchestrationError(f"unknown allowed effects: {unknown_allowed}")
-    task, events = _facts if _facts is not None else _load_task_facts(task_id, db_path)
+    task, events = _facts if _facts is not None else _load_task_facts(task_id, db_path, task_dir=task_dir)
     contract = orchestration_policy.resolve(contract, catalog, task["_orchestration_overrides"],
                                             project_id=str(task["project_id"]), task_id=task_id)
     task["_policy_sources"] = contract["_policy_sources"]
@@ -1137,14 +1286,15 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
         raise OrchestrationError(f"unknown public state: {state!r}")
     level = resolve_effective_level(task.get("risk_level"), task.get("flow_level"))
     project_root = str(task.get("project_root_path") or "").strip()
-    task_dir: Optional[Path] = None
+    explicit_task_dir = task_dir
     risk_scan = {"floor": None, "signals": []}
-    if project_root:
-        task_dir = Path(project_root) / ".tp-spec" / "tasks" / task_id
+    if project_root or explicit_task_dir:
+        task_dir = explicit_task_dir or Path(project_root) / ".tp-spec" / "tasks" / task_id
         risk_scan = risk_signals.scan_task_artifacts(task_dir, base_root=root)
         floor = str(risk_scan.get("floor") or "")
         if _rank(floor) > _rank(level):
             level = floor
+    task["_effective_level"] = level
     task["_risk_escalation_signals"] = list(risk_scan.get("signals") or []) if _rank(str(risk_scan.get("floor") or "")) > _rank(resolve_effective_level(task.get("risk_level"), task.get("flow_level"))) else []
     task["_task_dir"] = task_dir
     from . import current_context
@@ -1200,8 +1350,32 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
         result["next_responsibility"] = "tp-software-lifecycle"
         return result
 
+    from .execution import project_execution
+    from .work_units import candidate_binding, project_units
+    execution_facts = project_execution(task, events)
+    scoped = project_units(events)
+    task["_work_units"] = scoped
+    if execution_facts["plan"]:
+        current = execution_facts["current_step"]
+        related = [u for u in scoped["units"].values() if current and u["waiting_step_id"] == current["id"]]
+        outstanding = [u for u in related if not u["receipt"]]
+        if scoped["issues"] or outstanding:
+            owner = execution_facts["coordinator"]
+            return _route_dict(task, level, next_stage=current["phase"] if current else None,
+                role_id=owner.get("role"), skill_path=None, action="workitem_resolve",
+                reason_codes=["WORK_FACT_INVALID" if scoped["issues"] else "WORK_RESULTS_PENDING"],
+                context={"work_items": related, "work_issues": scoped["issues"],
+                    "instructions": "认领/处理子工作；完成后由协调者接收精确结果。此建议不派发 Agent、不授予实施权限。"})
+        if related and any(u["spec"]["kind"] == "FIX" for u in related) and current["status"] == "WAITING":
+            owner = execution_facts["coordinator"]
+            return _route_dict(task, level, next_stage=current["phase"], role_id=owner.get("role"),
+                skill_path=None, action="workitem_candidate_then_resume", reason_codes=["FIX_RECEIVED_PARENT_WAITING"],
+                context={"work_items": related, "instructions": "核对并登记实际集成候选，随后在原步骤恢复和补受影响复验；不重跑已完成父步骤。"})
+    integration = candidate_binding(events) if execution_facts["plan"] else None
+    repair_event_id = int(integration["event_id"]) if integration else 0
+
     review = _latest_arch_review(events)
-    if review and review["decision"] == "REVISE":
+    if review and review["decision"] == "REVISE" and int(review["event"]["id"]) > repair_event_id:
         architecture_after_review = _stage_completion_event("architecture", events)
         if not architecture_after_review or int(architecture_after_review.get("id") or 0) <= int(review["event"].get("id") or 0):
             role = role_map["tp-software-architect"]
@@ -1215,7 +1389,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             )
 
     code_review = _latest_code_review(events)
-    if code_review and code_review["decision"] in {"NEEDS_FIX", "REVISE", "FAIL"}:
+    if code_review and code_review["decision"] in {"NEEDS_FIX", "REVISE", "FAIL"} and int(code_review["event"]["id"]) > repair_event_id:
         development_after_review = _stage_completion_event("development", events)
         if not development_after_review or int(development_after_review.get("id") or 0) <= int(code_review["event"].get("id") or 0):
             return _route_role_boundary(
@@ -1228,7 +1402,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             )
 
     verification = _latest_verification(events)
-    if verification and verification["decision"] in {"NEEDS_FIX", "FAIL"}:
+    if verification and verification["decision"] in {"NEEDS_FIX", "FAIL"} and int(verification["event"]["id"]) > repair_event_id:
         if verification["decision"] == "NEEDS_FIX":
             target = "development"
             code = "VERIFICATION_NEEDS_FIX"
@@ -1327,10 +1501,16 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
     previous_completion: Optional[Dict[str, Any]] = None
     for step in included:
         stage = str(step["stage"])
-        completion = _delivery_completion_event(events, task_dir) if stage == "delivery" else _stage_completion_event(stage, events)
+        completion = _delivery_completion_event(events, task_dir, task=task) if stage == "delivery" else _stage_completion_event(stage, events)
         if ((stage == "verification" and current_verification_required)
                 or (stage == "review" and current_review_required)):
             completion = None
+        reusable_verification = (stage == "verification" and completion is not None
+                                 and not current_verification_required
+                                 and (task.get("_current_verification") or {}).get("event_id") == int(completion["id"]))
+        reusable_delivery = (stage == "delivery" and completion is not None
+                            and (not task.get("_current_code_review") or
+                                 _parse_detail(completion.get("detail_json")).get("review_event_id") == task["_current_code_review"].get("event_id")))
         reusable_review = (stage == "review" and completion is not None
                            and (task.get("_current_code_review") or {}).get("event_id") == int(completion["id"]))
         if stage in {"verification", "review", "delivery"}:
@@ -1339,7 +1519,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             dependency_id = reassessment_id
         else:
             dependency_id = 0
-        if completion is not None and (int(completion.get("id") or 0) > dependency_id or reusable_review):
+        if completion is not None and (int(completion.get("id") or 0) > dependency_id or reusable_review or reusable_verification or reusable_delivery):
             if stage in {"development", "verification", "review", "delivery"}:
                 upstream_completion_id = max(upstream_completion_id, int(completion.get("id") or 0))
             previous_role = str(step.get("role") or "") or None
@@ -1363,7 +1543,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             contract, catalog, phase=str(step.get("phase") or stage), signals=signals,
             risk_signals=task.get("_risk_signals") or [],
         )
-        step_effects = [str(x) for x in (step.get("effects") or [])]
+        step_effects = _scoped_stage_effects(task, stage, [str(x) for x in (step.get("effects") or [])])
         if allowed_set is not None:
             missing_effects = sorted(set(step_effects) - allowed_set)
             if missing_effects:
@@ -1420,9 +1600,16 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             recommended_roles=recommended_roles,
         )
 
-    delivery_event = _delivery_completion_event(events, task_dir)
+    delivery_event = _delivery_completion_event(events, task_dir, task=task)
     knowledge_request = _knowledge_request_for_delivery(events, delivery_event)
-    if knowledge_request is not None and _knowledge_result_for_request(events, knowledge_request, task_dir) is None:
+    if delivery_event and _parse_detail(delivery_event.get("detail_json")).get("closeout_schema") == "tp-spec.closeout/v1":
+        from .knowledge import convergence
+        if knowledge_request is None or not convergence.current_request(knowledge_request, events, task_dir, task):
+            return _route_dict(task, level, next_stage="delivery", role_id="tp-integration-engineer",
+                skill_path="skills/roles/tp-integration-engineer/SKILL.md", execution_mode="DIRECT",
+                reason_codes=["KNOWLEDGE_INPUT_REFRESH_REQUIRED"], action="dispatch_role", confirmation_policy=policy,
+                context={"action": "Inspect task-inputs, resolve missing inputs and rerun delivery converge; reuse valid technical results. This is closeout input refresh, not parent-flow rework."})
+    if knowledge_request is not None and _knowledge_result_for_request(events, knowledge_request, task_dir, task=task) is None:
         knowledge_role = role_map.get("tp-knowledge") or {}
         return _route_dict(
             task, level, next_stage="complete", role_id="tp-knowledge",
@@ -1435,6 +1622,9 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                 "trigger_reason_codes": list(knowledge_request["detail"].get("trigger_reason_codes") or []),
                 "search_scope": "project+shared",
                 "source_refs": list(knowledge_request["detail"].get("source_refs") or []),
+                "learning_schema": knowledge_request["detail"].get("learning_schema"),
+                "input_digest": (knowledge_request["detail"].get("input_index") or {}).get("digest"),
+                "input_command": "knowledge task-inputs",
             },
         )
 
@@ -1502,7 +1692,20 @@ def resolve_progress(
     task, events = _load_task_facts(task_id, db_path, include_progress=True, connection=connection)
     contract = orchestration_policy.resolve(contract, catalog, task["_orchestration_overrides"],
                                             project_id=str(task["project_id"]), task_id=task_id)
-    route = resolve_route(task_id, db_path=db_path, base_root=root, _facts=(dict(task), events))
+    execution_facts = task["_progress_facts"]["execution"]
+    try:
+        route = resolve_route(task_id, db_path=db_path, base_root=root, _facts=(task, events))
+    except Exception as exc:
+        # A failed gate lookup does not erase explicit progress or turn old terminal
+        # tasks into current work. It stays a separately reported read problem.
+        if execution_facts["status"] == "NOT_RECORDED" and not execution_facts["terminal"]:
+            raise
+        route = {"error": str(exc), "reason_codes": ["WORKFLOW_UNRESOLVED"]}
+    if execution_facts["status"] != "NOT_RECORDED":
+        from .execution import progress_view
+        level = route.get("effective_level") or resolve_effective_level(task.get("risk_level"), task.get("flow_level"))
+        return {**task["_progress_facts"], **progress_view(execution_facts, effective_level=level,
+                role_map=role_map, route=route), "error": route.get("error", ""), "retired": bool(task.get("_retired"))}
     task["_risk_signals"] = route.get("risk_signals", [])
     level = str(route.get("effective_level") or resolve_effective_level(task.get("risk_level"), task.get("flow_level")))
     signals = _decision_signals(events, contract)
@@ -1524,7 +1727,7 @@ def resolve_progress(
     for step in included:
         stage = str(step.get("stage") or "")
         role = str(step.get("role") or "")
-        completion = _delivery_completion_event(events, task_dir) if stage == "delivery" else _stage_completion_event(stage, events)
+        completion = _delivery_completion_event(events, task_dir, task=task) if stage == "delivery" else _stage_completion_event(stage, events)
         completion_source = ""
         completion_event_id = 0
         undeclared_completion = False

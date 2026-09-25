@@ -40,7 +40,7 @@ _TASK_ID_RE = re.compile(r"^TASK-[A-Za-z0-9][A-Za-z0-9._-]*$")
 # risk/flow 等级
 _RISK_LEVELS = ("L0", "L1", "L2", "L3")
 
-# Frozen long-state SHD compatibility table. Active V5.3.3 Record-first tasks return through the fast path and do not use this table.
+# Frozen long-state SHD compatibility table. Active Record-first tasks return through the fast path and do not use this table.
 _SHD_TRANSITIONS: Dict[str, List[str]] = {
     "NEW": ["RISK_ANALYZING", "TECH_DESIGNING", "DEVELOPING", "CANCELLED"],
     "RISK_ANALYZING": ["REQUIREMENT_CLARIFYING", "PRODUCT_DESIGNING", "TECH_DESIGNING", "DEVELOPING", "TECHNICAL_DISCOVERY"],
@@ -76,7 +76,7 @@ _SHD_FORWARD_CONSUMERS: Dict[str, List[str]] = {
     "VERIFYING": ["REVIEWING", "CLOSING", "COMPLETED"],
 }
 
-# V5.3.3 A-01：front matter 解析统一走 cli/frontmatter.py（LF/CRLF/BOM 兼容）
+# A-01：front matter 解析统一走 cli/frontmatter.py（LF/CRLF/BOM 兼容）
 _FM_RE = FRONTMATTER_RE
 
 # HPB: next_prompt 必须完整的 12 字段
@@ -152,7 +152,7 @@ def _check_shd_closure(
     risk_level: str = "",
     flow_level: str = "",
 ) -> List[str]:
-    """SHD M1/M2 + HPB 校验（V5.3.3），返回错误消息列表。"""
+    """SHD M1/M2 + HPB 校验，返回错误消息列表。"""
     errors: List[str] = []
     # M1 反向一致性
     if current_state in _SHD_DRIVER:
@@ -231,7 +231,7 @@ def _check_shd_closure(
 _INTAKE_ARTIFACTS = (
     ("requirement.md", "requirement.md"),
     # One-time source compatibility: old pre-task requirement facts are adopted
-    # into the v5.3.3 canonical requirement artifact, never copied as a second
+    # into the canonical requirement artifact, never copied as a second
     # active requirement model.
     ("requirement-knowledge.md", "requirement.md"),
     ("requirement-clarifications.md", "requirement-clarifications.md"),
@@ -258,7 +258,7 @@ def _adopt_intake_artifacts(scaffold_dir: Path, intake_dir: Path, task_id: str, 
             text = raw.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             raise ValueError(f"intake artifact must be UTF-8: {src}") from exc
-        # V5.3.3 Record-first: business roles own content, Runtime owns machine metadata.
+        # Record-first: business roles own content, Runtime owns machine metadata.
         # Missing/mismatched front matter is normalized instead of sending the role
         # through a bookkeeping retry loop.
         artifact_type = target_name[:-3]
@@ -395,7 +395,7 @@ def _recover_interrupted_task_create(
 
 
 def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, flow: str, created_at: str) -> Path:
-    """Build a complete V5.3.3 task scaffold in a temporary sibling directory.
+    """Build a complete task scaffold in a temporary sibling directory.
 
     The caller may atomically rename the returned directory after the DB transaction
     has prepared successfully.  No existing task directory is overwritten.
@@ -413,7 +413,7 @@ def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, fl
     if tmp.exists():
         shutil.rmtree(tmp, ignore_errors=True)
     shutil.copytree(template_root, tmp)
-    # V5.3.3 Record-first scaffold: create only the durable task shell. Optional
+    # Record-first scaffold: create only the durable task shell. Optional
     # business artifacts are created when a role has real content, never because a
     # state machine requires an empty form. Base templates remain available.
     essential = {'task.md', 'acceptance.md', 'status.yaml'}
@@ -535,7 +535,8 @@ def cmd_task_create(args) -> int:
             requested_scaffold_target = (
                 Path(args.task_dir).resolve()
                 if getattr(args, 'task_dir', None)
-                else (Path.cwd() / '.tp-spec' / 'tasks' / task_id).resolve()
+                # 与 workflow next 等消费者使用同一项目根，避免从 Base/子目录调用时任务失联。
+                else (Path(proj['root_path']) / '.tp-spec' / 'tasks' / task_id).resolve()
             )
             if requested_scaffold_target.exists():
                 _recover_interrupted_task_create(
@@ -655,12 +656,12 @@ def cmd_task_create(args) -> int:
 
 
 def cmd_task_transition(args) -> int:
-    """V5.3.3 Hardening：禁用活动任务的独立状态推进（任务书 §4.2 方案 A）。
+    """Hardening：禁用活动任务的独立状态推进（任务书 §4.2 方案 A）。
 
-    V5.3.3 遗留的独立 transition（直接 UPDATE task + INSERT STATE 事件）可绕过
+    历史遗留的独立 transition（直接 UPDATE task + INSERT STATE 事件）可绕过
     commit 的 durable journal、projection 原子提交、架构评审与验收门禁，已被移除。
 
-    V5.3.3 活动任务：
+    活动任务：
     - 日常事实入口为 ``task checkpoint/block/resume/verify/complete``；这些命令复用
       durable journal + projection 原子提交，但不暴露旧 handoff/phase gate；
     - 旧 long-state commit 已迁入 migration/history-only；日常只使用 Record-first API；
@@ -680,10 +681,10 @@ def cmd_task_transition(args) -> int:
             return 4
         # 历史任务：静态归档，只读拒绝（不推进、不改写）。
         if (task["base_version"] or "") != active_version():
-            print(f"ERROR: legacy contract task is a frozen static archive; the V5.3.3 runtime operates only base_version={active_version()}", file=sys.stderr)
+            print(f"ERROR: legacy contract task is a frozen static archive; the runtime operates only base_version={active_version()}", file=sys.stderr)
             return 3
         # 活动任务：独立状态推进被禁用（方案 A）。
-        print("DIRECT_TRANSITION_DISABLED: V5.3.3 uses record-first task checkpoint/block/resume/complete; direct transition is not a daily API", file=sys.stderr)
+        print("DIRECT_TRANSITION_DISABLED: the runtime uses record-first task checkpoint/block/resume/complete; direct transition is not a daily API", file=sys.stderr)
         return 9
     finally:
         conn.close()
@@ -819,10 +820,10 @@ def cmd_task_validate(args) -> int:
             print(f"ERROR: {e}", file=sys.stderr)
             return 3
         if (task["base_version"] or "") != active_version():
-            print(f"ERROR: legacy contract task is a frozen static archive; the V5.3.3 runtime validates only base_version={active_version()}", file=sys.stderr)
+            print(f"ERROR: legacy contract task is a frozen static archive; the runtime validates only base_version={active_version()}", file=sys.stderr)
             return 3
         errors = []
-        # V5.3.3 Record-first validation protects ledger truth, not process completeness.
+        # Record-first validation protects ledger truth, not process completeness.
         quick = conn.execute("PRAGMA quick_check").fetchone()
         if quick is None or str(quick[0]).lower() != "ok":
             errors.append(f"sqlite integrity check failed: {quick[0] if quick else 'no result'}")
@@ -854,6 +855,10 @@ def cmd_task_validate(args) -> int:
                 )
             # task.owner_role 等于最后一条 STATE 事件后预期的 owner
             expected_owner = wf.get_state_owner(task["current_state"])
+            from .execution import recorded_coordinator
+            coordinator = recorded_coordinator(conn, task)
+            if coordinator:
+                expected_owner = coordinator["role"]
             if expected_owner and task["owner_role"] and task["owner_role"] != expected_owner:
                 errors.append(
                     f"owner_role mismatch: task={task['owner_role']}, "
@@ -1041,7 +1046,7 @@ def _upgrade_contract_artifact_text(name: str, text: str, source: str, target: s
         out = out.replace(f"artifact_contract.version: {source}", f"artifact_contract.version: {target}")
         out = out.replace(f"templates/{source}", f"templates/{target}")
     if name == "codex-review.md":
-        # V5.3.3 review routing is Runtime-owned and unambiguously named next_state.
+        # review routing is Runtime-owned and unambiguously named next_state.
         out = re.sub(r"(?m)^(\s*)intended_next\s*:\s*(.*)$", r"\1next_state: \2", out, count=1)
     if name == "acceptance.md":
         out = _migrate_legacy_database_verification(out)
@@ -1297,6 +1302,10 @@ def cmd_task_migrate(args) -> int:
         current = str(task["current_state"] or "")
         owner = str(task["owner_role"] or "")
         migrated_owner = map_active_owner(owner) or "tp-software-lifecycle"
+        from .execution import recorded_coordinator
+        coordinator = recorded_coordinator(conn, task)
+        if coordinator:
+            migrated_owner = coordinator["role"]
         legacy_phase_map = {
             "NEW": "intake", "RISK_ANALYZING": "requirement",
             "REQUIREMENT_CLARIFYING": "requirement", "PRODUCT_DESIGNING": "product",
@@ -1364,7 +1373,7 @@ def cmd_task_migrate(args) -> int:
                 tx_conn.execute(
                     "INSERT INTO task_event (task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (args.task, "STATE", current, migrated_state, task["current_stage"], migrated_phase,
-                     args.actor, "V5.3.3 record-first state collapse", json.dumps(detail, ensure_ascii=False), target, timestamp),
+                     args.actor, "record-first state collapse", json.dumps(detail, ensure_ascii=False), target, timestamp),
                 )
             refreshed = tx_conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
             status_yaml, events_jsonl, warnings = projection_cmd.render_projection(tx_conn, refreshed)
@@ -2283,15 +2292,17 @@ def _parse_context_usage_arg(raw):
 
 def cmd_task_run_pytest(args) -> int:
     from .pytest_execution import run_pytest
+    from .security_authority import explicit_context
     result = run_pytest(task_id=args.task, task_dir=args.task_dir, tests=args.test,
                         repo_root=args.repo_root, authorization_evidence=args.authorization_evidence,
-                        request_id=args.request_id, summary=args.summary, timeout=args.timeout, db=args.db)
+                        request_id=args.request_id, summary=args.summary, timeout=args.timeout, db=args.db,
+                        security_context=explicit_context(args, effect="regression"))
     print(json.dumps(result, ensure_ascii=False))
     return int(result["command_exit_code"])
 
 
 def cmd_task_checkpoint(args) -> int:
-    from . import record_first
+    from . import record_first, security_authority as authority
     result = record_first.checkpoint(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
         phase=args.phase, summary=args.summary, evidence=args.evidence,
@@ -2301,7 +2312,8 @@ def cmd_task_checkpoint(args) -> int:
         repo_roots=args.repo_root, request_id=args.request_id, collect=args.collect,
         result_reports=getattr(args, "result_report", None),
         report_artifact_root=getattr(args, "report_artifact_root", None),
-        recorded_result_ids=getattr(args, "recorded_result", None), db=args.db,
+        recorded_result_ids=getattr(args, "recorded_result", None),
+        security_context=authority.explicit_context(args, effect="implementation" if args.phase == "development" else "record_only"), db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -2330,11 +2342,12 @@ def cmd_task_resume(args) -> int:
 
 
 def cmd_task_verify(args) -> int:
-    from . import record_first
+    from . import record_first, security_authority as authority
     result = record_first.verify(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
         decision=args.decision, summary=args.summary, evidence=args.evidence,
         scope=getattr(args, "scope", "full"), checks=getattr(args, "check", None),
+        security_context=authority.explicit_context(args, effect="regression"),
         knowledge_signals=_parse_knowledge_signal_args(args.knowledge_signal_json),
         delivery_signals=args.delivery_signal,
         context_usage=_parse_context_usage_arg(args.context_usage_json), request_id=args.request_id, db=args.db,
@@ -2364,9 +2377,7 @@ def cmd_task_complete(args) -> int:
             task_id=args.task, task_dir=args.task_dir, db=args.db,
         )
         print(json.dumps(result, ensure_ascii=False))
-        return 0 if result.get("ready") else 1
-    if not args.summary:
-        raise ValueError("complete requires --summary unless --check is used")
+        return 0 if result.get("ready") or result.get("already_terminal") else 1
     result = record_first.complete(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
         summary=args.summary, db=args.db,
@@ -2381,6 +2392,13 @@ def cmd_task_scope_change(args) -> int:
 
     if args.actor != "human_owner":
         raise ValueError("scope change requires human_owner")
+    security_fields = [getattr(args, key, None) for key in (
+        "security_proposal", "proposal_version", "proposal_digest", "security_decision", "approved_scope", "human_event_id")]
+    if any(value is not None for value in security_fields):
+        if not all(value is not None for value in security_fields):
+            raise ValueError("SECURITY_DECISION_BINDING_REQUIRED: proposal/version/digest/decision/scope/human-event-id together")
+        from .security_cmd import record_decision
+        return record_decision(args)
     task_dir = record_first._task_dir(args.task_dir)
     db_path = dbmod.resolve_db_path(args.db, task_id=args.task)
     conn = dbmod.connect(db_path)
@@ -2483,12 +2501,12 @@ def add_task_subparsers(task_parser) -> None:
     p_create.add_argument("--flow", required=True, choices=["L0", "L1", "L2", "L3"])
     p_create.add_argument("--summary", required=False, default="任务创建")
     p_create.add_argument("--db", required=False, default=None)
-    p_create.add_argument("--scaffold", action="store_true", help="Create the V5.3.3 task directory and templates together with the DB task")
+    p_create.add_argument("--scaffold", action="store_true", help="Create the task directory and templates together with the DB task")
     p_create.add_argument("--from-intake", required=False, default=None, help="Adopt pre-task requirement artifacts from an intake directory; implies --scaffold and preserves source")
-    p_create.add_argument("--task-dir", required=False, default=None, help="Scaffold destination (default: .tp-spec/tasks/<TASK-ID>)")
+    p_create.add_argument("--task-dir", required=False, default=None, help="Scaffold destination (default: <project.root_path>/.tp-spec/tasks/<TASK-ID>)")
     p_create.set_defaults(func=cmd_task_create)
 
-    # V5.3.3 Record-first daily API: business facts, not workflow bookkeeping.
+    # Record-first daily API: business facts, not workflow bookkeeping.
     from . import record_first
     p_cp = sub.add_parser("checkpoint", help="Record meaningful task progress; auto-activates NEW and rebuilds projections")
     p_cp.add_argument("--task", required=True)
@@ -2507,6 +2525,8 @@ def add_task_subparsers(task_parser) -> None:
     p_cp.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks checkpoint")
     p_cp.add_argument("--repo-root", action="append", default=None, help="explicit product Git root; repeat for multi-repo Development checkpoint")
     p_cp.add_argument("--db", default=None)
+    from .security_authority import add_context_args
+    add_context_args(p_cp, effect=None, investigation=True)
     p_cp.set_defaults(func=cmd_task_checkpoint)
 
     p_run = sub.add_parser("run-pytest", help="Run explicitly authorized, selected pytest files and auto-record observed outputs; never grants formal PASS")
@@ -2519,6 +2539,7 @@ def add_task_subparsers(task_parser) -> None:
     p_run.add_argument("--summary", required=True)
     p_run.add_argument("--timeout", type=float, default=600.0, help="seconds to wait for the owned pytest process; no automatic rerun after interruption")
     p_run.add_argument("--db", default=None)
+    add_context_args(p_run, effect="regression")
     p_run.set_defaults(func=cmd_task_run_pytest)
 
     p_block = sub.add_parser("block", help="Record a real blocker and set task state BLOCKED")
@@ -2560,9 +2581,10 @@ def add_task_subparsers(task_parser) -> None:
     p_verify.add_argument("--delivery-signal", action="append")
     p_verify.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks verification")
     p_verify.add_argument("--db", default=None)
+    add_context_args(p_verify, effect="regression")
     p_verify.set_defaults(func=cmd_task_verify)
 
-    p_delivery = sub.add_parser("delivery-converge", help="L2/L3: record Integration-owned delivery facts bound to current verification")
+    p_delivery = sub.add_parser("delivery-converge", help="L0-L3: record delivery and Task learning inputs with applicable prerequisites")
     p_delivery.add_argument("--task", required=True)
     p_delivery.add_argument("--task-dir", required=True)
     p_delivery.add_argument("--delivery-status", required=True, choices=["READY", "BLOCKED"])
@@ -2596,7 +2618,15 @@ def add_task_subparsers(task_parser) -> None:
     p_scope.add_argument("--summary", required=True)
     p_scope.add_argument("--repo-root", action="append", help="owner-approved complete effective repository list; repeat for every included repo; omitted means no repository-scope replacement, not an operation grant")
     p_scope.add_argument("--db", default=None)
+    p_scope.add_argument("--security-proposal", help="registered security proposal ID; ordinary scope notes never authorize security changes")
+    p_scope.add_argument("--proposal-version", type=int)
+    p_scope.add_argument("--proposal-digest")
+    p_scope.add_argument("--security-decision", choices=["APPROVE", "REJECT", "DEFER"])
+    p_scope.add_argument("--approved-scope", action="append", help="exact scope unit ID; also identifies rejected/deferred units")
+    p_scope.add_argument("--human-event-id", type=int, help="same-Task HUMAN_AUTHORITY_RECORDED with matching original decision")
     p_scope.set_defaults(func=cmd_task_scope_change)
+    from .security_cmd import add_security_subparsers
+    add_security_subparsers(sub)
 
     p_terminal = sub.add_parser("terminal-check", help="Read-only check for post-terminal task artifact drift")
     p_terminal.add_argument("--task", required=True)

@@ -1,0 +1,53 @@
+/* Knowledge-only additions; Wiki layout/tokens remain unchanged. */
+.knowledge-page { min-width: 0; }
+.knowledge-page .knowledge-scope-note { color: var(--muted); font-size: 12px; line-height: 1.7; margin: 0 0 12px; }
+.knowledge-purpose { min-width: 158px; }
+.knowledge-collection p { font-size: 12px; line-height: 1.7; margin-bottom: 8px; overflow-wrap: anywhere; }
+.knowledge-collection summary,.knowledge-page details > summary { cursor: pointer; font-size: 12px; }
+.knowledge-source-state { display: grid; gap: 4px; padding: 9px 0; border-top: 1px solid var(--border); font-size: 11px; overflow-wrap: anywhere; }
+.knowledge-warning { color: var(--muted); border-left: 2px solid var(--accent); padding-left: 8px; }
+.knowledge-recent { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.knowledge-recent > div { display: grid; gap: 5px; font-size: 12px; }
+.knowledge-recent small { color: var(--muted); }
+.knowledge-table-wrap { overflow: auto; max-width: 100%; }
+.knowledge-table-wrap table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.knowledge-table-wrap td,.knowledge-table-wrap th { padding: 7px 9px; border-bottom: 1px solid var(--border); text-align: right; font-weight: 400; white-space: nowrap; }
+.knowledge-table-wrap th:first-child { text-align: left; }
+.knowledge-table-wrap thead { color: var(--muted); background: var(--muted-surface); }
+.knowledge-usage-grid { margin-bottom: 12px; }
+.knowledge-usage-table { height: 270px; }
+.knowledge-usage-table thead th { position: sticky; top: 0; z-index: 1; background: var(--muted-surface); }
+.knowledge-link { appearance: none; display: inline; font: inherit; border: 0; background: transparent; color: var(--accent); padding: 0; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.knowledge-link:hover { text-decoration: underline; }
+.knowledge-link:focus-visible,.knowledge-document-row > button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.knowledge-document-list,.knowledge-record-list,.knowledge-attention { list-style: none; padding: 0; margin: 0; display: grid; gap: 5px; }
+.knowledge-document-row > button { display: grid; grid-template-columns: minmax(0,2fr) minmax(90px,.55fr) minmax(90px,.65fr) minmax(160px,1fr); gap: 12px; width: 100%; text-align: left; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--control-radius); padding: 12px; cursor: pointer; align-items: center; }
+.knowledge-document-row > button:hover { background: var(--accent-tint); border-color: var(--accent); }
+.knowledge-document-row > button > span { display: grid; gap: 4px; min-width: 0; font-size: 12px; }
+.knowledge-document-row strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.knowledge-document-row small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.knowledge-document-title > small:not(.wiki-document-snippet) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.knowledge-document-row .ant-tag { justify-self: start; }
+.knowledge-attention li { padding: 7px 0; font-size: 12px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.knowledge-page .knowledge-filter-card .knowledge-filter-note { margin-top: 14px; margin-bottom: 0; line-height: 1.7; }
+.knowledge-page .knowledge-record-filter { margin-top: 12px; }
+.knowledge-record-results { display: grid; gap: 8px; }
+.knowledge-record-results > div { display: grid; gap: 5px; padding: 9px; border-radius: var(--control-radius); background: var(--muted-surface); font-size: 12px; }
+.knowledge-record-results code,.knowledge-record-results small { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.knowledge-reader .wiki-toc { max-height: 75vh; overflow: auto; }
+.knowledge-reader .wiki-document-heading h2 { overflow-wrap: anywhere; }
+.knowledge-reader .wiki-document-links li { overflow-wrap: anywhere; }
+.knowledge-external { color: var(--muted); font-size: .8em; }
+@media(max-width:1000px) {
+  .knowledge-document-row > button { grid-template-columns: minmax(0,2fr) minmax(90px,1fr); }
+  .knowledge-document-counts { text-align: right; }
+}
+@media(max-width:720px) {
+  .knowledge-page .wiki-page-controls { align-items: stretch; }
+  .knowledge-purpose { flex: 1 1 158px; }
+  .knowledge-recent { grid-template-columns: minmax(0,1fr); }
+  .knowledge-document-row > button { grid-template-columns: minmax(0,1fr) auto; gap: 8px; padding: 10px; }
+  .knowledge-document-title { grid-column: 1 / -1; }
+  .knowledge-document-counts { grid-column: 1 / -1; text-align: left; }
+  .knowledge-reader .wiki-toc { max-height: none; }
+}

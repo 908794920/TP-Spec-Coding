@@ -1,5 +1,6 @@
 import { record, text, valueText } from '../facts';
 import type { FactRecord, TaskData } from '../types';
+import { buildWorkflowRelations, type WorkflowRelations } from './workflowRelations';
 export interface GraphObject {
     id: string;
     objectId: string;
@@ -24,6 +25,7 @@ export interface GraphIssue {
     objectIds: string[];
 }
 export interface GraphModel {
+    workflow: WorkflowRelations;
     taskId: string;
     taskNodeId: string;
     groupId: string;
@@ -157,8 +159,9 @@ export function buildGraph(contextKey: string, data: TaskData): GraphModel {
         addIssue('DEPENDENCY_CYCLE', `循环依赖涉及：${cyclic.join('、')}。原边保留；异常区域位置不代表可执行顺序。`, cyclic);
     for (const problem of Array.isArray(work.issues) ? work.issues : [])
         addIssue('RUNTIME_WORKITEM_ISSUE', valueText(problem));
-    const topology = JSON.stringify([nodes.map(n => [n.id, n.belongs, n.parentTaskId]), edges.map(e => [e.source, e.target])]);
-    return { taskId, taskNodeId, groupId, nodes, edges, issues, invalidRecords, topology };
+    const workflow = buildWorkflowRelations(contextKey, data);
+    const topology = JSON.stringify([nodes.map(n => [n.id, n.belongs, n.parentTaskId]), edges.map(e => [e.source, e.target]), [...workflow.activityStages, ...workflow.stages].map(stage => stage.id)]);
+    return { taskId, taskNodeId, groupId, nodes, edges, issues, invalidRecords, topology, workflow };
 }
 export function relatedIds(model: GraphModel, start: string, direction: 'upstream' | 'downstream'): Set<string> {
     const seen = new Set<string>([start]), found = new Set<string>(), pending = [start];

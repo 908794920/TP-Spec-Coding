@@ -42,6 +42,15 @@ event_families:
   REVIEW_COMPLETED:
     required: [operation, review_kind, decision, result_status]
     operation: REVIEW
+  EXECUTION_PLAN_RECORDED:
+    required: [operation, result_status, execution_schema, plan_version, plan_digest, plan]
+    operation: RECORD
+  EXECUTION_STEP_RECORDED:
+    required: [operation, result_status, execution_schema, plan_version, step_id, action]
+    operation: RECORD
+  WORK_SESSION_UPDATED:
+    required: [operation, result_status, execution_schema, plan_version, step_id, session_id, start_event_id, action]
+    operation: RECORD
   WORK_SESSION_STARTED:
     required: [operation, result_status]
     operation: START
@@ -63,6 +72,18 @@ event_families:
   KNOWLEDGE_CONVERGENCE_RESULT:
     required: [operation, result_status, request_event_id, change_set_id, knowledge_disposition, query_receipts, source_refs, source_items, reason_code]
     operation: KNOWLEDGE_CONVERGE
+  HUMAN_AUTHORITY_RECORDED:
+    required: [operation, result_status, security_schema, security_payload, security_digest]
+    operation: RECORD
+  SECURITY_PROPOSAL_RECORDED:
+    required: [operation, result_status, security_schema, security_payload, security_digest]
+    operation: RECORD
+  SECURITY_WORK_BOUND:
+    required: [operation, result_status, security_schema, security_payload, security_digest]
+    operation: RECORD
+  SECURITY_EVIDENCE_RECORDED:
+    required: [operation, result_status, security_schema, security_payload, security_digest]
+    operation: RECORD
   SCOPE_CHANGE:
     required: [operation, result_status, scope_id]
     operation: SCOPE_CHANGE

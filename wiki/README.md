@@ -1,12 +1,12 @@
-# TP-Spec-Coding Wiki Subsystem (V5.3.3)
+# TP-Spec-Coding Wiki Subsystem
 
-Wiki 是 TP-Spec-Coding 的**代码理解层**：它把当前源码事实压缩成可导航、可引用、可增量维护的结构化地图，供人和 Agent 快速定位代码，但**源码始终是最终事实源**。
+Wiki 是 TP-Spec-Coding 的**代码理解层**：它把稳定源码快照压缩成可导航、可引用、可增量维护的结构化地图，供人和 Agent 快速定位代码，但**源码始终是最终事实源**。
 
 职责分离：
 
 ```text
 Source Code = 当前技术事实
-Wiki        = 当前技术事实的结构化理解/导航
+Wiki        = 选定稳定源码快照的结构化理解/导航
 Task        = 一次研发行为的历史记录
 Knowledge   = 跨任务长期有效的业务/经验知识
 ```
@@ -14,6 +14,8 @@ Knowledge   = 跨任务长期有效的业务/经验知识
 Wiki 不参与 Task 工作流状态机，不替代源码核验，也不与 Knowledge canonical 数据混写。
 
 ## 标准维护链
+
+Git 来源先 pin stable_ref 的完整 SHA；成功来源与策略不变时直接 NO_CHANGE，不进入模型维护。需要处理时：
 
 ```text
 SCAN
@@ -62,6 +64,7 @@ tp-spec wiki audit
 tp-spec wiki audit-record
 tp-spec wiki snapshot-commit
 tp-spec wiki status
+tp-spec wiki source-read --path <repo-relative-file> [--start-line N --end-line N] [--baseline]
 ```
 
 AI 定时维护应读取 `automation/wiki/daily-maintenance.md`，不得靠长期保存的一段自由提示词自行发明流程。
@@ -69,6 +72,7 @@ AI 定时维护应读取 `automation/wiki/daily-maintenance.md`，不得靠长�
 ## 标准文档
 
 - 配置与路径：`wiki/rules/configuration.md`
+- 稳定 Git 来源 / 非 Git / 零 LLM / 基线迁移恢复：`wiki/rules/stable-source.md`
 - Source Fingerprint / 编码 / Mass Change Guard / cite 行号漂移：`wiki/rules/source-fingerprint.md`
 - L1-L4 质量门：`wiki/rules/quality-gates.md`
 - Wiki 内容类型与引用规范：`wiki/rules/content-standard.md`

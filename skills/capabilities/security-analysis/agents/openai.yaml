@@ -1,0 +1,4 @@
+interface:
+  display_name: "安全分析与核验"
+  short_description: "认证授权、敏感数据或信任边界风险触发时使用；区分发现证据与人工行为变更授权。"
+  default_prompt: "Use $security-analysis for the applicable part of this task."

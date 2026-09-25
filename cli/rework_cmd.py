@@ -1,14 +1,8 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.0 rework 命令组（M2）。
+"""Scoped Fix creation and read-only repair history.
 
-包含：
-- rework open / list
-
-核心保证：
-- rework open：单事务插入 REWORK 事件，detail_json 记录返工结构化字段
-- cause 受控（10 类）
-- 不自动改 task.current_state（返工可能落在 LOCAL_REWORK，无状态变更）
-- actor_role 默认回退到 task.owner_role，actor_agent = --by
+Explicit-plan repairs reuse a Work identity and preserve the parent's step.
+Legacy rework open remains available only for tasks without an explicit plan.
 """
 
 from __future__ import annotations
@@ -66,6 +60,11 @@ def cmd_rework_open(args) -> int:
         if task is None:
             print(f"ERROR: task not found: {task_id}", file=sys.stderr)
             return 4
+        from .execution_cmd import load_current
+        _, facts = load_current(conn, task_id, allow_legacy=True)
+        if facts["plan"]:
+            print("ERROR: use rework fix for an explicit-plan repair; rework open cannot rewind its parent", file=sys.stderr)
+            return 2
         actor_role = args.role or task["owner_role"] or DEFAULT_ROLE
         actor_agent = args.by or task["owner_agent"] or ""
         affected_items = _parse_items(args.items)
@@ -101,7 +100,7 @@ def cmd_rework_open(args) -> int:
             event_id = cur.lastrowid
         # 不自动改 task.current_state（返工可能落在 LOCAL_REWORK，无状态变更）
         print(f"Rework opened: {event_id} ({args.cause})")
-        # V5.3.3 B-13 W5：审查包复用告警（复用不替代 VERIFYING，每次复用动作发生时展示）
+        # B-13 W5：审查包复用告警（复用不替代 VERIFYING，每次复用动作发生时展示）
         print(f"\n{w5_warning()}\n")
         return 0
     finally:
@@ -111,8 +110,9 @@ def cmd_rework_open(args) -> int:
 def cmd_rework_list(args) -> int:
     task_id = args.task
     db_path = dbmod.resolve_db_path(args.db, project_id=getattr(args, "project", None), task_id=task_id)
-    conn = dbmod.connect(db_path)
+    conn = dbmod.connect_readonly(db_path)
     try:
+        conn.execute("BEGIN")
         task = conn.execute("SELECT task_id FROM task WHERE task_id = ?", (task_id,)).fetchone()
         if task is None:
             print(f"ERROR: task not found: {task_id}", file=sys.stderr)
@@ -127,8 +127,14 @@ def cmd_rework_list(args) -> int:
             """,
             (task_id,),
         ).fetchall()
+        from .work_units import read
+        units = [u for u in read(conn, task_id)["units"].values() if u["spec"]["kind"] == "FIX"]
+        for unit in units:
+            print(f"  {unit['item_id']} FIX issue={unit['spec']['issue_key']} step={unit['waiting_step_id']} "
+                  f"attempt={unit['attempt']} status={unit['recorded_state']} received={bool(unit['receipt'])}")
         if not rows:
-            print(f"(no rework events for {task_id})")
+            if not units:
+                print(f"(no rework events for {task_id})")
             return 0
         print(f"rework events for {task_id} ({len(rows)}):")
         for r in rows:
@@ -150,6 +156,28 @@ def cmd_rework_list(args) -> int:
         return 0
     finally:
         conn.close()
+
+
+def cmd_rework_fix(args) -> int:
+    from .execution_cmd import _write_command
+    from .workitem_cmd import _json_file
+    from . import work_units as units
+    def write(conn, task, facts):
+        from .security_authority import identifier
+        args.id = identifier(args.id, "work item id")
+        units._text(args.summary, "summary")
+        raw = _json_file(args.file)
+        if not isinstance(raw, dict):
+            raise ValueError("FIX_SPEC_OBJECT_REQUIRED")
+        if raw.get("step_id") != args.step:
+            raise ValueError("FIX_STEP_MISMATCH")
+        spec = units.normalize_spec(conn, task, facts, raw, item_id=args.id, kind="FIX", issue=units._text(args.issue, "issue key"))
+        spec["cause"] = args.cause
+        # Requirement changes are not defects. The scope refs/AC and P4 authority
+        # context must refer to the already authorized Task, never this proposal.
+        return units.create(conn, task, facts, item_id=args.id, title=args.summary,
+                            spec=spec, actor=args.role, agent=args.agent)
+    return _write_command(args, write)
 
 
 def add_rework_subparsers(rework_parser) -> None:
@@ -187,3 +215,16 @@ def add_rework_subparsers(rework_parser) -> None:
     p_list.add_argument("--task", required=True, help="task id")
     p_list.add_argument("--db", required=False, default=None)
     p_list.set_defaults(func=cmd_rework_list)
+
+    fix = sub.add_parser("fix", help="Create/reuse a scoped Fix Work at the current parent step")
+    fix.add_argument("--task", required=True)
+    fix.add_argument("--id", required=True, help="Globally unique Work ID, e.g. TASK-ID-FIX01")
+    fix.add_argument("--issue", required=True, help="Stable issue identity within this Task")
+    fix.add_argument("--step", required=True)
+    fix.add_argument("--file", required=True, help="Scoped Work JSON; references existing Task scope")
+    fix.add_argument("--summary", required=True)
+    fix.add_argument("--cause", choices=[c for c in _CAUSE_TYPES if c not in {"REQUIREMENT_CHANGE", "DEPENDENCY_CHANGE"}], default="IMPLEMENTATION_DEFECT")
+    fix.add_argument("--role", required=True)
+    fix.add_argument("--agent", required=True)
+    fix.add_argument("--db", default=None)
+    fix.set_defaults(func=cmd_rework_fix)

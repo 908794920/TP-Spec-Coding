@@ -66,6 +66,7 @@ def acceptance_view(task_dir: Path) -> dict[str, Any]:
         result.update(status="read", rows=rows, sha256=hashlib.sha256(raw).hexdigest(),
                       issues=checked.issues, pending=checked.pending_rows,
                       page_verification=checked.page_verification,
+                      visual_evidence_pending=checked.ok and checked.visual_evidence_pending,
                       deferred=checked.deferred_entries, waived=checked.owner_waiver_entries,
                       database_operations=checked.database_operations,
                       no_acceptance_required=checked.no_acceptance_required)
@@ -157,16 +158,14 @@ def build_task_details(conn, task: dict[str, Any], task_dir: Path) -> dict[str, 
         try:
             delivery["ledger_trusted"] = bool(event_policies.load_trusted_governance_event(
                 conn, task_id, event_type="DELIVERY_RESULT", actor="tp-integration-engineer", latest_only=True))
-            if current is None or reviewed is None or event_policies.verification_scope(current.detail) != "full":
-                delivery["reasons"].append("未取得当前 full Verification 与匹配 Review；READY 历史记录不等于可正式结单。")
+            from cli import orchestration
+            facts = orchestration._load_task_facts(task_id, connection=conn, task_dir=task_dir)
+            orchestration.resolve_route(task_id, _facts=facts, task_dir=task_dir)
+            ready = orchestration._delivery_completion_event(facts[1], task_dir, task=facts[0])
+            if ready is not None:
+                delivery.update(applicability="current", source="orchestration._delivery_completion_event")
             else:
-                ready = delivery_contract.find_delivery_completion_event(
-                    events, verification_event=dict(current.row),
-                    current_subject_digest=str(current.detail.get("subject_digest") or ""), task_dir=task_dir)
-                if ready is not None:
-                    delivery.update(applicability="current", source="delivery_contract.find_delivery_completion_event")
-                else:
-                    delivery["reasons"].append("既有 Delivery 读取未返回匹配的 READY；不推断缺失/失效的具体分支。")
+                delivery["reasons"].append("没有与当前适用步骤、主体及证据匹配的 READY；历史记录不等于可正式结单。")
         except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
             delivery["reasons"].append(str(exc))
 
@@ -214,6 +213,13 @@ def build_task_details(conn, task: dict[str, Any], task_dir: Path) -> dict[str, 
             if channel["applicability"] == "current":
                 channel.update(applicability="not_confirmed", reasons=[declaration_changed])
         owner.update(evaluation="unavailable", effective={})
+    from cli import security_authority as authority
+    try:
+        security = authority.summary(authority.read(conn, task_id, task_dir))
+        if security["proposals"]:
+            blockers["security_changes"] = security
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        blockers["security_changes"] = {"status": "UNKNOWN", "reason": str(exc)}
     return {"task": {"task_id": task_id, "state": task.get("current_state"), "phase": task.get("current_stage"),
                      "owner": task.get("owner_role"), "completed_at": task.get("completed_at")},
             "task_dir": str(task_dir), "acceptance": acceptance, "verification": verification,

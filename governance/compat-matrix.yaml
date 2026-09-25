@@ -1,17 +1,20 @@
 # Compatibility Matrix — TP-Spec-Coding single active contract
 #
-# V5.3.3 performs a canonical Role-first cutover. Current branches expose only
-# one active contract; V5.3.3 compatibility lives in migration/history code and
-# Git release/tag history, never in active routing.
+# The active version remains 5.3.4. Earlier snapshots may already carry the
+# same version string without the execution/work-unit/closeout/task-learning
+# v1 markers. Adoption follows trusted events, never the version string alone.
+# Public Task states and physical SQLite schema are unchanged by this upgrade.
+# Historical terminal facts stay read-only; do not mix older writers with
+# adopted in-flight facts. See docs/GETTING_STARTED.md for update/rollback.
 version: "1.0.0"
 contracts:
-  "5.3.3":
-    base_version: "5.3.3"
+  "5.3.4":
+    base_version: "5.3.4"
     governance_ranges:
-      workflow: "[5.3.3, 5.4.0)"
-      ai-role: "[5.3.3, 5.4.0)"
+      workflow: "[5.3.4, 5.4.0)"
+      ai-role: "[5.3.4, 5.4.0)"
       risk-rule: "[2.0.0, 3.0.0)"
       knowledge-rule: "[2.1.0, 3.0.0)"
-      role-catalog: "[5.3.3, 5.4.0)"
-      orchestration: "[5.3.3, 5.4.0)"
-    status_contract: "5.3.3"
+      role-catalog: "[5.3.4, 5.4.0)"
+      orchestration: "[5.3.4, 5.4.0)"
+    status_contract: "5.3.4"

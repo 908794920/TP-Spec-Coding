@@ -46,6 +46,23 @@ Runtime/CLI 先解析 Wiki System Root，再通过 Repo Registry 解析当前 wo
 - 已存在 registry 但当前 workspace 无匹配项时 fail-closed；可由 `project-binding.yaml` 的显式 `wiki_id` 提供受控 fallback，不按目录名猜仓库；
 - 同一 physical path 通过 canonical path 去重/诊断。
 
+## 稳定源码配置
+
+`systems.wiki.source.source_mode` 默认为 `AUTO`：Git 用 `GIT_REF`，真正非 Git 用 `FILESYSTEM`。正式 Git Wiki 必须配置本地已有的完整远程跟踪引用；空 `stable_ref` 表示尚未配置，不自动选择 remote HEAD 或当前分支。例：
+
+```yaml
+systems:
+  wiki:
+    source:
+      stable_ref: refs/remotes/origin/dev
+```
+
+`origin/dev` 仅为示例，由用户指定远程与分支。配置按基座默认 → 项目覆盖 → Registry 单仓覆盖合并，再逐仓校验来源。项目默认写入项目 `content-systems.yaml` 的上述位置；单仓例外写入 Registry 对应 `repos[]` 项的 `source.stable_ref`。未覆盖部分继承已有配置，不共享上一个 repo 的运行 SHA；旧 `branch` 字段仅为历史元数据，不参与解析。此处 repo_root 是已有 Resolver 配置，不复制到通用 Skill。
+
+本地引用落后于服务器仍可维护；用户控制何时同步。Wiki 不 fetch/pull，不接纳本地分支未推送提交，也不以工作区代替引用。缺少配置、引用或对象时仅报告受影响仓库及恢复条件，不自动修复源码仓库。FILESYSTEM 不提供指定 Git 分支保证。
+
+来源 pin、离线边界、非 Git 保留、迁移及失败恢复见 [Stable Source](stable-source.md)。
+
 ## 配置化与不变量
 
 适合配置：source include/exclude、mass-change threshold、citation coverage、L4 sample size 等。

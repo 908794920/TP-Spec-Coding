@@ -1,15 +1,21 @@
 ---
 name: requirement-clarification
 display_name: 需求澄清
-version: 5.3.3
+version: 5.3.4
 description: Use when a requirement is ambiguous, incomplete, conflicts with project facts, or contains material decisions with prerequisites. Ask only high-value questions and keep facts, assumptions, decisions, and unknowns distinct.
 ---
 
-# 需求澄清 — V5.3.3 Record-first
+# 需求澄清 — Record-first
 
 ## 目的
 
 用尽量少的用户交互消除真正影响实现或验收的不确定性；能通过已有事实自行确认的内容不反问用户。Requirement Frontier 是本 Skill 内部的条件方法，不是新的 Skill、流程阶段或固定问卷。
+
+## 按需导航
+
+输入成熟度分流、产品定义或输出范围不明确时读 [产品定义](references/product-definition.md)；只澄清一个问题不展开该参考。原型、UI、交互或动效任务读 [原型与交互设计](../ui-prototype-design/SKILL.md)，不把产品方法自动变成新阶段。
+
+需要 Wiki 缩小范围时按 [低成本检索与使用记录](../../../docs/WIKI_USAGE.md) 按需查询或读取；上下文足够可跳过，真实采用并入已有任务记录，不为计数新增调用。
 
 ## 基础方法
 

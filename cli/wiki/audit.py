@@ -137,6 +137,8 @@ def build_audit_plan(wiki_repo_root: Path, quality_cfg: Dict[str, Any], *, full:
     topology_review = list(staged_plan.get("topology_review") or [])
     plan = {
         "schema": AUDIT_PLAN_SCHEMA,
+        "source": verification.get("source") or changeset.get("source") or manifest.get("source"),
+        "maintenance_digest": verification.get("maintenance_digest"),
         "created_at": utc_now(),
         "mode": mode,
         "audit_scope": audit_scope,
@@ -158,7 +160,7 @@ def build_audit_plan(wiki_repo_root: Path, quality_cfg: Dict[str, Any], *, full:
         "topology_review_required": bool(topology_review),
         "semantic_challenges": SEMANTIC_CHALLENGES,
         "instructions": [
-            "read every mandatory Wiki document in this plan and the real cited/dependent source",
+            "read every mandatory Wiki document and its cited/dependent source via wiki source-read at this plan source.commit; never read dirty worktree source",
             "for initial-full-repo, validate every durable Wiki document because no trusted semantic baseline exists",
             "for standalone-full-repo, validate every durable Wiki document as an explicit quality audit even when source did not change",
             "for incremental all-affected, validate every affected document; do not replace mandatory review with sampling",

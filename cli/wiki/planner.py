@@ -124,6 +124,17 @@ def build_plan(
                     item["expected_semantic_action"] = "REVIEW_DELETED_OR_OUT_OF_SCOPE_SOURCE_SIGNIFICANCE"
             topology.append(item)
 
+    refresh_reasons = list(changeset.get("refresh_reasons") or [])
+    repair_documents = set(changeset.get("repair_documents") or [])
+    if refresh_reasons:
+        repair_only = set(refresh_reasons) == {"EXPLICIT_REPAIR"}
+        for doc in docs:
+            rel = str(doc.get("path") or "")
+            if not rel or (repair_only and repair_documents and rel not in repair_documents):
+                continue
+            row = affected.setdefault(rel, {"document": rel, "reasons": [], "sections": set(), "roles": set()})
+            row["reasons"].extend({"kind": reason} for reason in refresh_reasons)
+
     affected_list = []
     for row in affected.values():
         row["sections"] = sorted(row["sections"])
@@ -137,6 +148,10 @@ def build_plan(
         "created_at": utc_now(),
         "change_set_id": changeset.get("change_set_id"),
         "repo_id": changeset.get("repo_id"),
+        "source": changeset.get("source"),
+        "baseline_source": changeset.get("baseline_source"),
+        "maintenance_digest": changeset.get("maintenance_digest"),
+        "refresh_reasons": refresh_reasons,
         "guard": changeset.get("guard"),
         "mass_change_approved": bool(guard != "MASS_CHANGE_REVIEW_REQUIRED" or allow_mass_change),
         "mass_change_review_reason": mass_change_reason.strip() if guard == "MASS_CHANGE_REVIEW_REQUIRED" and allow_mass_change else "",
@@ -158,6 +173,7 @@ def build_plan(
             "semantic": "update only affected semantics/sections unless topology requires broader correction",
             "structural": "review topology and add/merge/restructure Wiki only when source facts require it; cluster eligible files by capability/subsystem rather than one-file-one-doc",
             "uncertain": "do not advance baseline until resolved",
+            "source": "read source only through wiki source-read (staged commit, otherwise successful baseline); do not use worktree line numbers",
         },
     }
     _write_json(paths["plan"], plan)

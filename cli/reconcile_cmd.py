@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""V5.3.3 reconcile 命令（A-04 修复：durable recovery + 自身一致性）。
+"""reconcile 命令（A-04 修复：durable recovery + 自身一致性）。
 
 ``tp-spec reconcile --task TASK-ID`` 以 SQLite 为唯一权威，检查并修复投影漂移。
 
-V5.3.3 修复内容：
+修复内容：
 - **durable journal 恢复判定**（任务书 §3）：发现未完成 journal 时按
   DB revision 判定——A（DB 未推进）恢复全部备份；B（DB 已推进）按 DB
   完成全部投影；C（无法判定）不删除任何备份，输出
@@ -21,12 +21,11 @@ V5.3.3 修复内容：
 原则：不删除/修改历史事件；只追加 RECONCILIATION 事件（投影为 FACT，
 Test-TpSpecTask.ps1 零感知）；幂等（无漂移不写事件）；失败非零退出。
 
-设计依据：V5.3.3 AI-A 定向修复任务书 §3/§4/§5/§8 与审查报告 §3.2-§3.4/§3.7。
+设计依据：AI-A 定向修复任务书 §3/§4/§5/§8 与审查报告 §3.2-§3.4/§3.7。
 """
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import shutil
 import sqlite3
@@ -47,7 +46,6 @@ from .transaction_commit import (
     _read,
     _rebuild_current_view_text,
     _sha256_file,
-    _source_digest,
 )
 from .encoding_guard import validate_input
 from .version import active_version
@@ -131,7 +129,7 @@ def _journal_target_events_match(conn, task_id: str, journal: Dict[str, Any]) ->
     expected_state = journal.get("expected_state_event_id")
     expected_handoff = journal.get("expected_handoff_event_id")
     # 兼容旧 journal（无新字段）：无身份声明时不阻止按 revision 判定（向后兼容），
-    # 但 V5.3.3 新 journal 必须携带完整身份字段。
+    # 但 新 journal 必须携带完整身份字段。
     if not (flush_id or expected_state or expected_handoff):
         return True
     for evt_id, evt_type in ((expected_state, "STATE"), (expected_handoff, "HANDOFF")):
@@ -168,7 +166,7 @@ def _journal_target_events_match(conn, task_id: str, journal: Dict[str, Any]) ->
 def _recover_journal(task_dir: Path, conn, task, journal: Dict[str, Any], actor: str) -> Tuple[str, List[str]]:
     """处理单个未完成 journal。返回 (decision, fixed_items)，decision in {'A','B','C'}。
 
-    V5.3.3 P0-7 增强：情况 B 需五要素全部满足——revision == expected_revision_after
+    P0-7 增强：情况 B 需五要素全部满足——revision == expected_revision_after
     **且** current_state == target_state **且** owner_role == owner_after **且**
     journal 声明的目标 STATE/HANDOFF 事件存在且 flush_id 一致 **且**
     expected_event_ids 均在 DB 中存在。任一不满足即情况 C（不删除任何恢复依据）。
@@ -217,6 +215,18 @@ def _recover_journal(task_dir: Path, conn, task, journal: Dict[str, Any], actor:
                 file=sys.stderr,
             )
             return "C", []
+        # A committed terminal transaction is already sealed. Verify its exact
+        # journal targets; never re-render/re-hash history to hide post-seal drift.
+        if task["current_state"] in {"COMPLETED", "CANCELLED"}:
+            files = journal.get("files") or []
+            if (journal.get("phase") not in {"FILES_REPLACED", "DB_COMMITTED"} or not files
+                    or any("target_digest" not in entry or
+                           _sha256_file(task_dir / entry["path"]) != entry["target_digest"] for entry in files)):
+                return "C", []
+            if backup_dir is not None:
+                shutil.rmtree(backup_dir, ignore_errors=True)
+            transaction_journal.remove_journal(task_dir, tx_id)
+            return "B", ["verified sealed transaction targets; no artifact rewritten"]
         # 情况 B：DB 已推进且身份一致 → 完成全部投影
         fixed = _complete_from_db(task_dir, conn, task, journal, actor)
         if backup_dir is not None:
@@ -262,7 +272,7 @@ def _handoff_texts(conn, task, task_dir: Path, actor: str) -> Tuple[Optional[str
 
     返回 (expected_text, rebuild_text)；无 HANDOFF 事件返回 (None, None)。
     - expected_text：与 handoff.json 比对用的语义等价基准（无 reconstructed 元数据）；
-    - rebuild_text：写入文件用的文本（V5.3.3 payload 含完整 handoff_record；
+    - rebuild_text：写入文件用的文本（payload 含完整 handoff_record；
       旧版事件回退为字段级重建并标记 reconstructed）。
     """
     row = conn.execute(
@@ -285,7 +295,7 @@ def _handoff_texts(conn, task, task_dir: Path, actor: str) -> Tuple[Optional[str
         rebuilt["reconstructed_at"] = dbmod.now_iso()
         rebuilt["reconstructed_by"] = actor
         return expected, json.dumps(rebuilt, ensure_ascii=False, indent=2) + "\n"
-    # 旧版事件（V5.3.3）：字段级回退重建
+    # 旧版事件：字段级回退重建
     owner = task["owner_role"] or ""
     state = task["current_state"] or "NEW"
     entry = "generated/final-result.md" if state == "COMPLETED" else "generated/continuation.md"
@@ -336,49 +346,12 @@ def _handoff_matches(actual_text: str, expected_text: str) -> bool:
 
 
 def _check_generated_digest(task_dir: Path, task) -> List[str]:
-    """校验 generated current view：存在性 + source_files/source_digest/content_digest。"""
-    state = task["current_state"] or "NEW"
-    rel = _current_view_rel(state)
-    path = task_dir / rel
-    if not path.is_file():
-        return [f"{rel} missing"]
-    text = _read(path)
-    parts = frontmatter.split(text)
-    if parts is None:
-        return [f"{rel}: front matter invalid"]
-    front, rest, _ = parts
-    source_names: List[str] = []
-    for line in front.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("- "):
-            source_names.append(stripped[2:].strip().strip('"'))
-    declared_generator = ""
-    for line in front.splitlines():
-        if line.strip().startswith("generator_version:"):
-            declared_generator = line.split(":", 1)[1].strip().strip('"')
-    if str(task["base_version"] or "") == active_version() and declared_generator != active_version():
-        return [f"{rel}: generator_version mismatch (declared {declared_generator or 'MISSING'}, expected {active_version()})"]
-    declared_digest = ""
-    for line in front.splitlines():
-        if line.strip().startswith("source_digest:"):
-            declared_digest = line.split(":", 1)[1].strip().strip('"')
-    declared_content = ""
-    for line in front.splitlines():
-        if line.strip().startswith("content_digest:"):
-            declared_content = line.split(":", 1)[1].strip().strip('"')
-    source_paths = [task_dir / n for n in source_names if n]
-    missing_sources = [n for n in source_names if n and not (task_dir / n).is_file()]
-    if missing_sources:
-        return [f"{rel}: declared source file missing: {', '.join(missing_sources)}"]
-    actual_digest = "sha256:" + _source_digest(source_paths, task_dir)
-    if declared_digest and declared_digest != actual_digest:
-        return [f"{rel}: source_digest mismatch (declared {declared_digest}, actual {actual_digest})"]
-    # content_digest 语义与 Test-TpSpecTask.ps1 的 Get-FrontMatter 一致：
-    # closing delimiter 后的空行被 ".*?\r?\n---\s*\r?\n" 吞掉，content 从正文开始。
-    actual_content = "sha256:" + hashlib.sha256(rest.lstrip("\r\n").encode("utf-8")).hexdigest()
-    if declared_content and declared_content != actual_content:
-        return [f"{rel}: content_digest mismatch"]
-    return []
+    """Same read-only freshness interpretation as CLI inspection and Workbench."""
+    from .task_views import inspect_generated
+    state = str(task["current_state"] or "NEW")
+    view = inspect_generated(task_dir, _current_view_rel(state), task_id=str(task["task_id"]),
+                             state=state, base_version=str(task["base_version"] or ""))
+    return [view["path"] + ": " + issue for issue in view["issues"]]
 
 
 def _detect_drift(task_dir: Path, conn, task, actor: str) -> Tuple[List[str], List[str]]:
@@ -420,7 +393,7 @@ def _detect_drift(task_dir: Path, conn, task, actor: str) -> Tuple[List[str], Li
         pass
     # 3. generated view digest
     repairable.extend(_check_generated_digest(task_dir, task))
-    # 4. 主工件 front matter 可解析性（V5.3.3 可选工件存在时同样检查）
+    # 4. 主工件 front matter 可解析性（可选工件存在时同样检查）
     for name in _MAIN_ARTIFACTS + tuple(projection_cmd.projection_source_names()):
         p = task_dir / name
         if not p.is_file():
@@ -474,7 +447,7 @@ def cmd_reconcile(args) -> int:
     task_id = args.task
     validate_input(args.actor, "actor")
     db_path = dbmod.resolve_db_path(args.db, project_id=getattr(args, "project", None), task_id=task_id)
-    conn = dbmod.connect(db_path)
+    conn = dbmod.connect_readonly(db_path)
     try:
         task = conn.execute("SELECT * FROM task WHERE task_id = ?", (task_id,)).fetchone()
         if task is None:
@@ -495,11 +468,24 @@ def cmd_reconcile(args) -> int:
             print(f"ERROR: task-dir not found: {task_dir}", file=sys.stderr)
             return 4
 
+        # Opening a historical Task is not permission to repair sealed sources.
+        from .task_views import TERMINAL, inspect_task_views
+        if task["current_state"] in TERMINAL and not any(transaction_journal.transactions_dir(task_dir).glob("*.json")):
+            print(json.dumps({"view_status": "SEALED", "documents": inspect_task_views(task_dir, task)}, ensure_ascii=False))
+            return 0
+        conn.close()
+        conn = dbmod.connect(db_path)
+        task = conn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
+
         # ---- 0. 未完成 journal 恢复判定（优先于一切清理）----
         recovered, block_reason = _recover_pending_journals(task_dir, conn, task, args.actor)
         if block_reason:
             print(f"ERROR: PROJECTION_RECONCILIATION_REQUIRED: {block_reason}", file=sys.stderr)
             return 5
+
+        if task["current_state"] in TERMINAL:
+            print(json.dumps({"view_status": "SEALED", "documents": inspect_task_views(task_dir, task)}, ensure_ascii=False))
+            return 0
 
         # ---- 1. 深度漂移检测 ----
         repairable, unrepaired = _detect_drift(task_dir, conn, task, args.actor)
@@ -563,6 +549,15 @@ def cmd_reconcile(args) -> int:
                 repair_rels.add(view_rel)
         rel_paths = ["status.yaml", "events.jsonl", "handoff.json", view_rel]
 
+        expected_revision = transaction_journal.current_revision(conn, task_id)
+
+        def before_prepare(dbconn):
+            current = dbconn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
+            if (current is None or current["current_state"] in TERMINAL
+                    or current["current_state"] != task["current_state"]
+                    or transaction_journal.current_revision(dbconn, task_id) != expected_revision):
+                raise ValueError("RECONCILE_INPUT_CHANGED: re-read current facts; sealed history is not rewritten")
+
         def db_and_render(conn, transaction_id=""):
             detail.update({
                 "transaction_id": transaction_id,
@@ -595,7 +590,7 @@ def cmd_reconcile(args) -> int:
                               target_state=task["current_state"] or "NEW",
                               owner_before=task["owner_role"] or "",
                               owner_after=task["owner_role"] or "",
-                              flush_id=flush_id)
+                              flush_id=flush_id, before_prepare=before_prepare)
 
         # ---- 3. 自校验（修复后必须一致）----
         refreshed = conn.execute("SELECT * FROM task WHERE task_id = ?", (task_id,)).fetchone()
@@ -616,7 +611,7 @@ def cmd_reconcile(args) -> int:
 
 
 def add_reconcile_subparsers(parser) -> None:
-    p = parser.add_parser("reconcile", help="V5.3.3: reconcile DB truth with projections; durable journal recovery; append-only RECONCILIATION event")
+    p = parser.add_parser("reconcile", help="reconcile DB truth with projections; durable journal recovery; append-only RECONCILIATION event")
     p.add_argument("--task", required=True, help="task id")
     p.add_argument("--task-dir", required=False, default=None, help="task directory path")
     p.add_argument("--project", required=False, default=None, help="resolve db via registry by project_id")

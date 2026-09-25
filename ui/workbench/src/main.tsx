@@ -2,13 +2,13 @@ import { createRoot } from 'react-dom/client';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import App from './App';
-import { useWorkbenchTheme } from './theme';
+import { AppearanceContext, useWorkbenchTheme } from './theme';
 import './styles/tokens.css';
 import './styles/workbench.css';
 
 function Root() {
-    const theme = useWorkbenchTheme();
-    return <ConfigProvider locale={zhCN} theme={theme}><App /></ConfigProvider>;
+    const { theme, appearance } = useWorkbenchTheme();
+    return <AppearanceContext.Provider value={appearance}><ConfigProvider locale={zhCN} theme={theme}><App /></ConfigProvider></AppearanceContext.Provider>;
 }
 
 const root = document.getElementById('root');

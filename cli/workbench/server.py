@@ -8,7 +8,7 @@ import json
 import os
 import signal
 import sys
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 import uuid
 
 from .service import BASE_ROOT, ReadError, SCHEMA, WorkbenchService, timestamp
@@ -25,18 +25,26 @@ class WorkbenchServer(ThreadingHTTPServer):
 class WorkbenchHandler(BaseHTTPRequestHandler):
     server: WorkbenchServer
 
+    def log_request(self, code="-", size="-") -> None:
+        # Wiki searches may contain private terms. HTTP diagnostics need the route/status,
+        # not another unbounded plaintext query log outside the 90-day usage store.
+        if urlsplit(self.path).path.startswith(("/api/wiki/", "/api/knowledge/")):
+            self.log_message('"%s %s" %s %s', self.command, urlsplit(self.path).path, code, size)
+        else:
+            super().log_request(code, size)
+
     def _send(self, status: int, payload: dict, *, allow: bool = False) -> None:
         body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        if allow:
-            self.send_header("Allow", "GET")
-        self.end_headers()
         try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            if allow:
+                self.send_header("Allow", "GET")
+            self.end_headers()
             self.wfile.write(body)
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:
             pass  # Navigation may cancel a read; it never requires a retry/write.
 
     def do_GET(self) -> None:
@@ -45,8 +53,14 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         try:
             if path == ["api", "health"]:
                 result = service.health()
+            elif len(path) == 3 and path[:2] == ["api", "skill-documents"]:
+                result = service.skill_document(path[2], parse_qs(urlsplit(self.path).query).get("path", [""])[0])
             elif path == ["api", "global"]:
                 result = service.global_view()
+            elif len(path) == 3 and path[:2] == ["api", "wiki"]:
+                result = service.wiki_view(path[2], parse_qs(urlsplit(self.path).query, keep_blank_values=True))
+            elif len(path) == 3 and path[:2] == ["api", "knowledge"]:
+                result = service.knowledge_view(path[2], parse_qs(urlsplit(self.path).query, keep_blank_values=True))
             elif len(path) >= 3 and path[:2] == ["api", "projects"]:
                 if len(path) == 3:
                     result = service.project_view(path[2])
@@ -65,8 +79,9 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             self._send(exc.status, {"schema": SCHEMA, "error": {"code": exc.code, "message": str(exc)},
                                     "failed_at": timestamp()})
         except Exception as exc:
-            self.log_error("read failed: %s: %s", type(exc).__name__, exc)
-            self._send(500, {"schema": SCHEMA, "error": {"code": "READ_FAILED", "message": str(exc)},
+            message = "知识读取失败，未修改索引或日志。" if path[:2] == ["api", "knowledge"] else str(exc)
+            self.log_error("read failed: %s: %s", type(exc).__name__, message)
+            self._send(500, {"schema": SCHEMA, "error": {"code": "READ_FAILED", "message": message},
                              "failed_at": timestamp()})
 
     def _read_only(self) -> None:

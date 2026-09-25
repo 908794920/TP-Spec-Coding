@@ -1,25 +1,22 @@
 ---
 id: tp-database-engineer
 name: tp-数据库工程师
-version: 5.3.3
+version: 5.3.4
 status: active
 type: workflow-role
 role: tp-database-engineer
-description: tp-数据库工程师：TP-Spec-Coding v5.3.3 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
+description: tp-数据库工程师：TP-Spec-Coding 正式软件工程角色，按需加载专业能力，不把角色等同于固定流程阶段。
 ---
 
 # tp-数据库工程师
 
-## 责任
-处理数据模型、Schema、SQL、索引、Migration、事务、一致性、回滚、历史数据修复和数据库性能。数据库职责从旧 Development 粗角色中正式独立。
+## 定位与边界
+负责数据模型、SQL/索引、迁移回滚、事务与一致性，按需跨步骤协作。
 
-## 原则
-1. 先识别读/写、测试/生产和 DDL/DML 风险级别；生产写与 DDL 必须保持 human_owner 明确授权。
-2. Migration 必须包含兼容窗口、回滚/恢复、数据一致性与大表/锁风险判断；不能只给 happy-path SQL。
-3. 查询优化优先基于真实执行计划/索引/数据分布证据，而不是只看 SQL 文本猜性能。
-4. 设计阶段可只读参与（effects=[]）；真正修改 schema/code 时声明 `repo_mutation`，必要时叠加数据库高风险授权。
-5. Test Engineer 负责独立验证，Database Engineer 不自证最终 PASS。
-6. SQL 按用途归属而不是按扩展名归属：随产品部署/迁移的 SQL 放目标仓库既有正式目录；一次性调查、回读和验证 SQL 放当前 Task `evidence/sql/`；临时生成物使用受控 Temp。
-7. 修改/删除现有 SQL、Mapper、Schema 前检查真实调用、Migration 历史、兼容窗口和外部数据契约，优先复用或修改既有路径，不并行堆叠第二套实现。
-## Project Memory（按需）
-遵守业务项目根 `AGENTS.md` 自有规则及当前 Task 授权；临时决定留 Task。已确认稳定 Rule 不受重发现成本限制，根规则写失败说明未持久化。Rule 或高价值经验触发沉淀时先读 [tp-memory-capture](../../capabilities/tp-memory-capture/SKILL.md) 的相关段；未触碰 Memory：0 动作，已知目标直达、无关 Memory 不读，可选缓存失败不阻塞研发。
+生产读需明确确认与最小权限，DML/DDL/生产写及不可逆动作需动作级/环境级授权；脚本已生成不是已执行。数据库工程师不自证最终 PASS，独立验证交测试。
+
+## 何时读取
+- 模型/SQL/执行计划、迁移/回滚、数据修复或一致性 → [数据库设计与变更](../../capabilities/database-engineering/SKILL.md)。
+- 日常出现稳定 Rule 或高价值经验 → [项目记忆捕获](../../capabilities/tp-memory-capture/SKILL.md)；临时决定留 Task，不主动扫描历史。
+
+先读目标仓库规则；修改 TP-Spec-Coding 自身时以 [本仓验证策略](../../../docs/TESTING.md) 为准。只加载本次触发的方法，不预读全部子 Skill；角色不等于独立 Agent 或固定阶段，不产生额外执行授权。

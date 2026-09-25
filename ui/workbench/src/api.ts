@@ -24,6 +24,11 @@ export function validateEnvelope<T>(value: unknown, key?: string, taskId?: strin
 }
 const projectPath = (key: string) => `/api/projects/${encodeURIComponent(key)}`;
 export const api = {
+  skillDocument: async (id: string, signal?: AbortSignal, path = '') => {
+    const value = record(await get(`/api/skill-documents/${encodeURIComponent(id)}?path=${encodeURIComponent(path)}`, signal));
+    if (value.id !== id || typeof value.content !== 'string' || typeof value.path !== 'string') throw new Error('设定文档响应不匹配');
+    return { content: value.content, path: value.path };
+  },
   health: async (signal?: AbortSignal) => {
     const value = await get('/api/health', signal);
     if (record(value).ready !== true || record(value).read_only !== true) throw new Error('工作台只读服务未就绪');

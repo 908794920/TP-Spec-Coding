@@ -1,4 +1,4 @@
 interface:
-  display_name: "Technical Review"
-  short_description: "Independently review traceability, quality, and residual risk"
-  default_prompt: "Use $technical-review to review this implementation."
+  display_name: "独立技术审查"
+  short_description: "对真实 Diff 和 subject 做独立代码审查；保留 Finding、定位、范围、证据及正式 Review 边界。"
+  default_prompt: "Use $technical-review for the applicable part of this task."

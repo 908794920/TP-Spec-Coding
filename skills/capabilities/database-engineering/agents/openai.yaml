@@ -1,0 +1,4 @@
+interface:
+  display_name: "数据库设计与变更"
+  short_description: "涉及模型、SQL、执行计划、迁移回滚或数据一致性时使用；依据真实环境与动作授权。"
+  default_prompt: "Use $database-engineering for the applicable part of this task."

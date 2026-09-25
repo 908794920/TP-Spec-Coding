@@ -1,4 +1,4 @@
-version: 5.3.3
+version: 5.3.4
 mode: record-first
 principle: business work first; Runtime owns bookkeeping
 daily_api:
@@ -51,11 +51,20 @@ daily_api:
     purpose: Finish the task and auto-generate final-result with truthful verification
       facts.
     notes:
-    - Actor defaults to the latest task owner; do not repeat role identity just for bookkeeping.
+    - Use the recorded Task coordination responsibility; step participants do not replace the Task coordinator or prove an Agent is online.
     - Every AC must be PASS, NOT_REQUIRED, N/A, DEFERRED_ACCEPTED, or OWNER_WAIVED before completion; PENDING/BLOCKED is rejected.
     - database_operations records each READ/DML/DDL separately; an unexecuted operation must be reconciled through its acceptance refs.
     - If a recorded verification subject changed, final truth is marked *_STALE instead of reusing PASS.
-    - Completion atomically writes generated/terminal-manifest.json with status/events/final-result so post-terminal drift can be detected without rewriting history.
+    - Completion commits the real terminal fact and converges status/events/continuation/final-result plus generated/terminal-manifest.json; projection failure is disclosed separately from committed facts.
+    - Repeating complete for a terminal Task returns its recorded terminal result without rewriting files, evidence or history. Cancellation is not completion.
+  task_complete_check:
+    command: tp-spec task complete --task <TASK> --task-dir <DIR> --db <DB> --check
+    purpose: Read-only tp-spec.closeout/v1 diagnostics shared with formal complete and the workbench.
+    notes:
+    - checks reports applicability, issues, facts, responsibility and depends_on; blockers and unknowns are aggregated. Unknown required facts never count as PASS.
+    - Covers registered execution/Work/integration, current subject and evidence, AC/Owner/database/visual obligations, effective route, cleanup and Delivery/Knowledge/Memory. It cannot prove unregistered business facts.
+    - No event, checkpoint, Change Set, cleanup, test or Knowledge request is created by preflight. Stable facts and applicable results are reused.
+    - One SQLite read snapshot does not lock product/evidence files; formal writes recheck their applicable inputs. See docs/agents/tp-software-lifecycle.md.
   workflow_confirm:
     command: tp-spec workflow confirm --task <TASK> --task-dir <DIR>
     purpose: human_owner-only audited confirmation for the currently bound ordinary(each_stage) or material workflow boundary.
@@ -64,23 +73,42 @@ daily_api:
     - A short Wake Prompt is returned only after the bound confirmation is accepted.
   task_delivery_converge:
     command: tp-spec task delivery-converge --task <TASK> --task-dir <DIR> --delivery-status READY|BLOCKED --reason <TEXT> ...
-    purpose: L2/L3 structured Delivery convergence bound to the current Verification PASS, Code Review PASS, and product change_set_id.
+    purpose: L0-L3 structured Delivery convergence with current product binding and the professional verification/review results required by the effective route; inapplicable results are NOT_REQUIRED, never synthetic PASS.
     notes:
     - A plain delivery checkpoint never satisfies this contract.
-    - Delivery does not accept a Knowledge disposition. If verified facts carry long-lived Knowledge signals, Runtime writes a separate KNOWLEDGE_CONVERGENCE_REQUEST in the same durable transaction.
-    - No Knowledge signal means no Request and no extra completion gate. A current Request without a trusted Result is routed as dispatch_effect(tp-knowledge).
+    - New READY Delivery records adopt tp-spec.closeout/v1 and always emit or reuse a task-input-bound KNOWLEDGE_CONVERGENCE_REQUEST, including when knowledge_signals is empty. Delivery cannot sign a Knowledge disposition.
+    - A current Request without a trusted Result is routed as dispatch_effect(tp-knowledge); tp-spec.task-learning/v1 checks effective Task/step/Work input coverage, targeted Knowledge handling and Memory assessment.
+    - Stable inputs reuse valid Delivery/Request/Result. Changed relevant inputs require reassessment; markerless historical deliveries retain legacy interpretation without fabricating a past assessment or retrofitting terminal Tasks.
     - Task-bound Context Usage may be attached with --context-usage-json; invalid telemetry is WARN+DROP and never changes the operation result.
+  task_execution:
+    command: tp-spec work plan|show|step|start|update|end --task <TASK> --db <DB> ...
+    purpose: Explicit versioned steps and distinct role participations in the existing event ledger; see docs/EXECUTION_FACTS.md for each subcommand.
+    notes:
+    - Plan registration does not invent completed work. Parent progress stays forward; waiting, child Fix and evidence applicability are separate facts.
+    - The coordinator owns Task integration; role/agent strings, working directory and unfinished participation do not prove identity, hard isolation or liveness.
+  work_results:
+    command: tp-spec workitem create|claim|complete|receive|candidate|release|retry|list --task <TASK> --db <DB> ...
+    purpose: Scoped Work results, exact coordinator receipts and actual integration candidates; see docs/WORK_UNITS.md.
+    notes:
+    - New JSON Work specs use tp-spec.work-unit/v1 and one security_context; do not mix legacy CLI scope overrides with --file.
+    - rework fix binds the existing parent step and issue identity. Work completion does not complete its parent step/Task or grant merge/push/cleanup authority.
+  security_change:
+    command: tp-spec task security source|propose|observe|show --task <TASK> --db <DB> ...
+    purpose: Evidence and original human attribution are separate from approval. Decisions reuse task scope-change; see docs/security-change-authority.md.
+    notes:
+    - New out-of-scope observable security changes require explicit human approval of the matching Proposal/scope/version. Discovery, tests, reviews and persisted text cannot grant it.
+    - Local source attestation is not host identity authentication; ordinary authorized repairs do not require repeated approval.
 project_api:
   project_bootstrap_check: tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only
   project_bootstrap: tp-spec project bootstrap --id <PROJECT> --root <ROOT>
-  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.3.3
+  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.3.4
 errors:
   PROJECT_BOOTSTRAP_AVAILABLE: read-only bootstrap check found a pristine project that may be initialized only after explicit human_owner action
   PROJECT_NOT_INITIALIZED: project ledger is not initialized; run project bootstrap/init first
   PROJECT_BOOTSTRAP_UNSAFE: bootstrap refused because the project is not pristine or ledger state is ambiguous
 runtime_owned:
 - task identity / contract metadata
-- current_state / current_phase / current_owner projection
+- current_state / legacy phase-owner facts / explicit plan coordinator and step-participation projections
 - status.yaml / events.jsonl / generated/continuation.md / generated/final-result.md / generated/terminal-manifest.json
 - provenance for adopted intake artifacts
 - durable journal and SQLite transaction recovery
@@ -97,13 +125,14 @@ optional_capabilities:
     gate
   structured_refs: available when precise provenance materially helps; missing refs
     are WARN
-  work_sessions: available for timing evidence; never a workflow blocker
+  work_sessions: legacy timing remains optional; explicitly bound new-plan participation must end before its adopted step or Work can finish, without implying process liveness
   acceptance_override: human_owner defer/waive without forging PASS
   scope_change: human_owner-only typed scope correction via `task scope-change`; optional repeated --repo-root replaces the complete effective repository set, while omission leaves it unchanged; it rebuilds projections without creating a new Task state or granting execution authority
   terminal_integrity: read-only `task terminal-check` compares terminal artifacts with the completion-time manifest and never reopens history
   knowledge_task_convergence: >-
-    Conditional typed effect: `tp-spec knowledge task-converge --task <TASK> --task-dir <DIR> --db <DB> --workspace-root <ROOT> --request-event-id <ID> --disposition CREATED|UPDATED|DUPLICATE|NO_DURABLE_INSIGHT --reason-code <CODE> --query <TEXT> --source <TASK-RELATIVE-PATH> [--knowledge-ref <REF>]`. It performs targeted current-project+shared search only; CREATED/UPDATED use exact-canonical lint + single-note incremental index before writing the tp-knowledge Result.
-  legacy_commit: compatibility/recovery surface; not the V5.3.3 daily role API
+    Required per-Task assessment after new READY Delivery, not a new lifecycle stage. Read `knowledge task-inputs --task <TASK> --task-dir <DIR> --db <DB>` and the referenced actual inputs, then `knowledge task-converge --task <TASK> --task-dir <DIR> --db <DB> --workspace-root <ROOT> --request-event-id <ID> --assessment <JSON>`.
+    Use per-input coverage entries, targeted current-project+shared queries and truthful Knowledge/Memory dispositions; mandatory assessment does not require low-value writes. Stable inputs replay without a duplicate request/result. Legacy --disposition payloads apply only to markerless requests. See agents/tp-knowledge/SKILL.md and skills/capabilities/knowledge-capture/SKILL.md.
+  legacy_commit: compatibility/recovery surface; not the daily role API
   context_effectiveness: >-
     Read-only report over Task-bound Context Usage receipts. It never gates workflow
     and never mutates Context assets.
@@ -115,7 +144,10 @@ rules:
     - task checkpoint / task verify / task block / task resume / task complete
     - task scope-change
     - workflow confirm / task delivery-converge / task delivery-accept-deferred
-    - work start / work end
+    - work plan / work step / work start / work update / work end
+    - workitem create / claim / complete / receive / candidate / release / retry
+    - rework fix / task security source / propose / observe
+    - knowledge task-converge
     - acceptance-override
     - legacy commit (compatibility/recovery only)
     direct_sqlite_edit: forbidden
@@ -125,7 +157,7 @@ rules:
       should own start/end when available
     pretask_rule: No TaskId means no fabricated work-session event; pre-task timing
       may remain unrecorded
-    workflow_effect: timing evidence never blocks task progression
+    workflow_effect: missing legacy timing does not block; unfinished explicitly adopted participation is work still to reconcile, not permission to infer an active process
   temporary_artifacts:
     storage: system_temp
     ownership: machine-local JSON manifest keyed by project/task/run

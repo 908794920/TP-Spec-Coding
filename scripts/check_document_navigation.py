@@ -270,6 +270,41 @@ def retired_process_files(base: Path) -> list[str]:
     return sorted(found)
 
 
+# 版本专用过程文档：文件名内嵌基座版本号（如 V531_xxx.md、MIGRATION_V529.md）。
+# 拼接式声明，避免扫描器自身保存完整版本字面量。
+_VERSION_IN_DOC_NAME_RE = re.compile(
+    r"(?:^|[_-])v?5\.\d+\.\d+|(?:^|[_-])v?5\d{2}(?=[_-]|\.md$)",
+    re.IGNORECASE,
+)
+
+
+def version_specific_doc_files(base: Path) -> list[str]:
+    """Return version-specific process documents that must not re-enter the release surface.
+
+    Retired designs, migration investigations and one-off implementation notes are
+    kept in Git history and ``CHANGELOG.md`` only (see "历史与过程文档政策" in
+    ``docs/README.md``).  Two shapes are rejected:
+
+    * any file under ``docs/decisions/`` — ADR / one-off decision archives;
+    * any ``docs/`` file whose name embeds a base contract version.
+
+    Git does not track directories and an emptied directory is not a release
+    artifact, so only files are reported — the same rule ``retired_process_files``
+    applies to retired prefixes.
+    """
+    docs = base / "docs"
+    if not docs.is_dir():
+        return []
+    found: list[str] = []
+    for path in sorted(docs.rglob("*")):
+        if not (path.is_file() or path.is_symlink()):
+            continue
+        rel = path.relative_to(base).as_posix()
+        if rel.startswith("docs/decisions/") or _VERSION_IN_DOC_NAME_RE.search(path.name):
+            found.append(rel)
+    return sorted(found)
+
+
 def validate_document_navigation(base: Path) -> list[str]:
     base = base.resolve()
     errors: list[str] = []
@@ -278,6 +313,10 @@ def validate_document_navigation(base: Path) -> list[str]:
             errors.append(f"missing document entrypoint: {rel}")
     for rel in retired_process_files(base):
         errors.append(f"retired process document file still exists: {rel}")
+    for rel in version_specific_doc_files(base):
+        errors.append(
+            "version-specific process document must not re-enter the release surface: " + rel
+        )
 
     errors.extend(validate_agent_guides(base))
     docs_readme = base / "docs" / "README.md"

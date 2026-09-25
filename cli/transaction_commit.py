@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Neutral durable transaction/projection primitives for V5.3.3 Record-first Runtime.
+"""Neutral durable transaction/projection primitives for Record-first Runtime.
 
 This module contains no legacy long-state workflow or Action-role policy.  Migration-only
 compatibility remains under :mod:`cli.migrations.v5_2_3`.
@@ -39,15 +39,9 @@ def _read(path: Path) -> str:
         return handle.read()
 
 def _continuation_sources(task_dir: Path, state: str) -> List[Path]:
-    """Return the formal artifacts completed before the current owner starts work."""
-    names = ["status.yaml", "events.jsonl", "task.md", "acceptance.md"]
-    if state in {"CLOSING", "COMPLETED"}:
-        names.extend(["implementation.md", "codex-review.md"])
-    elif state == "VERIFYING":
-        names.append("implementation.md")
-    # V5.3.3 §3.8/§10.2：新工件经集中注册表纳入 source digest（存在才纳入）
-    names.extend(projection_cmd.projection_source_names())
-    return [task_dir / name for name in names if (task_dir / name).is_file()]
+    """Shared input registry for generation, freshness checks and navigation."""
+    from .task_views import source_names
+    return [task_dir / name for name in source_names(task_dir, state)]
 
 def _source_digest(paths: List[Path], task_dir: Path, source_digests: Optional[Dict[str, str]] = None) -> str:
     parts: List[str] = []
@@ -59,14 +53,19 @@ def _source_digest(paths: List[Path], task_dir: Path, source_digests: Optional[D
     return hashlib.sha256("".join(parts).encode("utf-8")).hexdigest()
 
 def _generated_view_text(task_dir: Path, name: str, body: str, sources: List[Path], flush_id: str,
-                         source_digests: Optional[Dict[str, str]] = None) -> str:
+                         source_digests: Optional[Dict[str, str]] = None,
+                         identity: Optional[Dict[str, str]] = None) -> str:
     """渲染 generated view 文本（不落盘）。"""
     digest = _source_digest(sources, task_dir, source_digests)
     source_lines = "\n".join(f'  - "{p.relative_to(task_dir).as_posix()}"' for p in sorted(sources))
+    from .task_views import SCHEMA
+    identity_lines = "".join(f"{key}: {json.dumps(value, ensure_ascii=False)}\n" for key, value in (identity or {}).items())
     return (
         "---\n"
         "generated_view: true\n"
-        f'generator_version: "{ACTIVE_CONTRACT}"\n'
+        f'view_schema: "{SCHEMA}"\n'
+        + identity_lines
+        + f'generator_version: "{ACTIVE_CONTRACT}"\n'
         f'generated_at: "{dbmod.now_iso()}"\n'
         "source_files:\n" + source_lines + "\n"
         f'source_digest: "sha256:{digest}"\n'
@@ -110,46 +109,18 @@ def _current_view_rel(state: str) -> str:
     """当前视图投影的相对路径（按状态选择 continuation/final-result）。"""
     return "generated/final-result.md" if state == "COMPLETED" else "generated/continuation.md"
 
-def _acceptance_projection_summary(task_dir: Path) -> tuple[dict[str, int], list[dict]]:
-    """读取验收矩阵的结构化统计，仅用于当前视图展示。"""
-    path = task_dir / "acceptance.md"
-    if not path.is_file():
-        return {}, []
+def _acceptance_projection_summary(task_dir: Path) -> dict:
+    """Presentation only; missing/invalid declarations are not a zero-PENDING verdict."""
     try:
         from . import yaml_checks
         result = yaml_checks.check_acceptance_yaml(
-            _read(path), enforce_completion=False, allow_human_pending=True
+            _read(task_dir / "acceptance.md"), enforce_completion=False, allow_human_pending=True
         )
-        return dict(result.verdict_counts), list(result.database_operations)
-    except Exception:
-        return {}, []
-
-def _latest_projected_verification(task_dir: Path) -> str:
-    """Return the latest verification fact and mark subject changes as stale."""
-    path = task_dir / "events.jsonl"
-    if not path.is_file():
-        return "NOT_RECORDED"
-    latest = "NOT_RECORDED"
-    latest_subject = ""
-    latest_scope = "full"
-    try:
-        for line in _read(path).splitlines():
-            if not line.strip():
-                continue
-            obj = json.loads(line)
-            if obj.get("type") in {"REVIEW_COMPLETED", "VERIFICATION"} and obj.get("actor") == "tp-test-engineer":
-                latest = str(obj.get("decision") or "NOT_RECORDED").upper()
-                latest_subject = str(obj.get("subject_digest") or "")
-                latest_scope = obj.get("verification_scope", "full")
-                if latest_scope == "technical":
-                    latest += "_TECHNICAL"
-        if latest_subject:
-            from .digest import compute_verification_subject_digest
-            if compute_verification_subject_digest(task_dir, scope=latest_scope) != latest_subject:
-                return f"{latest}_STALE"
-    except Exception:
-        return "UNKNOWN"
-    return latest
+        return {"known": not result.issues, "counts": dict(result.verdict_counts),
+                "operations": list(result.database_operations), "issues": list(result.issues),
+                "not_required": result.no_acceptance_required}
+    except (OSError, UnicodeError, ValueError) as exc:
+        return {"known": False, "counts": {}, "operations": [], "issues": [str(exc)], "not_required": None}
 
 def _terminal_manifest_excluded(rel: str) -> bool:
     """终态清单忽略 Runtime 事务工件和清单自身。"""
@@ -253,42 +224,12 @@ def terminal_integrity(task_dir: Path, *, task_id: str) -> Dict[str, Any]:
 
 
 def _status_context(task_dir: Path) -> Dict[str, Any]:
-    """读取刚生成的 status 投影中的少量人类可读事实。"""
-    context: Dict[str, Any] = {
-        "blockers": [],
-        "next_responsibility": "unknown",
-        "change_set_id": "NOT_RECORDED",
-        "quality_facts": {},
-    }
-    path = task_dir / "status.yaml"
-    if not path.is_file():
-        return context
-    in_quality = False
+    """Read the just-written projection; a missing file remains unknown."""
+    from .task_views import parse_status
     try:
-        for raw in _read(path).splitlines():
-            line = raw.rstrip()
-            if line.startswith("blockers:"):
-                raw_value = line.split(":", 1)[1].strip()
-                try:
-                    value = json.loads(raw_value)
-                    context["blockers"] = value if isinstance(value, list) else []
-                except json.JSONDecodeError:
-                    context["blockers"] = []
-            elif line.startswith("next_responsibility:"):
-                context["next_responsibility"] = line.split(":", 1)[1].strip().strip('"\\\'') or "unknown"
-            elif line == "quality_facts:":
-                in_quality = True
-            elif in_quality and line.startswith("  ") and ":" in line:
-                key, value = line.strip().split(":", 1)
-                value = value.strip().strip('"\\\'')
-                context["quality_facts"][key] = value
-                if key == "change_set_id":
-                    context["change_set_id"] = value
-            elif line and not line.startswith(" "):
-                in_quality = False
-    except OSError:
-        return context
-    return context
+        return parse_status(_read(task_dir / "status.yaml"))
+    except (OSError, UnicodeError):
+        return {}
 
 
 def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str) -> str:
@@ -296,7 +237,7 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
     state = str(task["current_state"] or "NEW")
     owner = str(task["owner_role"] or "unknown")
     phase = str(task["current_stage"] or "intake")
-    from . import current_context
+    from . import current_context, task_views
     current = current_context.read_current(task_dir, task_id=str(task["task_id"]))
     # Stamp the source bytes actually consumed for the slice. A concurrent edit
     # must leave a detectable stale view, not a freshly hashed old summary.
@@ -308,9 +249,15 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
         # A newly created competing document (or a deleted source) cannot be
         # stamped as current using a slice read from the previous source set.
         raise ValueError("CURRENT_CONTEXT_SOURCES_CHANGED: rebuild the view from current canonical sources")
-    verification = _latest_projected_verification(task_dir)
     status_context = _status_context(task_dir)
     quality = status_context.get("quality_facts") or {}
+    verification = quality.get("verification", "NOT_RECORDED")
+    execution = status_context.get("execution") or {}
+    latest = status_context.get("last_activity") or {}
+    last_actor = latest.get("actor") or "历史未记录"
+    summary = task_views.excerpt(summary)
+    identity = {"task_id": str(task["task_id"]), "task_state": state}
+    nav = task_views.navigation(task_dir, task_id=str(task["task_id"]), current=current)
     blockers = status_context.get("blockers") or []
     blocker_text = "、".join(str(item) for item in blockers) if blockers else "无"
 
@@ -319,19 +266,25 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
             "# 生成的结项摘要\n\n"
             "- 任务状态：COMPLETED\n"
             f"- 最后阶段：{phase}\n"
-            f"- 最后执行角色：{owner}\n"
-            f"- 技术验证事实：{verification}\n"
+            f"- 最后记录角色（历史）：{last_actor}\n"
+            "- 当前执行角色 / 下一责任：无（任务已结束）\n"
             f"- 结论：{summary}\n"
         )
-        counts, database_operations = _acceptance_projection_summary(task_dir)
+        acceptance = _acceptance_projection_summary(task_dir)
+        counts, database_operations = acceptance["counts"], acceptance["operations"]
         not_required = counts.get("NOT_REQUIRED", 0) + counts.get("N/A", 0)
         unresolved = counts.get("PENDING", 0) + counts.get("BLOCKED", 0)
-        body += (
-            f"- 验收结论：PASS：{counts.get('PASS', 0)}；"
-            f"NOT_REQUIRED/N/A：{not_required}；"
-            f"DEFERRED_ACCEPTED：{counts.get('DEFERRED_ACCEPTED', 0)}；"
-            f"OWNER_WAIVED：{counts.get('OWNER_WAIVED', 0)}；未处置：{unresolved}\n"
-        )
+        if not acceptance["known"]:
+            body += "- 验收计数：未确认；" + task_views.excerpt("；".join(acceptance["issues"])) + "\n"
+        elif not counts and acceptance["not_required"]:
+            body += "- 验收声明：no_acceptance_required；" + task_views.excerpt(acceptance["not_required"].get("reason")) + "\n"
+        else:
+            body += (
+                f"- 验收结论：PASS：{counts.get('PASS', 0)}；"
+                f"NOT_REQUIRED/N/A：{not_required}；"
+                f"DEFERRED_ACCEPTED：{counts.get('DEFERRED_ACCEPTED', 0)}；"
+                f"OWNER_WAIVED：{counts.get('OWNER_WAIVED', 0)}；未处置：{unresolved}\n"
+            )
         if database_operations:
             db_items = [
                 f"{item.get('id', '?')}={item.get('type', '?')}/{item.get('status', '?')}"
@@ -339,12 +292,13 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
             ]
             body += "- 数据库操作：" + "、".join(db_items) + "\n"
         else:
-            body += "- 数据库操作：无\n"
+            body += "- 数据库操作：未列出操作条目（不能从 UI 人验推断执行）\n"
         body += (
             f"- Verification：{quality.get('verification', 'NOT_RECORDED')}\n"
             f"- Code Review：{quality.get('review', 'NOT_RECORDED')}\n"
             f"- Delivery：{quality.get('delivery', 'NOT_RECORDED')}\n"
             f"- Knowledge：{quality.get('knowledge', 'NOT_RECORDED')}\n"
+            f"- Memory：{quality.get('memory', 'NOT_RECORDED')}\n"
             f"- 未解决阻塞：{blocker_text}\n"
             "- 终态完整性：CAPTURED（同一结单事务生成 terminal manifest；后续使用 `task terminal-check` 检查漂移）\n"
         )
@@ -353,8 +307,11 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
             body += "- 延期验收项：" + "、".join(deferred) + "（见 acceptance.md）\n"
         if verification != "PASS":
             body += "- 提示：COMPLETED 表示任务工作已结束，不代表未记录/失败/延期的验证被改写为 PASS。\n"
-        body += current_context.render_current(current)
-        return _generated_view_text(task_dir, "final-result.md", body, sources, flush_id, source_digests)
+        body += _delivery_view_text(task_dir)
+        body += _learning_view_text(task_dir)
+        body += task_views.render_navigation(nav)
+        body += "\n> 终态按 Runtime 记录解释；业务文档中的旧进度、模板注释和最后阶段不能覆盖已完成事实。\n"
+        return _generated_view_text(task_dir, "final-result.md", body, sources, flush_id, source_digests, identity)
 
     # A handoff is an instruction surface: phase flexibility must not override
     # an actual wait or terminal state recorded by the Runtime.
@@ -369,22 +326,97 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
     elif "TECHNICAL" in verification:
         guidance = "技术限定结果不代表整体验收通过；按 workflow next 完成必要代码审查，保留完整验证及视觉/人验缺口，不直接交付或结单。"
     else:
-        guidance = "V5.3.3：phase 是查询事实，不是流程门禁；继续完成业务工作即可。"
+        guidance = "读取 workflow next 确认适用步骤、责任及授权；历史 phase 不是新的执行指令，不因摘要自动重做已完成工作。"
 
+    step = execution.get("current_step") or {}
+    next_step = execution.get("next_step") or {}
+    terminal = state in task_views.TERMINAL
+    step_text = "无（任务已结束）" if terminal else (f"{step.get('id')} · {step.get('title')} · {step.get('status')}" if step else "历史未记录 / 尚无已开始步骤")
+    roles = "无（任务已结束）" if terminal else "、".join(execution.get("current_roles") or []) or "未记录（计划角色不等于已参与）"
+    next_role = "无（任务已结束）" if terminal else status_context.get("next_responsibility") or "未知"
+    next_text = "无（任务已结束）" if terminal else (f"{next_step.get('id')} · {next_step.get('title')}（计划，尚未发生）" if next_step else "未知 / 无后续计划步骤")
     body = (
         "# 任务接续区\n\n"
         f"- 状态：{state}\n"
-        f"- 当前阶段：{phase}\n"
-        f"- 最近执行角色：{owner}\n"
-        f"- 最新 Change Set：{status_context.get('change_set_id') or 'NOT_RECORDED'}\n"
+        f"- 当前步骤：{step_text}\n"
+        f"- 当前执行角色：{roles}\n"
+        f"- 计划版本：{execution.get('plan_version', '历史未记录')}\n"
+        f"- Task 协调责任：{(execution.get('coordinator') or {}).get('role') or '历史未记录'}\n"
+        f"- 最后阶段（历史）：{phase}\n"
+        f"- 最近记录角色（历史）：{last_actor}；时间：{latest.get('time') or '历史未记录'}\n"
+        f"- 最新 Change Set：{status_context.get('change_set_id') or quality.get('change_set_id') or 'NOT_RECORDED'}\n"
         f"- 当前阻塞：{blocker_text}\n"
-        f"- 下一责任：{status_context.get('next_responsibility') or owner}\n"
+        f"- 等待子工作：{'、'.join(step.get('waiting_work_items') or []) or '未记录'}\n"
+        f"- 步骤等待原因：{task_views.excerpt(step.get('wait_reason')) or '未记录'}\n"
+        f"- 下一责任：{next_role}\n"
+        f"- 下一计划步骤：{next_text}\n"
         f"- 技术验证事实：{verification}\n"
-        f"- 最近记录：{summary}\n"
-        f"\n> {guidance}\n"
+        f"- 最近记录摘录（events.jsonl）：{summary}\n"
+        f"\n> {guidance} 未闭合参与不证明执行者在线。\n"
     )
-    body += current_context.render_current(current)
-    return _generated_view_text(task_dir, "continuation.md", body, sources, flush_id, source_digests)
+    body += task_views.render_navigation(nav)
+    return _generated_view_text(task_dir, "continuation.md", body, sources, flush_id, source_digests, identity)
+
+
+def _delivery_view_text(task_dir: Path) -> str:
+    try:
+        rows = [json.loads(line) for line in _read(task_dir / "events.jsonl").splitlines() if line.strip()]
+        row = next((item for item in reversed(rows) if isinstance(item, dict) and item.get("delivery")), None)
+    except (OSError, UnicodeError, ValueError):
+        return "- 交付处置与遗留风险：读取失败；见正式交付记录。\n"
+    if row is None:
+        return "- 交付处置与遗留风险：历史未记录；不得推断为无风险。\n"
+    value = row["delivery"]
+    from .task_views import excerpt
+    lines = [f"- 交付来源：`events.jsonl` `{row['id']}` / Runtime event `{row.get('runtime_event_id')}`；"
+             f"已登记 {value.get('status') or 'UNKNOWN'}（适用性见上方质量事实）。",
+             "- 交付说明：" + (excerpt(value.get("reason")) or "未记录")]
+    risks = value.get("residual_risks")
+    if not isinstance(risks, list):
+        lines.append("- 遗留风险：记录无法识别，待核对。")
+    elif risks:
+        lines.append(f"- 已登记遗留风险：{len(risks)} 项；最多显示 5 项，完整内容见来源事件。")
+        lines.extend("  - " + excerpt(risk, 160) for risk in risks[:5])
+    else:
+        lines.append("- 遗留风险：交付记录未列出条目；不是无风险保证。")
+    return "\n".join(lines) + "\n"
+
+
+def _learning_view_text(task_dir: Path) -> str:
+    """Keep outcomes short and link to the existing event, not four new reports."""
+    try:
+        rows = [json.loads(line) for line in _read(task_dir / "events.jsonl").splitlines() if line.strip()]
+        row = next((row for row in reversed(rows) if isinstance(row, dict) and row.get("learning")), None)
+    except (OSError, UnicodeError, ValueError):
+        return "- 提炼详细记录：读取失败；不得视为已处理。\n"
+    if row is None:
+        return "- 提炼详细记录：历史未记录；旧 NOT_REQUIRED 不证明已评估，无新增追补义务。\n"
+    value = row["learning"]
+    lines = [f"- 提炼来源：`events.jsonl` `{row['id']}` / Runtime event `{row.get('runtime_event_id')}`。"]
+    knowledge = value.get("knowledge") or []
+    memory = value.get("memory") or []
+    from .task_views import excerpt
+    for label, items in (("知识处置", knowledge), ("记忆处置", memory)):
+        lines.append(f"- {label}：{len(items)} 项；以下最多显示 5 项，全部处置按来源事件读取。")
+        for item in items[:5]:
+            lines.append(f"  - {item.get('id')}：{item.get('disposition')}；目标：`{item.get('target') or '未写入'}`；{excerpt(item.get('reason'), 160)}")
+    if value.get("memory_summary"):
+        lines.append("- 记忆判断摘要：" + excerpt(value["memory_summary"]))
+    return "\n".join(lines) + "\n"
+
+
+def _terminal_continuation_text(final_text: str) -> str:
+    """An explicit terminal redirect, sealed with the final result's exact inputs."""
+    from . import frontmatter
+    parts = frontmatter.split(final_text)
+    if parts is None:
+        raise ValueError("terminal final view is not generated text")
+    body = ("# 任务接续区\n\n- 状态：COMPLETED\n- 当前执行角色：无（任务已结束）\n"
+            "- 下一责任 / 下一动作：无（任务已结束）\n\n"
+            "> 此入口已随结单同步终态，仅供查询；不继续旧 ACTIVE 接续，不补造验收或新义务。\n\n"
+            "[读取最终结项摘要](./final-result.md)；[范围与历史](../task.md)；[验收记录](../acceptance.md)。\n")
+    text = "---\n" + parts[0] + "\n---\n\n" + body
+    return frontmatter.set_value(text, "content_digest", "sha256:" + hashlib.sha256(body.encode("utf-8")).hexdigest())
 
 def _probe_writable(task_dir: Path) -> None:
     """任务目录可写探测（探测文件立即删除，无持久副作用）。"""
@@ -507,7 +539,7 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
                          db_state_before: str = "", target_state: str = "",
                          owner_before: str = "", owner_after: str = "",
                          flush_id: str = "", before_prepare=None) -> Dict[str, str]:
-    """一致性提交核心（V5.3.3 durable journal 版）：
+    """一致性提交核心（durable journal 版）：
 
     1. BEGIN IMMEDIATE 获取 SQLite writer serialization；2. 读取 revision 并备份现有投影；
     3. 写 durable journal（PREPARED）；4. db_and_render(conn) 写 DB 并渲染投影；
@@ -523,6 +555,8 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
     effective_rel_paths = list(rel_paths)
     if target_state == "COMPLETED" and TERMINAL_MANIFEST_REL not in effective_rel_paths:
         effective_rel_paths.append(TERMINAL_MANIFEST_REL)
+    if target_state == "COMPLETED" and "generated/continuation.md" not in effective_rel_paths:
+        effective_rel_paths.append("generated/continuation.md")
     bak_dir = task_dir / f".v511-bak-{tx_id}"
     journal: Dict[str, Any] = {}
     journal_prepared = False
@@ -589,6 +623,8 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
 
         texts = db_and_render(conn, transaction_id=tx_id)
         if target_state == "COMPLETED":
+            # Both entrypoints belong to the same recovery boundary and terminal seal.
+            texts["generated/continuation.md"] = _terminal_continuation_text(texts["generated/final-result.md"])
             state_event = conn.execute(
                 "SELECT id FROM task_event WHERE task_id=? AND event_type='STATE' "
                 "AND to_state='COMPLETED' AND detail_json LIKE ? ORDER BY id DESC LIMIT 1",
@@ -719,7 +755,7 @@ def refresh_current_view(conn, task_dir: Path, task_id: str, *, summary: str = "
         revision = transaction_journal.current_revision(conn, task_id)
         if expected_revision is not None and revision != expected_revision:
             raise ValueError("fact revision advanced; rebuild against the latest projection")
-        if str(task["current_state"] or "") == "COMPLETED":
+        if str(task["current_state"] or "") in {"COMPLETED", "CANCELLED"}:
             conn.execute("ROLLBACK")
             started = False
             lock_scope.close()

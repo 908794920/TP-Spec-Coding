@@ -8,6 +8,7 @@ required:
   - sources
   - citations
 fields:
+  source: fixed source identity used to read the committed anchor bytes
   snapshot_id: committed source snapshot this anchor baseline binds
   documents: sha256 of Wiki Markdown at anchor capture time
   sources:

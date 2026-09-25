@@ -62,11 +62,14 @@ def _read(path: Path) -> dict[str, Any]:
         raise ValueError('EXECUTION_RECEIPT_INVALID: restore original evidence; do not rerun') from exc
 
 
-def _run_directory(tdir: Path, key: str) -> Path:
+def _run_directory(tdir: Path, key: str, *, create: bool = True) -> Path:
     current = tdir
     for name in ('evidence', 'pytest-executions'):
         current = current / name
-        current.mkdir(exist_ok=True)
+        if create:
+            current.mkdir(exist_ok=True)
+        elif not current.exists() and not current.is_symlink():
+            continue
         info = current.lstat()
         if (stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode)
                 or getattr(info, 'st_file_attributes', 0) & 0x400):
@@ -196,7 +199,7 @@ def _accept(tdir: Path, tid: str, db_path: str, run_dir: Path, payload: dict[str
 
 def run_pytest(*, task_id: str, task_dir: str, tests: list[str], authorization_evidence: str,
                request_id: str, summary: str, repo_root: str | None = None,
-               timeout: float = 600.0, db: str | None = None) -> dict[str, Any]:
+               timeout: float = 600.0, db: str | None = None, security_context: dict | None = None) -> dict[str, Any]:
     if not re.fullmatch(r'[A-Za-z0-9._:-]{1,96}', request_id or ''):
         raise ValueError('REQUEST_ID_INVALID: execution requires 1..96 safe ASCII characters')
     if not math.isfinite(timeout) or timeout <= 0:
@@ -208,12 +211,13 @@ def run_pytest(*, task_id: str, task_dir: str, tests: list[str], authorization_e
     payload = {'task_id': task_id, 'task_dir': str(tdir), 'db': db_path, 'tests': list(tests),
                'authorization_evidence': authorization_evidence, 'request_id': request_id,
                'repo_root': str(Path(repo_root).resolve()) if repo_root else None,
-               'summary': summary, 'timeout': timeout}
+               'summary': summary, 'timeout': timeout,
+               **({'security_context': security_context} if security_context is not None else {})}
     conn = dbmod.connect(db_path)
     try:
         record_first._load(conn, task_id)
         transaction_commit._assert_task_workspace_identity(conn, tdir, task_id)
-        run_dir = _run_directory(tdir, request_id)
+        run_dir = _run_directory(tdir, request_id, create=False)
         if run_dir.exists():
             info = run_dir.lstat()
             if (run_dir.is_symlink() or not run_dir.is_dir()
@@ -238,6 +242,13 @@ def run_pytest(*, task_id: str, task_dir: str, tests: list[str], authorization_e
         if root is None or root not in roots:
             raise ValueError('EXECUTION_REPO_REQUIRED: select one already bound development repository')
         selected = _selections(root, list(tests))
+        from . import security_authority as authority
+        security = authority.normalize_context(security_context or {"effect_scope": "regression"})
+        if security["effect_scope"] != "regression":
+            raise ValueError("SECURITY_POC_NOT_FORMAL: run isolated PoC under its separately authorized investigation, not formal regression")
+        security["paths"] = sorted(set(security["paths"]) | {Path(s.split("::", 1)[0]).relative_to(root).as_posix() for s in selected})
+        authority.check_effect(conn, task_id, security, task_dir=tdir)
+        authority.check_formal_evidence(authority.read(conn, task_id, tdir), tdir, [auth.item])
         before = capture_change_set([str(p) for p in roots])
         from .change_set import same_bound_product_content
         from .delivery_contract import require_scope_checkpoint
@@ -246,6 +257,7 @@ def run_pytest(*, task_id: str, task_dir: str, tests: list[str], authorization_e
             raise ValueError('DEVELOPMENT_CHANGE_SET_STALE')
         # Atomic mkdir is the no-rerun fence; never expire or automatically erase
         # a reserved request, including one interrupted before process creation.
+        _run_directory(tdir, request_id)
         try:
             run_dir.mkdir()
         except FileExistsError:
@@ -274,6 +286,8 @@ def run_pytest(*, task_id: str, task_dir: str, tests: list[str], authorization_e
                 or not same_bound_product_content(development['detail'], capture_change_set([str(p) for p in roots]))):
             raise ValueError('EXECUTION_PRECONDITION_CHANGED: reserved run was not launched')
         require_scope_checkpoint(conn, task_id, development_event_id=development['event_id'])
+        authority.check_effect(conn, task_id, security, task_dir=tdir)
+        authority.check_formal_evidence(authority.read(conn, task_id, tdir), tdir, [auth.item])
         recording.validate_bound_items(tdir, [auth.item])
     finally:
         conn.close()

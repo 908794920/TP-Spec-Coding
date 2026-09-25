@@ -1,0 +1,4 @@
+interface:
+  display_name: "交付收敛"
+  short_description: "每个 Task 最终交付时核对范围、候选、验收与知识记忆；复用有效结果，不代签或补造事实。"
+  default_prompt: "Use $delivery-convergence for the applicable part of this task."

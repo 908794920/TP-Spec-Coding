@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-TP-Spec-Coding itself is distributed under the repository's MIT License. The v5.3.3 implementation also studies or adapts small ideas from third-party open-source projects. No third-party repository is vendored into this source tree.
+TP-Spec-Coding itself is distributed under the repository's MIT License. The v5.3.4 implementation also studies or adapts small ideas from third-party open-source projects. No third-party repository is vendored into this source tree.
 
 ## Alibaba OpenCodeReview
 
@@ -100,3 +100,19 @@ W03 已用 npm 10.9.2 对新增锁文件离线归一化并执行 `ci --dry-run -
 - `https://github.com/thesongzhu/Friday/blob/51684b987c041193f079563056cc43aa823aa559/pnpm-lock.yaml`
 - `https://reactflow.dev/api-reference/react-flow`
 - `https://reactflow.dev/learn/layouting/layouting`
+
+
+## P1 视觉方法适配
+
+以下固定版本用于 `skills/capabilities/ui-prototype-design/SKILL.md` 及其 `references/interaction-and-motion.md` 的方法适配。未打包完整第三方仓库、上游引擎、安装器、Hook、字体或素材；两份许可证作为离线分发声明保留。适配文件的来源条款仍须保留，不能用仓库 MIT 声明替代第三方许可。
+
+| 来源与固定版本 | 实际阅读文件与采用部分 | 本项目取舍 |
+|---|---|---|
+| [Impeccable](https://github.com/pbakaus/impeccable/tree/f2c7051853848826aac2f4646581d62a732155ad)，Skill 4.3.1 | `.pi/skills/impeccable/SKILL.md`、`reference/operate.md`、`reference/animate.md`、`reference/adapt.md`、`scripts/impeccable`、根 `LICENSE` | 操作型产品的熟悉控件/状态、目的性动效、中断/清理、结构性响应式与真实浏览器证据；改写为中文 Task/角色/授权方法，补业务三类清单、组件实际调用、Mock 与产品边界 |
+| [Taste](https://github.com/Leonxlnx/taste-skill/tree/e79ca9ec7e071eb3a3b623c4fb752e853fc3ed58) | `skills/taste-skill/SKILL.md`、`skill.sh`、根 `LICENSE` | 仅互补采用先理解 brief、保留现有品牌和用户约束的方法；该版本声明不面向 dashboards/data tables/multi-step product UI，不能作为业务工作台的完整方法 |
+
+**许可与归属：** Impeccable，Copyright 2025 Paul Bakaus，Apache License 2.0，见 [原许可副本](licenses/impeccable-APACHE-2.0.txt)；Taste，Copyright (c) 2026 Leonxlnx，MIT，见 [原许可副本](licenses/taste-skill-MIT.txt)。副本分别与固定版本的 Git blob `bb3f6d23b1f8025514a62a12b51b47d73e3c9aa9`、`48a2f6640b81ff8eca9ce7f6a96337692713ef5b` 一致。固定 Impeccable 根 `NOTICE` 路径返回 404；未据此声称已扫描整仓的其他声明。
+
+**适配边界：** 两个固定来源在 2026-09-16 有已读取的提交记录，不能据此保证后续维护质量或称为最新版本。不采用营销页默认字体/配色/动效强度、固定断点/设备矩阵、强制新建 PRODUCT.md/DESIGN.md，亦不引入上游自动下载/安装链。现有栈足以实现时不增加包依赖或付费工具；普通适配成本是本地方法和导航维护，上游升级需要重新核对适用部分，不自动跟随。
+
+这是方法适配，不是上游引擎、全部命令或其检测器已安装/实测的声明。本地代表原型的实际浏览器范围及限制随 P1 Patch 交付记录，不能推为原业务、真实权限、Windows 安装或全版验收通过。

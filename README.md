@@ -34,6 +34,21 @@ Agent / Role / Skill 的权威拓扑来自 [`governance/role-catalog.yaml`](gove
 - **完整能力，按需执行。** 生命周期描述能力上限，不要求所有任务跑完整流程；Role 是能力集合，不是固定阶段包。
 - **机器路径留在机器上。** 公共仓库和业务项目只保存 portable identity；安装路径由用户级配置解析。
 
+## 升级内容与状态
+
+本轮源码交付保留既有版本，不是另起版本或自动发布。六组能力使用现有 Runtime 和只读工作台：
+
+| 范围 | 入口与边界 |
+|---|---|
+| 角色/专业方法 | [薄入口与能力导航](docs/AGENTS_AND_SKILLS.md)，按需读取视觉、交付与共享记忆方法 |
+| Task/Work | [步骤与角色事实](docs/EXECUTION_FACTS.md)、[Fix/结果/集成候选](docs/WORK_UNITS.md)；父流程前向，证据适用性单独判断 |
+| Wiki | [稳定来源与增量维护](wiki/README.md)；Git 固定 stable_ref snapshot，无有效变化不请求 LLM，保留非 Git 支持 |
+| 安全变更 | [范围与人工来源](docs/security-change-authority.md)；发现和建议不产生实施权限 |
+| 结单/提炼 | [只读预检与必做评估](docs/agents/tp-software-lifecycle.md)；复用有效结果，空信号不跳过知识/记忆判断 |
+| 文档/展示 | [同源派生视图](docs/TASK_VIEWS.md)与[只读工作台](docs/WORKBENCH.md)；保留历史，明确过期/未知 |
+
+源码 Patch 可供本地应用核对；不等于安装、用户验收或上线。锁定前端类型检查、构建和工作台真实浏览器交互仍待本地验证，具体对象/操作见工作台文档。安装升级、同版本标记兼容及回滚边界见 [Getting Started](docs/GETTING_STARTED.md)。
+
 ## 交给 AI 自动安装
 
 可以把下面内容直接复制给能够访问本机文件系统的 AI：
@@ -92,6 +107,8 @@ python -m cli.main base resolve --workspace-root "<project-root>"
 npm ci
 npm run dev
 ```
+
+Windows 上可用 `ui\install.cmd` 按锁文件准备依赖（锁文件未变化时跳过重复安装；`--python` 一并准备 Python 依赖，`--build` 额外构建，`--force` 强制重装），再用 `ui\start.cmd` / `ui\restart.cmd` / `ui\stop.cmd` 管理受管实例。
 
 需要满足 `package.json` 的 Node.js 版本范围，并已准备上文的 Python 运行依赖。访问终端输出的本机地址；`Ctrl+C` 关闭本次两端。启动不会自动安装依赖、初始化/迁移 Runtime 或执行测试。
 

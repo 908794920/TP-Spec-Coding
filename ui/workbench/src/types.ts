@@ -87,6 +87,15 @@ export interface DetailData extends FactRecord {
     evidence: FactRecord[];
     problems: Problem[];
 }
+export interface CloseoutCheck extends FactRecord {
+    id: string;
+    status: string;
+    required: boolean;
+    responsibility: string | null;
+    depends_on: string[];
+    issues: unknown[];
+    facts: FactRecord;
+}
 export interface CloseoutData extends FactRecord {
     task_id: string;
     state: string;
@@ -94,5 +103,9 @@ export interface CloseoutData extends FactRecord {
     blockers: unknown[];
     acceptance_issues: unknown[];
     route: FactRecord | null;
+    checks?: CloseoutCheck[];
+    unknowns?: string[];
+    next_actions?: FactRecord[];
+    already_terminal?: boolean;
     problems?: Problem[];
 }

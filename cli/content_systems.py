@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Shared Content Systems configuration and path resolution.
 
-V5.3.3 keeps Wiki and Knowledge as first-class content systems while separating
+keeps Wiki and Knowledge as first-class content systems while separating
 logical project mounts from physical storage.  This module is the single resolver
 used by both subsystems; ``cli.wiki.config`` remains a compatibility re-export.
 """
@@ -150,6 +150,13 @@ def _validate_config(data: Dict[str, Any]) -> None:
     wiki = systems["wiki"]
     if wiki.get("layout", "auto") not in {"auto", "workspace-root", "legacy-central"}:
         raise ContentSystemsConfigError("systems.wiki.layout must be auto|workspace-root|legacy-central")
+    source = wiki.get("source", {})
+    if not isinstance(source, dict):
+        raise ContentSystemsConfigError("systems.wiki.source must be a mapping")
+    if str(source.get("source_mode") or "AUTO").upper() not in {"AUTO", "GIT_REF", "FILESYSTEM"}:
+        raise ContentSystemsConfigError("systems.wiki.source.source_mode must be AUTO|GIT_REF|FILESYSTEM")
+    if "stable_ref" in source and not isinstance(source["stable_ref"], str):
+        raise ContentSystemsConfigError("systems.wiki.source.stable_ref must be a string")
     snap = wiki.get("snapshot", {})
     qual = wiki.get("quality", {})
     coverage = wiki.get("coverage", {})

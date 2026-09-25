@@ -1,12 +1,12 @@
 ---
 id: tp-wiki
 name: tp-wiki
-version: 5.3.3
+version: 5.3.4
 status: active
 type: human-owner-skill
 tool_agnostic: 本技能包不要求特定 IDE、账号、插件、模型或绝对路径；从 TP-Spec-Coding 相对路径加载即可。
 description: >
-  代码理解 Wiki 工程师（tp-wiki）：V5.3.3 代码理解 Wiki 专项 Skill：把当前源码事实维护为高信息密度、可溯源、可增量更新的代码认知地图。
+  代码理解 Wiki 工程师（tp-wiki）：代码理解 Wiki 专项 Skill：把稳定源码快照维护为高信息密度、可溯源、可增量更新的代码认知地图。
   不拥有 workflow state；可由 human_owner 显式调用，或由 human_owner 已配置的 canonical Wiki automation 调用。
 ---
 
@@ -14,16 +14,18 @@ description: >
 
 ## 0. 定位
 
-Wiki 是**当前源码的结构化理解与导航层**，不是源码本身：
+Wiki 是**稳定源码的结构化理解与导航层**，不是源码本身。正式 Git Wiki 只从用户指定、本地已有的 `refs/remotes/<remote>/<branch>` 固定 commit，排除工作区和本地未推送提交；不自行 fetch/pull 或选择默认分支，缺失来源则报告。非 Git 保留文件 hash/stability 来源，不提供指定分支保证；详细规则见 [Stable Source](../../wiki/rules/stable-source.md)：
 
 ```text
 Source Code = 当前技术事实
-Wiki        = 当前技术事实的结构化理解/导航
+Wiki        = 已选择的稳定源码快照的结构化理解/导航
 Task        = 一次研发行为的历史记录
 Knowledge   = 跨任务长期有效的业务/经验知识
 ```
 
-必须先用 Wiki 缩小源码范围，再回到真实源码核验关键事实。Wiki 不得覆盖源码事实，不得替代 Task 历史，不得写入 canonical Knowledge。
+按需使用 Wiki 缩小源码范围；上下文足够时可直接回到真实源码核验关键事实。Wiki 不得覆盖源码事实，不得替代 Task 历史，不得写入 canonical Knowledge。
+
+需要检索或读取已登记 Wiki 时，使用 [统一检索与使用记录](../../docs/WIKI_USAGE.md) 的 CLI 入口；已知文档直接读，实际采用才记 `context_usage`。不为统计新增搜索，不将页面浏览或维护当作研发采用。
 
 ## 1. 调用边界
 
@@ -54,7 +56,7 @@ Knowledge   = 跨任务长期有效的业务/经验知识
 
 本 Skill 负责：
 
-1. 根据 rebuild plan 回读真实源码；
+1. 根据 rebuild plan，用 `wiki source-read --path <repo-relative file>` 回读同一份固定源码（需要旧成功来源时加 `--baseline`），不引用工作区行号；
 2. 判断 semantic/structural 变化意味着什么；
 3. 更新真正受影响的 Wiki；
 4. 处理新增/删除/移动模块造成的 topology 变化；
@@ -114,7 +116,7 @@ Wiki 文档按能力/子系统组织，一个源码文件不等于一篇 Wiki。
 
 ## 7. Baseline 铁律
 
-唯一合法顺序：
+先固定来源并执行成功基线快路径；NO_CHANGE 直接结束，不启动模型维护。需要处理时顺序为：
 
 ```text
 SCAN → CLASSIFY → TOPOLOGY → PLAN → AI UPDATE
@@ -122,11 +124,13 @@ SCAN → CLASSIFY → TOPOLOGY → PLAN → AI UPDATE
 → snapshot-commit
 ```
 
-以下任一发生都禁止推进 baseline：AI 未更新、质量 FAIL、UNCERTAIN 未解决、L4 未做/失败、运行中断、scan 后源码再次变化。
+以下任一发生都禁止推进 baseline：必要语义更新未完成、质量 FAIL、UNCERTAIN 未解决、必要 L4 未做/失败、来源/策略不一致或提交前 FILESYSTEM 字节变化。Git follow-up 始终使用 staged SHA；stable_ref 后续推进留给下次运行，不能改用 dirty 工作区。临时收据清理失败与 baseline 是否已提交必须分别报告。
 
 
 
 ## 8. 按需 Context Pointers
+
+- 读取条件：Wiki 来源选择、日常增量、零 LLM、迁移或失败恢复；路径：[Stable Source](../../wiki/rules/stable-source.md)
 
 - 读取条件：首次构建或全量重建一个 repo 的可信 Wiki baseline；内容：语义聚类覆盖阈值与uncovered处置；路径：[首次构建](references/initial-build.md)
 - 读取条件：Anchor baseline 异常或 cite line 无法恢复；内容：anchors doctor修复条件与fail-closed重建边界；路径：[Anchor 恢复](references/anchor-recovery.md)

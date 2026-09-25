@@ -9,6 +9,11 @@ from __future__ import annotations
 from typing import Dict
 
 EVENT_LABELS: Dict[str, str] = {
+    "HUMAN_AUTHORITY_RECORDED": "人工来源登记（非身份认证）",
+    "SECURITY_PROPOSAL_RECORDED": "安全变更提案（非授权）",
+    "SECURITY_WORK_BOUND": "Work 效果范围绑定",
+    "SECURITY_EVIDENCE_RECORDED": "调查证据（非正式回归）",
+    "SCOPE_CHANGE": "范围变更 / 人工决定记录",
     "FACT": "事实记录", "CHECKPOINT": "检查点", "BLOCKER": "阻塞记录",
     "VERIFICATION_COMPLETED": "验证完成", "REVIEW_COMPLETED": "复审完成",
     "WORK_SESSION_STARTED": "工作会话开始", "WORK_SESSION_ENDED": "工作会话结束",

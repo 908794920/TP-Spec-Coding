@@ -26,3 +26,8 @@ semantic_challenges:
 - pipeline-stage-owner
 - active-contract
 - cite-strength
+
+source_binding:
+  source: fixed source_mode, stable_ref, commit, repo_prefix for this run
+  maintenance_digest: maintenance configuration and rule identity
+  invariant: source reads and audit receipts must use the same staged identity, not the worktree

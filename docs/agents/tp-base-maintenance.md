@@ -37,7 +37,7 @@
 
 ### 项目规则与 Memory 的同步边界
 
-项目稳定 Rule 的归位、去重及失败处理统一见 [`tp-memory-capture`](../../skills/capabilities/tp-memory-capture/SKILL.md)。这里只同步通用入口；不读取可选 Memory 正文来裁决规则、不迁移项目实例内容、不自动删除 PROJECT 或改候选 Skill 状态。既有 Memory 为 create-once，自有正文不会因模板更新被覆盖；新入口允许已知 Skill/片段直达，旧缓存不是必经加载步骤。
+项目稳定 Rule/高价值经验的归位、AGENTS 薄入口与可发现性核对、去重及失败处理统一见 [`tp-memory-capture`](../../skills/capabilities/tp-memory-capture/SKILL.md)。这里只同步通用入口；不读取可选 Memory 正文来裁决规则、不迁移项目实例内容、不自动删除 PROJECT 或改候选 Skill 状态。既有 Memory 为 create-once，自有正文不会因模板更新被覆盖；新模板不等于既有项目经验已迁移。已知 Skill/片段直达，INDEX 仅在目标未知且需要经验时导航；PROJECT 可保存详细稳定规则与事实线索，方法正文归项目 Skill。
 
 项目根文件必须为精确的 `AGENTS.md`。检测到 `Agents.md`/其他大小写变体、损坏标记或无法读取的根正文时，计划返回对应文件的 `BLOCKED`，不自动选择、改名、转码或合并；核对实际规则及所有权并获准解决冲突后再重试。只检查根目录同名变体，不扫描模块或 Memory。已有模块级 AGENTS 不批量改动。保留原件与必要来源，根规则未写成功不能声称已持久化，也不能先删除其 Memory 唯一副本。
 

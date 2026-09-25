@@ -43,18 +43,20 @@ def _ensure_utf8_stdio() -> None:
 # 历史位置精确 allowlist（任务书 §12）：这些位置允许出现旧版本 token（归档证据、
 # 显式迁移与旧版目录），保留原样以维持审计链；不参与活动契约纯度判定。
 # 前缀匹配（相对 BASE 的 posix 路径前缀）。
+# 注：`docs/decisions/` 前缀白名单已随版本专用过程文档清理移除（见 CHANGELOG 与本
+# 仓「历史与过程文档政策」），不再为决策归档开白名单；如需保留历史说明请写进 Git
+# 历史或 CHANGELOG，而不是留成发布面文件。
 _ALLOWED_HISTORY_PREFIXES = (
     "reports/",       # 历史质量报告
     "cli/migrations/",
     "scripts/migration/",
-    "docs/decisions/",  # 决策 ADR 归档：精确引用决策发生时的基座契约版本
 )
 # 精确文件 glob 匹配（相对 BASE）。
+# 同类清理：迁移说明与验证策略历史附录两份版本专用文档已移除，其 glob 白名单同步
+# 删除；版本专用文档不得再引入发布面，由 scripts/check_document_navigation.py 门禁拒绝。
 _ALLOWED_HISTORY_GLOBS = (
     "CHANGELOG.md",
     "THIRD_PARTY_NOTICES.md",  # 第三方声明归档：精确引用评估/发布发生时的版本号
-    "docs/MIGRATION_V529.md",  # 当前迁移说明必须精确引用上一活动契约
-    "docs/TESTING.md",  # 验证策略附录保留历史实测版本；不是当前测试执行授权
     "manifest.sha256",  # 生成产物，可引用历史文件名
     "db/registry.local.json",
     "db/registry.local.json.example",

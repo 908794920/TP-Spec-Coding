@@ -12,4 +12,23 @@ file_fields:
   - decode_status
 commit_rule: "Only current verification PASS (+ semantic audit PASS when required) may advance baseline."
 
-raw_sha_rule: "Every eligible source file is raw-SHA256 checked on each scan; size/mtime alone never prove unchanged content."
+raw_sha_rule: "FILESYSTEM hashes every discovered source on each scan; GIT_REF hashes changed blobs from a pinned commit diff. Size/mtime alone never prove unchanged content."
+optional_fields:
+  source:
+    source_mode: GIT_REF or FILESYSTEM
+    stable_ref: explicit refs/remotes/<remote>/<branch> for new GIT_REF runs; historical values retained; empty for FILESYSTEM
+    commit: immutable full commit SHA for GIT_REF; empty for FILESYSTEM
+    repo_prefix: repository-relative subtree prefix; no machine absolute path
+  source_policy_digest: source selection and fingerprint rules
+  maintenance_digest: merged maintenance config and relevant implementation/rules
+  scan_mode: GIT_INVENTORY or COMMIT_DIFF or FILESYSTEM_HASH
+  completion:
+    status: SUCCESS or UNVERIFIED
+    committed_at: successful baseline replacement time
+    change_set_id: verified run identity
+    subject_digest: durable Wiki subject
+    verification: retained verification result/time/subject/audit requirement
+    audit: retained audit result/time/subject/documents/topology, when required
+    affected_documents: Wiki pages selected by the final plan
+optional_git_file_fields: [git_blob, git_mode]
+identity_rule: "snapshot_id remains the content identity, not a commit SHA; legacy source identity must be explicitly initialized, never inferred from the worktree."

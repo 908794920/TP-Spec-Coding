@@ -50,7 +50,7 @@ def _fields(value: Any, path: str, required: set[str], optional: set[str] | None
 
 def protected_stages(level: str) -> set[str]:
     # Q01 未变：项目偏好不能将最终必要义务改成可选项。
-    return {"development"} | ({"verification"} if level != "L0" else set()) | (
+    return {"development", "delivery"} | ({"verification"} if level != "L0" else set()) | (
         {"review", "delivery"} if level in {"L2", "L3"} else set()
     )
 
@@ -119,6 +119,12 @@ def validate(data: dict[str, Any], catalog: dict[str, Any]) -> None:
     execution = data["execution"]
     _fields(execution, "execution", {"lazy_load_role_skill", "prefer_parallel_isolated_subagents", "sequential_isolation_fallback",
             "concurrent_workflow_stages", "assignment_effects", "delivery_fast_path"}, {"artifact_collection"})
+    # Keep doctor/routing validation consistent with the collection consumer.
+    collection = execution.get("artifact_collection", {})
+    _fields(collection, "execution.artifact_collection", set(), {"max_files", "max_file_bytes"})
+    for key, value in collection.items():
+        if type(value) is not int or value < 1:
+            _invalid("execution.artifact_collection." + key, "positive integer required")
     for key in ("lazy_load_role_skill", "sequential_isolation_fallback", "assignment_effects"):
         if execution.get(key) is not True:
             _invalid("execution." + key, "must remain enabled")

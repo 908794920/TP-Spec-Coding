@@ -173,7 +173,7 @@ def cmd_config_list(args) -> int:
         conn.close()
 
 
-# --- V5.3.3 C-01.4: controlled governed-YAML load subcommands ---
+# --- C-01.4: controlled governed-YAML load subcommands ---
 
 def _schema_to_jsonable(schema):
     """Render a schema dict with Python type objects as type-name strings."""
@@ -190,6 +190,15 @@ def _schema_to_jsonable(schema):
         else:
             out[k] = v
     return out
+
+
+def _with_resolved_file(name: str, schema: dict) -> dict:
+    """CLI 展示用：把 schema 路径里的 ``<active-version>`` 占位解析成活动契约版本。"""
+    from cli import config_schemas
+    resolved = dict(schema)
+    if resolved.get("file"):
+        resolved["file"] = config_schemas.resolve_schema_file(name)
+    return resolved
 
 
 def _emit_load_error(exc) -> int:
@@ -246,12 +255,15 @@ def cmd_config_schema(args) -> int:
                              ensure_ascii=False), file=sys.stderr)
             return 4
         print(json.dumps(
-            {"status": "ok", "schema": args.name, "definition": _schema_to_jsonable(schema)},
+            {"status": "ok", "schema": args.name,
+             "definition": _schema_to_jsonable(_with_resolved_file(args.name, schema))},
             ensure_ascii=False, indent=2,
         ))
         return 0
     print(json.dumps(
-        {"status": "ok", "schemas": {n: _schema_to_jsonable(s) for n, s in config_schemas.SCHEMAS.items()}},
+        {"status": "ok",
+         "schemas": {n: _schema_to_jsonable(_with_resolved_file(n, s))
+                     for n, s in config_schemas.SCHEMAS.items()}},
         ensure_ascii=False, indent=2,
     ))
     return 0
@@ -317,7 +329,7 @@ def add_config_subparsers(config_parser) -> None:
     p_list.add_argument("--db", required=False, default=None)
     p_list.set_defaults(func=cmd_config_list)
 
-    # --- V5.3.3 C-01.4: controlled governed-YAML load subcommands ---
+    # --- C-01.4: controlled governed-YAML load subcommands ---
     p_load = sub.add_parser("load", help="Load a governed YAML file, output read-only JSON")
     p_load.add_argument("--file", required=True, help="YAML file path (relative to base root or absolute)")
     p_load.add_argument("--schema", required=False, default=None, help="schema name for validation")

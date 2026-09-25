@@ -7,9 +7,9 @@ Wiki 使用两类指纹：
 
 ## 扫描真实性
 
-每次 scan 都会对全部 eligible source **重新计算 raw SHA-256**。`size/mtime` 只作为 provenance/诊断信息，不能单独证明文件未变化。
+来源协议见 [Stable Source](stable-source.md)。`FILESYSTEM` 每次 scan 对全部 scanner-visible source 重新计算 raw SHA-256；`size/mtime` 只作诊断，不能单独证明未变，防止 archive/re-download/sync 保持大小和时间戳却替换源码。
 
-这是为了防止 archive/re-download/sync 工具在**保持文件大小和时间戳**的情况下替换源码，造成 Wiki 永久漏检。raw hash 未变时可以复用旧 normalized 结果，避免重复文本归一化。
+`GIT_REF` 首次或 source policy 变化时对固定 commit 做 inventory；日常使用 commit diff，仅对变动 blob 计算指纹，未变对象复用基线结果。成功 SHA 和维护策略不变的 `maintain` 快路径不进入 scan。raw hash 相同且归一化配置/规则也相同时才复用 normalized 结果，不能跨算法版本沿用旧判断。
 
 ## 编码层
 
@@ -94,4 +94,4 @@ CITE_ANCHOR_RELOCATION_UNAVAILABLE
 - 当前 Wiki Markdown 与 manifest hash/citation 一致；
 - 当前 Wiki Markdown 仍与旧 anchor 的 document hash subject 一致。
 
-任何 source drift（即使只是 `COSMETIC`）都会拒绝 repair。原因是缺失的旧 semantic-line signatures 不存在于 snapshot hash 中，无法确定性反推；此时只能重新验证当前 citation 并建立新 baseline，或执行 full-rebuild。
+Git anchor 恢复读取成功 baseline 的不可变 commit，不读取已移动的 stable_ref 或 dirty 工作区；旧对象仍可用时可按上述条件重建。FILESYSTEM 的实际字节若已变化（即使只是 COSMETIC），hash 无法反推缺失旧签名，必须重新验证后建立新 baseline。两种模式均不得伪造旧行签名。

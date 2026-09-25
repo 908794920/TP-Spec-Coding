@@ -172,6 +172,36 @@ class WorkbenchService:
                                   if database else "配置、注册表和工作区清单是实时文件读取，不承诺多个文件的原子快照。")},
                 "data": data})
 
+    def skill_document(self, node_id: str, document_path: str = "") -> dict[str, Any]:
+        topology, error = snapshot._read_skill_topology(BASE_ROOT)
+        if error:
+            raise ReadError("TOPOLOGY_UNAVAILABLE", "能力目录读取失败")
+        node = topology["nodes"].get(node_id)
+        if not node:
+            raise ReadError("NOT_FOUND", "未找到对应能力设定", 404)
+        relative = document_path or str(node.get("path") or "")
+        if document_path:
+            try:
+                published = {line.split("  ", 1)[1] for line in
+                             (BASE_ROOT / "manifest.sha256").read_text(encoding="utf-8").splitlines()
+                             if "  " in line and not line.startswith("#")}
+            except OSError:
+                raise ReadError("DOCUMENT_INDEX_UNAVAILABLE", "文档目录不可读取")
+            if relative not in published:
+                raise ReadError("DOCUMENT_NOT_PUBLISHED", "该链接不在公开文档目录中", 404)
+        path = (BASE_ROOT / relative).resolve()
+        if not path.is_relative_to(BASE_ROOT.resolve()) or path.suffix.lower() != ".md":
+            raise ReadError("INVALID_DOCUMENT", "设定文档路径不受支持", 400)
+        try:
+            with path.open("rb") as handle:
+                raw = handle.read(512 * 1024 + 1)
+            if len(raw) > 512 * 1024:
+                raise ReadError("DOCUMENT_TOO_LARGE", "设定文档超过读取大小限制", 413)
+            content = raw.decode("utf-8-sig")
+        except (OSError, UnicodeError):
+            raise ReadError("DOCUMENT_UNREADABLE", "设定文档不存在或无法读取", 404)
+        return {"schema": SCHEMA, "id": node_id, "path": path.relative_to(BASE_ROOT.resolve()).as_posix(), "content": content}
+
     def global_view(self) -> dict[str, Any]:
         started = timestamp()
         data = snapshot.build_global_snapshot(active_base_root=BASE_ROOT)
@@ -180,6 +210,100 @@ class WorkbenchService:
         data["contexts"] = [asdict(ctx) for ctx in contexts]
         data["problems"] = [*data.get("problems", []), *issues]
         return self._response(data, None, started)
+
+    def wiki_view(self, operation: str, parameters: dict[str, list[str]]) -> dict[str, Any]:
+        if operation not in {"overview", "documents", "document", "search", "records"}:
+            raise ReadError("NOT_FOUND", "Wiki 接口不存在", 404)
+        from .wiki_view import WikiView
+        started = timestamp()
+
+        def value(name, default=""):
+            values = parameters.get(name, [default])
+            if len(values) != 1:
+                raise ReadError("INVALID_QUERY", f"参数不能重复：{name}", 400)
+            return values[0]
+
+        try:
+            days, page = int(value("days", "30")), int(value("page", "1"))
+        except ValueError as exc:
+            raise ReadError("INVALID_QUERY", "时间范围和页码必须为整数", 400) from exc
+        if days not in {7, 30, 90} or not 1 <= page <= 100000:
+            raise ReadError("INVALID_QUERY", "时间范围或页码不受支持", 400)
+        query, status, date = value("q").strip(), value("status", "all"), value("date")
+        if len(query) > 512 or status not in {"all", "hit", "zero", "failed"}:
+            raise ReadError("INVALID_QUERY", "查询内容或状态不受支持", 400)
+        if date:
+            try:
+                datetime.strptime(date, "%Y-%m-%d")
+            except ValueError as exc:
+                raise ReadError("INVALID_QUERY", "日期须为 YYYY-MM-DD", 400) from exc
+        contexts, issues = read_contexts()
+        view = WikiView(self, contexts, issues, days=days, project=value("project"))
+        if operation == "overview":
+            data = view.overview()
+        elif operation in {"documents", "search"}:
+            data = view.documents_view(page=page, query=query, repo=value("repo"), kind=value("kind"),
+                                       adopted=value("adopted") == "1")
+        elif operation == "document":
+            data = view.document_view(value("id"))
+        elif operation == "records":
+            data = view.records_view(page=page, status=status, date=date, query=query)
+        else:
+            raise ReadError("NOT_FOUND", "Wiki 接口不存在", 404)
+        result = self._response(data, None, started)
+        result["read"].update(consistency="independent_readonly_snapshots+live_files",
+            note="各项目 Runtime、Wiki 索引及日志分别只读；跨来源与实时文件不承诺原子快照。页面读取不会采集使用量。")
+        return result
+
+    def knowledge_view(self, operation: str, parameters: dict[str, list[str]]) -> dict[str, Any]:
+        if operation not in {"overview", "documents", "document", "records"}:
+            raise ReadError("NOT_FOUND", "知识库接口不存在", 404)
+        from .knowledge_view import KnowledgeView
+        from cli.knowledge.telemetry import KnowledgeError, PURPOSES
+        started = timestamp()
+
+        def value(name, default="", maximum=256):
+            values = parameters.get(name, [default])
+            if len(values) != 1 or len(values[0]) > maximum:
+                raise ReadError("INVALID_QUERY", "参数重复或超出长度限制", 400)
+            return values[0]
+
+        try:
+            days, page = int(value("days", "30")), int(value("page", "1"))
+        except ValueError as exc:
+            raise ReadError("INVALID_QUERY", "时间范围和页码必须为整数", 400) from exc
+        if days not in {7, 30, 90} or not 1 <= page <= 100000:
+            raise ReadError("INVALID_QUERY", "时间范围或页码不受支持", 400)
+        purpose, status, layer = value("purpose", "development"), value("status", "all"), value("layer")
+        if purpose not in PURPOSES | {"all"} or status not in {"all", "hit", "zero", "failed"} or layer not in {"", "canonical", "source"}:
+            raise ReadError("INVALID_QUERY", "用途、状态或层级不受支持", 400)
+        query, date, query_hash = value("q", maximum=512).strip(), value("date"), value("hash", maximum=64)
+        if query_hash and (len(query_hash) < 4 or any(c not in "0123456789abcdef" for c in query_hash)):
+            raise ReadError("INVALID_QUERY", "查询哈希须为至少四位的小写十六进制前缀", 400)
+        if date:
+            try:
+                datetime.strptime(date, "%Y-%m-%d")
+            except ValueError as exc:
+                raise ReadError("INVALID_QUERY", "日期须为 YYYY-MM-DD", 400) from exc
+        contexts, issues = read_contexts()
+        try:
+            view = KnowledgeView(self, contexts, issues, days=days, project=value("project"), purpose=purpose)
+            if operation == "overview":
+                data = view.overview()
+            elif operation == "documents":
+                data = view.documents_view(page=page, query=query, layer=layer, kind=value("kind"),
+                    maintenance=value("maintenance"), adopted=value("adopted") == "1")
+            elif operation == "document":
+                data = view.document_view(value("id"))
+            else:
+                data = view.records_view(page=page, status=status, date=date, task=value("task", maximum=128),
+                    query_hash=query_hash, receipt=value("receipt"))
+        except KnowledgeError as exc:
+            raise ReadError(exc.code, "知识读取失败；来源、文档或版本可能已变化，请重新读取。", 409) from None
+        result = self._response(data, None, started)
+        result["read"].update(consistency="independent_readonly_snapshots+live_files",
+            note="知识索引、日志和任务记录分别只读；跨来源与实时文件不承诺原子快照。人工搜索和页面全文读取不采集使用量。")
+        return result
 
     def project_view(self, key: str) -> dict[str, Any]:
         started, context = timestamp(), self._context(key)
@@ -203,6 +327,13 @@ class WorkbenchService:
             # not the current-subject verdict consumed by the Runtime itself.
             data["verification"] = {**data.get("verification", {}), "current_applicability": "not_evaluated",
                                     "source": "historical_task_event"}
+            from cli.task_views import inspect_task_views
+            from cli.execution import read_execution
+            rows = conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id,)).fetchall()
+            task_dir = Path(context.project_root) / ".tp-spec" / "tasks" / task_id
+            data["documents"] = inspect_task_views(task_dir, task, events=rows,
+                                                   execution=read_execution(conn, task, rows=rows))
+            data["problems"] = [*data.get("problems", []), *data["documents"]["problems"]]
             data["timeline_scope"] = {"limit": 50, "returned": len(data.get("timeline", [])),
                 "total": conn.execute("SELECT count(*) FROM task_event WHERE task_id=?", (task_id,)).fetchone()[0]}
         return self._response(data, context, started, database=True, task_revision=revision)
@@ -230,7 +361,6 @@ class WorkbenchService:
             except (OSError, UnicodeError, ValueError) as exc:
                 raise ReadError("CLOSEOUT_UNAVAILABLE", f"既有结单预检未能完成：{exc}", 409) from exc
         data["source"] = "record_first.completion_check"
-        data["coverage_note"] = "完整保留既有预检返回的 blockers/acceptance_issues/route；不承诺它已穷举 Runtime 的全部独立门禁。责任方与恢复条件仅使用返回的结构化字段。"
-        if any(str(value).startswith("ROUTE_CHECK_FAILED") for value in data.get("blockers", [])):
-            data["problems"] = [{"code": "CLOSEOUT_PARTIAL", "message": "路由预检未完成，其他已返回问题仍保留。"}]
+        if data.get("unknowns"):
+            data["problems"] = [{"code": "CLOSEOUT_PARTIAL", "message": "部分必需检查尚未取得确定结果；已知问题保留，未知项不会视为通过。"}]
         return self._response(data, context, started, database=True, task_revision=revision)

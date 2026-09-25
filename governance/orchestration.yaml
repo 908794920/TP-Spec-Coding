@@ -1,4 +1,4 @@
-version: "5.3.3"
+version: "5.3.4"
 entry_role: tp-software-lifecycle
 level_resolution:
   rule: MAX_RISK_FLOW
@@ -79,6 +79,7 @@ pipelines:
     - {stage: development, phase: development, role: tp-development-engineer, required: true, mode: DIRECT, effects: [repo_mutation]}
     - {stage: verification, phase: verification, role: tp-test-engineer, required: false, trigger: behavioral_change, mode: DIRECT, effects: []}
     - {stage: review, phase: review, role: tp-code-reviewer, required: false, trigger: deep_review, mode: AUTO_REVIEW, effects: []}
+    - {stage: delivery, phase: delivery, role: tp-integration-engineer, required: true, mode: DIRECT, effects: []}
   L1:
     - {stage: requirement, phase: requirement, role: tp-product-manager, required: false, trigger: unresolved_scope, mode: DIRECT, effects: []}
     - {stage: architecture, phase: architecture, role: tp-software-architect, required: false, trigger: architecture_risk, mode: AUTO_PLANNING, effects: []}
@@ -86,6 +87,7 @@ pipelines:
     - {stage: development, phase: development, role: tp-development-engineer, required: true, mode: DIRECT, effects: [repo_mutation]}
     - {stage: verification, phase: verification, role: tp-test-engineer, required: true, mode: DIRECT, effects: []}
     - {stage: review, phase: review, role: tp-code-reviewer, required: false, trigger: deep_review, mode: AUTO_REVIEW, effects: []}
+    - {stage: delivery, phase: delivery, role: tp-integration-engineer, required: true, mode: DIRECT, effects: []}
   L2:
     - {stage: requirement, phase: requirement, role: tp-product-manager, required: false, trigger: unresolved_scope, mode: DIRECT, effects: []}
     - {stage: product, phase: product, role: tp-product-manager, required: false, trigger: contextual, mode: DIRECT, effects: []}

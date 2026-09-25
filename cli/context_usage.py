@@ -15,6 +15,7 @@ MEMORY_PROJECT_FRAGMENTS = {
     "index", "runtime", "structure", "constraints", "verification", "navigation",
 }
 SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+RECEIPT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 WINDOWS_ABSOLUTE_RE = re.compile(r"^[A-Za-z]:[\\/]")
 MAX_ITEMS_PER_EVENT = 32
 _PREFIX = {
@@ -70,6 +71,11 @@ def _valid_asset_id(source_type: str, asset_id: str) -> bool:
         project, fragment = payload.rsplit("#", 1)
         return bool(project) and fragment in MEMORY_PROJECT_FRAGMENTS
     return True
+
+
+def _valid_receipt_id(value: str) -> bool:
+    """Validate an optional portable retrieval receipt without creating one."""
+    return bool(value and _portable(value) and RECEIPT_ID_RE.fullmatch(value))
 
 
 def _normalize_context_usage(value: Any) -> tuple[list[dict[str, Any]], list[str]]:
@@ -147,12 +153,25 @@ def _normalize_context_usage(value: Any) -> tuple[list[dict[str, Any]], list[str
             else:
                 warnings.append(f"context usage item #{index + 1} has invalid query_hash; field omitted")
 
+        receipt_id = str(raw.get("receipt_id") or "").strip()
+        if receipt_id:
+            if _valid_receipt_id(receipt_id):
+                item["receipt_id"] = receipt_id
+            else:
+                warnings.append(f"context usage item #{index + 1} has invalid/non-portable receipt_id; field omitted")
+
         key = (source_type, asset_id)
         existing = normalized_by_key.get(key)
         if existing is not None:
             warnings.append(f"duplicate context asset collapsed: {source_type}/{asset_id}")
             if _STAGE_RANK[stage] < _STAGE_RANK[str(existing["stage"])]:
                 continue
+            # Keep optional receipt/query metadata when an equivalent or later
+            # stage arrives without repeating it. This preserves provenance
+            # without inferring an ``adopted`` stage.
+            for optional_key in ("receipt_id", "query_hash"):
+                if optional_key not in item and optional_key in existing:
+                    item[optional_key] = existing[optional_key]
         normalized_by_key[key] = item
     return list(normalized_by_key.values()), warnings
 
@@ -166,7 +185,11 @@ def normalize_context_usage(value: Any) -> tuple[list[dict[str, Any]], list[str]
 
 def emit_warnings(warnings: Iterable[str]) -> None:
     for warning in warnings:
-        print(f"WARN: context telemetry: {warning}", file=sys.stderr)
+        try:
+            print(f"WARN: context telemetry: {warning}", file=sys.stderr)
+        except Exception:
+            # A failed optional warning sink must not abort the Runtime operation.
+            return
 
 
 def merge_context_usage(*groups: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -197,7 +220,7 @@ def knowledge_usage_from_delivery(
                 "source_type": "knowledge",
                 "asset_id": f"knowledge:{stable_id}",
                 "stage": "retrieved",
-                # V5.3.3 telemetry convention: a source-layer hit is represented as
+                # telemetry convention: a source-layer hit is represented as
                 # fallback, even though an explicit source-layer query can also cause it.
                 "outcome": "fallback" if layer == "source" else "success",
                 "confidence": "high",
@@ -206,6 +229,9 @@ def knowledge_usage_from_delivery(
             }
             if SHA256_RE.fullmatch(query_hash):
                 item["query_hash"] = query_hash
+            receipt_id = str(receipt.get("receipt_id") or "").strip()
+            if _valid_receipt_id(receipt_id):
+                item["receipt_id"] = receipt_id
             usage.append(item)
     for ref in resolved_knowledge_refs or []:
         if not isinstance(ref, dict):

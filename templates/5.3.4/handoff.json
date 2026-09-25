@@ -1,0 +1,12 @@
+{
+  "schema_version": "5.3.4",
+  "handoff_id": "",
+  "flush_id": "",
+  "consumed": false,
+  "actor": "",
+  "summary": "",
+  "changes": [],
+  "risks": [],
+  "evidence": [],
+  "next": { "state": "", "owner": "" }
+}

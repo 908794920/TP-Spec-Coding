@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""V5.3.3 fail-closed YAML 解析与工件结构校验（Hardening P0-3/P1-4）。
+"""fail-closed YAML 解析与工件结构校验（Hardening P0-3/P1-4）。
 
-依据：《V5.3.3 执行AI统一修复与自验证任务》§9.1（使用真实 YAML 解析，禁止仅正则）
-与《V5.3.3 源码级发布审查报告》P1-4（deferred_acceptance 仍使用正则）。
+依据：《执行AI统一修复与自验证任务》§9.1（使用真实 YAML 解析，禁止仅正则）
+与《源码级发布审查报告》P1-4（deferred_acceptance 仍使用正则）。
 
 设计：
 - ``parse_yaml_fail_closed(text, name)``：真实 YAML 解析（pyyaml 可用时），
@@ -132,6 +132,7 @@ class AcceptanceCheckResult:
     verdict_counts: Dict[str, int] = field(default_factory=dict)
     acceptance_ids: List[str] = field(default_factory=list)
     page_verification: Optional[Dict[str, Any]] = None
+    visual_evidence_pending: bool = False
     no_acceptance_required: Optional[Dict[str, Any]] = None
 
     @property
@@ -139,7 +140,8 @@ class AcceptanceCheckResult:
         return ["ACCEPTANCE_PENDING" if self.pending_rows else "YAML_INVALID"]
 
 
-def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_human_pending: bool = False) -> AcceptanceCheckResult:
+def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_human_pending: bool = False,
+                          require_visual_evidence: bool = False) -> AcceptanceCheckResult:
     """校验 acceptance.md 正文 YAML 块 + 验收表格结论列。
 
     Final Hardening（Task 4 §6.2 / P0-3 / P0-6）：
@@ -148,6 +150,7 @@ def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_h
     - 每个 AC 行的验收条件不得为空；
     - verdict=PASS 的 AC 行必须存在证据路径；
     - PENDING/BLOCKED 行在结单时拒绝。
+    - 准备阶段允许视觉证据待登记；视觉 PASS、正式验证和结单仍要求证据清单。
     """
     result = AcceptanceCheckResult()
     ac_row_count = 0
@@ -232,8 +235,8 @@ def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_h
                 if not isinstance(required, bool):
                     result.ok = False
                     result.issues.append("page_verification.visual.required must be boolean")
+                refs = visual.get("acceptance_refs")
                 if "acceptance_refs" in visual:
-                    refs = visual.get("acceptance_refs")
                     if not isinstance(refs, list) or any(
                             not isinstance(value, str) or not value.strip()
                             for value in refs
@@ -250,8 +253,15 @@ def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_h
                                 + ", ".join(unknown_refs)
                             )
                 if required is True and not str(visual.get("evidence_manifest") or "").strip():
-                    result.ok = False
-                    result.issues.append("page_verification.visual required=true needs evidence_manifest")
+                    # A future obligation is not a malformed declaration. Positive claims
+                    # and formal gates remain strict, even when other ACs may be pending.
+                    scoped_refs = [value.strip() for value in refs if isinstance(value, str)] if isinstance(refs, list) else []
+                    visual_pass = any(ac_verdicts.get(ac) == "PASS" for ac in (scoped_refs or ac_verdicts))
+                    if enforce_completion or require_visual_evidence or visual_pass:
+                        result.ok = False
+                        result.issues.append("page_verification.visual required=true needs evidence_manifest")
+                    else:
+                        result.visual_evidence_pending = True
             mode = pv.get("mode")
             if enforce_completion and mode == "human":
                 human_pass = any(r.get("verdict") == "PASS" for r in result.human_rows)

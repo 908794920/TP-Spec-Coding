@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """架构评审正式执行链（Hardening P0-2/P0-6）。
 
-依据：《V5.3.3 执行AI统一修复与自验证任务》§7 与《V5.3.3 源码级发布审查报告》
+依据：《执行AI统一修复与自验证任务》§7 与《源码级发布审查报告》
 P0-2（无架构评审可 DEVELOPING）/P0-6（新增角色不能通过正式 CLI 执行）。
 
 提供 ``tp-spec review record``：
@@ -373,8 +373,20 @@ def _cmd_code_review_record(args) -> int:
                     return 8
                 evidence_items.append(dict(checked.item))
 
+        from . import security_authority as authority
+        security = authority.context_from_args(args, effect="regression")
+        if not security["paths"]:
+            security["paths"] = authority.changed_paths(current_change_set)
+        authority.check_effect(conn, task_id, security, task_dir=task_dir)
+        authority.check_formal_evidence(authority.read(conn, task_id, task_dir), task_dir, evidence)
+        findings = authority.validate_findings(conn, task_id, task_dir, getattr(args, "findings", None),
+            decision=str(args.decision).upper(), count=findings_count, snapshot=current_change_set)
+        if findings:
+            evidence_items.append(findings["artifact"])
+
         result_payload = {
             "schema": "tp-spec.code-review-result/v1",
+            "security_context": security, "scoped_findings": findings,
             "task_id": task_id,
             "review_kind": str(args.kind).upper(),
             "actor_role": args.actor,
@@ -409,6 +421,7 @@ def _cmd_code_review_record(args) -> int:
             "change_set_id": change_set_id,
             "verification_event_id": int(verification.row["id"]),
             "verification_scope": scope,
+            "security_context": security, "scoped_findings": findings,
             "repo_roots": repo_roots,
             "change_set_snapshot_digest": str(current_change_set.get("snapshot_digest") or ""),
             "findings_count": int(args.findings_count or 0),
@@ -425,6 +438,12 @@ def _cmd_code_review_record(args) -> int:
         view_rel = _current_view_rel(task["current_state"])
 
         def db_and_render(conn, transaction_id=""):
+            authority.check_effect(conn, task_id, security, task_dir=task_dir)
+            authority.check_formal_evidence(authority.read(conn, task_id, task_dir), task_dir, evidence)
+            current_findings = authority.validate_findings(conn, task_id, task_dir, getattr(args, "findings", None),
+                decision=str(args.decision).upper(), count=findings_count, snapshot=current_change_set)
+            if current_findings != findings:
+                raise ValueError("REVIEW_FINDINGS_CHANGED: reread the scoped findings")
             from .recording import validate_bound_items
             validate_bound_items(task_dir, evidence_items)
             # Preflight happened outside the write lock. Bind the result only if
@@ -575,11 +594,18 @@ def cmd_review_record(args) -> int:
                     print(f"ERROR: REVIEW_PASS_CONTENT_GATE: evidence invalid: {ev_check.error}", file=sys.stderr)
                     return 8
                 evidence_items.append(dict(ev_check.item))
+        from . import security_authority as authority
+        findings = authority.validate_findings(conn, task_id, task_dir, getattr(args, "findings", None),
+            decision=str(args.decision).upper(), count=int(args.findings_count or 0))
+        authority.check_formal_evidence(authority.read(conn, task_id, task_dir), task_dir, evidence)
+        if findings:
+            evidence_items.append(findings["artifact"])
         detail = {
             "schema": event_contract.EVENT_SCHEMA,
             "operation": "REVIEW",
             "result_status": "BLOCKED" if str(args.decision).upper() == "BLOCKED" else "COMPLETED",
             "flush_id": flush_id,
+            "scoped_findings": findings,
             "review_kind": args.kind,
             "round": args.round,
             "artifact": artifact_rel,
@@ -609,6 +635,11 @@ def cmd_review_record(args) -> int:
         # ---- Task 3 Transaction 阶段：同一 durable transaction 处理
         # artifact + 事件 + 投影 + journal/backup（禁止 DB 提交后再改 artifact）----
         def db_and_render(conn, transaction_id=""):
+            current_findings = authority.validate_findings(conn, task_id, task_dir, getattr(args, "findings", None),
+                decision=str(args.decision).upper(), count=int(args.findings_count or 0))
+            if current_findings != findings:
+                raise ValueError("REVIEW_FINDINGS_CHANGED")
+            authority.check_formal_evidence(authority.read(conn, task_id, task_dir), task_dir, evidence)
             detail["transaction_id"] = transaction_id
             conn.execute(
                 "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,evidence_path,created_at) VALUES (?,?,?,?,?,?,?)",
@@ -643,7 +674,7 @@ def cmd_review_record(args) -> int:
 
 
 def add_review_subparsers(subparsers) -> None:
-    p = subparsers.add_parser("review", help="V5.3.3: formal architecture/code review commands")
+    p = subparsers.add_parser("review", help="formal architecture/code review commands")
     sub = p.add_subparsers(dest="subcommand", required=True)
 
     pr = sub.add_parser("record", help="Record a formal ARCHITECTURE or CODE review decision")
@@ -654,6 +685,9 @@ def add_review_subparsers(subparsers) -> None:
     pr.add_argument("--decision", required=True, choices=sorted(_DECISIONS), help="PASS | REVISE | BLOCKED | NEEDS_FIX | FAIL")
     pr.add_argument("--artifact", required=False, default=None, help="architecture review artifact; CODE results use a Runtime-generated machine artifact")
     pr.add_argument("--round", type=int, required=False, default=1, help="review round number")
+    pr.add_argument("--findings", help="task-relative evidence/*.json with tp-spec.scoped-findings/v1; required for Findings and NEEDS_FIX/FAIL/REVISE")
+    from .security_authority import add_context_args
+    add_context_args(pr, effect="regression")
     pr.add_argument("--findings-count", type=int, required=False, default=0, help="findings count")
     pr.add_argument("--evidence", action="append", help="real evidence/* path(s); required for PASS, not a generated receipt")
     pr.add_argument("--summary", required=False, default="architecture review", help="review summary")

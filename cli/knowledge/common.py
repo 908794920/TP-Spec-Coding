@@ -26,7 +26,7 @@ KIND_CODES = {
 KINDS = set(KIND_CODES)
 ID_PATTERN = re.compile(r"^[A-Z][A-Z0-9]*-(PROJ|DOM|SYS|MOD|FEAT|API|DATA|JOB|OPS|DEC|SRC)-\d{3,}$")
 WIKILINK_RE = re.compile(r"!?\[\[([^\]]+)\]\]")
-FRONTMATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n(?:---|\.\.\.)[ \t]*\r?\n", re.DOTALL)
+FRONTMATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 TASK_REF_RE = re.compile(r"^TASK-[A-Za-z0-9._-]+$")
 SRC_REF_RE = re.compile(r"^(?:[A-Z][A-Z0-9]*-)?SRC-[A-Za-z0-9._-]+$")
 
@@ -53,14 +53,15 @@ def parse_frontmatter(text: str) -> Tuple[Optional[Dict[str, Any]], str, Optiona
     m = FRONTMATTER_RE.match(text)
     if not m:
         return None, text, "no frontmatter", 1
+    body_start_line = text[:m.end()].count("\n") + (1 if m.group(0).endswith("\n") else 2)
     try:
         fm = yaml.safe_load(m.group(1))
         if not isinstance(fm, dict):
-            return None, text[m.end():], "frontmatter not a mapping", text[:m.end()].count("\n") + 1
+            return None, text[m.end():], "frontmatter not a mapping", body_start_line
         fm = normalize_yaml_scalars(fm)
-        return fm, text[m.end():], None, text[:m.end()].count("\n") + 1
+        return fm, text[m.end():], None, body_start_line
     except Exception as exc:
-        return None, text[m.end():], f"frontmatter parse error: {exc}", text[:m.end()].count("\n") + 1
+        return None, text[m.end():], f"frontmatter parse error: {exc}", body_start_line
 
 
 def read_note(path: Path, *, root: Path, scope: str) -> Dict[str, Any]:
