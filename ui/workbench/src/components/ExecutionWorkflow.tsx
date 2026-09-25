@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Alert, Button, Pagination, Select, Tag, Typography } from 'antd';
-import { record, records, text, timestampText } from '../facts';
+import { record, records, stageLabel, text, timestampText } from '../facts';
 import type { WorkflowHandle, WorkflowProps } from './WorkflowStrip';
 import { Disclosure, Fields } from './Facts';
 import { actions, currentDescription, filterEvents, groupParticipations, latestHandoff, newestEvents,
@@ -142,6 +142,21 @@ export const ExecutionWorkflow = forwardRef<WorkflowHandle, WorkflowProps>(({ wo
         });
     }
     useImperativeHandle(ref, () => ({ locateCurrent: locate }));
+    if (noPlan) {
+        const recordedStage = record(workflow.current_step).stage ? record(workflow.current_step)
+            : records(workflow.steps).find(step => step.stage === task.phase);
+        return <section className="workflow-strip execution-workflow" aria-label="任务评估与流程进展">
+          <div className="task-assessment"><div><span className="eyebrow">任务评估</span><strong className="assessment-level">{text(workflow.effective_level) || '等级未解析'}</strong></div>
+            <p>阶段推进、角色工作和事件明细见下方工作关系。</p></div>
+          <div className="execution-summary">
+            <p><span>当前记录阶段</span><strong>{terminal ? '任务已结束' : stageLabel(recordedStage) || text(task.phase) || '尚未记录'}</strong></p>
+            <p><span>下一步</span><strong>{terminal ? '无后续执行' : stageLabel(workflow.next_step) || '尚未解析'}</strong><small>流程建议不代表已开始执行</small></p>
+          </div>
+          {!!latestBlockers.length && <div className="task-blocker" role="status"><strong>任务阻塞</strong>{latestBlockers.map((blocker, index) => <p key={index}>{text(blocker.reason) || '原因未记录'}</p>)}</div>}
+          {!!text(workflow.error) && <Alert type="warning" showIcon title="流程路由未解析" description={text(workflow.error)}/>}
+          <Disclosure label="流程与评估来源"><p>当前展示流程配置和已有事件；此任务未登记独立执行计划，不补造步骤起止或角色参与记录。</p><Fields value={{ risk_level: task.risk_level, flow_level: task.flow_level, effective_level: workflow.effective_level, phase: task.phase, route: workflow.route }}/></Disclosure>
+        </section>;
+    }
     return <section className="workflow-strip execution-workflow" aria-label="任务评估与执行步骤">
       <div className="task-assessment"><div><span className="eyebrow">任务评估</span><strong className="assessment-level">{text(workflow.effective_level) || '等级未解析'}</strong></div>
         <div className="assessment-reason">{text(assessment.summary) ? <><span className="muted">计划登记时的评估依据</span><Typography.Paragraph ellipsis={{ rows: 2, expandable: 'collapsible', symbol: expanded => expanded ? '收起' : '展开依据' }}>{text(assessment.summary)}</Typography.Paragraph></> : <><p>未登记结构化评估依据</p><Button size="small" type="link" onClick={onDocuments}>查看当前任务文档</Button></>}

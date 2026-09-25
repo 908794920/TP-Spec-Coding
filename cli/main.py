@@ -64,22 +64,6 @@ def _ensure_utf8_stdio() -> None:
                 pass
 
 
-def _cmd_not_implemented_m0(args) -> int:
-    group = getattr(args, "group", None) or "unknown"
-    print(f"not implemented in M0: {group}", file=sys.stderr)
-    return 255
-
-
-def _add_stub_group(subparsers, name: str) -> None:
-    """为 M0 未实现的命令组注册一个占位 subparser，M1-M4 替换。
-
-    用 argparse.REMAINDER 捕获任意剩余参数（含 --option），避免 stub 报错。
-    """
-    p = subparsers.add_parser(name)
-    p.add_argument("rest", nargs=argparse.REMAINDER, help="subcommand args (not implemented in M0)")
-    p.set_defaults(func=_cmd_not_implemented_m0)
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tp-spec",

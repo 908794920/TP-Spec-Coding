@@ -296,6 +296,16 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
             raise ValueError(f"terminal task cannot accept checkpoint: {current}")
         if current == "BLOCKED":
             raise ValueError("task is BLOCKED; use 'task resume' after the blocker is resolved")
+        from .evidence import validate_evidence_path
+
+        def validate_explicit_evidence():
+            for item in evidence:
+                checked = validate_evidence_path(tdir, item)
+                if not checked.ok:
+                    raise ValueError(f"CHECKPOINT_EVIDENCE_INVALID: {checked.error}")
+
+        # Validate new references before collection; replay above preserves old receipts.
+        validate_explicit_evidence()
         target = "ACTIVE"
         now = dbmod.now_iso()
         flush_id = f"CHECKPOINT-{uuid.uuid4().hex}"
@@ -361,6 +371,8 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
             result["change_set_snapshot_digest"] = str(change_set["snapshot_digest"])
 
         def writer(dbconn, transaction_id=""):
+            # A referenced file may have moved while outputs were being collected.
+            validate_explicit_evidence()
             authority.check_effect(dbconn, task_id, security, task_dir=tdir)
             authority.classify_evidence(dbconn, task_id, tdir, security, ev, actor=actor, transaction_id=transaction_id)
             recording.validate_bound_items(tdir, collected)
@@ -688,6 +700,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                     acceptance_path.read_text(encoding="utf-8-sig"),
                     enforce_completion=False,
                     allow_human_pending=True,
+                    require_visual_evidence=True,
                 )
                 visual_issues = [
                     issue for issue in acceptance.issues

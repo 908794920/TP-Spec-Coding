@@ -10,4 +10,4 @@
 
 ## Pre-task intake 使用
 
-需求分析可以早于正式 Task。需要 pre-task 工件时，可复制当前版本的 `requirement-knowledge.md` / `requirement-clarifications.md` / `requirement-decisions.md` 到 intake/preliminary 目录，保持 `task_id: ""`，不得为了填 TaskId 提前创建任务。阻塞清零后由 `tp-spec task create --from-intake <DIR>` 统一建立正式 Task、绑定 TaskId/当前契约并记录 provenance。
+需求分析可以早于正式 Task。需要 pre-task 工件时，可复制当前版本的 `requirement.md` / `requirement-clarifications.md` / `requirement-decisions.md` 到 intake/preliminary 目录，保持 `task_id: ""`，不得为了填 TaskId 提前创建任务。阻塞清零后由 `tp-spec task create --from-intake <DIR>` 统一建立正式 Task、绑定 TaskId/当前契约并记录 provenance。

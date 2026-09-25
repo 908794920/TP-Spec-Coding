@@ -185,7 +185,11 @@ def normalize_context_usage(value: Any) -> tuple[list[dict[str, Any]], list[str]
 
 def emit_warnings(warnings: Iterable[str]) -> None:
     for warning in warnings:
-        print(f"WARN: context telemetry: {warning}", file=sys.stderr)
+        try:
+            print(f"WARN: context telemetry: {warning}", file=sys.stderr)
+        except Exception:
+            # A failed optional warning sink must not abort the Runtime operation.
+            return
 
 
 def merge_context_usage(*groups: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:

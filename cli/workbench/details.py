@@ -66,6 +66,7 @@ def acceptance_view(task_dir: Path) -> dict[str, Any]:
         result.update(status="read", rows=rows, sha256=hashlib.sha256(raw).hexdigest(),
                       issues=checked.issues, pending=checked.pending_rows,
                       page_verification=checked.page_verification,
+                      visual_evidence_pending=checked.ok and checked.visual_evidence_pending,
                       deferred=checked.deferred_entries, waived=checked.owner_waiver_entries,
                       database_operations=checked.database_operations,
                       no_acceptance_required=checked.no_acceptance_required)

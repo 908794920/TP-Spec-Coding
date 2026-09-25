@@ -1,13 +1,15 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { GraphObject } from './model';
 import { stateLabel, stateTone } from '../facts';
+import type { WorkflowStage } from './workflowRelations';
 export type WorkbenchNode = Node<{
     object?: GraphObject;
+    stage?: WorkflowStage;
     label?: string;
     count?: number;
     dim?: boolean;
     emphasis?: boolean;
-}, 'work' | 'workGroup'>;
+}, 'work' | 'workGroup' | 'stage'>;
 export function WorkNode({ data, selected }: NodeProps<WorkbenchNode>) {
     const row = data.object;
     if (!row)
@@ -19,6 +21,7 @@ export function WorkNode({ data, selected }: NodeProps<WorkbenchNode>) {
     <div className={`node-state tone-${stateTone(row.kind, row.status)}`} title={stateLabel(row.kind, row.status)}>{stateLabel(row.kind, row.status)}</div>
     <div className="node-owner" title={row.owner}>负责人：{row.owner || '未记录'}</div>
     {row.kind === 'work_item' && <Handle type="source" position={Position.Right} isConnectable={false}/>}
+    {row.kind === 'task' && <Handle id="stages" type="source" position={Position.Bottom} isConnectable={false}/>}
   </div>;
 }
 export function WorkGroup({ data }: NodeProps<WorkbenchNode>) { return <div className="work-group-label"><strong>{data.label}</strong><span>{data.count} 项 · 边框表示归属，不是执行依赖</span></div>; }

@@ -119,6 +119,12 @@ def validate(data: dict[str, Any], catalog: dict[str, Any]) -> None:
     execution = data["execution"]
     _fields(execution, "execution", {"lazy_load_role_skill", "prefer_parallel_isolated_subagents", "sequential_isolation_fallback",
             "concurrent_workflow_stages", "assignment_effects", "delivery_fast_path"}, {"artifact_collection"})
+    # Keep doctor/routing validation consistent with the collection consumer.
+    collection = execution.get("artifact_collection", {})
+    _fields(collection, "execution.artifact_collection", set(), {"max_files", "max_file_bytes"})
+    for key, value in collection.items():
+        if type(value) is not int or value < 1:
+            _invalid("execution.artifact_collection." + key, "positive integer required")
     for key in ("lazy_load_role_skill", "sequential_isolation_fallback", "assignment_effects"):
         if execution.get(key) is not True:
             _invalid("execution." + key, "must remain enabled")

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Tabs } from 'antd';
+import { Alert, Button, Tabs } from 'antd';
 import type { GraphObject } from '../graph/model';
 import type { CloseoutData, DetailData, Envelope, ReadState, TaskData } from '../types';
 import { record, stateLabel, stageLabel } from '../facts';
@@ -82,6 +82,8 @@ export function TaskDetail({ object, snapshot, initialTab, defaultTab, details, 
         <ReadStatus {...details}/>
         {mismatch && <p className="warning" role="status">详情与画布的账本版本不同，不能合并为同一次快照。请重新读取页面，以下保留各自读取时间。</p>}
         {data && <Problems items={data.problems}/>}
+        {data && record(data.acceptance).visual_evidence_pending === true && <Alert type="info" showIcon
+          title="页面视觉验收待完成" description="证据清单尚未登记。当前数据已读取，验收通过和结单时仍需检查必需证据。"/>}
         {tab === 'blockers' && <>
           {data && <><Fields value={data.blockers} labels={{ waiting: '当前结构化等待', legacy_blocker: '历史自由文本阻塞', source: '来源', note: '解释边界' }}/>
             <Disclosure label="Verification / Review / Delivery 的原始阻塞字段"><Fields value={{ verification: record(record(data.verification).recorded).detail, review: record(record(data.review).recorded).detail, delivery: record(record(data.delivery).recorded).detail }}/></Disclosure></>}

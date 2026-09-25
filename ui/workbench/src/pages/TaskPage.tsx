@@ -3,7 +3,7 @@ import { api } from '../api';
 import { useRead } from '../useRead';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Context, Envelope, ReadState, TaskData } from '../types';
-import { record, records, stageLabel, stateLabel, text } from '../facts';
+import { record, stateLabel, text } from '../facts';
 import { buildGraph, type GraphObject } from '../graph/model';
 import type { GraphHandle } from '../graph/TaskGraph';
 import { TaskDetail, type TaskDetailTab } from '../components/TaskDetail';
@@ -32,18 +32,9 @@ function WorkflowDiagnostics({ context, taskId, data, workItemId }: {
     data: TaskData;
     workItemId?: string;
 }) {
-    const workflow = record(data.workflow), support = record(data.data_support), steps = records(workflow.steps);
+    const workflow = record(data.workflow), support = record(data.data_support);
     return <div className="task-diagnostics">
       <EventTimeline events={data.timeline} scope={data.timeline_scope} workItemId={workItemId}/>
-      <Disclosure className="legacy-workflow-reference" label={`旧流程阶段参考 · ${steps.length} 项`}>
-        <p className="muted">以下是历史响应中的阶段记录，仅用于诊断与来源核对，不作为当前执行路线，也不补齐缺失阶段。</p>
-        {steps.length ? <ol className="flow-steps">
-          {steps.map((step, i) => <li key={`${text(step.stage)}:${i}`}>
-            <strong>{stageLabel(step) || '阶段未解析'}</strong><span>{text(step.status) || '状态未记录'}</span>
-            <small>阶段定义来源：{text(step.definition_source) || '未记录'} · 完成记录来源：{text(step.completion_source) || '未记录'}</small>
-          </li>)}
-        </ol> : <p>当前响应没有可展示的历史阶段记录。</p>}
-      </Disclosure>
       <Disclosure className="route-diagnostics" label="路由与来源字段">
         <Fields value={{ current_step: workflow.current_step, current_step_source: workflow.current_step_source,
           next_step: workflow.next_step, next_step_source: workflow.next_step_source, route: workflow.route,
@@ -85,7 +76,7 @@ function TaskWorkspace({ context, snapshot, revision }: {
     const returnFocus = useRef<HTMLElement | null>(null);
     const selected = model.nodes.find(n => n.id === selectedId);
     const taskObject = model.nodes.find(n => n.id === model.taskNodeId);
-    const support = record(data.data_support), task = record(data.task);
+    const task = record(data.task);
 
     const onDetails = useCallback(() => requestDetails(true), []);
     const onRefreshDetails = useCallback(() => { requestDetails(true); refreshDetails(n => n + 1); }, []);
@@ -199,10 +190,10 @@ function TaskWorkspace({ context, snapshot, revision }: {
       <summary>工作关系</summary>
       <div className="task-auxiliary-body">
         <div className="section-heading"><h3>工作关系</h3><div className="graph-actions">
-          <Button size="small" onClick={() => workflow.current?.locateCurrent()}>定位当前步骤</Button>
+          <Button size="small" onClick={() => graph.current?.locateCurrent()}>定位当前步骤</Button>
           <Button size="small" disabled={task.state !== 'BLOCKED'} onClick={() => locateGraph(model.taskNodeId)}>定位阻塞 Task</Button>
         </div></div>
-        <p className="support-note">Task / WorkItem 关系来自账本；新版结果契约见下方子工作详情，旧记录缺失字段不补造。Agent Thread 绑定：{text(support.agent_thread_binding) || '未提供'}。</p>
+        <p className="support-note">沿阶段查看参与角色、工作摘要和事件记录。点击阶段卡片展开明细，或用上方按钮定位当前阶段。</p>
         {graphMounted ? <Suspense fallback={<div className="graph-canvas graph-loading" role="status">正在加载关系图…</div>}>
           <TaskGraph ref={graph} model={model} selectedId={selectedId} onOpen={onOpen}/>
         </Suspense> : <p className="support-note" role="status">展开工作关系后加载关系图。</p>}

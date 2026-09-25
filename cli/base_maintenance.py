@@ -40,7 +40,7 @@ from cli.environment import (
 from cli.knowledge.common import load_project_registry, resolve_knowledge_project
 from cli.project_portability import normalize_project_portability, project_portability_plan
 from cli.project_surface import project_surface_plan, sync_project_surface
-from cli.runtime_portability import apply_runtime_rebind, runtime_rebind_plan
+from cli.runtime_portability import apply_runtime_rebind, runtime_db_path, runtime_rebind_plan
 from cli.active_task_portability import scan_active_task_portability
 from cli.installation_lifecycle import configure_installation, installation_doctor, installation_migration
 from cli.namespace_migration import namespace_plan, migrate_namespace
@@ -109,18 +109,7 @@ def _safe_remove_link(path: Path) -> None:
 
 def _runtime_project_status(workspace: Path, project_id: str) -> Dict[str, Any]:
     """Read project Runtime contract without creating or mutating SQLite."""
-    candidates: List[Path] = []
-    if project_id:
-        candidates.append(workspace / ".tp-spec" / "db" / f"{project_id}.db")
-    for row in dbmod.list_projects():
-        try:
-            root = row.get("root_path")
-            if root and same_path(Path(str(root)), workspace):
-                raw = row.get("db_path")
-                if raw:
-                    candidates.append(Path(dbmod._resolve_project_db_abs(str(raw))))
-        except Exception:
-            continue
+    candidates = [runtime_db_path(workspace, project_id)]
     seen: Set[str] = set()
     for candidate in candidates:
         cp = canonical_path(candidate)
@@ -144,7 +133,7 @@ def _runtime_project_status(workspace: Path, project_id: str) -> Dict[str, Any]:
                 conn.close()
         except Exception as exc:
             return {"exists": True, "db_path": str(cp), "valid": False, "issues": [f"{type(exc).__name__}: {exc}"], "base_version": "", "schema_version": None}
-    return {"exists": False, "db_path": str((workspace / ".tp-spec" / "db" / f"{project_id}.db").resolve(strict=False)) if project_id else None, "valid": False, "issues": [], "base_version": "", "schema_version": None}
+    return {"exists": False, "db_path": str(cp) if project_id else None, "valid": False, "issues": [], "base_version": "", "schema_version": None}
 
 
 def _simple_content_override_redundant(workspace: Path, cfg, installation) -> Dict[str, Any]:
@@ -693,6 +682,20 @@ def cmd_sync_project(args) -> int:
         results=[]
         for workspace in _all_workspaces(args):
             resolution=resolve_workspace(workspace,installation_config=args.installation_config)
+            # The current executable's templates must not silently substitute
+            # for an invalid Base selected by the resolver.
+            if not resolution["base"]["valid"]:
+                base = resolution["base"]
+                results.append({
+                    "workspace_root": str(workspace), "status": "BLOCKED",
+                    "blockers": [f"resolved Base root is invalid: {base['root']}; "
+                                 f"review {base['source']} before retrying sync-project"],
+                    "base": base, "executing_base": resolution.get("executing_base"),
+                    "runtime_portability": resolution.get("runtime_portability"),
+                    "portability": None, "surface": None,
+                    "active_task_portability": resolution.get("active_task_portability"),
+                })
+                continue
             project_id=str(resolution.get("project_id") or "")
             runtime_plan=resolution.get("runtime_portability") or runtime_rebind_plan(workspace,project_id)
             if runtime_plan.get("status")=="BLOCKED":

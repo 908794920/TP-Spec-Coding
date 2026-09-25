@@ -535,7 +535,8 @@ def cmd_task_create(args) -> int:
             requested_scaffold_target = (
                 Path(args.task_dir).resolve()
                 if getattr(args, 'task_dir', None)
-                else (Path.cwd() / '.tp-spec' / 'tasks' / task_id).resolve()
+                # 与 workflow next 等消费者使用同一项目根，避免从 Base/子目录调用时任务失联。
+                else (Path(proj['root_path']) / '.tp-spec' / 'tasks' / task_id).resolve()
             )
             if requested_scaffold_target.exists():
                 _recover_interrupted_task_create(
@@ -2502,7 +2503,7 @@ def add_task_subparsers(task_parser) -> None:
     p_create.add_argument("--db", required=False, default=None)
     p_create.add_argument("--scaffold", action="store_true", help="Create the task directory and templates together with the DB task")
     p_create.add_argument("--from-intake", required=False, default=None, help="Adopt pre-task requirement artifacts from an intake directory; implies --scaffold and preserves source")
-    p_create.add_argument("--task-dir", required=False, default=None, help="Scaffold destination (default: .tp-spec/tasks/<TASK-ID>)")
+    p_create.add_argument("--task-dir", required=False, default=None, help="Scaffold destination (default: <project.root_path>/.tp-spec/tasks/<TASK-ID>)")
     p_create.set_defaults(func=cmd_task_create)
 
     # Record-first daily API: business facts, not workflow bookkeeping.

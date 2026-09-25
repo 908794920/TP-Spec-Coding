@@ -16,8 +16,32 @@ from cli import db as dbmod
 from cli.path_identity import canonical_path, same_path
 
 
-def runtime_db_path(workspace_root: "str | Path", project_id: str) -> Path:
-    return canonical_path(workspace_root) / ".tp-spec" / "db" / f"{project_id}.db"
+def runtime_db_path(
+    workspace_root: "str | Path", project_id: str, *, registry_path: Optional[str] = None,
+) -> Path:
+    workspace = canonical_path(workspace_root)
+    default = workspace / ".tp-spec" / "db" / f"{project_id}.db"
+    if default.is_file():
+        return default
+    explicit = os.environ.get("TP_SPEC_DB")
+    if explicit:
+        return canonical_path(explicit)
+    reg = _registry_entry(project_id, registry_path)
+    if reg and reg.get("db_path"):
+        registered = canonical_path(dbmod._resolve_project_db_abs(str(reg["db_path"])))
+        root = str(reg.get("root_path") or "").strip()
+        if root and os.path.isabs(root):
+            try:
+                # A project-local DB keeps its relative location after a move;
+                # do not guess filenames or scan unrelated databases.
+                relocated = workspace / registered.relative_to(canonical_path(root))
+            except ValueError:
+                pass  # A registered shared/external DB stays at its own locator.
+            else:
+                if relocated.is_file():
+                    return canonical_path(relocated)
+        return registered
+    return default
 
 
 def _transient_files(db_path: Path) -> List[Dict[str, Any]]:
@@ -58,7 +82,7 @@ def runtime_rebind_plan(
     registry_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     workspace = canonical_path(workspace_root)
-    db_path = runtime_db_path(workspace, project_id)
+    db_path = workspace / ".tp-spec" / "db" / f"{project_id}.db"
     result: Dict[str, Any] = {
         "schema": "tp-spec.runtime-portability/v1",
         "workspace_root": str(workspace),
@@ -76,7 +100,17 @@ def runtime_rebind_plan(
         result["status"] = "BLOCKED"
         result["blockers"].append("project id unresolved")
         return result
-    if not db_path.is_file():
+    try:
+        db_path = runtime_db_path(workspace, project_id, registry_path=registry_path)
+        result.update(db_path=str(db_path), transient_files=_transient_files(db_path))
+        if not db_path.is_file():
+            if _registry_entry(project_id, registry_path) or os.environ.get("TP_SPEC_DB"):
+                result["status"] = "BLOCKED"
+                result["blockers"].append(f"selected Runtime DB is not a file: {db_path}")
+            return result
+    except (OSError, ValueError) as exc:
+        result["status"] = "BLOCKED"
+        result["blockers"].append(f"Runtime locator unreadable: {exc}")
         return result
     try:
         conn = dbmod.connect_readonly(str(db_path))
@@ -191,6 +225,9 @@ def apply_runtime_rebind(
                 latest_plan = runtime_rebind_plan(workspace, project_id, registry_path=registry_path)
                 if latest_plan["status"] == "BLOCKED":
                     return latest_plan
+                if (latest_plan["status"] not in {"CURRENT", "REBIND_AVAILABLE"}
+                        or not same_path(latest_plan["db_path"], db_path)):
+                    return {**plan, "status": "BLOCKED", "blockers": ["RUNTIME_BINDING_CHANGED: replan before rebind"]}
                 current = conn.execute("SELECT root_path, base_version, schema_version FROM project WHERE project_id=?",
                                        (project_id,)).fetchone()
                 if (current is None or str(current["root_path"] or "") != str(plan["previous_root"] or "")
@@ -209,6 +246,7 @@ def apply_runtime_rebind(
     try:
         latest_plan = runtime_rebind_plan(workspace, project_id, registry_path=registry_path)
         if (latest_plan["status"] not in {"CURRENT", "REBIND_AVAILABLE"}
+                or not same_path(latest_plan["db_path"], db_path)
                 or latest_plan.get("rebind_required")
                 or latest_plan.get("base_version") != plan.get("base_version")
                 or latest_plan.get("schema_version") != plan.get("schema_version")):

@@ -132,6 +132,9 @@ def _capture_repo(root: Path) -> tuple[dict[str, Any], str]:
 
     patch = _run_git(
         root,
+        # A stat-only change must not make this read-only snapshot refresh the index.
+        "-c",
+        "diff.autoRefreshIndex=false",
         "diff",
         "--no-ext-diff",
         "--no-textconv",

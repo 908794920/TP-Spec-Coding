@@ -50,7 +50,7 @@ export function layoutGraph(model: GraphModel): Layout {
         positions[item.id] = { x: 24 + column * (NODE_WIDTH + 88), y: 62 + row * (NODE_HEIGHT + 36) };
     }
     const group = {
-        x: 0, y: 170, width: Math.max(440, 48 + (Math.max(0, ...rank.values()) + 1) * (NODE_WIDTH + 88) - 88),
+        x: 0, y: model.workflow.activityStages.length ? 940 : model.workflow.stages.length ? 550 : 170, width: Math.max(440, 48 + (Math.max(0, ...rank.values()) + 1) * (NODE_WIDTH + 88) - 88),
         height: Math.max(112, 86 + Math.max(0, ...rows.values()) * (NODE_HEIGHT + 36) - 36)
     };
     let ungrouped = 0;

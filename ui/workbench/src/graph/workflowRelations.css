@@ -1,0 +1,31 @@
+.task-graph { --graph-completed: color-mix(in srgb, var(--good) 72%, var(--graph-bg)); }
+.task-graph .edge-completed .react-flow__edge-text { fill: var(--graph-completed); }
+.completed-edge-legend { color: var(--graph-completed); }
+.completed-edge-legend::before { content: ''; display: inline-block; width: 20px; margin-right: 6px; border-top: 2px solid currentColor; vertical-align: middle; }
+.workflow-stage-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.workflow-stage-navigation .ant-btn { height: auto; min-height: 28px; white-space: normal; text-align: left; }
+.workflow-stage-navigation .ant-btn[aria-current="step"] { border-color: var(--accent); background: var(--accent-tint); }
+.workflow-stage-node { height: 100%; display: flex; flex-direction: column; padding: 14px; border: 1px solid var(--node-border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--node-shadow); font-size: 12px; }
+.workflow-stage-node.is-current { border-color: var(--accent); }
+.workflow-stage-node.is-selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stage-node-heading,.stage-node-status { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11px; }
+.stage-node-heading span:last-child { color: var(--accent); }
+.stage-node-title { display: block; font-size: 16px; margin: 7px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage-node-roles { flex: 1; min-height: 0; overflow: hidden; margin-top: 10px; }
+.stage-node-roles section { border-top: 1px solid var(--border); padding: 8px 0; }
+.stage-node-roles strong,.stage-node-roles small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage-node-roles small { color: var(--muted); font-size: 10px; margin: 3px 0; }
+.stage-node-roles p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; margin: 3px 0 0; line-height: 1.5; }
+.stage-node-more { font-size: 10px; color: var(--accent); margin-top: 8px; }
+.workflow-stage-details { margin-top: 14px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.workflow-stage-details h4 { margin: 0 0 4px; }
+.stage-role-details { display: grid; gap: 12px; }
+.stage-role-history { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.stage-role-history>header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.stage-role-history>header span { color: var(--muted); font-size: 12px; }
+.stage-activity-list { margin: 10px 0 0; padding: 0 0 0 20px; max-height: 420px; overflow: auto; overscroll-behavior: contain; }
+.stage-activity-list li { padding: 10px 6px; border-top: 1px solid var(--border); }
+.stage-activity-list p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.stage-activity-heading { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.stage-activity-list .ant-collapse { margin-top: 8px; }
+@media(max-width:520px) { .workflow-stage-details { padding: 10px; } .workflow-stage-details>.section-heading { align-items: flex-start; flex-wrap: wrap; } }
