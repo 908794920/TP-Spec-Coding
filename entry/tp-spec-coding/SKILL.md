@@ -1,7 +1,7 @@
 ---
 id: tp-spec-coding
 name: tp-软件生命周期
-version: 5.3.4
+version: 5.3.5
 status: active
 type: control-role
 role: tp-spec-coding
@@ -11,7 +11,7 @@ description: TP-Spec-Coding 唯一默认产品入口；以低上下文成本识�
 # tp-统一入口
 
 ## 目标
-让用户只需要一个入口表达“规划需求 / 开发 / Review / 更新 Wiki / 维护 Knowledge / 基座维护 / 项目自治”。入口只做低成本领域识别与上下文恢复，不把产品壳变成第二套编排器。
+让用户只需要一个入口表达“规划需求 / 开发 / Review / 更新 Wiki / 维护 Knowledge / 基座维护 / 项目自治”。入口只做低成本领域识别、必要能力发现与上下文恢复，不把产品壳变成第二套编排器。
 
 ## 路由原则
 1. 只使用当前用户输入、显式命令、当前 Project identity 和 active Task 的紧凑摘要信号。
@@ -20,11 +20,18 @@ description: TP-Spec-Coding 唯一默认产品入口；以低上下文成本识�
 4. 在明确 TP-Spec 软件项目上下文且没有冲突信号时，默认进入 software；真正歧义才做一次最小澄清。
 5. 原始用户输入尽量原样交给目标 Domain Agent，避免入口二次总结造成信息损失。
 
+## 外部能力发现与转交
+开始/继续实际工作时，在领域识别后运行一次 `tp-spec skill list --query external:local: --json` 获取当前用户级外部摘要；纯状态查询不强制读取。复用同轮真实结果，不扫描业务仓库、不预载所有正文；恢复会话或来源变化后重新查询。
+
+显式 ID 优先，否则只根据可用项的名称、非空用途与声明范围选择候选；无描述不猜用途，同名有歧义才澄清。选中后用 `tp-spec skill read --id <精确ID> --json` 读取，把原始请求、ID、来源根、文档路径、状态、内容指纹及必要方法传给目标 Domain，再由其判断适用性并保留到执行 Role。没有匹配继续内置路径；停用/缺失/无效不以旧正文或同名能力冒充。
+
+命令定位、字段与转交规则见 [外部 SKILL](../../docs/EXTERNAL_SKILLS.md#entry-handoff)。目录发现不修改项目入口、不注册宿主原生命令、不自动执行脚本，也不改变 `route` 的领域职责或现有授权。
+
 ## 用户体验
 默认只暴露：开始/继续、状态、Explain、需要用户决策。Role ID、Skill path、event id、contract digest、fencing generation 等仅在 Explain/Doctor 场景按需展开。
 
 ## 按需读取与反馈
-只加载已选 Domain 的正文，其他领域保留发现信息；已在当前上下文可靠加载的规则不重复读取。命中长文档时只读命中段，不沿链接预加载全部角色/能力。
+领域正文只加载已选 Domain，其他领域保留发现信息；外部方法按上述选中结果读取；已在当前上下文可靠加载的规则不重复读取。命中长文档时只读命中段，不沿链接预加载全部角色/能力。
 
 - 修改 TP-Spec-Coding 自身源码：将 [本仓验证策略](../../docs/TESTING.md) 作为项目约束交给执行 Agent；不将基座临时测试清理规则套用到其他业务项目。
 - 软件工作：读取 [tp-software-lifecycle](../../agents/tp-software-lifecycle/SKILL.md)；已有 Task 复用当前摘要与真实授权，不为入口路由重读全历史。

@@ -1,16 +1,30 @@
 import { record, records, text } from '../facts';
 import type { FactRecord } from '../types';
 
-/* The skill topology as the page reads it. Two of these fields are derived, and only because the
-   payload states neither: `level` is the distance from `root_id`, and `order` is the position inside
-   that level. The payload carries NO sequence field at all — checked on every node and every edge:
-   order / seq / index / rank / position / step / phase are all absent — so the sequence can only be
-   the order the edges arrive in, and both views render it as received rather than sorting. */
+export const KIND_LABELS: Record<string, string> = { 'product-entry': '入口', 'domain-agent': '领域 Agent', 'formal-role': '角色', 'capability-skill': 'SKILL' };
+export const RELATION_LABELS: Record<string, string> = { 'routes-to': '路由', 'owns-role': '拥有', 'uses-skill': '声明使用', uses: '声明关联' };
+export const SKILL_STATUS_LABELS: Record<string, string> = { available: '可读取', disabled: '已停用', missing: '文件缺失', invalid: '无效', unknown: '未记录' };
+export const SOURCE_LABELS: Record<string, string> = { builtin: '内置', external: '外部' };
+export const TOPOLOGY_NODE_WIDTH = 244, TOPOLOGY_NODE_HEIGHT = 72;
+
+/* Level/order describe the recorded edges, not execution. External packages retain their own
+   identity and metadata; unconnected packages never acquire a fabricated owner or level. */
 export interface TopoNode {
     id: string;
     name: string;
     kind: string;
     path: string;
+    sourceKind: string;
+    sourceRoot: string;
+    status: string;
+    enabled?: boolean;
+    reason: string;
+    description: string;
+    upstream: string;
+    version: string;
+    entrySha256: string;
+    appliesTo: string[];
+    autoSelectable: boolean;
 }
 export interface TopoEdge {
     from: string;
@@ -30,15 +44,28 @@ export interface Topology {
     orphans: TopoNode[];
     kinds: [string, number][];
     relations: [string, number][];
+    status: string;
+    error: string;
+    external: { root: string; configPath: string; status: string };
+    problems: { code: string; message: string; nodeId: string }[];
 }
 
 function readNode(nodes: FactRecord, id: string): TopoNode {
     const node = record(nodes[id]);
-    return { id, name: text(node.name) || id, kind: text(node.kind), path: text(node.path) };
+    return {
+        id, name: text(node.name) || id, kind: text(node.kind), path: text(node.path),
+        sourceKind: text(node.source_kind) || (id.startsWith('external:local:') ? 'external' : 'builtin'),
+        sourceRoot: text(node.source_root), status: text(node.status) || 'unknown',
+        enabled: typeof node.enabled === 'boolean' ? node.enabled : undefined,
+        reason: text(node.reason), description: text(node.description), upstream: text(node.upstream),
+        version: text(node.version), entrySha256: text(node.entry_sha256),
+        appliesTo: Array.isArray(node.applies_to) ? node.applies_to.filter((v): v is string => typeof v === 'string') : [],
+        autoSelectable: node.auto_selectable === true,
+    };
 }
 
 export function readTopology(value: unknown): Topology {
-    const source = record(value);
+    const source = record(value), external = record(source.external);
     const raw = record(source.nodes);
     const nodes = new Map(Object.keys(raw).map(id => [id, readNode(raw, id)]));
     const edges: TopoEdge[] = records(source.edges).map(edge => ({
@@ -50,9 +77,7 @@ export function readTopology(value: unknown): Topology {
         parentCount.set(edge.to, (parentCount.get(edge.to) ?? 0) + 1);
     });
     const rootId = text(source.root_id);
-    /* Breadth-first from the entry: a node is placed at the first level it is reached at and keeps
-       that level however many parents point at it. Visiting each node once also makes a cycle in the
-       data impossible to loop over. */
+    // First breadth-first visit fixes the recorded level, even for shared nodes or cyclic input.
     const level = new Map<string, number>(), order = new Map<string, number>(), placed = new Map<number, number>();
     const queue: string[] = [];
     const place = (id: string, depth: number) => {
@@ -61,13 +86,11 @@ export function readTopology(value: unknown): Topology {
         order.set(id, placed.get(depth)!);
         queue.push(id);
     };
-    if (nodes.has(rootId))
-        place(rootId, 0);
+    if (nodes.has(rootId)) place(rootId, 0);
     for (let head = 0; head < queue.length; head += 1) {
         const id = queue[head];
         (children.get(id) ?? []).forEach(edge => {
-            if (!level.has(edge.to))
-                place(edge.to, level.get(id)! + 1);
+            if (!level.has(edge.to)) place(edge.to, level.get(id)! + 1);
         });
     }
     const kinds = new Map<string, number>(), relations = new Map<string, number>();
@@ -76,9 +99,35 @@ export function readTopology(value: unknown): Topology {
     return {
         rootId, nodes, edges, children, parentCount, level, order,
         entry: nodes.has(rootId) ? [nodes.get(rootId)!] : [],
-        /* Anything the entry cannot reach is listed instead of disappearing. */
         orphans: [...nodes.values()].filter(node => !level.has(node.id)),
         kinds: [...kinds].sort((a, b) => b[1] - a[1]),
         relations: [...relations].sort((a, b) => b[1] - a[1]),
+        status: text(source.status), error: text(source.error),
+        external: { root: text(external.root), configPath: text(external.config_path), status: text(external.status) },
+        problems: records(source.problems).map(p => ({ code: text(p.code), message: text(p.message), nodeId: text(p.node_id) })),
     };
+}
+
+export interface TopologyPosition {
+    id: string;
+    position: { x: number; y: number };
+    order: number | null;
+    detached: boolean;
+}
+
+/** Geometry only. The rightmost orphan column is not a new topology level or a synthetic owner. */
+export function layoutTopology(topology: Topology): TopologyPosition[] {
+    const columns = new Map<number, string[]>();
+    topology.level.forEach((level, id) => columns.set(level, [...(columns.get(level) ?? []), id]));
+    const orphanColumn = Math.max(-1, ...columns.keys()) + 1;
+    if (topology.orphans.length) columns.set(orphanColumn, topology.orphans.map(node => node.id));
+    const tallest = Math.max(1, ...[...columns.values()].map(ids => ids.length));
+    return [...columns].flatMap(([column, ids]) => {
+        const offset = (tallest - ids.length) * (TOPOLOGY_NODE_HEIGHT + 12) / 2;
+        return ids.map((id, index) => ({
+            id, position: { x: column * (TOPOLOGY_NODE_WIDTH + 72), y: offset + index * (TOPOLOGY_NODE_HEIGHT + 12) },
+            order: topology.level.has(id) && ids.length > 1 ? topology.order.get(id) ?? null : null,
+            detached: !topology.level.has(id),
+        }));
+    });
 }

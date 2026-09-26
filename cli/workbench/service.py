@@ -14,6 +14,7 @@ from typing import Any, Iterator
 
 from cli import db as dbmod, environment, record_first
 from cli.path_identity import canonical_path, path_identity_key, same_path
+from cli.skill_catalog import SkillCatalogError, read_skill_document
 from cli.version import active_version
 from . import snapshot
 from .details import build_task_details
@@ -172,35 +173,18 @@ class WorkbenchService:
                                   if database else "配置、注册表和工作区清单是实时文件读取，不承诺多个文件的原子快照。")},
                 "data": data})
 
-    def skill_document(self, node_id: str, document_path: str = "") -> dict[str, Any]:
-        topology, error = snapshot._read_skill_topology(BASE_ROOT)
-        if error:
-            raise ReadError("TOPOLOGY_UNAVAILABLE", "能力目录读取失败")
-        node = topology["nodes"].get(node_id)
-        if not node:
-            raise ReadError("NOT_FOUND", "未找到对应能力设定", 404)
-        relative = document_path or str(node.get("path") or "")
-        if document_path:
-            try:
-                published = {line.split("  ", 1)[1] for line in
-                             (BASE_ROOT / "manifest.sha256").read_text(encoding="utf-8").splitlines()
-                             if "  " in line and not line.startswith("#")}
-            except OSError:
-                raise ReadError("DOCUMENT_INDEX_UNAVAILABLE", "文档目录不可读取")
-            if relative not in published:
-                raise ReadError("DOCUMENT_NOT_PUBLISHED", "该链接不在公开文档目录中", 404)
-        path = (BASE_ROOT / relative).resolve()
-        if not path.is_relative_to(BASE_ROOT.resolve()) or path.suffix.lower() != ".md":
-            raise ReadError("INVALID_DOCUMENT", "设定文档路径不受支持", 400)
+    def skill_document(self, node_id: str, document_path: str = "", *,
+                       allow_disabled: bool = False) -> dict[str, Any]:
         try:
-            with path.open("rb") as handle:
-                raw = handle.read(512 * 1024 + 1)
-            if len(raw) > 512 * 1024:
-                raise ReadError("DOCUMENT_TOO_LARGE", "设定文档超过读取大小限制", 413)
-            content = raw.decode("utf-8-sig")
-        except (OSError, UnicodeError):
-            raise ReadError("DOCUMENT_UNREADABLE", "设定文档不存在或无法读取", 404)
-        return {"schema": SCHEMA, "id": node_id, "path": path.relative_to(BASE_ROOT.resolve()).as_posix(), "content": content}
+            document = read_skill_document(
+                node_id, document_path, base_root=BASE_ROOT,
+                user_root=environment.user_tp_spec_root(), allow_disabled=allow_disabled,
+            )
+        except SkillCatalogError as exc:
+            raise ReadError(exc.code, str(exc), exc.status) from exc
+        # Keep the existing HTTP document shape/schema while adding source
+        # metadata. Disabled inspection remains explicit and reports its state.
+        return {**document, "schema": SCHEMA}
 
     def global_view(self) -> dict[str, Any]:
         started = timestamp()
@@ -209,7 +193,14 @@ class WorkbenchService:
         contexts, issues = read_contexts()
         data["contexts"] = [asdict(ctx) for ctx in contexts]
         data["problems"] = [*data.get("problems", []), *issues]
-        return self._response(data, None, started)
+        response = self._response(data, None, started)
+        # These map keys are skill identities (e.g. token-optimizer), not secret
+        # field names. Still apply the existing filter to each descriptor's fields.
+        response["data"]["skill_topology"]["nodes"] = {
+            node_id: _strip_sensitive(node)
+            for node_id, node in data["skill_topology"]["nodes"].items()
+        }
+        return response
 
     def wiki_view(self, operation: str, parameters: dict[str, list[str]]) -> dict[str, Any]:
         if operation not in {"overview", "documents", "document", "search", "records"}:

@@ -1,7 +1,7 @@
 ---
 name: tp-memory-capture
 display_name: 项目记忆捕获
-version: 5.3.4
+version: 5.3.5
 description: 日常按需、每 Task 交付必评估的共享归位方法；区分短规则、详细规则/方法、事实线索与临时内容，不扫描其他任务。
 ---
 

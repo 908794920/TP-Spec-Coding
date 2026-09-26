@@ -49,7 +49,7 @@ Task / 角色只是调用方提供的可选上下文，不创建 Task，不产�
 
 Python `projection.search()` 仍返回原片段列表，保留配置中的默认数量（后备 20）和旧范围解析契约；不把它改成新候选信封。eval 和新旧 Task convergence 继续调用它。正式 Task 判重保持原数量和项目 + shared 范围，并标注 `delivery_convergence` / `task_convergence`，不混入默认研发指标。
 
-新正式搜索回执不保存 query 明文，而使用 `receipt_contract=tp-spec.knowledge-usage/v2` 与 `query_hash_only=true`。收敛结果验证仍将哈希与实际声明的 query 比对，不能用任意哈希替代绑定。旧明文搜索回执仍按原契约校验，不重写历史事实。正式收敛输入中的用户声明不是本次新增的搜索日志；本轮没有重写或清理 Runtime 历史业务事实。
+新正式搜索回执不保存 query 明文，而使用 `receipt_contract=tp-spec.knowledge-usage/v2` 与 `query_hash_only=true`。收敛结果验证仍将哈希与实际声明的 query 比对，不能用任意哈希替代绑定。旧明文搜索回执仍按原契约校验，不重写历史事实。正式收敛输入中的用户声明不等同于搜索日志；采集与页面读取不重写或清理 Runtime 历史业务事实。
 
 ## 3. 显式升级与恢复
 
@@ -69,7 +69,7 @@ tp-spec knowledge index build --workspace-root <workspace>
 
 这两个现有入口追加新字段 / 读取记录表、补充稳定文档标识，并刷新内容索引。多个工作区指向同一数据库只需对该数据库升级一次。不需要升级 Runtime 业务表，也不会迁移 Wiki 数据库。精确 canonical 更新入口不偷偷升级日志 schema。
 
-升级前需要备份时使用现有 SQLite 一致性备份流程；数据库仍在 WAL 写入期间，不能只复制主 `.db` 文件冒充完整备份。索引升级 / 重建与本地备份均是显式操作，本补丁未替用户执行。
+升级前需要备份时使用现有 SQLite 一致性备份流程；数据库仍在 WAL 写入期间，不能只复制主 `.db` 文件冒充完整备份。索引升级 / 重建与本地备份均是显式操作，应用源码补丁不会代为执行。
 
 `build/update` 保留同库 `retrieval_runs` 和 `knowledge_reads`；不再将删除整个投影数据库作为重建或默认回退。失败时保留数据库和日志，修正注册、权限或不可读来源后重新执行同一显式命令；追加升级可重复执行。不要通过清空投影、删除日志、修改风险规则或回填旧事件消除错误。若需要回退代码，保留追加的兼容列 / 表和备份，不删除升级后产生的使用证据。
 
@@ -77,7 +77,7 @@ tp-spec knowledge index build --workspace-root <workspace>
 
 ### 3.1 追加字段清单
 
-| 存放位置 | 原字段 / 本轮字段 | 含义与历史处理 |
+| 存放位置 | 原字段 / 使用统计扩展字段 | 含义与历史处理 |
 |---|---|---|
 | `documents` | 原 `rel_path/scope/project/kind/canonical_id/source_id/title/sha256/...` 保留 | 原索引与 FTS5 关系不变；SQLite 自增 ID 不公开为永久 ID |
 | `documents` | 新 `document_key, metadata_json` | 稳定公开标识及已登记维护 / 来源 / 转换事实；旧元数据缺失不补造 |
@@ -123,7 +123,7 @@ Markdown 使用已有安全渲染组件：跳过原始 HTML，不执行脚本 / 
 | 已记录采用任务 / 条目 | 复用已有可信 `knowledge + adopted`；按解析 Runtime / Task 和资产去重 |
 | 最近活动 / 日趋势 | 成功搜索、实际正文读取、可信 adopted 分开；时间解析为带时区时间比较，日趋势按 UTC+8 日期归组 |
 
-采用不是命中、阅读、检索评分、验收通过或维护完成。本轮没有从检索结果自动生成 adopted，也没有给旧采用补造 receipt。采用是独立证据，不随检索用途筛选；没有可靠用途的旧采用不能强行推断为研发或收敛。可保留没有回执、无法关联现存文档的可信历史采用。
+采用不是命中、阅读、检索评分、验收通过或维护完成。不从检索结果自动生成 adopted，也不给旧采用补造 receipt。采用是独立证据，不随检索用途筛选；没有可靠用途的旧采用不能强行推断为研发或收敛。可保留没有回执、无法关联现存文档的可信历史采用。
 
 请求 alpha 项目并返回 shared 内容：项目表归因 alpha，内容列表标 shared。来源 / 投影数据库 / Runtime 先按解析后的身份去重，不因重复注册工作区复制次数。同一来源多个数据库的内容只采用一个可用投影，日志按数据库与回执去重，并明确警告，不把各投影伪装成互不相关的知识库。
 
@@ -153,58 +153,14 @@ Markdown 使用已有安全渲染组件：跳过原始 HTML，不执行脚本 / 
 
 所有 GET 使用现有库的 `mode=ro` 连接，无 DDL / 迁移 / SQL 业务写入，无 Runtime 事件、使用记录或 Wiki 变更；不调用完整 `projection_status()`、doctor、maintain、verify、build/update。没有 `record_telemetry=False` 后再走普通建表连接的伪只读路径。
 
-**SQLite WAL 的文件层边界：**现有 Runtime 的只读 SQLite 连接仍可能创建或更新 SQLite 协调文件 `-shm` 和空 `-wal`。它们不是新的业务事件或使用回执，但意味着不能声称目录中每个文件都零变化。本轮对比验证主数据库、schema、日志内容与 Wiki / 知识文件未变，单独观察此类协调文件；没有使用会忽略活动 WAL 的 `immutable=1`，也没有为了界面复制整个 Runtime。若验收要求包括协调文件在内的绝对文件系统零写入，该更严格条件本轮尚未满足，不能把它写为通过。
+**SQLite WAL 的文件层边界：**现有 Runtime 的只读 SQLite 连接仍可能创建或更新 SQLite 协调文件 `-shm` 和空 `-wal`，它们不是新的业务事件或使用回执。因此“业务只读”不等于目录中每个文件都零变化。保持现有只读连接，不用 `immutable=1` 忽略活动 WAL，也不为页面复制整个 Runtime；当期文件对比结果和未满足的严格零写入条件见 [历史验证记录](../CHANGELOG.md#history-knowledge-usage)。
 
-## 7. 本轮实现与验证记录
+## 7. 本地接入与验收边界
 
-### 7.1 实际源码与交付范围
+实现批次的输入快照、实际检查、失败与未执行项统一保留在 [CHANGELOG](../CHANGELOG.md#history-knowledge-usage)。该记录只证明当期范围，不代表当前全部页面、Windows 或真实任务已验收；也不能据其早期环境限制断言后来从未验证。
 
-基于提供的 `TP-Spec-Coding-v5.3.4-0ea0703.zip`，不是重新检出计划编制时的 `fe5a666...`。压缩包没有 `.git` 历史，不能独立认证完整 HEAD / 分支；增量以原压缩包文件字节为基线。Wiki 检索、页面、API、说明、样式及 14px 留白所需文件均已存在，本轮不覆盖其实现。版本、依赖锁、风险规则、任务详情、全局模型设置、安装同步和正式知识内容不变。
+应用源码先按 [安装与升级说明](GETTING_STARTED.md) 核对本次交付基线。仅在依赖需要准备/更新或对应检查尚未完成时使用原锁文件安装，并分别执行类型检查与构建；需要升级实际知识投影时，按第 3 节显式执行 `knowledge index update`。页面本身不代替索引升级；不要修改真实知识来制造统计样本，也不要为了证明采集额外执行研发查询。
 
-新增 `cli/knowledge/{documents,reading,telemetry}.py`、`cli/workbench/knowledge_view.py`，以及前端 KnowledgePage / knowledgeApi / knowledgeTypes / knowledge.css 和本说明。修改 projection、CLI / convergence 回执适配、workbench service / server、侧栏入口、产品默认保留天数、Knowledge Skill 短引用及其生成元数据 / manifest。无发布、推送、合并或真实 Runtime 操作；没有为测试创建正式 Task 或伪造历史使用量。源快照未带项目 AGENTS / 已接入 Task 账本，本轮未冒用 Wiki 任务。
+现场按本次影响选择：375px 与桌面、明暗主题、长标题、筛选说明、三页签/筛选/分页、全文/内部返回/Escape 焦点、快速切换请求取消、失败/空状态和远程图片不请求；共用导航受影响时再核对 Wiki、配置、Task 搜索及项目导航。Windows 路径大小写、junction/UNC、真实 Vault/Runtime 来源、历史保留、可信采用及真实任务体验需用相应环境验证。
 
-### 7.2 实际执行的检查
-
-环境：Linux 隔离容器；Python 3.13.5、Node 22.16.0；可用全局 TypeScript 5.8.3。前端锁文件声明的 TypeScript 5.9.3 等依赖没有成功安装；不把全局工具当成已安装的锁定版本。
-
-| 检查 | 实际结果 |
-|---|---|
-| 当前功能临时用例：`PYTHONPATH=<临时目录>:<源码根> python -m pytest -q <临时目录>/test_knowledge.py --tb=short` | 退出 0；最终 **53 passed，12.71s**。仅本次定向文件，不是全仓套件 |
-| 新 knowledgeApi / knowledgeTypes 及直接依赖的独立严格 TypeScript 检查 | 使用全局 TypeScript，退出 0；不包含 React / Ant Design 全页面语义检查 |
-| 新页面、API、类型与 App 的 TypeScript 语法解析 | 无语法诊断；不冒充完整类型或运行时验证 |
-| `npm ci --ignore-scripts --no-audit --no-fund` | registry DNS `EAI_AGAIN`，未安装完成；未修改依赖或锁文件绕过 |
-| `npm run check:types` | **退出 2，未通过**：缺少 `node` / `vite/client` 类型依赖；完整前端类型检查待本机执行 |
-| `npm run build` | **退出 127，未通过**：`vite` 不存在；生产构建待本机执行 |
-| 11 个受影响 Python 模块的 AST 解析 | 通过；未发现 Python 语法错误 |
-| Wiki / 版本 / 依赖 / Runtime 核心基线守卫 | 11 个关键文件与原快照字节一致；397 个原始 Git 树文件与输入 ZIP 字节一致 |
-| `python scripts/update_role_catalog.py --write` / `--verify` | 退出 0；15 roles / 34 topology nodes 校验通过 |
-| `python scripts/update_manifest.py` / `--verify` | 退出 0；405 个内容文件重算一致，manifest 自身不计入 |
-| 增量打包检查 | `git diff --check` 与补丁正向 / 反向检查通过；在原始树的独立临时 index 应用后，与目标树完全一致；没有另建产品 checkout |
-| 针对性代码审查 | 已按接口、范围、版本、采集与兼容路径逐项复核并修正发现问题；没有独立第二执行者的审查证据 |
-
-临时用例覆盖：中文 / 英文 / ID / 路径 / 多词搜索、多片段去重、20 条分页、5 / 200 候选、80 / 4000 正文、20 / 1000 目录、显式行号 / 全文、frontmatter / 围栏 / CRLF / 超长行 / 空正文、request 重试冲突 / 版本变化、失败与零结果、采集故障、不采集路径、旧 schema 只读与显式升级、重建保留日志、共享 / 显式跨项目、旧记录不进入单项目、可信采用 / 角色来源 / 去重、混合时区与 7 / 30 / 90 天、source 多文件 / 已登记转换、删除 / 改名 / POSIX symlink / 路径正反例、当时版本与当前版本、未注册链接、跨来源分页与部分失败、重复注册去重、HTTP GET / 非 GET / 哈希隐私，以及旧 search / eval / 精确 canonical 更新和新旧正式搜索回执兼容。
-
-最初只读文件对比发现测试写连接未及时关闭导致 checkpoint，已修正夹具；随后确认只读 Runtime 仍会产生上述 SQLite 协调文件。最终验证明确区分业务数据不变与协调文件行为，未把此差异隐藏为全目录零变化。临时用例、夹具、临时环境和 HTTP 服务执行后清理，不进入补丁，不增加永久测试套件；只保留本节真实结果。
-
-### 7.3 验收对账与本机待验
-
-| 计划项 | 本轮可证明范围 / 未执行部分 |
-|---|---|
-| K-01 | 原 Wiki 文件和留白基线保留；现有主题、配置、任务搜索、项目导航的实际浏览器回归未执行 |
-| K-02 | 搜索 / 文档去重 / 分页 / canonical-source 及跨库范围定向用例通过 |
-| K-03 | 预算、行号、目录、围栏、CRLF、空内容和超长行定向用例通过 |
-| K-04 | 逻辑去重、冲突、失败与零结果、只目录不计读取、采集失败不阻断通过 |
-| K-05 | 无库 / 旧 schema / 空日志 / 不可读 / 部分可用 / 旧未归因通过 |
-| K-06 | 请求项目与共享内容归因、来源去重、混合时区、保留范围通过；真实多工作区注册待验 |
-| K-07 | 可信 adopted 去重、无回执旧事实、用途区分、非 adopted 不转采用通过 |
-| K-08 | 只读 SQL、主数据和 Wiki 不变、人工请求不采集、重建保留日志通过；包含 WAL 协调文件的绝对零文件变化不满足，见上节 |
-| K-09 | 稳定标识、多 source 文件、当前 / 历史版本、路径 / POSIX symlink、内部链接后端用例通过；Windows junction / 大小写现场及浏览器脚本 / 远程请求拦截待验 |
-| K-10 | 三页签、14px 留白、375px / 明暗主题、键盘、搜索 / 分页 / 返回 / 取消请求已实现；**实际浏览器交互未执行**，未用语法检查代替验收 |
-| K-11 | 正文 API 全文独立于 CLI 预算通过；页面真实渲染、普通工具采集范围提示待浏览器体验 |
-| K-12 | 新旧单一计数、search/eval/收敛回执兼容、日志 / HTTP 错误不保存原 query 通过 |
-
-本机最小接入顺序：将增量应用到对应干净基线；在源码根按原锁文件完成 `npm ci`，分别执行 `npm run check:types` 和 `npm run build`；对实际注册投影显式执行 `knowledge index update`，再按现有工作台启动方式打开页面。不要修改真实知识来制造统计样本，也不要为了证明采集额外执行研发查询。
-
-本机浏览器需实际核对 375px 与桌面、明暗主题、长标题、筛选说明 14px / 行高 1.7、三页签 / 筛选 / 分页、全文 / 内部返回 / Escape 焦点、快速切换请求取消、失败 / 空状态、远程图片不请求，以及原 Wiki / 配置 / Task 搜索 / 项目导航。Windows 另验大小写 / junction / UNC 边界；真实 Vault / Runtime 验证来源解析、历史保留、可信采用与真实任务体验。本轮没有这些环境的验收签字，也没有生产使用样本；隔离夹具不是产品历史数据。
-
-完整交互、完整前端类型 / 构建和独立审查尚无通过证据；不能据此说明已完成上线验收。补丁交付不自动关闭 Task，不替用户完成人工验证。后续需要依靠真实任务证明的体验，应在代码可供用户应用后再体验反馈，不把这些结果伪造或全部前置为提供试用代码的门槛。
+记录实际环境、操作、结果与未执行项，隔离夹具不是产品历史数据。补丁交付不自动关闭 Task，不替用户完成人工验收；需要依靠真实任务证明的体验在代码可供应用后反馈，不全部前置为提供试用代码的门槛。

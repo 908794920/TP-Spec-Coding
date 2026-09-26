@@ -23,6 +23,7 @@ if __package__ in (None, ""):
 
 from cli import project_cmd
 from cli import product_cmd
+from cli import skill_cmd
 from cli import document_cmd
 from cli import command_context
 from cli import base_maintenance
@@ -73,6 +74,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # tp-spec-coding unified product entry: shallow Domain routing only.
     product_cmd.add_product_subparsers(subparsers)
+
+    # Source-scoped capability discovery, independent of project/Runtime writes.
+    skill_cmd.add_skill_subparsers(subparsers)
 
     # Local-only document normalization; retrieval and Knowledge disposition remain separate.
     document_cmd.add_document_subparsers(subparsers)

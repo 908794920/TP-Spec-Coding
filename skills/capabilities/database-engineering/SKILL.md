@@ -1,7 +1,7 @@
 ---
 name: database-engineering
 display_name: 数据库设计与变更
-version: 5.3.4
+version: 5.3.5
 description: 涉及模型、SQL、执行计划、迁移回滚或数据一致性时使用；依据真实环境与动作授权。
 ---
 

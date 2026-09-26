@@ -1,7 +1,7 @@
 ---
 id: tp-base-maintenance
 name: tp-基座维护
-version: 5.3.4
+version: 5.3.5
 status: active
 type: human-owner-skill
 tool_agnostic: 本技能不依赖特定 IDE；Base/Wiki/Knowledge 根必须来自 Installation/Resolver，不在 Skill 中硬编码用户绝对路径。
@@ -34,6 +34,9 @@ Current Workspace
 ```
 
 项目侧 Junction 只属于兼容迁移面。Runtime 不得依赖 `.tp-spec/agents|skills|wiki|knowledge|scripts...` 链接才能工作。
+
+## 用户级外部 SKILL
+接收并保留入口选中的外部方法及来源，直接调用本领域时按 [外部能力选择与转交](../../docs/EXTERNAL_SKILLS.md#entry-handoff) 发现并按需读取。外部包与登记文件是独立用户资产，不属于 Base 发布文件或项目 managed block；接入查询不运行 configure/sync-project，不将其复制或链接到业务工程。Base 更新、迁移或清理不得据此覆盖或删除外部原件。
 
 ## 1. 标准配置
 

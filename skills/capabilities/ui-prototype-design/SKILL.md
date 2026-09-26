@@ -1,7 +1,7 @@
 ---
 name: ui-prototype-design
 display_name: 原型与交互设计
-version: 5.3.4
+version: 5.3.5
 description: 原型、UI、交互或动效设计时使用；保真业务、复用真实组件、检验请求状态和窄屏，区分原型与产品验收。
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: delivery-planning
 display_name: 交付计划
-version: 5.3.4
+version: 5.3.5
 description: Use when a task benefits from an explicit technical delivery plan. Produce an implementation-ready, risk-aware plan without creating mandatory workflow gates or handoff bookkeeping.
 ---
 

@@ -1,7 +1,7 @@
 ---
 id: tp-wiki
 name: tp-wiki
-version: 5.3.4
+version: 5.3.5
 status: active
 type: human-owner-skill
 tool_agnostic: 本技能包不要求特定 IDE、账号、插件、模型或绝对路径；从 TP-Spec-Coding 相对路径加载即可。
@@ -26,6 +26,9 @@ Knowledge   = 跨任务长期有效的业务/经验知识
 按需使用 Wiki 缩小源码范围；上下文足够时可直接回到真实源码核验关键事实。Wiki 不得覆盖源码事实，不得替代 Task 历史，不得写入 canonical Knowledge。
 
 需要检索或读取已登记 Wiki 时，使用 [统一检索与使用记录](../../docs/WIKI_USAGE.md) 的 CLI 入口；已知文档直接读，实际采用才记 `context_usage`。不为统计新增搜索，不将页面浏览或维护当作研发采用。
+
+## 已选外部 SKILL
+承接入口传入的外部方法及准确来源；直接调用时按 [外部能力选择与转交](../../docs/EXTERNAL_SKILLS.md#entry-handoff) 使用同一发现与读取规则，并在后续转交中保留。外部方法不是源码证据，不改变 stable source、repo scope、写入根与质量判断，也不因阅读方法而记录 Wiki 采用。
 
 ## 1. 调用边界
 

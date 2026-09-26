@@ -1,7 +1,7 @@
 ---
 name: delivery-convergence
 display_name: 交付收敛
-version: 5.3.4
+version: 5.3.5
 description: 每个 Task 最终交付时核对范围、候选、验收与知识记忆；复用有效结果，不代签或补造事实。
 ---
 

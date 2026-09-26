@@ -1,7 +1,7 @@
 ---
 id: tp-software-lifecycle
 name: tp-软件工程生命周期
-version: 5.3.4
+version: 5.3.5
 status: active
 type: control-role
 role: tp-software-lifecycle
@@ -23,6 +23,9 @@ description: 唯一软件工程 Domain Agent；基于 L0~L3、风险、phase、�
 3. 每个 Role 只加载必要 Skill/Sub-Skill；Skill Pool 很大不等于单 Task 要全跑。`workflow next` 提供只读 `included_stages`、`policy_sources` 和有限 `context.validation`；执行者仍核对实际调用方、AC 和授权后选择验证，不能把建议当成覆盖证明。项目政策及查询方法按需读 [生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)。
 
 修改 TP-Spec-Coding 自身源码时，将 [本仓验证策略](../../docs/TESTING.md) 传给各执行/审查角色；本地与云端均不因批次、提交或最终汇合自动全量测试，临时用例结束后清理。其他业务仓库仍按自身规则。
+
+## 已选外部 SKILL
+承接入口选中的外部方法时，保留精确 ID、来源根、路径、状态、内容指纹及必要正文，并传给实际执行 Role／Work，不因只查内置 Catalog 而丢失。直接调用本领域且尚无本轮发现结果时，先按 [外部能力选择与转交](../../docs/EXTERNAL_SKILLS.md#entry-handoff) 发现并按需读取；专业适用性仍由本领域判断，不新增角色或 Runtime 义务。外部 SKILL 方法与下节“外部已完成实现”是不同输入，不能混用。
 
 ## 外部实现接入
 外部 AI 已完成实现或用户明确说明代码已由其他开发者完成时，默认把现有工作区固定为 Development subject，随后调度 Test Engineer + Code Reviewer，二者 `effects=[]`。Codex/当前 Agent 不因为“还能优化”自动重新进入 Development；只有独立 Test/Review 产生确定 Finding 后，才在父 Task 下交开发处理相应 Fix Work；父步骤等待并在原处复验，修改只限 Finding 覆盖内容，不抹去原完成历史。

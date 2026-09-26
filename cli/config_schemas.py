@@ -30,7 +30,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
     "workflow": {
         "file": "governance/workflow.yaml",
         "version_field": "version",
-        "supported_versions": ["5.3.4"],
+        "supported_versions": ["5.3.5"],
         "properties": {
             "version": {"type": str, "required": True},
             "workflow": {"type": dict, "required": True},
@@ -43,7 +43,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
     "ai-role": {
         "file": "governance/ai-role.yaml",
         "version_field": "version",
-        "supported_versions": ["5.3.4"],
+        "supported_versions": ["5.3.5"],
         "properties": {
             "version": {"type": str, "required": True},
             "team": {"type": dict, "required": True},
@@ -94,7 +94,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
     "orchestration": {
         "file": "governance/orchestration.yaml",
         "version_field": "version",
-        "supported_versions": ["5.3.4"],
+        "supported_versions": ["5.3.5"],
         "properties": {
             "version": {"type": str, "required": True},
             "entry_role": {"type": str, "required": True},
@@ -122,7 +122,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
     "role-catalog": {
         "file": "governance/role-catalog.yaml",
         "version_field": "catalog_version",
-        "supported_versions": ["5.3.4"],
+        "supported_versions": ["5.3.5"],
         "properties": {
             "catalog_version": {"type": str, "required": True},
             "base_version": {"type": str, "required": True},
@@ -141,7 +141,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
         # 每次 open release line 变化，所以这里不写死版本号：解析见 resolve_schema_file()。
         "file": "templates/" + ACTIVE_VERSION_PLACEHOLDER + "/status.yaml",
         "version_field": "artifact_contract.version",
-        "supported_versions": ["5.3.4"],
+        "supported_versions": ["5.3.5"],
         "properties": {
             "task_id": {"type": str, "required": True},
             "task_name": {"type": str, "required": False},

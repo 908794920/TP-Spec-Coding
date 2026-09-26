@@ -95,7 +95,7 @@ Base 中已有的信号名、条件角色 phases 和受角色能力约束的 mod
 
 摘要不是授权输入。真正范围变更仍通过获准的 `task scope-change --actor human_owner`，执行许可仍由 Execution Envelope/allowed_effects 等现有控制表达；重要新决定及时更新选定当前区并留来源，不能仅改最后一条 checkpoint 叙述冒充已经收敛。程序不自动裁决两个自然语言说法是否同义/冲突，也不自行给历史结论加 SUPERSEDED；必要业务判断由实际执行者/用户负责。
 
-本批将 canonical `requirement.md` 纳入架构主体及生成视图源指纹，将 `task.md` 和 `requirement.md` 纳入 full/technical Verification 主体。需求或约束改变后旧 PASS 继续保留历史身份，但不能用于新交付；不会重绑旧记录或自动重跑测试。指纹保守保护完整正文，不做自然语言语义比较，历史/备注的实质文本改动也可能要求重新留证；仅 BOM/CRLF 传输差异仍归一。既有未覆盖这些输入的旧 Verification 不能无证据继承，应在统一验证时重新取得适用结果；不在本批自动迁移或修写现场 DB。
+当前契约将 canonical `requirement.md` 纳入架构主体及生成视图源指纹，将 `task.md` 和 `requirement.md` 纳入 full/technical Verification 主体。需求或约束改变后旧 PASS 继续保留历史身份，但不能用于新交付；不会重绑旧记录或自动重跑测试。指纹保守保护完整正文，不做自然语言语义比较，历史/备注的实质文本改动也可能要求重新留证；仅 BOM/CRLF 传输差异仍归一。既有未覆盖这些输入的旧 Verification 不能无证据继承，应在所涉任务的正式验证中重新取得适用结果；应用源码不自动迁移或修写现场 DB。
 
 ## 工作段、里程碑与运行状态
 
@@ -310,7 +310,7 @@ ChangeSet 原内容 ID 保持原格式；正式新记录额外保留既有快照
 
 需要改变当前未授权的可观察行为时，定向读 [Security Change Authority](../security-change-authority.md)。`task security` 记录提案/原始人工来源/调查证据，决定复用 `task scope-change` 的具体版本、scope 与 source event 绑定；`workflow next` 可返回 `await_security_decision`。这与普通范围记录、宿主 effect 许可和人工验收分开；actor 名称不是身份认证。已授权必要修复不因安全标签重复审批。
 
-### 确定性结单预检与结果复用（P5A）
+### 确定性结单预检与结果复用
 
 `task complete --task <ID> --task-dir <DIR> --check` 只读返回 `tp-spec.closeout/v1`。
 `checks` 逐项列出判定、适用性、真实依据、问题、`responsibility` 和 `depends_on`；
@@ -352,7 +352,8 @@ Delivery 另外绑定验收结果文件、实际 PASS 所引用的证据、已�
 相同有效输入复用原 Result，不重复查询或写事件；知识用非主体材料变化只重评相关结论。
 缺必要知识环境/来源/结果保持待处理；Memory 的已判断和已保存分别记录，
 可选保存失败披露责任和恢复条件，不无关阻塞完整研发。
-仅应用过 P5A 的在途新契约任务，重新通过正式 delivery-converge 生成学习请求并接续，
+已采用 `tp-spec.closeout/v1`、但缺少当前 `tp-spec.task-learning/v1` 请求的在途任务，
+通过正式 `delivery-converge` 生成/复用学习请求并接续，
 不能填写假信号、改事件或删除 marker 来结单。
 旧 markerless Delivery 维持原信号契约，其缺少提炼记录显示“不适用/历史未记录”，
 不解释为已评估无价值；旧终态不追补新义务。

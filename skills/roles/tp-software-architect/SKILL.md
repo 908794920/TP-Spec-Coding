@@ -1,7 +1,7 @@
 ---
 id: tp-software-architect
 name: tp-软件架构师
-version: 5.3.4
+version: 5.3.5
 status: active
 type: workflow-role
 role: tp-software-architect

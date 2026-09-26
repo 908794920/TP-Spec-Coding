@@ -532,3 +532,36 @@ button,a,summary { -webkit-tap-highlight-color: transparent; }
 
 .skill-usage { flex: none; color: var(--accent); font-size: 10px; line-height: 16px; white-space: nowrap; }
 .skill-node-meta { display: flex; align-items: center; gap: 6px; min-width: 0; } .skill-node-meta .skill-id { flex: 1; min-width: 0; }
+
+/* External skill source presentation stays within the existing graph/tree and theme. */
+.skill-node .skill-id { overflow-wrap: anywhere; min-width: 0; }
+.skill-node-select { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 12px; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.skill-node-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.skill-graph-node.is-external { border-style: dashed; }
+.skill-node-state { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted); }
+.skill-node-state .ant-tag { margin: 0; font-size: 10px; line-height: 15px; }
+.skill-source-status { font-size: 11px; color: var(--muted); }
+.skill-source-status[data-status="invalid"],.skill-source-status[data-status="missing"] { color: var(--warning); }
+.skill-source-location { margin: 8px 0; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.skill-source-location p { margin: 4px 0; }
+.skill-source-problems { margin: 10px 0; overflow-wrap: anywhere; }
+.skill-source-problems ul { margin: 0; padding-left: 16px; max-height: 220px; overflow: auto; }
+.skill-detached-note { margin: 0; padding: 8px 10px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12px; }
+.skill-document { max-height: 76vh; overflow: auto; overflow-wrap: anywhere; padding-right: 8px; }
+.skill-document .ant-alert { margin: 10px 0; }
+.skill-document-toolbar { margin-bottom: 10px; }
+.skill-document-note { font-size: 12px; }
+.skill-source-details { margin: 0 0 12px; font-size: 12px; }
+.skill-source-details > div { display: grid; grid-template-columns: minmax(100px, 24%) minmax(0, 1fr); gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.skill-source-details dt { color: var(--muted); }
+.skill-source-details dd { margin: 0; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.skill-source-description { font-size: 12px; }
+.skill-source-description p { margin: 6px 0; }
+.skill-document .skill-markdown { max-height: none; overflow: visible; padding-right: 0; }
+.skill-document-loading { padding: 20px; text-align: center; }
+@media (max-width: 520px) {
+  .skill-source-details > div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .config-page .skill-tree .skill-children { padding-left: 10px; margin-left: 3px; }
+  .skill-node { gap: 5px; }
+  .topology-graph .graph-summary { width: 100%; margin-left: 0; }
+}

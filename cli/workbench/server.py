@@ -54,7 +54,16 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             if path == ["api", "health"]:
                 result = service.health()
             elif len(path) == 3 and path[:2] == ["api", "skill-documents"]:
-                result = service.skill_document(path[2], parse_qs(urlsplit(self.path).query).get("path", [""])[0])
+                parameters = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                for name in ("path", "allow_disabled"):
+                    if len(parameters.get(name, [""])) != 1:
+                        raise ReadError("INVALID_QUERY", f"参数不能重复：{name}", 400)
+                inspect_disabled = parameters.get("allow_disabled", ["0"])[0]
+                if inspect_disabled not in {"0", "1"}:
+                    raise ReadError("INVALID_QUERY", "allow_disabled 必须为 0 或 1", 400)
+                result = service.skill_document(
+                    path[2], parameters.get("path", [""])[0], allow_disabled=inspect_disabled == "1",
+                )
             elif path == ["api", "global"]:
                 result = service.global_view()
             elif len(path) == 3 and path[:2] == ["api", "wiki"]:

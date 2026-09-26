@@ -109,3 +109,20 @@ export interface CloseoutData extends FactRecord {
     already_terminal?: boolean;
     problems?: Problem[];
 }
+
+/** Source-relative document returned by the existing read-only workbench endpoint. */
+export interface SkillDocumentData {
+    id: string;
+    name: string;
+    path: string;
+    content: string;
+    source_kind: 'builtin' | 'external';
+    source_root: string;
+    status: 'available' | 'disabled';
+    enabled: boolean;
+    entry_path: string;
+    content_sha256: string;
+    entry_sha256: string;
+    upstream: string;
+    version: string;
+}

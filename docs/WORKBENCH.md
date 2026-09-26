@@ -2,9 +2,9 @@
 
 ## 当前能力与边界
 
-侧栏新增全局 Wiki 入口与待开放知识库入口。Wiki 的使用概况、文档、检索记录与只读边界见 [Wiki 检索与使用分析](WIKI_USAGE.md)。`GET /api/wiki/overview|documents|document|search|records` 沿用工作台 envelope；人工搜索不写使用日志。AI 采集由 Wiki CLI 执行，页面没有索引维护或统计写入接口。
+侧栏提供全局 Wiki 与知识库入口。两者的使用概况、文档、检索记录与只读边界分别见 [Wiki 检索与使用分析](WIKI_USAGE.md) 和 [Knowledge 检索与使用分析](KNOWLEDGE_USAGE.md)。人工页面搜索和正文浏览不写 AI 使用记录；正式采集由相应 CLI 入口执行，页面没有索引维护或统计写入接口。
 
-在 TP-Spec-Coding 自身源码根目录启动，不在每个业务仓库复制前端。提供项目总览、任务工作区、全局配置和 Wiki 四个页面，以及真实 WorkItem 关系图、实际流程区、四类详情、验收/证据适用性、按需结单预检、时间线和刷新异常处理。W05 已退出旧卡片专属链路，只保留本地 Web 可视化入口和既有纯文本/JSON 查询。源码可供本地安装后验证；文末保留云端浏览器/构建限制，不将源码交付描述为真实交互已通过。
+在 TP-Spec-Coding 自身源码根目录启动，不在每个业务仓库复制前端。提供项目总览、任务工作区、全局配置、Wiki 和知识库页面，以及真实 WorkItem 关系图、具体步骤/角色参与、四类详情、验收/证据适用性、按需结单预检、时间线和刷新异常处理。旧卡片专属链路已退出，只保留本地 Web 可视化入口和既有纯文本/JSON 查询。功能说明不代替验收；历史批次的通过、失败和未执行范围统一见 [CHANGELOG](../CHANGELOG.md)，现场检查按文末的当前场景选择。
 
 页面只读现有注册表、Binding、Runtime 和工件。没有项目时显示真实空态，不插入演示数据；缺少数据库时返回缺失，不创建、修复或迁移。普通 CLI 运行不会启动工作台。
 
@@ -49,7 +49,7 @@ $env:TP_SPEC_PYTHON = (Join-Path $PWD '.venv/Scripts/python.exe')
 npm run dev
 ```
 
-启动器固定加载本目录的 `cli.workbench.server`，同时校验 Python readiness、实例身份与 `/api/health`。源码位置不是已配置安装位置时，不会自动替换安装配置。全局页面中的 `base` 是安装声明；`active_source_root` 与 health 的 `source_root` 才是本次执行源码；能力拓扑使用本次源码。
+启动器固定加载本目录的 `cli.workbench.server`，同时校验 Python readiness、实例身份与 `/api/health`。源码位置不是已配置安装位置时，不会自动替换安装配置。全局页面中的 `base` 是安装声明；`active_source_root` 与 health 的 `source_root` 才是本次执行源码；能力拓扑的内置部分使用本次源码，外部部分沿用同一进程的用户级根；不从安装声明中的另一份 Base 偷换正文来源。
 
 ## 数据选择与真实性
 
@@ -72,8 +72,14 @@ Task 的数据及路由共用一次 SQLite 只读事务，项目索引也使用�
 | 项目总览 | 项目身份、Binding、任务统计、搜索/状态筛选索引、Wiki/Knowledge 及注册表来源 |
 | 任务工作区 | 任务评估、纵向具体步骤、角色参与与事件；辅助区域保留 WorkItem 关系图、四类详情和任务历史 |
 | 全局配置 | 安装与活动源码、Wiki、Knowledge、Workspace、Resolver、Registry、自主配置、能力来源及已注册项目字段 |
+| Wiki | 使用概况、文档、只读搜索、正文与检索记录，详见 [Wiki 使用说明](WIKI_USAGE.md) |
+| 知识库 | 使用概况、知识条目、正文、用途/项目筛选与检索记录，详见 [Knowledge 使用说明](KNOWLEDGE_USAGE.md) |
 
-图中的 `WorkItem` 不改名为 Work Unit。每条已取得工作记录的 `task_id` 来自既有查询 `WHERE task_id=?` 的正式范围；节点身份还包含上下文键、Task ID 和对象类型。归属边框不表示执行依赖，依赖箭头从前置工作指向后续工作。Task 自身状态只读其正式记录，不根据所有工作项完成自动变绿。
+全局配置中的“能力定义与来源”提供拓扑图和层级树。后端使用同一份内置＋用户级外部合成目录，外部配置问题留在 `skill_topology.problems/external`，不隐藏仍可读的内置图。节点正文按各自来源读取，内置引用受发布清单约束，外部引用限定在对应包内。路由、拥有和使用是目录声明的关系，“使用”数量及 ×N 不是调用次数，不据此推断角色已执行。能力定义模型见 [Agent / Role / Skill](AGENTS_AND_SKILLS.md)，配置、来源及读取参数见 [外部 SKILL](EXTERNAL_SKILLS.md)。
+
+图和树均展示来源标识与状态；未关联外部能力单独列出且可查看设定。两种视图复用同一正文阅读器，区分 Base 与外部包的相对路径，并支持锚点、返回上一篇和显式人工检查停用内容。页面顶部重新读取目录，详情按钮重新读取正文；读取失败不把旧正文冒充当前内容。具体操作见 [外部能力页面阅读](EXTERNAL_SKILLS.md#页面阅读与来源跟踪)。实现说明不代表这些交互或真实宿主采用已经通过。
+
+以下工作关系图说明针对 Task 中的 `WorkItem`，不是上述能力目录图。图中的 `WorkItem` 不改名为 Work Unit。每条已取得工作记录的 `task_id` 来自既有查询 `WHERE task_id=?` 的正式范围；节点身份还包含上下文键、Task ID 和对象类型。归属边框不表示执行依赖，依赖箭头从前置工作指向后续工作。Task 自身状态只读其正式记录，不根据所有工作项完成自动变绿。
 
 没有工作项时仍显示 Task；没有实际阶段时不套用完整 L3。ID 类似 Wxx 不产生关系。悬空引用、重复身份、循环、记录类型异常会列出问题：不制造占位工作，不把歧义边画成已确认边，原始记录保留在详情/异常区。循环中的原边仍显示；异常布局不代表该流程可执行。
 
@@ -83,7 +89,7 @@ Task 的数据及路由共用一次 SQLite 只读事务，项目索引也使用�
 
 布局采用 `graph/layout.ts` 单一、确定性的从左到右分层算法；只处理本 Task 的工作依赖，不把阶段/归属混入依赖排序，也不增加 Dagre/ELK 多引擎。相同拓扑更新状态时保留坐标、缩放和选择；首次打开、手动重排或正式拓扑改变才重新布局。此处坐标不是 Runtime 字段。
 
-任务主线使用纵向步骤与角色详情；Task/WorkItem 详情统一使用原生模态侧栏，800px 以下导航折叠，520px 以下进一步收敛工具栏和字段布局。目标视口为 1440/1024/715/480 CSS px；规则已实现，但四档真实浏览器检查本批尚未执行。详情和表格独立滚动，状态有文字，不只靠颜色；系统字体，无外部字体/CDN。
+任务主线使用纵向步骤与角色详情；Task/WorkItem 详情统一使用原生模态侧栏，800px 以下导航折叠，520px 以下进一步收敛工具栏和字段布局。目标视口为 1440/1024/715/480 CSS px；历史检查范围见 [CHANGELOG](../CHANGELOG.md#history-task-mainline)，不能将其中一批结果外推为后续所有页面均已验证。详情和表格独立滚动，状态有文字，不只靠颜色；系统字体，无外部字体/CDN。
 
 ## 具体执行计划与角色参与
 
@@ -117,20 +123,23 @@ Task 的数据及路由共用一次 SQLite 只读事务，项目索引也使用�
 
 读取时间分别对应画布、详情、预检。`read.task_revision` 仅是 Task 行与最新事件 ID 的账本观察摘要，不是产品/证据文件的原子版本。标识不同时页面提示不能拼为同次快照；即使相同，也不承诺文件系统原子性。读取中已发现验收声明变化/消失时，返回部分结果，并撤回“当前适用”的展示结论，提示重新读取，不修改账本。
 
-页面上的“重新读取”会更新已打开的数据；从未请求的详情/预检不会为了刷新后台预先运行。读取失败保留原内容、原读取时间和失败提示。接口返回其他上下文/Task、过时请求或不匹配展示契约时不会覆盖当前页面。跨 Task 清除旧选择与详情；同 Task 状态刷新沿用 W03 的同拓扑坐标/视图，不自动重排或抢焦点。实际 React 生命周期、焦点和四档宽度仍待本地浏览器验证。
+页面上的“重新读取”会更新已打开的数据；从未请求的详情/预检不会为了刷新后台预先运行。读取失败保留原内容、原读取时间和失败提示。接口返回其他上下文/Task、过时请求或不匹配展示契约时不会覆盖当前页面。跨 Task 清除旧选择与详情；同 Task 状态刷新保留同拓扑坐标/视图，不自动重排或抢焦点。实际生命周期、焦点和响应式行为按当前受影响页面验证，既有局部记录不代替未覆盖场景。
 
 ## 只读 API
 
 | GET 路径 | 数据 |
 |---|---|
 | `/api/health` | 本次源码、版本、Python、Registry 路径及实例身份；不代表所有项目都可读 |
-| `/api/global` | 全局配置、注册项目/工作区上下文及读取问题 |
+| `/api/global` | 全局配置、能力目录、注册项目/工作区上下文及读取问题 |
+| `/api/skill-documents/{id}` | 精确 ID 的入口正文；`path` 相对 Base 发布目录或所属外部包；`allow_disabled=1` 仅用于显式人工检查停用内容，不接受任意本机文件 |
+| `/api/wiki/{operation}` | `operation` 为 `overview`、`documents`、`document`、`search` 或 `records`，见 [Wiki 使用说明](WIKI_USAGE.md) |
+| `/api/knowledge/{operation}` | `operation` 为 `overview`、`documents`、`document` 或 `records`，见 [Knowledge 使用说明](KNOWLEDGE_USAGE.md) |
 | `/api/projects/{context_key}` | 指定上下文项目概况及完整 `task_index` |
 | `/api/projects/{context_key}/tasks/{task_id}` | 正式任务、WorkItem、Work Session、现有流程和基础证据投影 |
 | `/api/projects/{context_key}/tasks/{task_id}/details` | 按需读取验收声明、可信结果、适用性、等待及证据文件核对 |
 | `/api/projects/{context_key}/tasks/{task_id}/closeout` | 显式调用既有 `completion_check()`；不运行 verify 或 complete |
 
-`health` 以外的成功结果为 `{schema, context, read, data}`；schema 为 `tp-spec.workbench/v1`，不是 Runtime schema 升级。错误为 `{schema, error:{code,message}, failed_at}`，读取失败不附伪成功时间。缺对象 404；上下文/工件冲突 409；不可读 503 或 500；非 GET 动作返回 405。响应 `Cache-Control: no-store`。
+项目、任务、全局配置及 Wiki/Knowledge 的成功结果为 `{schema, context, read, data}`；`health` 返回实例身份，能力正文保留 `{schema, id, path, content}` 并追加 `source_kind/source_root/status/enabled/entry_path/content_sha256` 等来源字段，具体见 [外部 SKILL](EXTERNAL_SKILLS.md#工作台后端与正文接口)；不要将后两者按标准 envelope 解析。schema 为 `tp-spec.workbench/v1`，不是 Runtime schema 升级。错误为 `{schema, error:{code,message}, failed_at}`，读取失败不附伪成功时间。非法参数/不支持的文档路径 400，缺对象 404；上下文/工件冲突 409；能力正文超限 413；不可读按具体来源返回 404、503 或 500；非 GET 动作返回 405。响应 `Cache-Control: no-store`。
 
 `/details` 与 `/closeout` 使用各自请求内只读事务，并沿用既有 Runtime 判断。没有用户显式请求时，不执行结单预检。
 
@@ -152,13 +161,13 @@ npm run build
 
 ## 依赖及验证边界
 
-第三方依赖与锁文件来源见根 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。W02/W03 云端已分别执行当期改动的局部验证；W04 定向覆盖真实 CLI 夹具的详情/预检/Owner 范围、文件变化、只读不变性、接口身份和请求乱序。临时用例执行后移除；合成夹具不是用户人验结果，纯函数/请求替身检查也不是浏览器交互证明。W02—W04 因云端无法取得 npm 包体，**没有真实 Vite/React 浏览器运行、生产构建或锁定工具链完整类型检查的通过结论**。W05 仅为字段覆盖补齐 Task 概况中的最近 checkpoint、原摘要/来源及已有工作段，不改前端依赖或启动器；该处只做局部语法/字段接入核对，未把它写成浏览器或完整类型检查通过。此前环境缺口仍留在本地验证清单。
+第三方依赖及锁文件来源保留在 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。[早期工作台](../CHANGELOG.md#history-workbench-early)、[任务主线](../CHANGELOG.md#history-task-mainline)、[本地视觉批次](../CHANGELOG.md#history-workbench-visual)和 [Knowledge 批次](../CHANGELOG.md#history-knowledge-usage)的检查范围分别记录，不把早期环境失败或后续局部通过当作整个当前快照的统一结论。
 
-锁文件经 npm 离线归一化和 `ci --dry-run` 图检查，不代表包体已下载。首次联网 `npm ci`、真实 `npm run dev`、构建/类型检查及 Windows 体验，随本地统一合并阶段验证；这一环境缺口不会被写成 PASS，也不要求每批先本地验收才能继续。
+类型检查、构建、浏览器交互、Windows 安装及真实业务验收分别报告。未执行项保留待验；合成夹具、静态检查、依赖图 dry-run 或旧截图都不能替代实际执行。只针对本次变更和环境缺口选择检查，不为每批交付重跑全部场景。
 
 ## 旧展示退出与信息去向
 
-W05 删除 `cli/cards/`、`tp-spec card global/project/task`、`tp-card-display` 及对应角色/导航。旧 `TP_SPEC_CARD_*` 输出变量、inline fragment、Web Artifact marker 与宿主降级不再消费，也不增加同义 CLI 或隐藏模式。唯一可视化启动是仓库根 `npm run dev`；`task get`、`workflow next`、`report` 和其他纯文本/JSON 查询保持原职责。
+旧 `cli/cards/`、`tp-spec card global/project/task`、`tp-card-display` 及对应角色/导航已移除；退役批次记录见 [CHANGELOG](../CHANGELOG.md)。旧 `TP_SPEC_CARD_*` 输出变量、inline fragment、Web Artifact marker 与宿主降级不再消费，也不增加同义 CLI 或隐藏模式。唯一可视化启动是仓库根 `npm run dev`；`task get`、`workflow next`、`report` 和其他纯文本/JSON 查询保持原职责。
 
 | 原有效信息/呈现字段 | 当前承载位置或删除理由 |
 |---|---|
@@ -189,9 +198,9 @@ W05 删除 `cli/cards/`、`tp-spec card global/project/task`、`tp-card-display`
 
 ## 本地补验范围
 
-P6 已运行后端 Task/Work→Fix→原步骤复验→Review→Delivery→知识/记忆→正式 Complete 的隔离链路，以及候选漂移与只读检查；这不是 React 工作台、Windows 或用户业务验收。云端 `npm ci --offline --ignore-scripts --no-audit --no-fund` 因缺包失败，`check:types` 缺少 node/vite 类型，`build` 找不到 Vite；没有替换锁文件或用旧截图补 PASS。
+本节是按实际变更选择的现场检查场景，不是一份每次必须全跑的清单，也不表示所有场景从未验证。已记录的历史范围见 [CHANGELOG](../CHANGELOG.md)；本次交付的未执行项和用户反馈单独记录，不能将后端隔离链路结果当成 React、Windows 或业务人验通过。
 
-在能够获取锁定依赖的本地环境，从仓库根分别运行 `npm ci`、`npm run check:types`、`npm run build`、`npm run dev`。只用获准的隔离 Task 核对本版受影响面：
+在本地环境需要准备或更新依赖时，从仓库根使用 `npm ci`；类型/构建确实受影响或此前未完成时，分别运行 `npm run check:types`、`npm run build`。通过既有启动入口打开页面，只用获准的 Task 或隔离夹具核对本次受影响面：
 
 | 场景 | 具体操作与预期 |
 |---|---|
@@ -200,6 +209,7 @@ P6 已运行后端 Task/Work→Fix→原步骤复验→Review→Delivery→知�
 | 预检与失败 | 显式读取预检；缺候选显示 PENDING，变更产品/证据显示失效；请求失败保留旧读取时间并标历史，不继续显示当前可结单 |
 | 历史与终态 | 无计划/缺参与显示历史未记录；完成或取消后无当前执行者，旧 ACTIVE 接续标过期；返回/切换 Task 不泄漏前一上下文 |
 | 视觉和键盘 | 1440/1024/715/480 CSS px、浅/深色；Tab、Enter/空格、Escape、抽屉与关闭后焦点；空态、错误态、长内容及窄屏无遮挡 |
+| Wiki / 知识库 | 根据各自使用说明核对来源、检索/读取/采用口径、筛选、正文及失败/空态；人工浏览不增加 AI 使用记录 |
 
 记录实际浏览器/平台、操作和失败项。视口模拟不等于物理触控设备；类型/构建/后端检查不替代这些交互，专业技术验收也不代签业务人验。发现具体问题按影响修复，不自动恢复历史全量测试。
 
@@ -209,9 +219,9 @@ P6 已运行后端 Task/Work→Fix→原步骤复验→Review→Delivery→知�
 
 候选区展示真实来源、接收集合、输出、冲突处置、证据和登记时仍未收敛的 Work。中间候选不代表整体可交付；最终适用性和所有 blocker 仍由只读结单预检核对。界面没有认领/批准/合并/结单按钮。相关操作及兼容界限见 [Work 结果契约](WORK_UNITS.md)。
 
-本批新组件语法与后端快照可分别检查；没有安装锁定依赖并运行真实页面之前，不声明类型检查、构建或浏览器交互通过。本地需核对有/无 Work、失败回收、原步骤链接展开、终态、窄屏、刷新失败与键盘操作。
+这部分的语法/后端快照检查不能代替实际页面验证。有/无 Work、失败回收、原步骤链接展开、终态、窄屏、刷新失败与键盘操作按实际影响核对，结果和未执行项分别记录。
 
-## v5.3.4 任务主线展示
+## 任务主线展示
 
 任务页按“任务评估 → 执行步骤 → 角色进展 → 角色事件”组织。顶部突出当前有效等级和计划登记时的评估摘要；等级表示风险与流程义务，不新增技术难度评分。缺少结构化评估依据时显示缺失并提供任务文档入口，不从自由文本推断定级原因。
 
@@ -221,7 +231,7 @@ P6 已运行后端 Task/Work→Fix→原步骤复验→Review→Delivery→知�
 
 主线下方依次为“工作关系”“任务资料与验收”“任务历史与诊断”。每次进入任务默认展开工作关系，继续以独立 lazy 模块加载；同任务重新读取保留用户收起状态，其余两区默认折叠。Task 概况、阻塞详情和验证验收可从顶部直接进入。详情使用统一模态侧栏，关闭后回到触发控件；步骤关联 Work/Fix 会展开资料和对应条目，收起该工作条目返回原入口。页面仍只在进入对象或手动重新读取时发起 GET，失败保留原快照与读取时间，结单预检仍需显式触发。
 
-本次改版的验证范围：1186×698 为主视口，另覆盖 1440、1024、715、480 CSS px；真实无计划任务与隔离模拟的多角色、返修、长事件集合、终态及读取异常分别验证。隔离模拟不证明真实业务任务已经执行，不向 Runtime 补写历史。检查结果按本次交付证据记录，不追溯改写上文历史批次的验证结论。
+任务主线改版时的视口、真实无计划任务与隔离模拟范围见 [历史验证记录](../CHANGELOG.md#history-task-mainline)；隔离模拟不证明真实业务任务已执行，不向 Runtime 补写历史。
 
 ## 工作台外观与交互
 
@@ -231,4 +241,4 @@ P6 已运行后端 Task/Work→Fix→原步骤复验→Review→Delivery→知�
 
 全局配置保留原五组字段及顺序，只调整表格、层次和主题。项目总览优先展示 Runtime／版本摘要、任务计数筛选与任务列表，技术身份和来源信息置于下方详情。计数直接使用完整 `task_index`：在途为未退休 NEW／ACTIVE／BLOCKED，阻塞是其中 BLOCKED 子集，已完成为未退休 COMPLETED，其他包含取消、退休和未知状态。不可用数据展示“—”，不计作零；原始统计及 summary 保留在“已记录状态统计”中。列表每页 10 条，筛选或搜索变化回到第一页，切项目重置；阶段和责任角色仅表示索引记录，窄屏收入任务列，不解释为当前执行者。
 
-2026-09-21 本地视觉批次已执行类型检查、生产构建、配色单一来源检查及 34 项临时断言（主题解析、首屏脚本、存储拒绝、混合状态计数、筛选和顺序）。真实 IDC 索引在验证时为在途 1／阻塞 1／已完成 27／其他 5／全部 33。浏览器对三个页面、两种主题、五档宽度进行了 30 组页面溢出与首屏检查；另验证了 Task／能力图主题切换保留视图、关系区刷新保持收起、重新进入恢复展开、搜索与详情回焦点、侧栏拖动与窄屏遮罩。隔离静态夹具补验取消／退休／未知／空索引／Runtime 不可用、请求失败及恢复、存储拒绝；未写入真实 Runtime，临时夹具使用后清理。失败保留原读取时间并标明“上次读取快照”。本批未重跑上一轮所有执行语义场景；真实业务人工验收与物理触控设备验收仍由用户完成。
+主题、侧栏、索引筛选与焦点在 2026-09-21 本地视觉批次中的实际检查范围见 [历史验证记录](../CHANGELOG.md#history-workbench-visual)。该记录包含通过、未重跑及待用户验证的范围，不是该批次未覆盖的知识库等页面的验收依据。

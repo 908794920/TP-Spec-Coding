@@ -52,7 +52,7 @@ export function GlobalConfigPage({ read, health }: {
           question. Panels carry no card title — the selected tab has just named the group. */}
       <Tabs className="config-tabs" defaultActiveKey={groups[0][0]} items={groups.map(([key, label]) => ({ key, label,
           children: <Card size="small">{key === 'skill_topology'
-              ? <SkillTopology value={data.skill_topology}/>
+              ? <SkillTopology value={data.skill_topology} loading={read.loading} readError={read.error}/>
               : <Fields value={key === 'base' ? baseFacts : data[key]} labels={key === 'base' ? carriedLabels : undefined}/>}</Card> }))}/>
     </>}
   </div>;

@@ -13,6 +13,7 @@ from __future__ import annotations
 # events, never the version string alone.
 SOURCE_CONTRACTS = frozenset({
     "5.1.1", "5.1.3", "5.2.3", "5.2.8", "5.2.9", "5.3.0", "5.3.1", "5.3.2",
+    "5.3.4",  # Supplied baseline; explicit existing journal-backed migration only.
 })
 
 

@@ -1,7 +1,7 @@
 ---
 id: tp-knowledge
 name: tp-knowledge
-version: 5.3.4
+version: 5.3.5
 status: active
 type: human-owner-skill
 tool_agnostic: 本技能包不要求特定 IDE、账号、插件或用户目录绝对路径；从 TP-Spec-Coding/agents/tp-knowledge/SKILL.md 加载即可。
@@ -27,6 +27,9 @@ Knowledge 是 TP-Spec-Coding 的**长期可复用知识层**：业务规则、�
 **与软件生命周期解耦但接收 typed effect：** 集成交付工程师每 Task 调用 [knowledge-capture](../../skills/capabilities/knowledge-capture/SKILL.md) 覆盖有效需求与各步骤材料；生命周期通过 dispatch_effect 交本 Agent 定向检索/判重/维护。无信号也要处理，但不强制新知识。旧 Runtime 的 NOT_REQUIRED 只是旧投影，不是新任务已经提炼；在途新交付缺学习 Request 时重跑正常 delivery-converge，不伪造 Result。存在 Request 未执行仍是 NOT_RUN，不得伪装“无变化”。
 
 **Task-scoped convergence 边界：** 只消费可信 Request 和其中绑定的 Task 来源，执行 current project + registered shared scopes 的最小 targeted search，最终只写 `CREATED / UPDATED / DUPLICATE / NO_DURABLE_INSIGHT`。不重新裁决软件 Verification/Review/Delivery，不启动全库 scan、`90-sources` ingest、Golden Set、audit 或 migration/normalization。`CREATED/UPDATED` 必须绑定 exact canonical；`DUPLICATE` 必须命中已有 canonical；`NO_DURABLE_INSIGHT` 也必须有实际 query、来源和原因码。
+
+## 已选外部 SKILL
+承接入口传入的外部方法及准确来源；直接调用时按 [外部能力选择与转交](../../docs/EXTERNAL_SKILLS.md#entry-handoff) 使用同一发现与读取规则。交给后续执行者时保留选中来源，不自动把方法包 ingest 为 Knowledge、项目 Memory 或采用记录；原 project/shared scope、可信 Request 与写入权限不因方法来源改变。
 
 ## 1. 权威关系
 
