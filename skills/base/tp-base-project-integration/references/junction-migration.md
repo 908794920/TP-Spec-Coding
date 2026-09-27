@@ -1,6 +1,6 @@
 # Junction 迁移与收敛
 
-适用条件：执行 legacy Junction/symlink 迁移或移除时读取。
+适用条件：项目接入能力执行 legacy Junction/symlink 迁移或移除时读取。
 
 
 迁移必须严格按：

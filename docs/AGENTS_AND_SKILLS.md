@@ -9,7 +9,7 @@ entry/tp-spec-coding/SKILL.md
         ↓
 agents/<domain>/SKILL.md
         ↓
-skills/roles/ + skills/capabilities/ + skills/autonomy/
+skills/roles/ + skills/capabilities/ + skills/autonomy/ + skills/base/ + skills/knowledge/ + skills/wiki/
         ↓
 CLI / Runtime
 ```
@@ -19,6 +19,9 @@ CLI / Runtime
 - `skills/roles/`：软件工程 Formal Role。Role 是能力集合，不是固定阶段包。
 - `skills/capabilities/`：可复用能力，按需 lazy-load。
 - `skills/autonomy/`：项目自治领域的专项能力。
+- `skills/base/`：基座维护领域的专项能力，由薄入口按需选择，包含用户级外部方法包管理。
+- `skills/knowledge/`：Knowledge 检索、任务收敛、内容维护、接入、标准化与定时维护能力。
+- `skills/wiki/`：Wiki 检索、增量维护、首次构建、质量审计、异常恢复与定时维护能力。
 - CLI / Runtime：执行真实动作并自动维护 Task、Event、Evidence、Workflow 等事实。
 
 产品入口的稳定路径是 [`entry/tp-spec-coding/SKILL.md`](../entry/tp-spec-coding/SKILL.md)。
@@ -39,7 +42,7 @@ CLI / Runtime
 
 Role Catalog 的 `topology` 是内置 catalog + Skill metadata 的生成投影，不是第二事实源。用户级外部方法独立存放，CLI 与工作台后端通过共享加载器把内置投影和外部描述合成只读能力目录；不回写内置 Catalog。外部 ID 带来源前缀，未关联方法不虚构角色关系。存放、选择、正文定位与来源异常见 [外部 SKILL](EXTERNAL_SKILLS.md)。
 
-节点同时保留稳定 `id` 和用户可读 `name`。内置关系读取生成投影，外部方法只读取用户级限定目录；不为了查询关系扫描整个 Skills 目录，也不增加新的数据库或后台服务。图中的“使用”及节点的 ×N 表示目录声明的引用关系，不是实际调用次数；实际执行仍以相应任务记录为准。
+节点同时保留稳定 `id` 和用户可读 `name`。内置关系读取生成投影，外部方法只读取用户级限定目录；不为了查询关系扫描整个 Skills 目录，也不增加新的数据库或后台服务。拓扑图以统一入口为中心，无正式角色层的领域及其专属 SKILL 向左展开，含角色的分支按领域、角色、SKILL 向右展开；内置跨侧共享和未连通 SKILL 留在右侧能力列。外部 SKILL 在图和树中统一展示于自定义 SKILL 管理之下，分组不改用途关联或执行规则。每个图节点只画一次，布局不新增中间角色；树中的内置分支仍按目录声明展开。图中的“使用”及节点的 ×N 统计原目录声明，不包含仅展示的管理分组，也不是调用次数；实际执行仍以相应任务记录为准。
 
 ## 5. Runtime 与 Governance
 
@@ -66,4 +69,4 @@ Role 只留职责、边界和准确触发指针，方法由 Capability/其按需
 
 角色默认/条件能力由 Catalog 及对应 Role 的触发指针维护；共享方法不在导航中复制正文。历史方法抽取、原使用者与引用处置见 [CHANGELOG](../CHANGELOG.md#history-capability-extraction)，该记录不作为当前安装或宿主缓存已同步的证明。
 
-内置 Capability 方法路径以 `skills/capabilities/` 为根，具体可点击路径从生命周期导航或对应 Role 进入。Runtime 的[执行事实](EXECUTION_FACTS.md)、[Work/Fix 与集成候选](WORK_UNITS.md)、[来源审批](security-change-authority.md)和[结单/提炼](agents/tp-software-lifecycle.md)分别承载实际行为；本章与拓扑只负责导航，不能代替运行验证或真实验收。新旧事实按各自标记解释，不由角色关系推断过去已执行。
+软件工程共享 Capability 方法路径以 `skills/capabilities/` 为根，领域专项方法位于 `skills/autonomy/`、`skills/base/`、`skills/knowledge/` 或 `skills/wiki/`；具体可点击路径从生命周期导航或对应领域/Role 进入。Knowledge 与 Wiki 的领域入口只保留职责、意图路由、共享边界和结果汇总；具体方法按命中意图读取，不预载全部能力。共用的 Task 收敛契约保留原路径，拆分不改变 Runtime、CLI 或既有数据边界。Runtime 的[执行事实](EXECUTION_FACTS.md)、[Work/Fix 与集成候选](WORK_UNITS.md)、[来源审批](security-change-authority.md)和[结单/提炼](agents/tp-software-lifecycle.md)分别承载实际行为；本章与拓扑只负责导航，不能代替运行验证或真实验收。新旧事实按各自标记解释，不由角色关系推断过去已执行。

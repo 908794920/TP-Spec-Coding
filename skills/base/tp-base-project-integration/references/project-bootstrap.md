@@ -3,7 +3,7 @@
 适用条件：检查或执行项目 Runtime bootstrap 时读取。
 
 
-本 Skill 继续负责项目 Runtime 初始化健康检查，但它与 Base Binding 迁移是两件事。
+项目接入能力负责 Runtime 初始化健康检查；它与 Base Binding 迁移是两件事。
 
 - 只读预检：`tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only`；
 - 未初始化且确认 pristine 时，只有 human_owner 明确要求才执行 bootstrap；

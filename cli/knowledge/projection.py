@@ -469,11 +469,12 @@ def update_projection(cfg) -> Dict[str, Any]:
 
 def projection_status(cfg, *, conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
     db = cfg.paths.knowledge_projection_db
-    own = conn is None
-    if not db.is_file() and own:
-        return {"status":"MISSING","database":str(db),"fresh":False,"issues":["projection database missing"]}
-    if own: conn = _connect(db)
-    assert conn is not None
+    if conn is None:
+        if not db.is_file():
+            return {"status":"MISSING","database":str(db),"fresh":False,"issues":["projection database missing"]}
+        # 诊断不初始化或修补 schema；读失败时也关闭连接。索引写入方仍持有自己的连接。
+        with telemetry.connect_readonly(db) as reader:
+            return projection_status(cfg, conn=reader)
     issues: List[str] = []
     integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
     if integrity != "ok": issues.append(f"integrity_check: {integrity}")
@@ -506,7 +507,6 @@ def projection_status(cfg, *, conn: Optional[sqlite3.Connection] = None) -> Dict
         "embedding_rows":vectors, "vector_mode":vector_mode, "retrieval_authority":str(cfg.knowledge_retrieval.get("strategy") or "canonical-first-fts5"),
         "issues":issues,
     }
-    if own: conn.close()
     return result
 
 

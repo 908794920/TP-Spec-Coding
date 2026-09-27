@@ -19,6 +19,7 @@ description: TP-Spec-Coding 唯一默认产品入口；以低上下文成本识�
 3. software → `tp-software-lifecycle`；wiki → `tp-wiki`；knowledge → `tp-knowledge`；base → `tp-base-maintenance`；autonomy → `tp-project-autonomy`。
 4. 在明确 TP-Spec 软件项目上下文且没有冲突信号时，默认进入 software；真正歧义才做一次最小澄清。
 5. 原始用户输入尽量原样交给目标 Domain Agent，避免入口二次总结造成信息损失。
+6. 用户级外部 SKILL 的导入、更新、启停、移除、关联等管理请求交 `base → tp-base-maintenance → tp-external-skill-management`；使用外部方法完成业务工作仍按该工作的领域路由。管理对象与被采用的方法不混为一项执行授权。
 
 ## 外部能力发现与转交
 开始/继续实际工作时，在领域识别后运行一次 `tp-spec skill list --query external:local: --json` 获取当前用户级外部摘要；纯状态查询不强制读取。复用同轮真实结果，不扫描业务仓库、不预载所有正文；恢复会话或来源变化后重新查询。

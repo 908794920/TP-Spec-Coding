@@ -130,7 +130,7 @@ def prepare_source_config(
     result["_source_policy_digest"] = _digest({"config": public, "rules": source_rules})
     base = Path(__file__).resolve().parents[2]
     rule_paths = set((base / "cli/wiki").glob("*.py"))
-    for folder in ("wiki/rules", "agents/tp-wiki", "automation/wiki"):
+    for folder in ("wiki/rules", "agents/tp-wiki", "skills/wiki", "automation/wiki"):
         rule_paths.update((base / folder).rglob("*.md"))
     rule_paths.update((base / "wiki/schema").glob("*.yaml"))
     rules = {path.relative_to(base).as_posix(): sha256_bytes(path.read_bytes()) for path in sorted(rule_paths)}

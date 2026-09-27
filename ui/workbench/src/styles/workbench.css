@@ -155,6 +155,11 @@ main { min-width: 0; }
 .skill-graph-node { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 4px 10px; border: 1px solid var(--node-border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--node-shadow); }
 .skill-graph-node.is-emphasized { border-color: var(--accent); background: var(--accent-tint); }
 .skill-graph-node.is-dim { opacity: .4; }
+.skill-graph-node.is-entry { border: 2px solid var(--accent); border-left-width: 6px; background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-ring), var(--node-shadow); }
+.skill-graph-node.is-entry.is-dim { opacity: .75; }
+.skill-graph-node.is-entry .skill-node-select { color: var(--accent); font-size: 13px; font-weight: 700; }
+.skill-graph-node.is-entry .skill-entry-badge { background: var(--accent); color: var(--surface); font-weight: 700; }
+.skill-entry-hint { color: var(--accent); font-weight: 700; }
 .skill-graph-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .skill-graph-head .ant-typography { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .skill-graph-head .ant-tag { flex: none; margin: 0; font-size: 11px; line-height: 16px; }
@@ -544,6 +549,8 @@ button,a,summary { -webkit-tap-highlight-color: transparent; }
 .skill-source-status[data-status="invalid"],.skill-source-status[data-status="missing"] { color: var(--warning); }
 .skill-source-location { margin: 8px 0; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .skill-source-location p { margin: 4px 0; }
+.skill-management-entry { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.skill-management-entry .ant-btn { padding-inline: 0; font-size: 12px; }
 .skill-source-problems { margin: 10px 0; overflow-wrap: anywhere; }
 .skill-source-problems ul { margin: 0; padding-left: 16px; max-height: 220px; overflow: auto; }
 .skill-detached-note { margin: 0; padding: 8px 10px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12px; }

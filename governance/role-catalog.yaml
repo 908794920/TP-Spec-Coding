@@ -1,6 +1,6 @@
 catalog_version: "5.3.5"
 base_version: "5.3.5"
-generated_utc: 20260926T100246Z
+generated_utc: 20260927T092723Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -14,7 +14,7 @@ roles:
   phases: [other]
   capabilities: [domain.routing, status.compact, explain.route]
   owns_states: []
-  content_sha256: 37A8B63C363222D3364C20418AAB2BFD8F099133AD5A77EDC766A98249C59CA9
+  content_sha256: CA7C98B2BCDE0DAF4608D4211D90C84228331BAF3DB919FD95179DC854A36060
 - workflow_role: tp-software-lifecycle
   display_name: tp-软件工程生命周期
   type: control-role
@@ -44,9 +44,15 @@ roles:
   skill_path: agents/tp-base-maintenance/SKILL.md
   domain: base
   phases: [other]
-  capabilities: [base.configure, base.migrate, base.doctor, base.repair]
+  capabilities: [base.configure, base.migrate, base.doctor, base.repair, base.workbench, skill.external.manage]
+  domain_skills:
+    - {id: tp-base-installation, path: skills/base/tp-base-installation/SKILL.md, mode: conditional}
+    - {id: tp-base-project-integration, path: skills/base/tp-base-project-integration/SKILL.md, mode: conditional}
+    - {id: tp-base-contract-migration, path: skills/base/tp-base-contract-migration/SKILL.md, mode: conditional}
+    - {id: tp-base-workbench, path: skills/base/tp-base-workbench/SKILL.md, mode: conditional}
+    - {id: tp-external-skill-management, path: skills/base/tp-external-skill-management/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 3BA34C974DE212B43EA6277004CE3765520B57265E76499361E0C77372C1F9FC
+  content_sha256: FE0D5ECF6C854FEE336ADF21F922F61272FBAA76D17B7C62391D095C93BBC381
 - workflow_role: tp-knowledge
   display_name: tp-knowledge
   type: human-owner-skill
@@ -54,8 +60,15 @@ roles:
   domain: knowledge
   phases: [other, delivery]
   capabilities: [knowledge.search, knowledge.ingest, knowledge.converge, knowledge.audit]
+  domain_skills:
+    - {id: tp-knowledge-retrieval, path: skills/knowledge/tp-knowledge-retrieval/SKILL.md, mode: conditional}
+    - {id: tp-knowledge-task-convergence, path: skills/knowledge/tp-knowledge-task-convergence/SKILL.md, mode: conditional}
+    - {id: tp-knowledge-maintenance, path: skills/knowledge/tp-knowledge-maintenance/SKILL.md, mode: conditional}
+    - {id: tp-knowledge-ingestion, path: skills/knowledge/tp-knowledge-ingestion/SKILL.md, mode: conditional}
+    - {id: tp-knowledge-normalization, path: skills/knowledge/tp-knowledge-normalization/SKILL.md, mode: conditional}
+    - {id: tp-knowledge-scheduled-maintenance, path: skills/knowledge/tp-knowledge-scheduled-maintenance/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 274104FA9C0DB892DB45B5441AA316B7223CA9BEA44D896FE7AA2A17F1463850
+  content_sha256: 9CA70ACD88AE4BE13B1B3AFEDB3BEEFBFC01AAC3A384B84F8A9E2A96C39FFB32
 - workflow_role: tp-wiki
   display_name: tp-wiki
   type: human-owner-skill
@@ -63,8 +76,15 @@ roles:
   domain: wiki
   phases: [other]
   capabilities: [wiki.plan, wiki.update, wiki.audit, wiki.search]
+  domain_skills:
+    - {id: tp-wiki-retrieval, path: skills/wiki/tp-wiki-retrieval/SKILL.md, mode: conditional}
+    - {id: tp-wiki-maintenance, path: skills/wiki/tp-wiki-maintenance/SKILL.md, mode: conditional}
+    - {id: tp-wiki-initial-build, path: skills/wiki/tp-wiki-initial-build/SKILL.md, mode: conditional}
+    - {id: tp-wiki-audit, path: skills/wiki/tp-wiki-audit/SKILL.md, mode: conditional}
+    - {id: tp-wiki-recovery, path: skills/wiki/tp-wiki-recovery/SKILL.md, mode: conditional}
+    - {id: tp-wiki-scheduled-maintenance, path: skills/wiki/tp-wiki-scheduled-maintenance/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 099D2B6C06A37832B07EDBBF0566E3108E85DDFA95CE1D9467F5ECF73209F8A9
+  content_sha256: 89516600F74EB0AB331FA8E5C6F3A8BA4B6DD2D001B2AA186079CCD7C3B56CD4
 - workflow_role: tp-product-manager
   display_name: tp-产品经理
   type: workflow-role
@@ -298,6 +318,91 @@ topology:
       name: 自治集成
       kind: capability-skill
       path: skills/autonomy/tp-autonomy-integrate/SKILL.md
+    tp-base-installation:
+      id: tp-base-installation
+      name: 安装与健康检查
+      kind: capability-skill
+      path: skills/base/tp-base-installation/SKILL.md
+    tp-base-project-integration:
+      id: tp-base-project-integration
+      name: 项目接入维护
+      kind: capability-skill
+      path: skills/base/tp-base-project-integration/SKILL.md
+    tp-base-contract-migration:
+      id: tp-base-contract-migration
+      name: 契约升级迁移
+      kind: capability-skill
+      path: skills/base/tp-base-contract-migration/SKILL.md
+    tp-base-workbench:
+      id: tp-base-workbench
+      name: 工作台维护
+      kind: capability-skill
+      path: skills/base/tp-base-workbench/SKILL.md
+    tp-external-skill-management:
+      id: tp-external-skill-management
+      name: 自定义 SKILL 管理
+      kind: capability-skill
+      path: skills/base/tp-external-skill-management/SKILL.md
+    tp-knowledge-retrieval:
+      id: tp-knowledge-retrieval
+      name: 知识检索与证据读取
+      kind: capability-skill
+      path: skills/knowledge/tp-knowledge-retrieval/SKILL.md
+    tp-knowledge-task-convergence:
+      id: tp-knowledge-task-convergence
+      name: Task 知识与记忆收敛
+      kind: capability-skill
+      path: skills/knowledge/tp-knowledge-task-convergence/SKILL.md
+    tp-knowledge-maintenance:
+      id: tp-knowledge-maintenance
+      name: Knowledge 内容维护
+      kind: capability-skill
+      path: skills/knowledge/tp-knowledge-maintenance/SKILL.md
+    tp-knowledge-ingestion:
+      id: tp-knowledge-ingestion
+      name: 外部文档接入
+      kind: capability-skill
+      path: skills/knowledge/tp-knowledge-ingestion/SKILL.md
+    tp-knowledge-normalization:
+      id: tp-knowledge-normalization
+      name: Legacy Knowledge 标准化
+      kind: capability-skill
+      path: skills/knowledge/tp-knowledge-normalization/SKILL.md
+    tp-knowledge-scheduled-maintenance:
+      id: tp-knowledge-scheduled-maintenance
+      name: Knowledge 定时维护
+      kind: capability-skill
+      path: skills/knowledge/tp-knowledge-scheduled-maintenance/SKILL.md
+    tp-wiki-retrieval:
+      id: tp-wiki-retrieval
+      name: Wiki 检索与读取
+      kind: capability-skill
+      path: skills/wiki/tp-wiki-retrieval/SKILL.md
+    tp-wiki-maintenance:
+      id: tp-wiki-maintenance
+      name: Wiki 增量维护
+      kind: capability-skill
+      path: skills/wiki/tp-wiki-maintenance/SKILL.md
+    tp-wiki-initial-build:
+      id: tp-wiki-initial-build
+      name: Wiki 首次构建
+      kind: capability-skill
+      path: skills/wiki/tp-wiki-initial-build/SKILL.md
+    tp-wiki-audit:
+      id: tp-wiki-audit
+      name: Wiki 质量与语义审计
+      kind: capability-skill
+      path: skills/wiki/tp-wiki-audit/SKILL.md
+    tp-wiki-recovery:
+      id: tp-wiki-recovery
+      name: Wiki 异常恢复
+      kind: capability-skill
+      path: skills/wiki/tp-wiki-recovery/SKILL.md
+    tp-wiki-scheduled-maintenance:
+      id: tp-wiki-scheduled-maintenance
+      name: Wiki 定时维护
+      kind: capability-skill
+      path: skills/wiki/tp-wiki-scheduled-maintenance/SKILL.md
     ui-prototype-design:
       id: ui-prototype-design
       name: 原型与交互设计
@@ -430,6 +535,74 @@ topology:
     mode: conditional
   - from: tp-project-autonomy
     to: tp-autonomy-integrate
+    relation: uses-skill
+    mode: conditional
+  - from: tp-base-maintenance
+    to: tp-base-installation
+    relation: uses-skill
+    mode: conditional
+  - from: tp-base-maintenance
+    to: tp-base-project-integration
+    relation: uses-skill
+    mode: conditional
+  - from: tp-base-maintenance
+    to: tp-base-contract-migration
+    relation: uses-skill
+    mode: conditional
+  - from: tp-base-maintenance
+    to: tp-base-workbench
+    relation: uses-skill
+    mode: conditional
+  - from: tp-base-maintenance
+    to: tp-external-skill-management
+    relation: uses-skill
+    mode: conditional
+  - from: tp-knowledge
+    to: tp-knowledge-retrieval
+    relation: uses-skill
+    mode: conditional
+  - from: tp-knowledge
+    to: tp-knowledge-task-convergence
+    relation: uses-skill
+    mode: conditional
+  - from: tp-knowledge
+    to: tp-knowledge-maintenance
+    relation: uses-skill
+    mode: conditional
+  - from: tp-knowledge
+    to: tp-knowledge-ingestion
+    relation: uses-skill
+    mode: conditional
+  - from: tp-knowledge
+    to: tp-knowledge-normalization
+    relation: uses-skill
+    mode: conditional
+  - from: tp-knowledge
+    to: tp-knowledge-scheduled-maintenance
+    relation: uses-skill
+    mode: conditional
+  - from: tp-wiki
+    to: tp-wiki-retrieval
+    relation: uses-skill
+    mode: conditional
+  - from: tp-wiki
+    to: tp-wiki-maintenance
+    relation: uses-skill
+    mode: conditional
+  - from: tp-wiki
+    to: tp-wiki-initial-build
+    relation: uses-skill
+    mode: conditional
+  - from: tp-wiki
+    to: tp-wiki-audit
+    relation: uses-skill
+    mode: conditional
+  - from: tp-wiki
+    to: tp-wiki-recovery
+    relation: uses-skill
+    mode: conditional
+  - from: tp-wiki
+    to: tp-wiki-scheduled-maintenance
     relation: uses-skill
     mode: conditional
   - from: tp-product-manager

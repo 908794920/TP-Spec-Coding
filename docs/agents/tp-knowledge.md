@@ -6,7 +6,7 @@
 
 ## 执行入口
 
-通过 `tp-spec-coding` 按用户意图路由。机器契约与能力 ID 以下方自动生成区块为准。
+通过 `tp-spec-coding` 按用户意图路由。领域 Agent 是薄入口，只选择本次需要的 SKILL；检索、任务收敛、日常维护、外部接入、旧库标准化和定时维护各自按需加载，不默认执行整条维护链。机器契约与能力 ID 以下方自动生成区块为准。
 
 ## 能力导航
 
@@ -16,6 +16,15 @@
 - **Agent**：tp-knowledge · `tp-knowledge`
 - **执行契约**：[`agents/tp-knowledge/SKILL.md`](../../agents/tp-knowledge/SKILL.md)
 - **能力 ID**：`knowledge.search`、`knowledge.ingest`、`knowledge.converge`、`knowledge.audit`
+
+### Domain / Capability Skill
+
+- `tp-knowledge-retrieval` (conditional) → [`skills/knowledge/tp-knowledge-retrieval/SKILL.md`](../../skills/knowledge/tp-knowledge-retrieval/SKILL.md)
+- `tp-knowledge-task-convergence` (conditional) → [`skills/knowledge/tp-knowledge-task-convergence/SKILL.md`](../../skills/knowledge/tp-knowledge-task-convergence/SKILL.md)
+- `tp-knowledge-maintenance` (conditional) → [`skills/knowledge/tp-knowledge-maintenance/SKILL.md`](../../skills/knowledge/tp-knowledge-maintenance/SKILL.md)
+- `tp-knowledge-ingestion` (conditional) → [`skills/knowledge/tp-knowledge-ingestion/SKILL.md`](../../skills/knowledge/tp-knowledge-ingestion/SKILL.md)
+- `tp-knowledge-normalization` (conditional) → [`skills/knowledge/tp-knowledge-normalization/SKILL.md`](../../skills/knowledge/tp-knowledge-normalization/SKILL.md)
+- `tp-knowledge-scheduled-maintenance` (conditional) → [`skills/knowledge/tp-knowledge-scheduled-maintenance/SKILL.md`](../../skills/knowledge/tp-knowledge-scheduled-maintenance/SKILL.md)
 
 <!-- TP-SPEC:AGENT-TOPOLOGY-END -->
 
