@@ -15,7 +15,8 @@ import { Disclosure, Empty, Fields, Problems, ReadStatus } from '../components/F
 
 /* 关系图依赖 @xyflow/react 及其样式，进入任务时默认展开，保留独立 lazy 分块。
    加载占位沿用 graph-canvas，图出现时保持区域尺寸，避免布局跳动。 */
-const TaskGraph = lazy(() => import('../graph/TaskGraph').then(module => ({ default: module.TaskGraph })));
+const loadTaskGraph = () => import('../graph/TaskGraph').then(module => ({ default: module.TaskGraph }));
+const TaskGraph = lazy(loadTaskGraph);
 
 function focusAfterReveal(element: HTMLElement | null) {
     if (!element)
@@ -235,6 +236,10 @@ export function TaskPage({ context, taskId, read, revision }: {
     revision: number;
     read: ReadState<Envelope<TaskData>>;
 }) {
+    useEffect(() => {
+        // 与任务数据并行加载默认展开的关系图，避免数据返回后才开始下载代码。
+        if (context && taskId) void loadTaskGraph().catch(() => undefined);
+    }, [context?.context_key, taskId]);
     if (!context || !taskId)
         return <div className="page task-page"><div className="page-heading"><div><span className="eyebrow">任务工作区</span><h2>尚未选择 Task</h2></div></div>
         <Empty title="选择一个 Task 查看工作关系">从项目总览或左侧任务索引进入；不会自动选取“最近任务”。</Empty></div>;

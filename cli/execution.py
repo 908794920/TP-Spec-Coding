@@ -7,7 +7,9 @@ No plan, participation, role name or scope reference grants execution authority.
 from __future__ import annotations
 
 import hashlib
+import copy
 import json
+from pathlib import Path
 import re
 from typing import Any
 
@@ -36,10 +38,10 @@ def read_events(conn, task_id: str) -> list[dict]:
     return [dict(row) for row in conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id,))]
 
 
-def _trusted(row: dict, detail: dict, producer: str) -> bool:
+def _trusted(row: dict, detail: dict, producer: str, *, contract: dict | None = None) -> bool:
     """Validate a registered writer's identity fields, not cryptographic human identity."""
     from . import event_policies, event_contract
-    return (not event_contract.validate_event_semantics(row.get("event_type"), detail)
+    return (not event_contract.validate_event_semantics(row.get("event_type"), detail, contract=contract)
             and detail.get("execution_schema") == SCHEMA
             and event_policies.event_allowed_for_producer(row.get("event_type"), producer)
             and detail.get("producer") == producer
@@ -110,6 +112,21 @@ def _activity(row: dict, detail: dict) -> dict:
 
 
 def project_execution(task, rows, *, retired: bool = False) -> dict:
+    from . import command_context
+    context = command_context.current()
+    if context is None or not context.read_only_request:
+        return _project_execution(task, rows, retired=retired)
+    task, rows = dict(task), [dict(row) for row in rows]
+    # 对实际输入和当前规则内容取指纹；不能仅凭 Task ID/最后事件号复用。
+    contract = (Path(__file__).resolve().parents[1] / "governance/event-semantics.yaml").read_bytes()
+    key = digest([task.get("task_id"), task.get("current_state"), rows, retired,
+                  hashlib.sha256(contract).hexdigest()])
+    if key not in context.execution_cache:
+        context.execution_cache[key] = _project_execution(task, rows, retired=retired)
+    return copy.deepcopy(context.execution_cache[key])
+
+
+def _project_execution(task, rows, *, retired: bool = False) -> dict:
     """Deterministic replay, shared by CLI, workflow recovery and the read-only UI.
 
     Invalid new facts are reported, not silently interpreted as legacy records.
@@ -120,6 +137,10 @@ def project_execution(task, rows, *, retired: bool = False) -> dict:
     rows = list(rows)
     from .work_units import project_units
     scoped_work = project_units(rows)
+    from . import command_context, event_contract
+    context = command_context.current()
+    # 同批网页事件使用同一份已校验规则，避免每条事件再次深拷贝整份契约。
+    contract = event_contract.load_event_semantics_contract() if context and context.read_only_request else None
     plan, version = None, 0
     steps: dict[str, dict] = {}
     participations: dict[str, dict] = {}
@@ -141,7 +162,7 @@ def project_execution(task, rows, *, retired: bool = False) -> dict:
             legacy.append(row["id"])
             continue
         producer = "execution" if kind in {PLAN, STEP} else "work_session"
-        if not _trusted(row, detail, producer):
+        if not _trusted(row, detail, producer, contract=contract):
             issues.append(f"EXECUTION_EVENT_INVALID:{row['id']}")
             continue
         if kind == PLAN:

@@ -239,14 +239,19 @@ def public_document(cfg, row: dict) -> dict:
 
 
 def query_documents(cfg, query="", *, projects=None, layer="", kind="", maintenance="",
-                    keys=None, limit=20, offset=0, conn=None, count_only=False) -> dict:
+                    keys=None, limit=20, offset=0, conn=None, count_only=False,
+                    known_total=None, count_by_layer=False) -> dict:
     if (not isinstance(query, str) or len(query) > 512 or not 1 <= limit <= 20
-            or not 0 <= offset <= 2_000_000 or layer not in {"", "canonical", "source"}):
+            or not 0 <= offset <= 2_000_000 or layer not in {"", "canonical", "source"}
+            or (known_total is not None and (type(known_total) is not int or known_total < 0
+                                             or conn is None or count_only))
+            or (count_by_layer and (not count_only or layer or known_total is not None))):
         raise KnowledgeError("KNOWLEDGE_INVALID_QUERY")
     if conn is None:
         with connect_readonly(cfg.paths.knowledge_projection_db) as opened:
             return query_documents(cfg, query, projects=projects, layer=layer, kind=kind,
-                                   maintenance=maintenance, keys=keys, limit=limit, offset=offset, conn=opened, count_only=count_only)
+                                   maintenance=maintenance, keys=keys, limit=limit, offset=offset,
+                                   conn=opened, count_only=count_only, count_by_layer=count_by_layer)
     from .projection import tokenize_query
     key_expr, meta_expr = configure_connection(conn, cfg)
     base_where, params = scope_condition(cfg, projects)
@@ -267,7 +272,8 @@ def query_documents(cfg, query="", *, projects=None, layer="", kind="", maintena
         cte = """WITH matched AS MATERIALIZED (
             SELECT c.doc_id,c.id AS chunk_id,c.heading_path,c.line_start,c.line_end,c.content,c.content_hash,rank AS score
             FROM fts_chunks JOIN chunks c ON c.id=fts_chunks.rowid WHERE fts_chunks MATCH ?),
-            best AS (SELECT *,ROW_NUMBER() OVER(PARTITION BY doc_id ORDER BY score,chunk_id) AS rn FROM matched)"""
+            ranked AS (SELECT *,ROW_NUMBER() OVER(PARTITION BY doc_id ORDER BY score,chunk_id) AS rn FROM matched),
+            best AS MATERIALIZED (SELECT * FROM ranked WHERE rn=1)"""
         join = "LEFT JOIN best c ON c.doc_id=d.id AND c.rn=1"
         # An ID/path/title exact substring is useful even in old indexes whose FTS omitted IDs.
         where.append("(c.doc_id IS NOT NULL OR instr(lower(COALESCE(d.title,'')||' '||COALESCE(d.canonical_id,'')||' '||COALESCE(d.source_id,'')||' '||d.rel_path),lower(?))>0)")
@@ -278,15 +284,31 @@ def query_documents(cfg, query="", *, projects=None, layer="", kind="", maintena
         if query.strip():
             where.append("instr(lower(COALESCE(d.title,'')||' '||COALESCE(d.canonical_id,'')||' '||COALESCE(d.source_id,'')||' '||d.rel_path),lower(?))>0")
             params.append(query.strip())
+    # Combined counts must deduplicate independently within each layer, as the
+    # Workbench did when it issued two separate layer-filtered queries.
+    partition_key = f"d.scope,{key_expr}" if count_by_layer else key_expr
     eligible = f""", eligible AS (
         SELECT d.*, {key_expr} AS public_key, {meta_expr} AS public_metadata,
             c.heading_path,c.line_start,c.line_end,c.content_hash,c.content,COALESCE(c.score,0.0) AS score,
-            ROW_NUMBER() OVER(PARTITION BY {key_expr} ORDER BY d.rel_path) AS document_rank
+            ROW_NUMBER() OVER(PARTITION BY {partition_key} ORDER BY d.rel_path) AS document_rank
         FROM documents d {join} WHERE {' AND '.join(where)})"""
     sql = cte + eligible
-    total = conn.execute(sql + " SELECT count(*) FROM eligible WHERE document_rank=1", params).fetchone()[0]
+    if count_by_layer:
+        layer_counts = {"canonical": 0, "source": 0}
+        for scope, count in conn.execute(
+                sql + " SELECT scope,count(*) FROM eligible WHERE document_rank=1 GROUP BY scope", params):
+            layer_counts[scope] = int(count)
+        total = sum(layer_counts.values())
+    else:
+        # Workbench already counted this block on the same read transaction.
+        total = (known_total if known_total is not None else
+                 conn.execute(sql + " SELECT count(*) FROM eligible WHERE document_rank=1", params).fetchone()[0])
     if count_only:
-        return {"items": [], "total": int(total), "count": 0, "offset": offset, "limit": limit, "count_kind": "documents"}
+        result = {"items": [], "total": int(total), "count": 0, "offset": offset,
+                  "limit": limit, "count_kind": "documents"}
+        if count_by_layer:
+            result["layer_counts"] = layer_counts
+        return result
     rows = conn.execute(sql + """ SELECT * FROM eligible WHERE document_rank=1
         ORDER BY CASE scope WHEN 'canonical' THEN 0 ELSE 1 END,score,title COLLATE NOCASE,rel_path,public_key
         LIMIT ? OFFSET ?""", [*params, limit, offset]).fetchall()

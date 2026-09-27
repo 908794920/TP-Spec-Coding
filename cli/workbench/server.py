@@ -11,6 +11,7 @@ import sys
 from urllib.parse import parse_qs, unquote, urlsplit
 import uuid
 
+from cli import command_context, change_set
 from .service import BASE_ROOT, ReadError, SCHEMA, WorkbenchService, timestamp
 
 
@@ -48,6 +49,10 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             pass  # Navigation may cancel a read; it never requires a retry/write.
 
     def do_GET(self) -> None:
+        with command_context.read_request():
+            self._read_get()
+
+    def _read_get(self) -> None:
         path = [unquote(part) for part in urlsplit(self.path).path.strip("/").split("/")]
         service = self.server.service
         try:
@@ -83,6 +88,12 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     raise ReadError("NOT_FOUND", "接口不存在", 404)
             else:
                 raise ReadError("NOT_FOUND", "接口不存在", 404)
+            try:
+                change_set.verify_read_snapshot()
+            except change_set.ChangeSetError as exc:
+                raise ReadError("PRODUCT_CHANGED_DURING_READ", str(exc), 409) from exc
+            if isinstance(result.get("read"), dict):
+                result["read"]["completed_at"] = timestamp()
             self._send(200, result)
         except ReadError as exc:
             self._send(exc.status, {"schema": SCHEMA, "error": {"code": exc.code, "message": str(exc)},

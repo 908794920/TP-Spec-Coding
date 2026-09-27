@@ -29,8 +29,7 @@ def load_event_semantics_contract() -> Dict[str, Any]:
     return data
 
 
-def _controlled(name: str) -> set[str]:
-    contract = load_event_semantics_contract()
+def _controlled(name: str, contract: Dict[str, Any]) -> set[str]:
     return {_upper(v) for v in ((contract.get("controlled") or {}).get(name) or [])}
 
 
@@ -108,22 +107,25 @@ def inapplicable_prerequisite_binding(event_type: str, detail: Dict[str, Any], f
 
 
 
-def validate_event_semantics(event_type: str, detail: Dict[str, Any] | None) -> List[str]:
+def validate_event_semantics(event_type: str, detail: Dict[str, Any] | None, *,
+                             contract: Dict[str, Any] | None = None) -> List[str]:
     d = dict(detail or {})
     errors: List[str] = []
+    if contract is None:
+        contract = load_event_semantics_contract()
     if d.get("schema") != EVENT_SCHEMA:
         errors.append(f"schema must be {EVENT_SCHEMA}")
     result_status = _upper(d.get("result_status"))
     decision = _upper(d.get("decision"))
     operation = _upper(d.get("operation"))
-    if result_status and result_status not in _controlled("result_status"):
+    if result_status and result_status not in _controlled("result_status", contract):
         errors.append(f"invalid result_status: {result_status}")
-    if decision and decision not in _controlled("decision"):
+    if decision and decision not in _controlled("decision", contract):
         errors.append(f"invalid decision: {decision}")
-    if operation and operation not in _controlled("operations"):
+    if operation and operation not in _controlled("operations", contract):
         errors.append(f"invalid operation: {operation}")
 
-    family = (load_event_semantics_contract().get("event_families") or {}).get(_upper(event_type)) or {}
+    family = (contract.get("event_families") or {}).get(_upper(event_type)) or {}
     required = list(family.get("required") or [])
     if _upper(event_type) == "FACT" and operation == "CHECKPOINT":
         required = list(family.get("checkpoint_required") or [])
