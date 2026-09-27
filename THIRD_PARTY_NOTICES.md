@@ -69,7 +69,7 @@ These references are not Python/Base runtime dependencies and do not imply an in
 
 间接构建依赖包括 Rolldown（MIT）、Lightning CSS（MPL-2.0）、detect-libc（Apache-2.0）、picocolors（ISC）、source-map-js（BSD-3-Clause）等，逐项版本/许可证声明见 `package-lock.json`，实际使用应保留安装包附带的许可证。本声明不是对包体内容已完整审核或下载的结论。
 
-**锁文件来源与限制：**W02 当期容器不能连接 npm Registry 下载包体。通过可用的 GitHub 只读工具读取公开生成的 `zenbu-labs/terminal-code/package-lock.json`，Git blob `4b867289582766b2fa081dee5980773300153f4c`，只复用其中 49 个 npm 包的解析版本、resolved、integrity、依赖及平台/许可证元数据；不引入该应用源码、bin 入口或产品逻辑。根包信息改为本项目，React 移入运行依赖后用 npm 10.9.2 执行离线 `--package-lock-only --ignore-scripts` 归一化，并通过 `npm ci --dry-run --offline --ignore-scripts --no-audit --no-fund` 检查依赖图。所有包体仍待首次实际联网安装与校验，不把 dry-run 当作安装/构建通过。
+**锁文件来源与限制：**W02 当期容器不能连接 npm Registry 下载包体。通过可用的 GitHub 只读工具读取公开生成的 `zenbu-labs/terminal-code/package-lock.json`，Git blob `4b867289582766b2fa081dee5980773300153f4c`，只复用其中 49 个 npm 包的解析版本、resolved、integrity、依赖及平台/许可证元数据；不引入该应用源码、bin 入口或产品逻辑。根包信息改为本项目，React 移入运行依赖后用 npm 10.9.2 执行离线 `--package-lock-only --ignore-scripts` 归一化，并通过 `npm ci --dry-run --offline --ignore-scripts --no-audit --no-fund` 检查依赖图。W02 交付时尚未下载包体或完成首次联网校验，不把当期 dry-run 当作安装/构建通过；后续批次的实际验证范围见 [CHANGELOG](CHANGELOG.md)，不由这段来源说明判断当前安装状态。
 
 元数据来源（读取日期 2026-09-14）：
 `https://github.com/zenbu-labs/terminal-code/blob/main/package-lock.json`
@@ -91,7 +91,7 @@ W02 未预装图形库；W03 的实际新增依赖见下一节。
 
 **元数据来源与限制：**官方已发布包 `@xyflow/react@12.10.1` 的 package.json 与官方仓库用于核对入口/API、依赖和 MIT 声明；新增锁定版本/SRI/依赖解析从公开生成的 `thesongzhu/Friday/pnpm-lock.yaml` 的固定提交 `51684b987c041193f079563056cc43aa823aa559` 读取，并结合上游锁文件核对。只复用 npm 解析元数据，不引入该应用的代码、字体、测试、运行依赖集合或产品逻辑。没有把官网仓库当前显示的版本当作本项目安装版本。
 
-W03 已用 npm 10.9.2 对新增锁文件离线归一化并执行 `ci --dry-run --offline --ignore-scripts --no-audit --no-fund`。当期仍不能下载 npm 包体；**该结果只证明锁依赖图可解析，不证明包体 SRI 已实际校验、前端安装、构建、类型检查或浏览器通过**。首次联网 `npm ci` 由用户本地统一合并后执行。
+W03 已用 npm 10.9.2 对新增锁文件离线归一化并执行 `ci --dry-run --offline --ignore-scripts --no-audit --no-fund`。当期仍不能下载 npm 包体；**该结果只证明锁依赖图可解析，不证明包体 SRI 已实际校验、前端安装、构建、类型检查或浏览器通过**。这记录 W03 当期的环境限制，不表示后续批次从未联网安装；本机依赖是否就绪仍须按当前环境确认。
 
 来源：
 - `https://app.unpkg.com/@xyflow/react@12.10.1/files/package.json`

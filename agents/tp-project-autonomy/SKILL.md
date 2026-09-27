@@ -1,7 +1,7 @@
 ---
 id: tp-project-autonomy
 name: tp-项目自治维护
-version: 5.3.4
+version: 5.3.5
 status: active
 type: control-role
 role: tp-project-autonomy
@@ -29,6 +29,9 @@ description: 长期项目自治维护薄控制入口：识别配置、周期执�
 - 直接 `git merge/cherry-pick/reset` Canonical；
 - 把无人值守 Cycle 中的 `requires_human` 当成默认批准；
 - 绕过 `tp-autonomy-integrate` 进入 Canonical。
+
+## 已选外部 SKILL
+保留入口传入的外部方法 ID、来源与必要正文，按 [外部能力选择与转交](../../docs/EXTERNAL_SKILLS.md#entry-handoff) 接续；直接调用时也使用同一发现逻辑。外部方法只能补充当前已选自治动作，转交 `tp-autonomy-*` 或软件领域时继续携带来源，不能替代自治控制 Skill、Cycle 授权或集成边界，不因接入能力编辑项目入口。
 
 ## 1. 意图路由
 

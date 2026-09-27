@@ -489,7 +489,7 @@ def _catalog_fingerprint(source_id: str, docs: Iterable[Dict[str, Any]], repos: 
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def inventory(cfg: Any) -> Dict[str, Any]:
+def inventory(cfg: Any, *, include_fingerprint: bool = False) -> Dict[str, Any]:
     """Return the registered Wiki catalog without reading arbitrary paths."""
     source_id, docs, problems, repos = _catalog(cfg)
     project_map: Dict[str, Dict[str, Any]] = {}
@@ -506,13 +506,20 @@ def inventory(cfg: Any) -> Dict[str, Any]:
                 project_map[pid] = {"id": pid, "name": str(ws.get("display_name") or ws.get("name") or pid)}
     except Exception:
         pass
-    return {
+    result = {
         "source_id": source_id,
         "projects": sorted(project_map.values(), key=lambda row: str(row["id"])),
         "repositories": [{key: value for key, value in row.items() if not key.startswith("_")} for row in repos],
         "documents": [_public_document(doc) for doc in docs],
         "problems": problems,
     }
+    if include_fingerprint:
+        try:
+            result["catalog_fingerprint"] = _catalog_fingerprint(source_id, docs, repos, problems)
+        except (OSError, ValueError, RuntimeError) as exc:
+            # 指纹属于索引诊断；其异常不能让已读取的目录一起消失。
+            result["index_error"] = str(exc)
+    return result
 
 
 _SCHEMA = """
@@ -932,9 +939,14 @@ def update_index(cfg: Any) -> Dict[str, Any]:
     return result
 
 
-def index_status(cfg: Any) -> Dict[str, Any]:
+def index_status(cfg: Any, *, catalog: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Read projection metadata without creating or changing the database."""
-    source_id, current_docs, current_problems, current_repos = _catalog(cfg)
+    if catalog is None:
+        source_id, current_docs, current_problems, current_repos = _catalog(cfg)
+    else:
+        # 工作台传入本次、同来源的目录指纹，避免为索引状态再次检查全部文件。
+        source_id = catalog["source_id"]
+        current_problems = catalog["problems"]
     path = retrieval_db_path(cfg, source_id=source_id)
     conn = _open_ro(cfg, source_id=source_id)
     if conn is None:
@@ -944,7 +956,12 @@ def index_status(cfg: Any) -> Dict[str, Any]:
             schema = _get_meta(conn, "schema")
             if not schema:
                 return {"status": "WARN", "database": str(path), "indexed_at": "", "source_id": source_id, "document_count": 0, "error": "metadata missing"}
-            current_fingerprint = _catalog_fingerprint(source_id, current_docs, current_repos, current_problems)
+            if catalog is None:
+                current_fingerprint = _catalog_fingerprint(source_id, current_docs, current_repos, current_problems)
+            elif "index_error" in catalog:
+                raise RetrievalError(catalog["index_error"])
+            else:
+                current_fingerprint = catalog["catalog_fingerprint"]
             indexed_fingerprint = _get_meta(conn, "catalog_fingerprint")
             indexed_source = _get_meta(conn, "source_id")
             stale = bool(indexed_source != source_id or not indexed_fingerprint or indexed_fingerprint != current_fingerprint)

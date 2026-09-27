@@ -1,4 +1,4 @@
-version: 5.3.4
+version: 5.3.5
 mode: record-first
 principle: business work first; Runtime owns bookkeeping
 daily_api:
@@ -101,7 +101,7 @@ daily_api:
 project_api:
   project_bootstrap_check: tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only
   project_bootstrap: tp-spec project bootstrap --id <PROJECT> --root <ROOT>
-  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.3.4
+  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.3.5
 errors:
   PROJECT_BOOTSTRAP_AVAILABLE: read-only bootstrap check found a pristine project that may be initialized only after explicit human_owner action
   PROJECT_NOT_INITIALIZED: project ledger is not initialized; run project bootstrap/init first

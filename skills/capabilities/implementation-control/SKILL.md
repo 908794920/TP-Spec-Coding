@@ -1,7 +1,7 @@
 ---
 name: implementation-control
 display_name: 实现过程控制
-version: 5.3.4
+version: 5.3.5
 description: Use while implementing an TP-Spec-Coding task when code changes, refactoring, reuse decisions, debugging, or scope control are required.
 ---
 
@@ -17,7 +17,7 @@ description: Use while implementing an TP-Spec-Coding task when code changes, re
 ### THINK — 事实先于简化
 找到真实入口、当前实现、调用链、可验证目标和关键假设。仅相关事实存在缺口时定向调查，不为凑清单扫描全仓。
 
-需要 Wiki 导航时按 [统一检索与使用记录](../../../docs/WIKI_USAGE.md) 查询；已知文档直接读取，采用时记录真实 Task Context Usage。不为记录使用量增加无关检索，Wiki 结论仍回当前源码核验。
+首次定位陌生模块或跨模块关系时，先判断 Wiki 导航或 Knowledge 长期规则能否补足当前源码与上下文；已知位置、简单修改或现有事实充分时可跳过，不为统计次数机械检索。按需遵循 [Wiki 使用说明](../../../docs/WIKI_USAGE.md) 或 [Knowledge 使用说明](../../../docs/KNOWLEDGE_USAGE.md)；已知文档直接读取，采用情况随已有 checkpoint/review/verify 记录真实 `context_usage`。内容仍回当前源码核验。
 
 | 触发条件 | 必要核对 |
 | --- | --- |

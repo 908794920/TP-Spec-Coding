@@ -86,6 +86,8 @@ Portable project binding 只保存稳定 identity，不重复保存 Wiki/Knowled
 python -m cli.main workflow next --task <TASK-ID> --db <DB-PATH> --json
 ```
 
+用户级外部方法包由同一入口按需发现与读取；存放、登记、停用和排错见 [外部 SKILL](EXTERNAL_SKILLS.md)。接入它们不需要初始化项目、修改 `AGENTS.md` 或再次运行 `sync-project`；旧宿主会话需确认已读取更新后的入口指令。
+
 完整 Role 导航见 [`agents/tp-software-lifecycle.md`](agents/tp-software-lifecycle.md)，不在本手册维护第二份 Role 清单。
 
 ## 6. Runtime、Event 与 Evidence
@@ -147,22 +149,38 @@ python -m cli.main base resolve --workspace-root "<project-root>"
 
 ## 10. 同版本源码升级与兼容
 
-本轮原始输入已经标为当前活动契约，只检查 VERSION 不能确认新能力是否存在。应用前核对交付 Patch 头部的原始源码身份、manifest 与适用链，保留自己的未提交修改、Runtime、Knowledge 和机器配置；不要 `reset --hard`、删库或覆盖业务任务来凑基线。
+相同 VERSION 下也可能存在不同源码快照，只检查版本号不能确认某项能力是否存在。应用前核对本次交付说明中的输入源码身份、Manifest、补丁类型和适用链，保留自己的未提交修改、Runtime、Knowledge 和机器配置；不要 `reset --hard`、删库或覆盖业务任务来凑基线。
 
-最终全量 Patch 以原始 `32e8abb` ZIP 为输入，不应叠加在已应用 P1/P2A/P3/P4/P5A/P5B/P5C/P2B 的目录。已应用增量时，在独立原始基线副本核对全量目标，再由实际合并者按现有授权集成差异；不在用户工作区反复试错或重复应用。补丁应用命令和精确 digest 随 Patch 提供。
+增量 Patch 以上一批交付为输入；累计/全量 Patch 以该交付明确指定的原始快照为输入。两种方式择一，不在已应用增量的目录重复叠加同范围全量 Patch。输入不符时，先在独立副本核对差异，再由实际合并者按授权集成，不在用户工作区反复试错。本次补丁的精确基线、应用命令和 digest 以随附交付信息为准；[历史补丁链记录](../CHANGELOG.md#history-source-patch-chain)不作为当前操作指令。
 
 | 事实/数据 | 升级后的解释 |
 |---|---|
-| Task 公共状态与 SQLite 物理 schema | 不新增第二账本或额外 Task 状态；用既有事件表保存新记录 |
+| Task 公共状态与 Runtime SQLite schema | 当前执行/Work/结单契约用既有事件表保存记录，不新增第二任务账本；这不等于所有内容系统数据库均无变化 |
+| Knowledge 知识投影 | 检索/读取统计有独立字段和表的升级边界；按 [Knowledge 使用说明](KNOWLEDGE_USAGE.md) 判断是否需要显式维护，不通过打开页面自动建表或迁移 |
 | `tp-spec.execution/v1` / `tp-spec.work-unit/v1` | 显式计划、角色参与、范围和结果接收/候选；未采用标记的旧 Task/Work 不补造新记录 |
 | `tp-spec.closeout/v1` / `tp-spec.task-learning/v1` | 新 READY Delivery 按有效等级检查并强制生成/复用任务输入评估；无信号也处理，稳定输入可复用 |
 | 同版本旧在途 Task | 先只读查看既有事实；需要新显式计划时用 `work plan`，不补造过去开始/完成；后续新 Delivery 才采用其新契约 |
 | 旧终态/历史案例 | `projection inspect` / `task terminal-check` 只读发现过期或漂移；不补新知识/步骤，不重算旧 hash 或改成 ACTIVE |
-| 更早版本在途 Task | 仍走既有 `project upgrade-contract` 与显式 `task migrate` 的适用契约和授权，不改版本字符串绕过；本次未替所有历史版本做迁移验收 |
+| 更早版本在途 Task | 仍走既有 `project upgrade-contract` 与显式 `task migrate` 的适用契约和授权，不改版本字符串绕过；支持范围不代表所有历史部署均已完成迁移验收 |
+
+### 跨版本更新至当前契约
+
+当前活动契约为 `5.3.5`。仅替换 Base 源码不会自动更新 project/task 的 `base_version`，也不会补造执行、Work、知识或历史验证记录。外部 `skill list/read` 和能力页面查询本身不要求迁移业务 Task；需要继续写入旧契约项目或在途任务时，才按授权走既有显式路径。
+
+先备份实际 Runtime、任务工件及机器配置，并只读核对：
+
+```text
+python -m cli.main project upgrade-contract --id <PROJECT> --to 5.3.5 --db <DB-PATH> --dry-run
+python -m cli.main task migration-plan --project <PROJECT> --db <DB-PATH>
+```
+
+确认项目/任务身份、原契约、schema、工件及真实迁移范围后，由用户或已获授权的执行者去掉 `--dry-run` 切换项目契约，再逐个执行 `task migrate --task <TASK-ID> --task-dir <TASK-DIR> --to 5.3.5 --db <DB-PATH>`。项目升级不连带迁移 Task；终态/已退役任务不迁移。支持的来源由 `cli/migrations/__init__.py` 的显式清单决定，不手改版本字段绕过检查，也不使用一个合成夹具的成功结果替代现场数据验收。
+
+外部来源目录和 `external-skills.yaml` 不在 Base 发布面；源码升级、模板迁移和逆向补丁都不删除或改写它们。CLI 与工作台应指向同一用户根；旧宿主会话需重新读取当前入口指令。
 
 在实际获准的机器安装中先 `base installation-doctor`、`base resolve --workspace-root "<project-root>"`；同名版本不自动改 installation。确需同步薄入口时先运行不带 `--apply` 的 `base sync-project` 查看计划，再经已有授权应用；AGENTS 自有区、Runtime 和项目 binding 保留，不把机器路径迁入共享内容。
 
-新格式已写入后不要降级旧程序继续操作这些在途 Task。逆向 Patch 只恢复源码，不能撤销数据库事件、知识写入或人工决定；优先恢复新代码或向前修复。实际 Windows 安装、路径/Junction、宿主会话隔离、真实业务/权限和人工验收需现场核对；[工作台补验表](WORKBENCH.md)列出当前前端缺口，不因此增加全仓回归。
+新格式已写入后不要降级旧程序继续操作这些在途 Task。逆向 Patch 只恢复源码，不能撤销数据库事件、知识写入或人工决定；优先恢复新代码或向前修复。实际 Windows 安装、路径/Junction、宿主会话隔离、真实业务/权限和人工验收需现场核对；[工作台现场检查表](WORKBENCH.md#本地补验范围)提供按影响选择的场景，实际待验项由本次交付记录限定，不因此增加全仓回归。
 
 ## 11. 发布与文档
 

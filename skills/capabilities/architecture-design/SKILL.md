@@ -1,7 +1,7 @@
 ---
 name: architecture-design
 display_name: 架构设计与复审
-version: 5.3.4
+version: 5.3.5
 description: 在系统设计或独立架构复审有实际价值时读取；以真实代码、约束和成本决策，不扩大范围。
 ---
 

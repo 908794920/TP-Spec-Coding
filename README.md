@@ -24,7 +24,7 @@ Role / Capability Skill        按任务需要选择能力，不是固定流程�
 CLI / Runtime                  自动维护 Task / Event / Evidence / Workflow
 ```
 
-Agent / Role / Skill 的权威拓扑来自 [`governance/role-catalog.yaml`](governance/role-catalog.yaml)。面向用户的文档导航见 [`docs/README.md`](docs/README.md)，不要在 README 再维护一份完整 Role / Skill 清单。
+内置 Agent / Role / Skill 的权威拓扑来自 [`governance/role-catalog.yaml`](governance/role-catalog.yaml)。面向用户的文档导航见 [`docs/README.md`](docs/README.md)，不要在 README 再维护一份完整 Role / Skill 清单。
 
 ## 核心原则
 
@@ -34,20 +34,22 @@ Agent / Role / Skill 的权威拓扑来自 [`governance/role-catalog.yaml`](gove
 - **完整能力，按需执行。** 生命周期描述能力上限，不要求所有任务跑完整流程；Role 是能力集合，不是固定阶段包。
 - **机器路径留在机器上。** 公共仓库和业务项目只保存 portable identity；安装路径由用户级配置解析。
 
-## 升级内容与状态
+## 当前能力与状态
 
-本轮源码交付保留既有版本，不是另起版本或自动发布。六组能力使用现有 Runtime 和只读工作台：
+当前活动版本以 [`VERSION`](VERSION) 为准。以下是现有能力导航，不是发布或整版验收声明：
 
 | 范围 | 入口与边界 |
 |---|---|
 | 角色/专业方法 | [薄入口与能力导航](docs/AGENTS_AND_SKILLS.md)，按需读取视觉、交付与共享记忆方法 |
+| 外部 SKILL | [用户级独立方法包](docs/EXTERNAL_SKILLS.md)；标准／非标准 Markdown、按需发现与精确读取，不写入内置 Catalog 或业务项目 |
 | Task/Work | [步骤与角色事实](docs/EXECUTION_FACTS.md)、[Fix/结果/集成候选](docs/WORK_UNITS.md)；父流程前向，证据适用性单独判断 |
 | Wiki | [稳定来源与增量维护](wiki/README.md)；Git 固定 stable_ref snapshot，无有效变化不请求 LLM，保留非 Git 支持 |
+| Knowledge | [检索、读取与使用分析](docs/KNOWLEDGE_USAGE.md)；知识库页面已接入，检索、阅读与采用分别记录 |
 | 安全变更 | [范围与人工来源](docs/security-change-authority.md)；发现和建议不产生实施权限 |
 | 结单/提炼 | [只读预检与必做评估](docs/agents/tp-software-lifecycle.md)；复用有效结果，空信号不跳过知识/记忆判断 |
 | 文档/展示 | [同源派生视图](docs/TASK_VIEWS.md)与[只读工作台](docs/WORKBENCH.md)；保留历史，明确过期/未知 |
 
-源码 Patch 可供本地应用核对；不等于安装、用户验收或上线。锁定前端类型检查、构建和工作台真实浏览器交互仍待本地验证，具体对象/操作见工作台文档。安装升级、同版本标记兼容及回滚边界见 [Getting Started](docs/GETTING_STARTED.md)。
+源码、局部工程检查、用户现场验收和上线是不同状态。各批次的验证时间、范围及环境限制见 [CHANGELOG](CHANGELOG.md)；历史局部通过不代表当前全部功能已验收，历史环境缺口也不代表后来从未验证。安装升级、同版本标记兼容及回滚边界见 [Getting Started](docs/GETTING_STARTED.md)。
 
 ## 交给 AI 自动安装
 
@@ -112,15 +114,15 @@ Windows 上可用 `ui\install.cmd` 按锁文件准备依赖（锁文件未变化
 
 需要满足 `package.json` 的 Node.js 版本范围，并已准备上文的 Python 运行依赖。访问终端输出的本机地址；`Ctrl+C` 关闭本次两端。启动不会自动安装依赖、初始化/迁移 Runtime 或执行测试。
 
-工作台提供项目总览、任务工作区、全局配置、真实 WorkItem 关系图、四类详情、验收/证据适用性、按需结单预检，以及刷新失败/乱序响应处理。详情只解释事实，不执行验收或结单。旧卡片命令、渲染器、模板、宿主桥接和展示角色已退出，不保留兼容别名；本地工作台是唯一可视化入口，现有纯文本/JSON 查询继续可用。
+工作台提供项目总览、任务工作区、全局配置、Wiki 和知识库页面，以及真实 WorkItem 关系图、能力定义与来源、四类详情、验收/证据适用性、按需结单预检和刷新失败/乱序响应处理。详情只解释事实，不执行验收或结单。旧卡片命令、渲染器、模板、宿主桥接和展示角色已退出，不保留兼容别名；本地工作台是唯一可视化入口，现有纯文本/JSON 查询继续可用。
 
-本专项源码和 Patch 已交付，云端局部验证不代表真实浏览器、锁定工具链构建/完整类型检查或 Windows 已通过；这些仍由本地安装后的实际验证确认，详见工作台说明。
+现场验证只针对当前变更及实际环境，具体场景见 [工作台说明](docs/WORKBENCH.md#本地补验范围)。需要真实任务才能证明的效果由用户应用后验证，不以历史局部记录代签，也不把现场体验全部前置为提供试用代码的条件。
 
 启动参数、来源说明、开发命令与排错见 [`docs/WORKBENCH.md`](docs/WORKBENCH.md)。
 
 ## 按 Agent 选择能力
 
-第一次选择能力直接打开 [`docs/README.md`](docs/README.md)。软件研发从 [`docs/agents/tp-software-lifecycle.md`](docs/agents/tp-software-lifecycle.md) 开始；Base、Wiki、Knowledge、Autonomy 也各有独立导航。Role/Skill 列表由 Role Catalog 驱动的生成区块维护，避免代码升级后人工同步多份能力清单。
+第一次选择能力直接打开 [`docs/README.md`](docs/README.md)。软件研发从 [`docs/agents/tp-software-lifecycle.md`](docs/agents/tp-software-lifecycle.md) 开始；Base、Wiki、Knowledge、Autonomy 也各有独立导航。内置 Role/Skill 列表由 Role Catalog 驱动的生成区块维护，避免代码升级后人工同步多份能力清单。
 
 ## 数据与安全边界
 

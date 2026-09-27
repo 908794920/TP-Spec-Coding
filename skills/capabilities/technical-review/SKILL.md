@@ -1,7 +1,7 @@
 ---
 name: technical-review
 display_name: 独立技术审查
-version: 5.3.4
+version: 5.3.5
 description: 对真实 Diff 和 subject 做独立代码审查；保留 Finding、定位、范围、证据及正式 Review 边界。
 ---
 

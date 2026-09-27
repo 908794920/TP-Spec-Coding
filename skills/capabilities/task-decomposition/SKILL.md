@@ -1,7 +1,7 @@
 ---
 name: task-decomposition
 display_name: 任务拆解
-version: 5.3.4
+version: 5.3.5
 description: Use when a technical plan is complex enough to benefit from explicit executable work items. Split by independently verifiable outcomes, dependencies, scope, and acceptance links.
 ---
 

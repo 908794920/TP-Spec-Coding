@@ -1,5 +1,5 @@
 import { record } from './facts';
-import type { CloseoutData, DetailData, Envelope, GlobalData, Health, ProjectData, TaskData } from './types';
+import type { CloseoutData, DetailData, Envelope, GlobalData, Health, ProjectData, SkillDocumentData, TaskData } from './types';
 
 async function get(path: string, signal?: AbortSignal): Promise<unknown> {
   const response = await fetch(path, { method: 'GET', cache: 'no-store', signal });
@@ -24,10 +24,22 @@ export function validateEnvelope<T>(value: unknown, key?: string, taskId?: strin
 }
 const projectPath = (key: string) => `/api/projects/${encodeURIComponent(key)}`;
 export const api = {
-  skillDocument: async (id: string, signal?: AbortSignal, path = '') => {
-    const value = record(await get(`/api/skill-documents/${encodeURIComponent(id)}?path=${encodeURIComponent(path)}`, signal));
-    if (value.id !== id || typeof value.content !== 'string' || typeof value.path !== 'string') throw new Error('设定文档响应不匹配');
-    return { content: value.content, path: value.path };
+  skillDocument: async (id: string, signal?: AbortSignal, path = '', allowDisabled = false): Promise<SkillDocumentData> => {
+    const query = new URLSearchParams({ path });
+    if (allowDisabled) query.set('allow_disabled', '1');
+    const value = record(await get(`/api/skill-documents/${encodeURIComponent(id)}?${query}`, signal));
+    const expectedSource = id.startsWith('external:local:') ? 'external' : 'builtin';
+    if (value.id !== id || value.source_kind !== expectedSource
+        || typeof value.content !== 'string' || typeof value.path !== 'string' || !value.path
+        || typeof value.source_root !== 'string' || !value.source_root
+        || typeof value.entry_path !== 'string' || !value.entry_path
+        || typeof value.content_sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(value.content_sha256)
+        || !['name', 'entry_sha256', 'upstream', 'version'].every(key => typeof value[key] === 'string')
+        || !(value.status === 'available' && value.enabled === true
+          || allowDisabled && value.status === 'disabled' && value.enabled === false)) {
+      throw new Error('设定文档响应的身份、来源或状态不匹配');
+    }
+    return value as unknown as SkillDocumentData;
   },
   health: async (signal?: AbortSignal) => {
     const value = await get('/api/health', signal);

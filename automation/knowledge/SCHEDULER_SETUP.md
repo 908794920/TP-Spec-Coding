@@ -6,7 +6,7 @@ Knowledge maintenance is scheduled by waking a **conversational model session**.
 
 Store only the contents/intent of `SCHEDULER_BOOTSTRAP.md` as the scheduled prompt. Do not copy `daily-maintenance.md`, SKILL rules, CLI steps, model names or absolute Knowledge paths into the scheduler configuration.
 
-The scheduled conversation first reads the user Installation and resolves the physical Base Root, Knowledge System Root, Workspace Inventory, and Knowledge Project Registry, then processes each registered non-archived workspace/project independently. Project-side Junctions are not required.
+The scheduled conversation first reads the user Installation and resolves the physical Base Root, Knowledge System Root, Workspace Inventory, and Knowledge Project Registry. It resolves each enabled, registered, non-archived project's identity, then groups workspaces by physical Knowledge System Root. Run one serial maintenance chain per Vault after checking shared-state paths, effective maintenance policies and authorized scope; report content decisions per project. Project-side Junctions are not required.
 
 ## Required capabilities
 
@@ -25,6 +25,7 @@ It does not need an embedding service or a second Knowledge-specific daemon.
 - Project assignment, destructive delete/overwrite, uncertain merge/split and evidence conflicts are `NEEDS_REVIEW`.
 - A normal daily schedule does not create the first trusted baseline. Initial migration/bootstrap is an explicit human-owner activity.
 - A failed run must not advance snapshot/baseline merely so the next run looks clean.
+- A shared Vault has one scan/index/verification/baseline state. Unresolved project changes prevent committing that Vault's baseline; independent Vaults may continue. Never execute the same Vault chain concurrently or once per registered workspace.
 - The final message is a compact maintenance report, not a long explanation.
 
 ## Cadence

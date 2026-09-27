@@ -410,10 +410,17 @@ class KnowledgeView:
                 try:
                     conn = stack.enter_context(telemetry.connect_readonly(entry["cfg"].paths.knowledge_projection_db))
                     current = []
+                    base_options = dict(projects=selected, kind=kind, maintenance=maintenance, keys=adopted_keys)
+                    if layer:
+                        counts = {layer: documents.query_documents(
+                            entry["cfg"], query, conn=conn, count_only=True, layer=layer, **base_options)["total"]}
+                    else:
+                        counts = documents.query_documents(
+                            entry["cfg"], query, conn=conn, count_only=True,
+                            count_by_layer=True, **base_options)["layer_counts"]
                     for part in ([layer] if layer else ["canonical", "source"]):
-                        options = dict(projects=selected, layer=part, kind=kind, maintenance=maintenance, keys=adopted_keys)
-                        count = documents.query_documents(entry["cfg"], query, conn=conn, count_only=True, **options)["total"]
-                        current.append((part, source, entry["cfg"], conn, options, count))
+                        current.append((part, source, entry["cfg"], conn,
+                                        {**base_options, "layer": part}, counts[part]))
                     _, meta_expr = documents.configure_connection(conn, entry["cfg"])
                     where, values = documents.scope_condition(entry["cfg"], selected)
                     for row in conn.execute(f"SELECT DISTINCT d.kind,json_extract({meta_expr},'$.status') FROM documents d WHERE {where}", values):
@@ -432,7 +439,8 @@ class KnowledgeView:
                 if len(items) == 20:
                     break
                 try:
-                    result = documents.query_documents(cfg, query, conn=conn, limit=20-len(items), offset=offset, **options)
+                    result = documents.query_documents(cfg, query, conn=conn, limit=20-len(items),
+                                                       offset=offset, known_total=count, **options)
                     items.extend(self._decorate(row) for row in result["items"])
                     offset = 0
                 except (ValueError, sqlite3.Error, OSError):

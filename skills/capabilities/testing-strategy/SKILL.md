@@ -1,7 +1,7 @@
 ---
 name: testing-strategy
 display_name: 分层测试
-version: 5.3.4
+version: 5.3.5
 description: Use to choose and execute risk-proportionate tests for code changes, mapping acceptance criteria to reproducible evidence without equating test count with confidence.
 ---
 

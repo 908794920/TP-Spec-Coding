@@ -40,6 +40,9 @@ class CommandContext:
     config_cache: dict[tuple, dict] = field(default_factory=dict)
     counters: dict[str, int] = field(default_factory=dict)
     bindings: dict[str, Any] = field(default_factory=dict)
+    read_only_request: bool = False
+    change_set_cache: dict[tuple, dict] = field(default_factory=dict)
+    execution_cache: dict[str, dict] = field(default_factory=dict)
 
     def bind(self, args) -> None:
         group = str(getattr(args, "group", "") or "")
@@ -75,6 +78,17 @@ class CommandContext:
 
 def current() -> CommandContext | None:
     return _CURRENT.get()
+
+
+@contextlib.contextmanager
+def read_request() -> Iterator[CommandContext]:
+    """网页只读请求独占缓存；不继承 CLI 上下文，也不写诊断收据。"""
+    context = CommandContext(read_only_request=True)
+    token = _CURRENT.set(context)
+    try:
+        yield context
+    finally:
+        _CURRENT.reset(token)
 
 
 def invocation_id() -> str | None:

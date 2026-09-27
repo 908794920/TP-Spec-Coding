@@ -8,9 +8,10 @@ Never call `AskUserQuestion`. If a required business decision cannot be derived 
 
 ## 2. Bootstrap
 
-1. Resolve workspace/Base version and Content Systems.
-2. Read `agents/tp-knowledge/SKILL.md`, `knowledge/rules/*` and this file from the current Base.
-3. Run:
+1. Resolve the current Base and Content Systems for each enabled, registered, non-archived workspace/project. Group by the resolved physical Knowledge System Root, normalizing equivalent paths according to the host filesystem. Multiple workspaces sharing a Vault are one maintenance unit; do not run a full chain per workspace or run writers concurrently against the same Vault.
+2. Before choosing a command workspace, check that the group's registry, projection DB, meta root, effective Knowledge maintenance/quality configuration (including workspace quality-policy overrides) agree. Different project identities are expected; conflicting shared-state paths or policies are not. If consistency cannot be established, mark that Vault `NEEDS_REVIEW` without choosing one project's settings over another's.
+3. Check that the scheduled scope permits the Vault-level scan/index/verification/baseline operations. These commands cover the physical Vault, not only the chosen workspace's project. A project-only authorization cannot silently become a whole-Vault write. Content outside the configured project/shared scope must not be rewritten or assigned by guess; unresolved or out-of-scope changes prevent advancing that Vault's baseline.
+4. Select one resolved workspace from each consistent, authorized group for that run's Vault-level commands. Read `agents/tp-knowledge/SKILL.md`, follow its scheduled-maintenance capability, and read the applicable `knowledge/rules/*` plus this file from the current Base. Execute one serial chain per Vault:
 
 ```text
 tp-spec knowledge doctor --workspace-root <workspace>
@@ -18,6 +19,10 @@ tp-spec knowledge maintain --workspace-root <workspace>
 ```
 
 Do not treat a missing optional Junction as a Knowledge failure. Do not use legacy `tools/kb-*` from the Vault as runtime authority.
+
+`doctor` and `index status` inspect the existing projection without initializing or repairing its schema. A missing, incomplete or corrupt index is reported; only explicit index build/update initializes or migrates it. Checking freshness still reads the Vault's canonical/source files. `maintain`/`scan` write the shared change set, `verify` writes a verification receipt, and index/audit/snapshot operations have their documented write effects; none of these should be presented as read-only diagnostics.
+
+Keep project content decisions and retrieval scoped to the corresponding resolved workspace or explicit project ID, with current project + registered shared as the default. Grouping maintenance by Vault does not authorize `--scope global` retrieval. If any project remains unresolved, safe content work may continue elsewhere in the group, but do not commit the shared baseline until all staged changes have valid dispositions and the normal gates pass. Independent Vaults may continue.
 
 ## 3. Act on `maintain` result
 
@@ -72,7 +77,7 @@ knowledge snapshot-commit
 
 ### `INITIAL_BASELINE_REQUIRED`
 
-Daily maintenance must not silently turn an unknown Vault into a trusted baseline. Run read-only `doctor/verify/index status`, report initial-baseline work required, and stop unless the scheduled task was explicitly created for first initialization.
+Daily maintenance must not silently turn an unknown Vault into a trusted baseline. Use read-only `doctor/index status` to report initial-baseline work required, then stop unless the scheduled task was explicitly created for first initialization. `verify` writes a receipt and is not part of this read-only branch; do not build an index or create a trusted baseline just to clear this status.
 
 ### `BLOCKED` / `NEEDS_REVIEW`
 
@@ -95,10 +100,12 @@ Report separately:
 
 ## 5. Daily report
 
-Keep the report short:
+Keep the report short. Report scan/index/verify/L4/baseline once per physical Vault, then list each workspace/project's content changes, dispositions and blockers. Do not claim independent per-project baseline commits when the state is shared. A project `NEEDS_REVIEW` must remain visible and prevent a successful whole-Vault conclusion.
 
 ```text
 Knowledge Daily: PASS | NEEDS_REVIEW | BLOCKED
+Vault / command workspace: ...
+Projects in scope: ...
 Truth changes: ...
 Canonical updated: ...
 Source dispositions: ...
@@ -108,4 +115,5 @@ L4: ...
 Baseline: ...
 Retrieval 7d: queries / canonical-hit / source-fallback / no-result / avg latency
 Human review: ...
+Per-project content results: ...
 ```

@@ -10,6 +10,7 @@ import os
 import yaml
 
 from cli.config_loader import load_config
+from cli import command_context
 from cli.environment import load_project_binding
 from .config import ResolvedConfig, same_path
 
@@ -62,7 +63,9 @@ def load_registry(config: ResolvedConfig) -> Dict[str, Any]:
     path = config.paths.wiki_registry
     if not path.is_file():
         return {"version": 1, "workspaces": []}
-    data = load_config(path, use_cache=False)
+    # 网页同次读取可复用解析结果；load_config 仍按文件内容校验，CLI 保持原有读取方式。
+    context = command_context.current()
+    data = load_config(path, use_cache=bool(context and context.read_only_request))
     if "workspaces" not in data or not isinstance(data["workspaces"], list):
         raise ValueError(f"wiki registry missing workspaces list: {path}")
     return data

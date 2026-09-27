@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import copy
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import Context
 import json
 import os
 import stat
@@ -61,7 +64,8 @@ def _sha256_file(path: Path) -> str:
     command_context.count("content_files_hashed")
     digest = hashlib.sha256()
     with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        # 产品树以小文件为主，避免每次读取先分配 1 MiB；哈希范围不变。
+        for chunk in iter(lambda: handle.read(64 * 1024), b""):
             digest.update(chunk)
     return "sha256:" + digest.hexdigest()
 
@@ -125,8 +129,19 @@ def _capture_repo(root: Path) -> tuple[dict[str, Any], str]:
     tracked = [path for path in _nul_paths(tracked_raw) if _is_product_path(path)]
     untracked = [path for path in _nul_paths(untracked_raw) if _is_product_path(path)]
 
-    records = [_path_record(root, path, tracked=True) for path in tracked]
-    records.extend(_path_record(root, path, tracked=False) for path in untracked)
+    paths = [(path, True) for path in tracked] + [(path, False) for path in untracked]
+    context = command_context.current()
+    if context is not None and context.read_only_request and len(paths) >= 64:
+        # 网页批量读取用有界线程隐藏本地文件 I/O 等待；每个文件仍读取真实字节。
+        # 线程不继承请求上下文，计数由调用线程汇总，避免共享可变缓存。
+        def read_batch(batch):
+            return [_path_record(root, path, tracked=tracked_path) for path, tracked_path in batch]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            batches = pool.map(lambda batch: Context().run(read_batch, batch), [paths[i::4] for i in range(4)])
+            records = [record for batch in batches for record in batch]
+        command_context.count("content_files_hashed", sum(row["kind"] == "file" for row in records))
+    else:
+        records = [_path_record(root, path, tracked=tracked_path) for path, tracked_path in paths]
     records.sort(key=lambda row: (str(row["path"]), 0 if row["tracked"] else 1))
     product_digest = _canonical_sha(records)
 
@@ -164,6 +179,27 @@ def _capture_repo(root: Path) -> tuple[dict[str, Any], str]:
 
 @command_context.measured("changeset")
 def capture_change_set(repo_roots: Iterable[str | Path]) -> dict[str, Any]:
+    context = command_context.current()
+    if context is None or not context.read_only_request:
+        return _capture_change_set(repo_roots)
+    # 只读页面按同一组显式输入复用；返回前必须重新捕获并核对实际字节。
+    key = tuple(sorted({str(Path(value).expanduser().absolute()) for value in repo_roots}))
+    if key not in context.change_set_cache:
+        context.change_set_cache[key] = _capture_change_set(key)
+    return copy.deepcopy(context.change_set_cache[key])
+
+
+def verify_read_snapshot() -> None:
+    """重新读文件内容，mtime/size 相同也不能使旧的适用性结论通过。"""
+    context = command_context.current()
+    if context is None or not context.read_only_request:
+        return
+    for roots, expected in context.change_set_cache.items():
+        if _capture_change_set(roots)["snapshot_digest"] != expected["snapshot_digest"]:
+            raise ChangeSetError("读取期间产品文件发生变化，请重新读取。")
+
+
+def _capture_change_set(repo_roots: Iterable[str | Path]) -> dict[str, Any]:
     roots = sorted({_git_root(value) for value in repo_roots}, key=lambda value: str(value))
     if not roots:
         raise ChangeSetError("at least one explicit repo root is required")

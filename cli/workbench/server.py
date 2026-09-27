@@ -11,6 +11,7 @@ import sys
 from urllib.parse import parse_qs, unquote, urlsplit
 import uuid
 
+from cli import command_context, change_set
 from .service import BASE_ROOT, ReadError, SCHEMA, WorkbenchService, timestamp
 
 
@@ -48,13 +49,26 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             pass  # Navigation may cancel a read; it never requires a retry/write.
 
     def do_GET(self) -> None:
+        with command_context.read_request():
+            self._read_get()
+
+    def _read_get(self) -> None:
         path = [unquote(part) for part in urlsplit(self.path).path.strip("/").split("/")]
         service = self.server.service
         try:
             if path == ["api", "health"]:
                 result = service.health()
             elif len(path) == 3 and path[:2] == ["api", "skill-documents"]:
-                result = service.skill_document(path[2], parse_qs(urlsplit(self.path).query).get("path", [""])[0])
+                parameters = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                for name in ("path", "allow_disabled"):
+                    if len(parameters.get(name, [""])) != 1:
+                        raise ReadError("INVALID_QUERY", f"参数不能重复：{name}", 400)
+                inspect_disabled = parameters.get("allow_disabled", ["0"])[0]
+                if inspect_disabled not in {"0", "1"}:
+                    raise ReadError("INVALID_QUERY", "allow_disabled 必须为 0 或 1", 400)
+                result = service.skill_document(
+                    path[2], parameters.get("path", [""])[0], allow_disabled=inspect_disabled == "1",
+                )
             elif path == ["api", "global"]:
                 result = service.global_view()
             elif len(path) == 3 and path[:2] == ["api", "wiki"]:
@@ -74,6 +88,12 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     raise ReadError("NOT_FOUND", "接口不存在", 404)
             else:
                 raise ReadError("NOT_FOUND", "接口不存在", 404)
+            try:
+                change_set.verify_read_snapshot()
+            except change_set.ChangeSetError as exc:
+                raise ReadError("PRODUCT_CHANGED_DURING_READ", str(exc), 409) from exc
+            if isinstance(result.get("read"), dict):
+                result["read"]["completed_at"] = timestamp()
             self._send(200, result)
         except ReadError as exc:
             self._send(exc.status, {"schema": SCHEMA, "error": {"code": exc.code, "message": str(exc)},

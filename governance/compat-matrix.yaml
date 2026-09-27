@@ -1,20 +1,20 @@
 # Compatibility Matrix — TP-Spec-Coding single active contract
 #
-# The active version remains 5.3.4. Earlier snapshots may already carry the
-# same version string without the execution/work-unit/closeout/task-learning
-# v1 markers. Adoption follows trusted events, never the version string alone.
-# Public Task states and physical SQLite schema are unchanged by this upgrade.
-# Historical terminal facts stay read-only; do not mix older writers with
-# adopted in-flight facts. See docs/GETTING_STARTED.md for update/rollback.
+# Current Base contract: 5.3.5. Product version and execution/work-unit/closeout/
+# task-learning v1 adoption are separate facts. Adoption follows trusted events,
+# never an installed version string alone. External skills add no Task states or
+# physical Runtime tables; loading or viewing them never upgrades a project/task.
+# Historical terminal facts stay read-only; older in-flight contracts require
+# the existing explicit project/task migration path. See docs/GETTING_STARTED.md.
 version: "1.0.0"
 contracts:
-  "5.3.4":
-    base_version: "5.3.4"
+  "5.3.5":
+    base_version: "5.3.5"
     governance_ranges:
-      workflow: "[5.3.4, 5.4.0)"
-      ai-role: "[5.3.4, 5.4.0)"
+      workflow: "[5.3.5, 5.4.0)"
+      ai-role: "[5.3.5, 5.4.0)"
       risk-rule: "[2.0.0, 3.0.0)"
       knowledge-rule: "[2.1.0, 3.0.0)"
-      role-catalog: "[5.3.4, 5.4.0)"
-      orchestration: "[5.3.4, 5.4.0)"
-    status_contract: "5.3.4"
+      role-catalog: "[5.3.5, 5.4.0)"
+      orchestration: "[5.3.5, 5.4.0)"
+    status_contract: "5.3.5"

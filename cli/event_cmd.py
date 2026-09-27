@@ -1,15 +1,9 @@
 # -*- coding: utf-8 -*-
-"""TP-Spec-Coding V5.0 event 命令组（M3 + M5-C）。
+"""事件查询、受控事实补录与显式管理员恢复。
 
-包含：
-- event list（只读）：列出任务所有事件
-- event add：追加业务事件（不入 STATE/WORK_SESSION/REWORK 主流程，用于补录 FACT/DECISION 等）
-- event sync（M5-C）：回流 flush 追加的 events.jsonl 事件到 DB，同事务推进 task 表
-
-核心保证：
-- event add 的 type 必须在 Test-TpSpecTask.ps1 EventTypes 内
-- actor 非空保证
-- event sync 幂等（flush_id 去重），不变量 task.current_state == events.jsonl 末条 STATE.state
+普通 event sync 只导入历史 FACT，不从可编辑文件推进状态或专业结果。
+显式管理员恢复调用共享 Record-first API，并追加审计；事件类型和权限
+仍由 event_policies / event_contract 维护，不在此定义第二套规则。
 """
 
 from __future__ import annotations
@@ -25,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import db as dbmod
 from . import event_policies
 from . import event_contract
+from .version import active_version
 
 
 # Final Hardening（Task 1）：事件类型由 cli/event_policies 单一来源推导，
@@ -200,15 +195,15 @@ def cmd_event_sync(args) -> int:
     """回流 flush 追加的 events.jsonl 事件到 DB（M5-C，v3 §4 R2）。
 
     Hardening（任务书 §4.3）：默认禁止 event sync 推进权威状态。
-    - 允许：导入非状态历史 FACT/DECISION（不更新 task.current_state/owner_role）；
+    - 允许：导入非状态历史 FACT（不更新 task.current_state/owner_role）；
     - 禁止：从可编辑文件（events.jsonl / handoff.json）同步 STATE、HANDOFF 指向的
       新状态、owner_role、completed_at、cancel 状态；
     - 出现上述状态推进输入时返回 ``EVENT_SYNC_STATE_MUTATION_FORBIDDEN``；
     - 管理员恢复：显式 ``--admin-recovery`` + ``--confirm-admin-recovery ADMIN_RECOVERY`` 时，
-      转调共享 migration-only transition_task（共享 validator + durable journal +
-      AUDIT/RECONCILIATION 事件），不信任 handoff.json 自报 owner。
+      转调共享 Record-first block/resume/cancel，再追加 AUDIT/RECONCILIATION；
+      不信任 handoff.json 自报 owner，不允许借恢复伪造 COMPLETED。
 
-    幂等：重复 sync 既不重复插事件，也不重复推进 task 表。
+    普通 FACT 导入按 flush_id 去重；显式管理员恢复保留每次恢复审计。
     """
     task_id = args.task
     task_dir = args.task_dir
@@ -372,12 +367,12 @@ def cmd_event_sync(args) -> int:
                 conn.execute(
                     "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) "
                     "VALUES (?,?,?,?,?,?,?)",
-                    (task_id, "AUDIT", "human_owner", "admin recovery", detail, "5.3.4", now),
+                    (task_id, "AUDIT", "human_owner", "admin recovery", detail, active_version(), now),
                 )
                 conn.execute(
                     "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) "
                     "VALUES (?,?,?,?,?,?,?)",
-                    (task_id, "RECONCILIATION", "human_owner", "admin recovery", detail, "5.3.4", now),
+                    (task_id, "RECONCILIATION", "human_owner", "admin recovery", detail, active_version(), now),
                 )
         finally:
             conn.close()

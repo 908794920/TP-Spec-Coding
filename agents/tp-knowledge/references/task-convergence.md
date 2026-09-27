@@ -71,7 +71,8 @@ tp-spec knowledge task-converge --task <TASK-ID> --task-dir <TASK-DIR> --db <DB>
 
 新模式不与旧 `--query / --source / --disposition / --knowledge-ref / --reason-code` 混用。
 无新 schema 的旧 Request 仍可用原参数处理；已终态任务只返回其真实终态，不追补新义务。
-仅安装 P5A、还没有新学习请求的在途任务，通过正常 delivery-converge 接续，
+已采用 `tp-spec.closeout/v1`、但还没有当前 `tp-spec.task-learning/v1` 请求的在途任务，
+通过正常 `delivery-converge` 生成/复用请求并接续，不按安装批次名称判断采用状态，
 不得伪造 knowledge_signals、手造 Result、删除 closeout marker 或直接修改 Runtime。
 
 ## 3. Knowledge 的可核验结果

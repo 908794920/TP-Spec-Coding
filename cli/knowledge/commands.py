@@ -37,6 +37,7 @@ def cmd_doctor(args) -> int:
         if not cfg.paths.knowledge_registry.is_file(): issues.append("knowledge project registry missing")
         proj=projection_status(cfg)
         if proj.get("status")=="MISSING": warnings.append("retrieval projection missing; run knowledge index build")
+        warnings.extend(proj.get("warnings") or [])
         legacy=[]
         for rel in ("tools/kb-index","tools/kb-rebuild","tools/kb-ingest","00-system/schemas","00-system/templates","AI知识库维护体系V1.md","外部文档知识沉淀流水线V1.md"):
             if (root/rel).exists(): legacy.append(rel)
@@ -46,7 +47,7 @@ def cmd_doctor(args) -> int:
         if not scope.get("resolved"):
             warnings.append("current workspace has no resolved Knowledge project scope; project-scoped search will fail closed until registry/binding is fixed")
         result={
-            "schema":"tp-spec.knowledge-doctor/v1","status":"PASS" if not issues else "FAIL",
+            "schema":"tp-spec.knowledge-doctor/v1","status":"FAIL" if issues else "WARN" if warnings else "PASS",
             "paths":cfg.paths.as_dict(),
             "mount":junction_relation(cfg.paths.knowledge_logical_root,project_root),
             "project_scope":scope,

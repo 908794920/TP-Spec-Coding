@@ -20,7 +20,7 @@ from cli import event_presentation
 from cli import event_contract
 from cli import event_policies
 from cli import environment
-from cli import orchestration
+from cli import orchestration, skill_catalog
 from cli.workbench.evidence_view import build_evidence_view
 from cli.content_systems import load_content_systems
 from cli.knowledge import common as knowledge_common
@@ -157,12 +157,15 @@ def _read_autonomy_profiles(user_root: Path) -> Tuple[List[Dict[str, Any]], Path
     return sorted(profiles, key=lambda profile: str(profile.get("profile_id") or "")), profiles_root, None
 
 
-def _read_skill_topology(base_root: Path) -> Tuple[Dict[str, Any], Optional[str]]:
+def _read_skill_topology(base_root: Path, *, user_root: Optional[Path] = None) -> Tuple[Dict[str, Any], Optional[str]]:
     try:
-        topology = orchestration.load_role_topology(base_root)
+        topology = skill_catalog.load_skill_catalog(base_root=base_root, user_root=user_root)
         nodes = topology.get("nodes") or {}
         edges = topology.get("edges") or []
         return {
+            **topology,
+            # Optional source errors belong to topology.problems/external, not
+            # a fatal topology error that would hide the built-in graph.
             "status": "available",
             "schema": str(topology.get("schema") or ""),
             "root_id": str(topology.get("root_id") or ""),
@@ -253,7 +256,7 @@ def build_global_snapshot(
         problems.append(_problem("AUTONOMY_PROFILE_INVALID", f"自治维护配置不可读：{autonomy_error}"))
 
     topology_root = Path(active_base_root) if active_base_root else base_root
-    skill_topology, topology_error = _read_skill_topology(topology_root)
+    skill_topology, topology_error = _read_skill_topology(topology_root, user_root=user_root)
     skill_topology["source_root"] = str(topology_root)
     if topology_error:
         problems.append(_problem("SKILL_TOPOLOGY_INVALID", f"能力拓扑图谱不可读：{topology_error}"))
