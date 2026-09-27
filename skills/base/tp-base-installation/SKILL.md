@@ -17,9 +17,11 @@ description: 用于 TP-Spec 用户级安装配置、Base/Wiki/Knowledge 路径�
 
 1. 使用 `base installation-doctor` 检查 VERSION、关键文件、安装配置、启动器和 Registry 位置；`base resolve` 区分磁盘 Base、实际执行 Base、Binding 和 Runtime contract。
 2. 需要工作区清单时运行只读 `base inventory`，优先复用已有 Registry；只有明确的发现范围才增加 `--search-root`，不扫全盘。
-3. 用户要求创建、更新或修复安装配置时，先查看 `base configure --help`，只写已明确的系统根。合法旧配置中未提供的 root 保留；损坏配置需取得全量 root 后重建，不能猜新路径。
-4. 旧用户级安装状态用 `base installation-migrate` 先出计划，确认对象和已有授权覆盖后才 `--apply`；清单写入使用 `base inventory --write`。内容正文交 Wiki/Knowledge 能力。
-5. 修复后重跑受影响的安装诊断和 Resolver。项目 Binding、root rebind 或入口漂移转 [项目接入维护](../tp-base-project-integration/SKILL.md)；旧 Project/Task contract 转 [契约升级迁移](../tp-base-contract-migration/SKILL.md)。
+3. 核对 Knowledge 使用统计健康时，另查 `knowledge doctor` / `knowledge index status` 的 `usage_collection` 就绪状态和警告；VERSION、总体 doctor PASS 或索引可搜索都不能单独证明采集 schema 已就绪。健康检查不要求真实搜索或读取来凑计数。
+4. 若采集状态为旧契约、缺少读取记录结构或带采集警告，报告未就绪范围，并按本次授权转入 [Knowledge 使用说明](../../../docs/KNOWLEDGE_USAGE.md) 所述显式升级路径。未获授权不得自动执行 `index update`、DDL 或迁移。
+5. 用户要求创建、更新或修复安装配置时，先查看 `base configure --help`，只写已明确的系统根。合法旧配置中未提供的 root 保留；损坏配置需取得全量 root 后重建，不能猜新路径。
+6. 旧用户级安装状态用 `base installation-migrate` 先出计划，确认对象和已有授权覆盖后才 `--apply`；清单写入使用 `base inventory --write`。内容正文交 Wiki/Knowledge 能力。
+7. 修复后重跑受影响的安装诊断和 Resolver。项目 Binding、root rebind 或入口漂移转 [项目接入维护](../tp-base-project-integration/SKILL.md)；旧 Project/Task contract 转 [契约升级迁移](../tp-base-contract-migration/SKILL.md)。
 
 ## 结果
 

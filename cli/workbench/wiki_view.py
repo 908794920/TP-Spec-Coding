@@ -77,7 +77,7 @@ class WikiView:
                                 getattr(cfg, "data", {}).get("systems", {}).get("wiki", {}).get("workspace_dir_template", "projects/{workspace_id}"))
                 catalog = loaded.get(cfg_identity)
                 if catalog is None:
-                    catalog = retrieval.inventory(cfg)
+                    catalog = retrieval.inventory(cfg, include_fingerprint=True)
                     loaded[cfg_identity] = catalog
                 source = catalog["source_id"]
                 if not source:
@@ -107,7 +107,7 @@ class WikiView:
                         "project_name": self.projects.get(project_key, {}).get("name", repo["project_id"]),
                         "report": repo.get("report", repo.get("maintenance", {}))})
                 try:
-                    self.indexes.append({**retrieval.index_status(cfg), "source_id": source})
+                    self.indexes.append({**retrieval.index_status(cfg, catalog=catalog), "source_id": source})
                 except (OSError, ValueError, RuntimeError) as exc:
                     self.indexes.append({"source_id": source, "status": "unavailable"})
                     self.problems.append(_problem("WIKI_INDEX_UNREADABLE", exc))

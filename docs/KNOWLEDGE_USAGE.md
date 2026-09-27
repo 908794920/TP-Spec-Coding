@@ -45,6 +45,8 @@ tp-spec knowledge read --workspace-root <workspace> --document-id <document_key>
 
 Task / 角色只是调用方提供的可选上下文，不创建 Task，不产生 adopted。没有传入就保持缺失。普通 CLI 默认 `development` / `caller=ai_cli`。维护调用应显式声明 `maintenance`。`--no-telemetry` 关闭本次采集；Golden Query 的既有不计数路径继续有效。
 
+Task 需要使用已知 Knowledge 条目时直接用 `knowledge read`，不必先搜索；需要发现条目时再搜索。需形成读取记录时，不用普通文件工具代替 CLI，并在 Task / 角色已知时传入对应参数。每次搜索或读取后核对返回的 `status`、`collection_status`、`collection_warning` 和 `receipt`：内容操作成功但采集状态为旧契约、未就绪或带警告时，分别记录操作和采集结果，不能当作统计已采集；也不重复执行无关查询来补计数。
+
 ### 2.1 旧调用兼容
 
 Python `projection.search()` 仍返回原片段列表，保留配置中的默认数量（后备 20）和旧范围解析契约；不把它改成新候选信封。eval 和新旧 Task convergence 继续调用它。正式 Task 判重保持原数量和项目 + shared 范围，并标注 `delivery_convergence` / `task_convergence`，不混入默认研发指标。
@@ -73,7 +75,7 @@ tp-spec knowledge index build --workspace-root <workspace>
 
 `build/update` 保留同库 `retrieval_runs` 和 `knowledge_reads`；不再将删除整个投影数据库作为重建或默认回退。失败时保留数据库和日志，修正注册、权限或不可读来源后重新执行同一显式命令；追加升级可重复执行。不要通过清空投影、删除日志、修改风险规则或回填旧事件消除错误。若需要回退代码，保留追加的兼容列 / 表和备份，不删除升级后产生的使用证据。
 
-采集失败不会阻断实际成功的检索 / 阅读；返回 `collection_warning` 和实际采集状态。缺库、旧 schema、写入失败分别可辨认。`KNOWLEDGE_REQUEST_CONFLICT` 和 `KNOWLEDGE_RETRY_RESULT_CHANGED` 是调用一致性错误，不冒用旧成功回执。
+采集失败不会阻断实际成功的检索 / 阅读；返回 `collection_warning` 和实际采集状态。调用方须同时检查 `status` 和警告，因此一次成功搜索仍可能没有形成可计入统计的回执。缺库、旧 schema、写入失败分别可辨认；`KNOWLEDGE_USAGE_UPGRADE_REQUIRED` 表示需经授权的显式升级路径处理，搜索、读取和页面访问都不自动建表或迁移。`KNOWLEDGE_REQUEST_CONFLICT` 和 `KNOWLEDGE_RETRY_RESULT_CHANGED` 是调用一致性错误，不冒用旧成功回执。
 
 ### 3.1 追加字段清单
 
@@ -123,7 +125,7 @@ Markdown 使用已有安全渲染组件：跳过原始 HTML，不执行脚本 / 
 | 已记录采用任务 / 条目 | 复用已有可信 `knowledge + adopted`；按解析 Runtime / Task 和资产去重 |
 | 最近活动 / 日趋势 | 成功搜索、实际正文读取、可信 adopted 分开；时间解析为带时区时间比较，日趋势按 UTC+8 日期归组 |
 
-采用不是命中、阅读、检索评分、验收通过或维护完成。不从检索结果自动生成 adopted，也不给旧采用补造 receipt。采用是独立证据，不随检索用途筛选；没有可靠用途的旧采用不能强行推断为研发或收敛。可保留没有回执、无法关联现存文档的可信历史采用。
+采用不是命中、阅读、检索评分、验收通过或维护完成。当本 Task 实际把条目作为依据时，在已有 checkpoint/review/verify 的 `context_usage` 中记录 `source_type=knowledge`、稳定 `asset_id=document_key`、`stage=adopted`，可关联已有回执；仅在 `task.md` 中用文字提到不构成正式 adopted。不得从搜索命中或读取自动生成 adopted，也不给旧采用补造 receipt。采用是独立证据，不随检索用途筛选；没有可靠用途的旧采用不能强行推断为研发或收敛。可保留没有回执、无法关联现存文档的可信历史采用。
 
 请求 alpha 项目并返回 shared 内容：项目表归因 alpha，内容列表标 shared。来源 / 投影数据库 / Runtime 先按解析后的身份去重，不因重复注册工作区复制次数。同一来源多个数据库的内容只采用一个可用投影，日志按数据库与回执去重，并明确警告，不把各投影伪装成互不相关的知识库。
 
