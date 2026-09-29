@@ -1,7 +1,7 @@
 ---
 name: tp-knowledge-retrieval
 display_name: 知识检索与证据读取
-version: 5.3.5
+version: 5.3.6
 description: 用于在已解析的项目和注册 shared 范围内检索、读取 Knowledge canonical/source 及核对证据与搜索效果；不触发内容维护或全局检索。
 ---
 

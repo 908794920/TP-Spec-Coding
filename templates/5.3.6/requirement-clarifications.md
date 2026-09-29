@@ -2,7 +2,7 @@
 artifact: requirement-clarifications
 task_id: ""
 artifact_contract:
-  version: 5.3.5
+  version: 5.3.6
 blocking_open: 0
 ---
 

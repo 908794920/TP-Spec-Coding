@@ -1,7 +1,7 @@
 ---
 id: tp-integration-engineer
 name: tp-集成交付工程师
-version: 5.3.5
+version: 5.3.6
 status: active
 type: workflow-role
 role: tp-integration-engineer

@@ -2,7 +2,7 @@
 artifact: requirement-test-guide
 task_id: ""
 artifact_contract:
-  version: 5.3.5
+  version: 5.3.6
 ---
 
 # Test Guide（按需）

@@ -1,7 +1,7 @@
 ---
 name: tp-knowledge-task-convergence
 display_name: Task 知识与记忆收敛
-version: 5.3.5
+version: 5.3.6
 description: 用于最终 Task 交付时消费可信 Knowledge Request，逐项评估输入、定向判重或维护 canonical，并记录 Knowledge Result 与项目 Memory 评估；不运行全库维护链。
 ---
 
