@@ -7,7 +7,7 @@ cycle begin
 → doctor / workspace status / drift
 → 优先恢复已有允许执行 Task
 → approved Tasks → thin Batch
-→ 每 Task 继续当前 tp-workflow-orchestrator
+→ 每 Task 继续当前 tp-software-lifecycle
 → Task 完成 → Git commit binding
 → 有余量才 targeted discovery
 → 新发现 = ordinary Task
