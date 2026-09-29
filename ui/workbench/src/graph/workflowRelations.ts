@@ -34,6 +34,26 @@ export interface WorkflowRelations {
 const eventId = (event: FactRecord) => text(event.source_event_id ?? event.event_id ?? event.id);
 const newest = (a: FactRecord, b: FactRecord) =>
     (Date.parse(text(b.created_at)) || 0) - (Date.parse(text(a.created_at)) || 0) || Number(eventId(b)) - Number(eventId(a));
+export interface RoleActivity {
+    event: FactRecord;
+    participation?: FactRecord;
+    summaryOnly: boolean;
+}
+/** Attach each session summary once to its last recorded event, without inventing events. */
+export function buildRoleActivity(role: Pick<StageRole, 'events' | 'participations'>): RoleActivity[] {
+    const rows: RoleActivity[] = role.events.map(event => ({ event, summaryOnly: false }));
+    for (const participation of role.participations) {
+        const last = text(participation.last_event_id), session = text(participation.participation_id);
+        const matches = last ? rows.filter(row => !row.summaryOnly && eventId(row.event) === last
+            && (!text(row.event.participation_id) || text(row.event.participation_id) === session)) : [];
+        if (matches.length === 1 && !matches[0].participation) matches[0].participation = participation;
+        else rows.push({ participation, summaryOnly: true, event: {
+            created_at: participation.ended_at || participation.last_recorded_at || participation.started_at || '',
+            summary: participation.result || participation.scope || '',
+        } });
+    }
+    return rows.sort((a, b) => newest(a.event, b.event));
+}
 const phaseLabels: Record<string, string> = {
     intake: '受理', requirement: '需求', product: '产品设计', architecture: '架构设计', architecture_review: '架构复审',
     discovery: '调研', planning: '实施规划', development: '开发', verification: '验证', review: '代码复审', delivery: '交付集成', other: '其他',
@@ -56,7 +76,8 @@ function recordedStage(event: FactRecord): string {
         return kind === 'ARCHITECTURE' ? 'architecture_review' : ['CODE', 'IMPLEMENTATION', 'ULTRA_REVIEW'].includes(kind) ? 'review' : kind === 'VERIFICATION' ? 'verification' : '';
     }
     if (event.event_type === 'VERIFICATION_COMPLETED') return 'verification';
-    return text(detail.stage) || text(detail.source_stage) || (operation === 'CHECKPOINT' ? text(detail.phase) || text(event.to_stage) : '');
+    const phaseRecorded = operation === 'CHECKPOINT' || event.event_type === 'STATE' || event.event_type === 'BLOCKER';
+    return text(detail.stage) || text(detail.source_stage) || (phaseRecorded ? text(detail.phase) || text(event.to_stage) : '');
 }
 
 /** Read-only relationships: explicit step bindings first; structured legacy facts never create a plan. */
@@ -87,6 +108,23 @@ export function buildWorkflowRelations(contextKey: string, data: TaskData): Work
         return found;
     }
     const participants = records(execution.participations);
+    const work = record(data.work_items);
+    // Follow formal Work identity, including the step at this event's time. A retry may
+    // move a Work to another step; its current waiting step must not rewrite old events.
+    function workStep(event: FactRecord): string {
+        const id = text(event.work_item_id), eid = Number(eventId(event));
+        if (!id || work.source !== 'work_item' || !Number.isSafeInteger(eid) || eid <= 0) return '';
+        const matches = records(work.items).filter(item => text(item.item_id) === id);
+        if (matches.length !== 1 || text(matches[0].task_id) !== text(task.task_id)) return '';
+        const unit = record(matches[0].work_unit), created = Number(unit.create_event_id);
+        if (!Number.isSafeInteger(created) || created <= 0 || eid < created) return '';
+        let key = text(record(unit.spec).step_id);
+        for (const item of records(unit.history).filter(item => Number(item.event_id) <= eid)
+            .sort((a, b) => Number(a.event_id) - Number(b.event_id))) {
+            if (item.action === 'retry' && text(item.step_id)) key = text(item.step_id);
+        }
+        return key;
+    }
     if (explicit) for (const participation of participants) {
         const stage = byKey.get(text(participation.step_id));
         if (stage) role(stage, text(participation.role)).participations.push(participation);
@@ -104,7 +142,10 @@ export function buildWorkflowRelations(contextKey: string, data: TaskData): Work
         let stage: WorkflowStage | undefined;
         if (explicit) {
             const participation = participants.find(item => text(item.participation_id) === text(event.participation_id) && !!text(event.participation_id));
-            stage = byKey.get(stepId || text(participation?.step_id));
+            // An explicit but unresolved step/session is not permission to guess a parent.
+            const key = stepId || text(participation?.step_id)
+                || (!text(event.participation_id) ? workStep(event) : '');
+            stage = byKey.get(key);
         } else {
             const bound = stages.filter(item => Number(item.record.completion_event_id) > 0 && text(item.record.completion_event_id) === eventId(event));
             if (bound.length === 1) stage = bound[0];
