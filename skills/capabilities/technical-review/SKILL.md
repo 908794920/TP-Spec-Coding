@@ -15,11 +15,11 @@ description: 对真实 Diff 和 subject 做独立代码审查；保留 Finding�
 ## Review Contract
 1. 固定 review subject（workspace snapshot / commit / base-head digest）；subject 实质变化后旧 PASS 不可复用。
 2. Reviewer 默认只读，不修改文件、不创建 commit，不把 Review 变成第二轮 Development。Reviewer 逻辑身份与实现者隔离；只读取 canonical Requirement、Architecture、Project Rules、Diff、Test Evidence 与必要代码事实。
-3. 先检查完整真实 Diff、必要上下文、调用方和相关测试，不只相信实现摘要。
+3. 先检查完整真实 Diff、必要上下文、调用方和相关测试，不只相信实现摘要；核对测试的成功/失败预期是否有当前需求、契约或真实缺陷依据，不能用自拟测试通过为自增规则背书。
 4. Finding 只有同时满足以下条件才成立：由当前变更引入，或本 Task 明确要求修复但仍未满足；对 correctness/security/performance/maintainability 有实际影响；场景或调用路径可证明；问题离散且可行动；作者知道后大概率会修。
 5. speculative concern、范围外 pre-existing issue、已获准且符合要求的刻意行为变化和不影响理解的 style nit 不作为 Finding。没有确定 Finding 时不修改代码，输出 `No findings` / PASS 是正常结论。
 6. Finding 定位遵守 hunk → full file → unique cross-file；歧义时保持 unlocated，不猜行号。
-7. Review 同时检查过度设计：无真实变化轴的抽象、无现实调用方的兼容路径、重复实现、低价值测试、只有 AI 上下文才能理解的技巧写法。
+7. Review 同时检查过度设计与范围扩张：无真实变化轴的抽象、无现实调用方的兼容路径、重复调度/开关/实现/配置/依赖、低价值测试、只有 AI 上下文才能理解的技巧写法，以及缺少需求或契约依据的拒绝条件、必填项、状态门槛、静默丢弃或降级。并入本次真实 Diff 审查，不另开默认审查轮次。
 8. 只有目标仓库允许留存时才评估 durable test 的现实价值；基座自身按本仓策略核对临时验证结果，不以缺少永久测试文件阻塞交付，也不要求为了数量新增测试。
 
 ## Review 维度

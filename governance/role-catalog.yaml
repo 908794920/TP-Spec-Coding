@@ -1,6 +1,6 @@
 catalog_version: "5.3.5"
 base_version: "5.3.5"
-generated_utc: 20260927T092723Z
+generated_utc: 20260929T113934Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -23,7 +23,7 @@ roles:
   phases: [intake, requirement, product, discovery, architecture, planning, development, verification, review, delivery]
   capabilities: [lifecycle.routing, role.resolution, workflow.coordination]
   owns_states: [NEW]
-  content_sha256: C435B2B84F585F599DACE1D302020CCEAC8088FF1B1D557BCE72B9A01482A5E5
+  content_sha256: 8EED93C393C0D80AAF342FF0A94CC710621FB5CB65E480411C31A7D3A13867AB
 - workflow_role: tp-project-autonomy
   display_name: tp-项目自治维护
   type: control-role
