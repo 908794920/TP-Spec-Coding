@@ -50,7 +50,7 @@ Knowledge 不增加 lifecycle stage：新 READY Delivery 对 L0–L3 均生成�
 评估后登记具体步骤、开始角色参与或恢复会话时，按需读 [执行事实契约](../../docs/EXECUTION_FACTS.md)，使用 `work plan/show/step` 与有身份的 `work start/update/end`；不得用已计划节点代替实际完成或专业 PASS。Work/Fix 创建、结果接收和集成候选按需读 [Work 结果契约](../../docs/WORK_UNITS.md)，不把协调提示当自动实施授权。
 
 ## 当前范围接续
-优先使用 `workflow next` 的 `context.current_effective`（存在时）或接续导航指向的 canonical 当前区；只在 canonical Task/Requirement 一处维护必要语义，历史/来源按需展开。`AVAILABLE` 只表示可读取，不证明决定正确或授予权限；缺当前区不增流程。冲突/损坏时先定向核对来源，不按最后文本选宽松授权；程序摘取与 `SUPERSEDED` 留存细节按需读 [生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)。
+优先使用 `workflow next` 的 `context.current_effective`（存在时）或接续导航指向的 canonical 当前区；只在 canonical Task/Requirement 一处维护必要语义，历史/来源按需展开。接续时沿用已明确的目标、非目标、参考实现和允许改变的行为边界；模型生成的设计、计划、测试或检查清单不产生新需求或授权。`AVAILABLE` 只表示可读取，不证明决定正确或授予权限；缺当前区不增流程。冲突/损坏时先定向核对来源，不按最后文本选宽松授权；程序摘取与 `SUPERSEDED` 留存细节按需读 [生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)。
 
 ## 工作段与临时工件
 工作段用于有意义的执行/暂停边界，不逐工具 start/end。ACTIVE、未闭合 START 和角色名均不证明进程存活或独立 Agent；未知保持待诊断，不补造时间，不自动修历史或杀进程。只在已知中断、原 task/role/agent 与 ownership/授权成立时收口，不冒充执行者；终态/退休任务不得新开工作段。
@@ -68,7 +68,7 @@ Knowledge 不增加 lifecycle stage：新 READY Delivery 对 L0–L3 均生成�
 本 Domain Agent 只决定**何时进入深度模式**；UltraPlan/UltraReview 由正式专业角色主持；`mode` 与 `effects` 独立于 Role。任何 `repo_mutation` 都必须继续遵守 Execution Envelope / allowed_effects fail-closed 边界。
 
 ## 用户确认
-只为真实 material decision、高风险授权、外部 blocker 请求用户。不得因可推导 metadata、可选 Skill、推荐工件缺失让任务回退补账。
+只为真实 material decision、高风险授权、外部 blocker 请求用户。新增或改变业务准入、权限、数据含义等重大可观察行为且无已确认依据时，说明证据与取舍交 human_owner；已明确的上下文不重复确认，范围内的局部技术选择继续自主完成。不得因可推导 metadata、可选 Skill、推荐工件缺失让任务回退补账。
 
 ## 异常解释
 意外暂停、重复确认或验证范围扩大时，只说明一次：实际文件/相关条款或 Runtime 命令错误、适用条件、Agent 的解释、受阻动作及恢复所需事实。区分原文与推断，不捏造宿主隐藏指令，不用提示词绕过 Runtime 门禁；前置未变不反复解释或重试。只停止受影响动作，其余获准工作按依赖继续；复用批次回执，不新建解释报告或逐命令规则扫描。

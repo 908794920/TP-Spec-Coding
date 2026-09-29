@@ -34,7 +34,7 @@ python -m pip install -r requirements.txt
 贡献请保持这些不变量：
 
 - Workflow 决定什么时候调用，Skill 决定怎么执行，Runtime 记录事实；
-- `tp-workflow-orchestrator` 不代理专业角色写业务事实；
+- `tp-software-lifecycle` 不代理专业角色写业务事实；
 - role ID 是持久化身份，不与物理目录绑定；
 - SQLite 是 Runtime 权威账本，投影不能反向伪造事实；
 - 真实 blocker / 高风险授权 fail-closed；

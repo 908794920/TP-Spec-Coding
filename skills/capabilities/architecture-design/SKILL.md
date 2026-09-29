@@ -14,7 +14,7 @@ description: 在系统设计或独立架构复审有实际价值时读取；以�
 1. 先读取 canonical Requirement、确认 decision 和必要代码坐标。未知关键事实进入定向 `discovery`，不把推测写成设计前提；历史知识先做 canonical-first 定向检索，当前实现仍回 Wiki/Source Code 核验。
 2. 依据 `governance/risk-rule.yaml` 判断真实影响与风险。代码量不是风险等级依据；未知影响不默认低风险。认证授权、敏感信息可见性、数据下发/附件、权限边界等至少按高风险安全信号处理。
 3. 根据 `governance/planning-strategy.yaml` 选择 DIRECT 或深度规划。只有多条 materially different 且真实可行路线会显著改变风险、性能、兼容或维护成本时才 fan-out。
-4. 设计前后检查：需求覆盖、模块/依赖、接口兼容、数据、权限/安全、并发/事务/幂等、消息/定时/缓存、配置/部署运行、失败恢复、回滚/补偿和可验证 acceptance criteria。
+4. 设计前后仅核对当前需求、实际变更及有证据的风险所触及的维度：需求覆盖、模块/依赖、接口兼容、数据、权限/安全、并发/事务/幂等、消息/定时/缓存、配置/部署运行、失败恢复、回滚/补偿和可验证 acceptance criteria。该列表用于发现相关风险，不要求逐项补齐能力，也不授权新增业务规则。
 5. 有实际设计价值时形成 Architecture Artifact / ADR / tech design；简单确定任务允许只记录必要方案和风险，不为模板完整造文档。
 
 ## Knowledge Target

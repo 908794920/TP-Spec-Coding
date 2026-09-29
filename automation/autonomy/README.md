@@ -13,4 +13,4 @@ Scheduler 只决定什么时候唤醒。真正 Executor 至少必须：
 
 仅能在云端定时发送一条聊天消息、无法访问本地 Workspace 的工具可以做提醒，**不能直接执行 Autonomy Cycle**。
 
-外部 Scheduler 不要复制 L0～L3 pipeline、Agent 列表或长工作流提示词。Profile 自己保存 bootstrap prompt，真正协议以本目录和当前 `tp-workflow-orchestrator` 为准。
+外部 Scheduler 不要复制 L0～L3 pipeline、Agent 列表或长工作流提示词。Profile 自己保存 bootstrap prompt，真正协议以本目录和当前 `tp-software-lifecycle` 为准。

@@ -198,7 +198,7 @@ const GraphCanvas = forwardRef<GraphHandle, Props>(({ model, selectedId, onOpen 
     {model.workflow.truncated && <p className="warning" role="status">任务时间线仅取得最近 {model.workflow.returned} / {model.workflow.total} 条事件；阶段明细展示本次已取得记录，不能据此判断没有更早活动。</p>}
     {selectedStage && <WorkflowStageDetails stage={selectedStage} onClose={() => { setStageId(''); requestAnimationFrame(() => focusNode(selectedStage.id)); }}/>}
     {!!model.workflow.unassigned.length && <Disclosure label={`未绑定具体阶段的事件 · ${model.workflow.unassigned.length} 条`}>
-      <p className="muted">以下记录没有足够的阶段绑定信息，保留原始记录，不按角色或摘要猜测所属阶段。</p>
+      <p className="muted">以下记录尚不能唯一归入某个步骤，可能涉及多项工作汇总或缺少明确绑定。保留原始记录，不按当前阶段、角色或摘要猜测归属。</p>
       {model.workflow.unassigned.map((event, index) => <Disclosure key={text(event.source_event_id ?? event.event_id ?? event.id) || index} label={text(event.summary) || '事件摘要未记录'}><Fields value={event}/></Disclosure>)}
     </Disclosure>}
     {model.issues.length > 0 && <Disclosure className="graph-issues" open label={`图数据问题 · ${model.issues.length} 项`}><ul>{model.issues.map((issue, i) => <li key={`${issue.code}:${i}`}><Typography.Text code>{issue.code}</Typography.Text> {issue.message}</li>)}</ul></Disclosure>}

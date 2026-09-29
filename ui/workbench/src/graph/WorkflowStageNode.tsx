@@ -4,7 +4,7 @@ import { record, text, timestampText } from '../facts';
 import { actions, statusNames } from '../components/executionView';
 import { Disclosure, Fields } from '../components/Facts';
 import type { WorkbenchNode } from './WorkNode';
-import type { WorkflowStage } from './workflowRelations';
+import { buildRoleActivity, type WorkflowStage } from './workflowRelations';
 
 export const STAGE_WIDTH = 340, STAGE_HEIGHT = 310;
 export function WorkflowStageNode({ data, selected }: NodeProps<WorkbenchNode>) {
@@ -32,22 +32,23 @@ export function WorkflowStageDetails({ stage, onClose }: { stage: WorkflowStage;
     return <section className="workflow-stage-details" aria-label={`${stage.title}的角色与工作记录`}>
       <div className="section-heading"><div><h4>{stage.title} · 角色与工作记录</h4><p className="muted">{stage.status} · {stage.events.length} 条已取得事件。阶段记录与验证通过分别展示。</p></div><Button size="small" onClick={onClose}>收起阶段详情</Button></div>
       {stage.activityOnly && <p className="muted">这些活动已明确记录阶段，未绑定到后续执行计划中的具体步骤；保留实际工作，不补造步骤或参与起止。</p>}
+      <p className="muted">开始、结束与具体工作事件按时间倒序合并展示。工作时段“已完成”仅表示该段工作结束，不代表任务验收通过；执行者与原始记录可展开查看。</p>
       <div className="stage-role-details">
         {stage.roles.map(role => <section key={role.id} className="stage-role-history" aria-label={`${role.label}的工作记录`}>
-          <header><strong>{role.label}</strong><span>{role.events.length} 条工作记录{role.participations.length ? ` · ${role.participations.length} 次参与` : ''}</span></header>
+          <header><strong>{role.label}</strong><span>{role.events.length} 条事件{role.participations.length ? ` · ${role.participations.length} 个工作时段` : ''}</span></header>
           {!role.events.length && !role.participations.length && <p className="muted">此角色来自阶段安排，尚无实际执行记录。</p>}
-          {role.participations.map((participation, index) => <p key={text(participation.participation_id) || index}>
-            <Tag>{statusNames[text(participation.status)] || text(participation.status) || '状态未记录'}</Tag>{text(participation.agent) || '执行者未记录'}{text(participation.result) && ` · ${text(participation.result)}`}
-          </p>)}
-          <ol className="stage-activity-list">{role.events.map((event, index) => {
+          <ol className="stage-activity-list" reversed>{buildRoleActivity(role).map(({ event, participation, summaryOnly }, index) => {
               const detail = record(event.detail), presentation = record(event.presentation);
-              return <li key={text(event.source_event_id ?? event.event_id ?? event.id) || index}>
-                <div className="stage-activity-heading"><time title={text(event.created_at)}>{event.created_at ? timestampText(event.created_at) : '时间未记录'}</time><span>{actions[text(event.action)] || text(presentation.event_label) || text(event.operation) || text(event.event_type) || '事件'}</span></div>
+              return <li key={summaryOnly ? `session:${text(participation?.participation_id)}:${index}` : text(event.source_event_id ?? event.event_id ?? event.id) || index}>
+                <div className="stage-activity-heading"><time title={text(event.created_at)}>{event.created_at ? timestampText(event.created_at) : '时间未记录'}</time><span>{summaryOnly ? '工作时段摘要（本次未取得对应事件）' : actions[text(event.action)] || text(presentation.event_label) || text(event.operation) || text(event.event_type) || '事件'}</span></div>
+                {participation && <p className="stage-activity-heading"><Tag>{statusNames[text(participation.status)] || text(participation.status) || '状态未记录'}</Tag><span>工作时段：{participation.started_at ? timestampText(participation.started_at) : '开始时间未记录'} → {participation.ended_at ? timestampText(participation.ended_at) : '尚无结束记录'}</span></p>}
                 <p>{text(event.summary) || '摘要未记录'}</p>
                 {!!text(event.result) && <p>结果：{text(event.result)}</p>}
+                {!summaryOnly && participation && text(participation.result) && text(participation.result) !== text(event.result) && text(participation.result) !== text(event.summary) && <p>工作结果：{text(participation.result)}</p>}
                 <Disclosure label="来源与事件详情"><Fields value={{ event_id: event.source_event_id ?? event.event_id ?? event.id,
                   actor: event.actor, actor_agent: event.actor_agent, step_id: event.step_id, participation_id: event.participation_id,
-                  phase: detail.phase, decision: event.decision, evidence: event.evidence_path ?? event.evidence, detail }}/></Disclosure>
+                  phase: detail.phase, decision: event.decision, evidence: event.evidence_path ?? event.evidence, detail,
+                  ...(participation ? { participation } : {}) }}/></Disclosure>
               </li>;
           })}</ol>
         </section>)}
