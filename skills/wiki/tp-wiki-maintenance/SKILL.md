@@ -1,7 +1,7 @@
 ---
 name: tp-wiki-maintenance
 display_name: Wiki 增量维护
-version: 5.3.5
+version: 5.3.6
 description: 用于已选稳定源码的 Wiki 日常增量维护、变更分类和可信基线收敛；复用成功基线快路径，NO_CHANGE 不启动模型重写。
 ---
 

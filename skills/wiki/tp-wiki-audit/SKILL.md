@@ -1,7 +1,7 @@
 ---
 name: tp-wiki-audit
 display_name: Wiki 质量与语义审计
-version: 5.3.5
+version: 5.3.6
 description: 用于 Wiki 确定性质量验证、覆盖率判断及必要的 L4 源码语义审计；区分首次全仓与增量受影响范围，实际执行结果才可报告 PASS。
 ---
 

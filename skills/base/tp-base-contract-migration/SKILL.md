@@ -1,7 +1,7 @@
 ---
 name: tp-base-contract-migration
 display_name: 契约升级迁移
-version: 5.3.5
+version: 5.3.6
 description: 用于 Base 升级后的 Project/Task contract 不一致、显式迁移计划、备份及迁移复验；模板同步不构成 Runtime 或任务迁移授权。
 ---
 

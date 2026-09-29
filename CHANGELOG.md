@@ -1,8 +1,15 @@
 # Changelog
 
-## [Unreleased] 原型设计流程优化专项（v5.3.6 目标，源码交付）
+## [5.3.6] Open Release Line — 2026-09-29
 
-日期：2026-09-29。本节只记录原型方法、交接与核验规则的专项源码交付；不是整版验收或正式发布。当前活动版本及元数据仍为 `5.3.5`，统一升版由既有版本收尾处理，不由本专项触发安装、同步或迁移。
+- 从 **5.3.5** 收敛到 **5.3.6** 版本线：`VERSION`、治理活动契约、Agent/Skill frontmatter、产品入口 SKILL 与活动模板目录统一升级；活动模板目录切换为 `templates/5.3.6`，不再保留 `templates/5.3.5`。
+- `cli/config_schemas.py` 的 `supported_versions` 沿用完整精确匹配规则同步为 `5.3.6`；`5.3.5` 纳入 `cli/migrations` 的 `SOURCE_CONTRACTS`，继续走既有显式、非回溯的 journal 迁移路径，未新增迁移步骤、Task 公共状态或 Runtime schema。
+- `governance/role-catalog.yaml` 与 `manifest.sha256` 由本仓既有工具确定性重算，未手填哈希；未改变 Event Semantics、SQLite 结构或既有验收语义。
+- 本版本线同时承载当日记录的原型设计流程优化专项与方法/范围边界口径调整（见下一节）。收敛本身不构成整版验收或正式发布；按本仓验证策略只做版本纯度、文档导航、Role Catalog 与 Manifest 的定向核对，未恢复全量测试、类型检查、构建或浏览器验收。
+
+## [Unreleased] 原型设计流程优化专项（v5.3.6 line，源码交付）
+
+日期：2026-09-29。本节只记录原型方法、交接与核验规则的专项源码交付；不是整版验收或正式发布。专项本身不升版、不触发安装、同步或迁移；活动版本与元数据已由上方同一版本线的 open release line 收敛统一为 `5.3.6`。
 
 ### 方法与交接
 

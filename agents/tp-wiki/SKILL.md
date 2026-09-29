@@ -1,7 +1,7 @@
 ---
 id: tp-wiki
 name: tp-wiki
-version: 5.3.5
+version: 5.3.6
 status: active
 type: human-owner-skill
 tool_agnostic: Wiki 来源和写入根由 Content Systems Resolver 定位；能力按需读取，不依赖特定 IDE、模型或机器路径。

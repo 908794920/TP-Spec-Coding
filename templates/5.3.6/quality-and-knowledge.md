@@ -2,7 +2,7 @@
 artifact: quality-and-knowledge
 task_id: ""
 artifact_contract:
-  version: 5.3.5
+  version: 5.3.6
 ---
 
 # Quality & Knowledge（按需）

@@ -1,6 +1,6 @@
 # Compatibility Matrix — TP-Spec-Coding single active contract
 #
-# Current Base contract: 5.3.5. Product version and execution/work-unit/closeout/
+# Current Base contract: 5.3.6. Product version and execution/work-unit/closeout/
 # task-learning v1 adoption are separate facts. Adoption follows trusted events,
 # never an installed version string alone. External skills add no Task states or
 # physical Runtime tables; loading or viewing them never upgrades a project/task.
@@ -8,13 +8,13 @@
 # the existing explicit project/task migration path. See docs/GETTING_STARTED.md.
 version: "1.0.0"
 contracts:
-  "5.3.5":
-    base_version: "5.3.5"
+  "5.3.6":
+    base_version: "5.3.6"
     governance_ranges:
-      workflow: "[5.3.5, 5.4.0)"
-      ai-role: "[5.3.5, 5.4.0)"
+      workflow: "[5.3.6, 5.4.0)"
+      ai-role: "[5.3.6, 5.4.0)"
       risk-rule: "[2.0.0, 3.0.0)"
       knowledge-rule: "[2.1.0, 3.0.0)"
-      role-catalog: "[5.3.5, 5.4.0)"
-      orchestration: "[5.3.5, 5.4.0)"
-    status_contract: "5.3.5"
+      role-catalog: "[5.3.6, 5.4.0)"
+      orchestration: "[5.3.6, 5.4.0)"
+    status_contract: "5.3.6"

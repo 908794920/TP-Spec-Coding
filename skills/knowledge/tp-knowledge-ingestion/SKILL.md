@@ -1,7 +1,7 @@
 ---
 name: tp-knowledge-ingestion
 display_name: 外部文档接入
-version: 5.3.5
+version: 5.3.6
 description: 用于已登记外部文档批次的注册、哈希核对、转换分流和有证据的 canonicalization；不把每份 source 自动变成 Knowledge 正文。
 ---
 
