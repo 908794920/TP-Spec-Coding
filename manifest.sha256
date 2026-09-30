@@ -1,5 +1,5 @@
 # SHA-256 Manifest for TP-Spec-Coding working tree
-# Generated: 2026-09-30T11:13:08Z
+# Generated: 2026-09-30T14:29:03Z
 # Generator: update_manifest.py (SHA-256, UTF-8 byte-safe)
 # Repository: TP-Spec-Coding/
 # Note: records Git-visible working-tree files (tracked-existing + untracked non-ignored), except this manifest
@@ -298,7 +298,7 @@ DC157D30EFDEBA5ED24A73873BAEE3DAD3F50BA8E7679EFC9A36B208B418B734  skills/capabil
 29795D027F95C553A8291AFB0D2C854F5E1CA3D59995FBCBCB258D6BB5F90C57  skills/capabilities/delivery-convergence/agents/openai.yaml
 A42A72722DE19CDF515FAEB0FE6FAA8813A92913CC0C703E6A7DCE682C218410  skills/capabilities/delivery-planning/SKILL.md
 17D45A5109EBEF7AF5B0D324B306F7254677E0871BC6231952706A9B229E635A  skills/capabilities/delivery-planning/agents/openai.yaml
-FC23919006E0860C4635D14DB3256E858AD39B90C63238FB6B622DC4BE9F5741  skills/capabilities/implementation-control/SKILL.md
+3A3539629B1203A3003491BCB1683179C78E4C39E05F2F1DA2E44878481F14E6  skills/capabilities/implementation-control/SKILL.md
 4B0F8B63A2A574E7BCAE01A4AE9F0A770349FA49B42D467F39EB6A7B5DBA15DD  skills/capabilities/implementation-control/agents/openai.yaml
 843A100A1C0E55DD976E83274E22A916ED5A87F4D18015D5B87150299B754BB9  skills/capabilities/implementation-control/references/anti-patterns.md
 9756A24E572B42126B78B61B03043A2F1760CE1787292ECEC21C103021DE5379  skills/capabilities/knowledge-capture/SKILL.md
