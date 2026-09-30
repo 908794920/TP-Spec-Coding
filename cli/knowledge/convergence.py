@@ -148,6 +148,8 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
     locator_fields = _locator_fields(task, events)
     items, issues, contents = [], [], {}
     refs = {name for name in FILES if (task_dir / name).exists()}
+    strict_refs = set(refs)
+    locator_refs, event_items = {}, {}
     if "task.md" not in refs:
         issues.append("TASK_SOURCE_MISSING: task.md")
 
@@ -184,13 +186,18 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
                     "status": "UNRESOLVED_LOCATOR", "read_status": "NOT_READ",
                     "reason": "outside Task-relative input contract; target was not accessed"})
             else:
-                refs.add(ref)  # 同一目标另有强制证据出现时仍严格校验。
+                refs.add(ref)
+                if field in allowed_fields and not normalized.startswith(("event:", "https://", "http://")):
+                    locator_refs.setdefault(ref, []).append((fingerprint, field))
+                else:
+                    strict_refs.add(ref)  # 强制出现独立保留，不被同目标导航引用消掉。
         if fingerprint in seen_events:
             continue
         seen_events.add(fingerprint)
         add(f"event:{row['id']}", "event", content, event_id=int(row["id"]),
             event_type=row["event_type"], role=row.get("actor_role"), work_item_id=row.get("work_item_id"),
             **({"source_locators": sorted(locators, key=lambda item: (item["field"], item["ref"]))} if locators else {}))
+        event_items[fingerprint] = items[-1]
 
     for value in work_items:
         row = dict(value)
@@ -202,7 +209,21 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
 
     closeout = delivery_content(delivery)
     add("delivery", "delivery", closeout)
-    refs.update(_references(closeout))
+    delivery_refs = set(_references(closeout))
+    refs.update(delivery_refs)
+    strict_refs.update(delivery_refs)
+
+    def unresolved_locator(raw, reason, read_status):
+        if raw in strict_refs or raw not in locator_refs:
+            return False
+        for fingerprint, field in locator_refs[raw]:
+            navigation = event_items[fingerprint].setdefault("source_locators", [])
+            locator = {"ref": raw, "field": ".".join(field), "status": "UNRESOLVED_LOCATOR",
+                       "read_status": read_status, "reason": reason}
+            if locator not in navigation:
+                navigation.append(locator)
+        return True
+
     for raw in sorted(refs):
         ref = str(raw).replace("\\", "/").strip()
         if ref.startswith("event:"):
@@ -216,8 +237,16 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
         # A fragment navigates within a file; it is not part of its disk name.
         # Index the actual bytes without claiming to validate the named anchor.
         ref = ref.split("#", 1)[0]
-        checked = validate_evidence_path(task_dir, ref, require_evidence_dir=False)
+        try:
+            checked = validate_evidence_path(task_dir, ref, require_evidence_dir=False)
+        except OSError as exc:
+            if unresolved_locator(raw, f"relative locator access/read failed: {exc}", "READ_FAILED"):
+                continue
+            raise
         if not checked.ok:
+            read_status = "READ_FAILED" if checked.error.startswith("evidence file is not readable:") else "NOT_READ"
+            if unresolved_locator(raw, checked.error, read_status):
+                continue
             issues.append(f"SOURCE_UNAVAILABLE: {ref}: {checked.error}")
             continue
         ref = str(checked.path)
@@ -226,7 +255,12 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
         key = "file:" + ref
         if key in contents:
             continue
-        raw_bytes = (task_dir / ref).read_bytes()
+        try:
+            raw_bytes = (task_dir / ref).read_bytes()
+        except OSError as exc:
+            if unresolved_locator(raw, f"relative locator body read failed: {exc}", "READ_FAILED"):
+                continue
+            raise
         # Only the existing runtime-owned guide fields are normalized. Acceptance
         # outcomes and actual Task/requirement text remain learning inputs.
         if ref == "requirement-test-guide.md":
@@ -238,6 +272,9 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
         contents[key] = {"path": ref, "sha256": hash0}
         items.append({"id": key, "kind": FILES.get(ref, "evidence"), "ref": ref,
                       "digest": hash0, "hash_mode": mode})
+    for item in event_items.values():
+        if "source_locators" in item:
+            item["source_locators"].sort(key=lambda locator: (locator["field"], locator["ref"]))
     items.sort(key=lambda item: item["id"])
     index = {"schema": SCHEMA, "task_id": task["task_id"], "items": items, "issues": sorted(set(issues))}
     index["digest"] = digest(index)
