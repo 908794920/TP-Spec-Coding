@@ -51,6 +51,11 @@ Work 结果及交付材料；事件可指向本 Task 其他明确证据。事件
 事件正文指纹与去重规则不变，技术 Subject 未变时复用仍有效的 Verification/candidate。
 
 `generated/`、status/events 视图和本次 Request/Result 不反向成为输入。
+上述合格 locator 字段可引用同 Task 的历史 Knowledge Result：仅在正式生产者、角色、事件契约
+及其对应可信历史 Request 的学习结果绑定通过有限校验时，显示为 `source_locators` 的
+`EXCLUDED_FROM_LEARNING` 导航。包含该引用的事件仍须评估，Result 不生成内容输入、不递归展开
+其来源，也不因此重新成为当前 PASS。不存在、跨 Task、损坏绑定或真正强制证据中的同目标引用
+仍报缺口；旧 Request 因后续真实输入过时后，按既有 Delivery/Request 流程向前刷新。
 真实源码/AC/原绑定证据变化仍由原 Subject 契约决定技术结果是否失效；
 仅新增或修改知识用的非主体来源，不强制重跑源码验证。
 输入 `issues` 非空或最终候选失效时不得提交成功 Result；先解决缺口，再重发/复用 Delivery。

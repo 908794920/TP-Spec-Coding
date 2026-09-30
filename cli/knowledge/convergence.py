@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
@@ -133,6 +134,36 @@ def delivery_content(delivery: dict) -> dict:
             "delivery_mode", "applicability", "evidence", "acceptance_evidence_items", "repo_snapshot")}
 
 
+def _historical_learning_result(ref: str, events: dict) -> dict | None:
+    """只核对同Task历史绑定；不求当前PASS，也不递归构建学习索引。"""
+    from cli import event_contract, workflow_controls
+
+    if not re.fullmatch(r"event:[1-9][0-9]*", ref):
+        return None
+    row = events.get(int(ref[6:]))
+    if row is None:
+        return None
+    detail = workflow_controls.trusted_event_detail(row,
+        event_type="KNOWLEDGE_CONVERGENCE_RESULT", producer="knowledge_task_converge", actor="tp-knowledge")
+    if (detail is None or detail.get("learning_schema") != SCHEMA
+            or detail.get("result_status") != "COMPLETED"
+            or event_contract.validate_event_semantics(row["event_type"], detail)):
+        return None
+    request_id = detail.get("request_event_id")
+    request = events.get(request_id) if type(request_id) is int and request_id > 0 else None
+    if request is None:
+        return None
+    saved = workflow_controls.trusted_event_detail(request,
+        event_type="KNOWLEDGE_CONVERGENCE_REQUEST", producer="delivery_converge", actor="tp-integration-engineer")
+    if (saved is None or saved.get("learning_schema") != SCHEMA
+            or saved.get("result_status") != "PENDING"
+            or event_contract.validate_event_semantics(request["event_type"], saved)
+            or detail.get("change_set_id") != saved.get("change_set_id")
+            or not valid_result(detail, {"event": request, "detail": saved})):
+        return None
+    return detail
+
+
 def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dict:
     """Read only this Task's known artifacts and explicitly referenced evidence.
 
@@ -145,6 +176,7 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
 
     task = dict(task)
     events = [dict(row) for row in events if row["task_id"] == task["task_id"]]
+    events_by_id = {row["id"]: row for row in events}
     locator_fields = _locator_fields(task, events)
     items, issues, contents = [], [], {}
     refs = {name for name in FILES if (task_dir / name).exists()}
@@ -187,7 +219,7 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
                     "reason": "outside Task-relative input contract; target was not accessed"})
             else:
                 refs.add(ref)
-                if field in allowed_fields and not normalized.startswith(("event:", "https://", "http://")):
+                if field in allowed_fields and not normalized.startswith(("https://", "http://")):
                     locator_refs.setdefault(ref, []).append((fingerprint, field))
                 else:
                     strict_refs.add(ref)  # 强制出现独立保留，不被同目标导航引用消掉。
@@ -212,6 +244,7 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
     delivery_refs = set(_references(closeout))
     refs.update(delivery_refs)
     strict_refs.update(delivery_refs)
+    strict_event_refs = {str(ref).replace("\\", "/").strip() for ref in strict_refs}
 
     def unresolved_locator(raw, reason, read_status):
         if raw in strict_refs or raw not in locator_refs:
@@ -228,7 +261,19 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
         ref = str(raw).replace("\\", "/").strip()
         if ref.startswith("event:"):
             if ref not in contents:
-                issues.append(f"UNRESOLVED_EVENT_SOURCE: {ref}")
+                historical = (_historical_learning_result(ref, events_by_id)
+                              if raw in locator_refs and ref not in strict_event_refs else None)
+                if historical is None:
+                    issues.append(f"UNRESOLVED_EVENT_SOURCE: {ref}")
+                else:
+                    for fingerprint, field in locator_refs[raw]:
+                        navigation = event_items[fingerprint].setdefault("source_locators", [])
+                        locator = {"ref": raw, "field": ".".join(field), "status": "EXCLUDED_FROM_LEARNING",
+                            "event_type": "KNOWLEDGE_CONVERGENCE_RESULT",
+                            "request_event_id": historical["request_event_id"],
+                            "reason": "trusted historical result binding checked; not a learning input or current PASS"}
+                        if locator not in navigation:
+                            navigation.append(locator)
             continue
         # A remote citation is navigable provenance, never evidence of a fetch.
         if ref.startswith(("https://", "http://")):
