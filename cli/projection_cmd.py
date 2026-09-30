@@ -315,6 +315,22 @@ def _build_events_jsonl(events: List[Dict[str, Any]], task_id: str) -> Tuple[str
                     obj["detail_raw"] = raw_detail
                     warnings.append(f"event #{ev['id']} has invalid execution detail; raw value preserved")
 
+        if event_type == "STATE":
+            from .task_coordinator import claims_creation_metadata
+            raw = ev["detail_json"] or "{}"
+            try:
+                creation_detail = json.loads(raw)
+            except (TypeError, ValueError):
+                creation_detail = None
+            if claims_creation_metadata(creation_detail, raw):
+                obj.update(actor_role=ev["actor_role"], actor_agent=ev["actor_agent"],
+                           from_state=ev["from_state"], to_state=ev["to_state"])
+                if isinstance(creation_detail, dict):
+                    obj["detail"] = creation_detail
+                else:
+                    obj["detail_raw"] = raw
+                    warnings.append(f"event #{ev['id']} has invalid coordinator detail; raw value preserved")
+
         # Security provenance stays readable in the derived log, without granting
         # generic imports permission to recreate governed facts.
         if event_type in {"HUMAN_AUTHORITY_RECORDED", "SECURITY_PROPOSAL_RECORDED",
@@ -446,15 +462,24 @@ def _extract_scope_changes(conn, task_id: str) -> List[str]:
     return out
 
 
-def _latest_development_fact(conn, task_id: str) -> Dict[str, Any]:
-    """返回最新可信 Development checkpoint 的事件 id、Change Set 与仓库根。"""
+def _latest_development_fact(conn, task_id: str, *, event_id: Optional[int] = None) -> Dict[str, Any]:
+    """读取 Development checkpoint 或正式 Work candidate 的产品绑定。"""
     from . import event_contract
 
     rows = conn.execute(
-        "SELECT id, detail_json FROM task_event WHERE task_id=? AND event_type='FACT' ORDER BY id DESC",
-        (task_id,),
+        "SELECT * FROM task_event WHERE task_id=? "
+        "AND event_type IN ('FACT','WORK_INTEGRATION_RECORDED') "
+        + ("AND id=? " if event_id is not None else "") + "ORDER BY id DESC",
+        (task_id, event_id) if event_id is not None else (task_id,),
     ).fetchall()
     for row in rows:
+        if row["event_type"] == "WORK_INTEGRATION_RECORDED":
+            from .work_units import candidate_binding
+            try:
+                return candidate_binding([dict(row)]) or {}
+            except ValueError:
+                # A corrupt candidate cannot revive an older checkpoint.
+                return {}
         try:
             detail = json.loads(row["detail_json"] or "{}")
         except json.JSONDecodeError:
@@ -499,6 +524,21 @@ def _stale_value(value: str, *, stale: bool) -> str:
     return f"{value0}_STALE" if stale and value0 != "NOT_RECORDED" else value0
 
 
+def _verification_follows_development(conn, task_id: str, verification, development: Dict[str, Any]) -> bool:
+    if development.get("event", {}).get("event_type") == "WORK_INTEGRATION_RECORDED":
+        # A record-only candidate refresh may follow Verify without changing the
+        # product. Check Verify's original trusted binding, not the refresh date.
+        try:
+            development = _latest_development_fact(
+                conn, task_id, event_id=int(verification.detail.get("development_event_id") or 0),
+            )
+        except (ValueError, TypeError):
+            return False
+        if _current_change_set(development)[1] != "CURRENT":
+            return False
+    return bool(development) and int(verification.row["id"]) > int(development.get("event_id") or 0)
+
+
 def _extract_quality_facts(conn, task_id: str) -> Dict[str, str]:
     """从可信账本和当前 Git 内容投影 current/stale 质量事实。"""
     from . import event_policies
@@ -522,7 +562,6 @@ def _extract_quality_facts(conn, task_id: str) -> Dict[str, str]:
         (task_id,),
     ).fetchone()
     task_dir = Path(location[0]) / ".tp-spec" / "tasks" / task_id if location and location[0] else None
-    dev_event_id = int(development.get("event_id") or 0)
     dev_stale = development_status != "CURRENT"
 
     verification = event_policies.load_trusted_governance_event(
@@ -533,7 +572,7 @@ def _extract_quality_facts(conn, task_id: str) -> Dict[str, str]:
         v_change = str(verification.detail.get("change_set_id") or "")
         verification_current = (
             not dev_stale
-            and int(verification.row["id"]) > dev_event_id
+            and _verification_follows_development(conn, task_id, verification, development)
             and bool(current_digest)
             and v_change == current_digest
             and task_dir is not None
@@ -692,7 +731,10 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
     latest = dict(events[-1]) if events else {}
     next_role = ""
     if state not in TERMINAL:
-        next_role = _extract_next_responsibility(conn, task_id, task["owner_role"] or DEFAULT_OWNER_ROLE, waiting_fact)
+        # A recorded coordinator is not an inferred next specialist. Without an
+        # explicit wait/step, leave the projection unknown; workflow next owns routing.
+        fallback = "unknown" if execution.get("coordinator") else task["owner_role"] or DEFAULT_OWNER_ROLE
+        next_role = _extract_next_responsibility(conn, task_id, fallback, waiting_fact)
         current_step = execution.get("current_step") or {}
         next_step = execution.get("next_step") or {}
         if not waiting_fact and execution["status"] == "RECORDED":

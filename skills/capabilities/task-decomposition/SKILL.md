@@ -15,11 +15,15 @@ description: Use when a technical plan is complex enough to benefit from explici
 
 优先 tracer-bullet / vertical slice：一个 Work 交付可验证的端到端结果，不按 DB/Backend/Frontend 机械切层。每个 Work 适合可接续的上下文；wide refactor 用 expand → 分批 migrate → contract，必要时使用 integration branch，最终绿灯仍绑定集成候选。
 
-主 Agent 负责拆分、依赖、隔离安排、收回结果、冲突和授权后的集成；集成交付工程师负责专业收敛。每项明确父 Task、范围、AC、真实依赖、允许路径、责任角色/实际执行者、验证与结果；共享文件有一个明确写入所有者。Batch 与 worktree 不强制一一对应，可验证的 snapshot/Patch 也是结果，不要求每个 Work 自带 commit。
+技术主管拥有工程计划、Work 拆解和技术依赖；主 Agent 作为项目经理整合专业安排、协调依赖/隔离与阻塞、精确接收结果，不再拆一套工程计划。集成交付工程师负责已获准的实际 apply、冲突处置与最终专业核对；项目经理接收其结果，由已记录 coordinator 登记 record-only candidate，不能默认把候选写入权交给集成角色。
+
+每项明确父 Task、范围、AC、真实依赖、允许路径、责任角色/实际执行者、验证与结果；共享文件有一个明确写入所有者。Batch 与 worktree 不强制一一对应，可验证的 snapshot/Patch 也是结果，不要求每个 Work 自带 commit；只有实际集成需要才安排相应 Work。
 
 宿主有原生 spawn/message/wait 才使用，不自建消息总线。记录绑定或一句 cd 不是硬隔离；无相应能力时明确顺序执行与隔离限制。Work 不扩大父范围、不自行关闭父 Task，不自动 merge/push/删除工作树；这些动作需当次授权。范围内问题复用同一 Fix Work，父步骤等待后在原处复验；保留历史，失效 PASS 另行处理。登记范围、依赖、结果与 Fix 接续使用 [Work 结果契约](../../../docs/WORK_UNITS.md)；接口没有的事实保持未知，不伪造事件或直接改库。
 
 步骤与 Work 不是同一对象。评估后的具体计划及其版本、步骤顺序、角色和既有 Work 关联，使用 [执行事实契约](../../../docs/EXECUTION_FACTS.md) 的正式入口；只调整未开始内容，既有发生记录不回写。
+
+Work 提交、精确结果接收、candidate、步骤完成、专业 PASS、业务验收与 Task complete 分别留证；步骤完成沿用适用参与角色/coordinator 规则，不增加项目经理独占门禁。接收或候选不证明工作已被实际应用，也不代替当前主体的验证。
 
 ## 方法
 1. 按可独立验证的业务/技术结果拆分，不按文件数量机械拆分；每项关联一个或多个 AC/预期结果。

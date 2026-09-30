@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 SCHEMA = "tp-spec.task-learning/v1"
@@ -53,22 +53,56 @@ def detail_of(row) -> dict:
         return {}
 
 
-def _references(value):
+def _reference_entries(value, path=()):
     if isinstance(value, dict):
         for key, child in value.items():
             if key in {"source_refs", "scope_refs", "evidence", "evidence_refs", "evidence_items", "acceptance_evidence_items"}:
                 for ref in child if isinstance(child, list) else [child]:
                     if isinstance(ref, str):
-                        yield ref
+                        yield ref, path + (key,)
                     elif isinstance(ref, dict) and isinstance(ref.get("path"), str):
-                        yield ref["path"]
+                        yield ref["path"], path + (key, "path")
             elif key == "artifact" and isinstance(child, str):
-                yield child
+                yield child, path + (key,)
             elif isinstance(child, (dict, list)):
-                yield from _references(child)
+                yield from _reference_entries(child, path + (key,))
     elif isinstance(value, list):
-        for child in value:
-            yield from _references(child)
+        for index, child in enumerate(value):
+            yield from _reference_entries(child, path + (str(index),))
+
+
+def _references(value):
+    return (ref for ref, _ in _reference_entries(value))
+
+
+def _locator_fields(task, rows):
+    """仅正式生产者的准确字段是导航；不改变事件内容或证据契约。"""
+    from cli import execution, event_contract
+    from cli.work_session_cmd import pair_work_sessions, _REASON_CODES
+
+    fields = {}
+    projected = execution.project_execution(task, rows)
+    for plan in projected["plan_history"]:
+        fields[plan["event_id"]] = {("detail", "plan", "assessment", "source_refs"),
+                                    ("detail", "plan", "scope_refs")}
+    for activity in projected["timeline"]:
+        if activity["event_type"] in {execution.STEP, "WORK_SESSION_UPDATED", "WORK_SESSION_ENDED"}:
+            fields[activity["event_id"]] = {("detail", "evidence_refs")}
+
+    # 旧无计划END确实由同一writer接受locator，不要求补造新执行schema。
+    # 有现代绑定字段却缺schema的损坏记录，不能借此退回旧契约。
+    by_id = {row["id"]: row for row in rows}
+    modern = {"execution_schema", "step_id", "plan_version", "transaction_id"}
+    for pair in pair_work_sessions(rows)["pairs"]:
+        start, end = by_id[pair["start_event_id"]], by_id[pair["end_event_id"]]
+        first, last = detail_of(start), detail_of(end)
+        if any(modern & detail.keys() or detail.get("producer") != "work_session"
+               or event_contract.validate_event_semantics(row["event_type"], detail)
+               for row, detail in ((start, first), (end, last))):
+            continue
+        if execution._valid_boundary(last) and last.get("reason") in _REASON_CODES:
+            fields[end["id"]] = {("detail", "evidence_refs")}
+    return fields
 
 
 def _event_content(row: dict) -> dict | None:
@@ -110,6 +144,8 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
     from cli.evidence import validate_evidence_path
 
     task = dict(task)
+    events = [dict(row) for row in events if row["task_id"] == task["task_id"]]
+    locator_fields = _locator_fields(task, events)
     items, issues, contents = [], [], {}
     refs = {name for name in FILES if (task_dir / name).exists()}
     if "task.md" not in refs:
@@ -121,6 +157,7 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
 
     add("task", "scope", scope_content(task))
     seen_events = set()
+    qualified_sources = {}
     for value in events:
         row = dict(value)
         if row.get("task_id") != task["task_id"]:
@@ -129,12 +166,31 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
         if content is None:
             continue
         fingerprint = digest(content)
+        # 内容去重不丢弃来源不同的严格引用；仅完整来源/契约相同的重复
+        # 可以复用已验证的locator资格（重复END不会再次被会话配对接受）。
+        source = digest({**{key: value for key, value in row.items() if key not in {"id", "detail_json"}},
+                         "detail": detail_of(row)})
+        allowed_fields = locator_fields.get(row["id"], ())
+        if allowed_fields:
+            qualified_sources[source] = allowed_fields
+        else:
+            allowed_fields = qualified_sources.get(source, ())
+        locators = []
+        for ref, field in _reference_entries(content):
+            normalized = ref.replace("\\", "/").strip()
+            if (field in allowed_fields
+                    and (PurePosixPath(normalized).is_absolute() or PureWindowsPath(normalized).is_absolute())):
+                locators.append({"ref": ref, "field": ".".join(field),
+                    "status": "UNRESOLVED_LOCATOR", "read_status": "NOT_READ",
+                    "reason": "outside Task-relative input contract; target was not accessed"})
+            else:
+                refs.add(ref)  # 同一目标另有强制证据出现时仍严格校验。
         if fingerprint in seen_events:
             continue
         seen_events.add(fingerprint)
         add(f"event:{row['id']}", "event", content, event_id=int(row["id"]),
-            event_type=row["event_type"], role=row.get("actor_role"), work_item_id=row.get("work_item_id"))
-        refs.update(_references(content))
+            event_type=row["event_type"], role=row.get("actor_role"), work_item_id=row.get("work_item_id"),
+            **({"source_locators": sorted(locators, key=lambda item: (item["field"], item["ref"]))} if locators else {}))
 
     for value in work_items:
         row = dict(value)

@@ -4,11 +4,11 @@
 
 本接口补充[具体执行计划](EXECUTION_FACTS.md)，继续使用 `work_item` 和 `task_event`，不新增表、公共 Task 状态或第二套工作账本。新 Work 由 `tp-spec.work-unit/v1` 识别，不凭版本字符串相同推断已采用。Wxx/FIXxx 只是建议命名；父 Task、步骤和同一问题分别显式绑定。
 
-主协调者与执行者分开：计划中的 coordinator 登记范围、接收精确结果、记录实际集成候选；认领者提交结果。角色字符串、agent 标识和工作区路径只校验记录一致性，不认证人工身份、不证明进程在线或宿主强隔离。真实执行仍遵守 Task 授权、宿主工具权限与 [Security Change Authority](security-change-authority.md)。这些命令不运行测试、启动 Agent、应用 Patch、commit、merge、push、删除工作区或关闭父 Task。
+主协调者与执行者分开：专业执行者认领并提交实际结果；项目经理 `tp-project-manager` 承担已记录的 coordinator 责任时登记范围、精确接收，再 record-only 登记集成候选。集成工程师 `tp-integration-engineer` 负责获准的实际 apply、冲突处置和专业结果提交。角色字符串、agent 标识和工作区路径只校验记录一致性，不认证人工身份、不证明进程在线或宿主强隔离。真实执行仍遵守 Task 授权、宿主工具权限与 [Security Change Authority](security-change-authority.md)。这些命令不运行测试、启动 Agent、应用 Patch、commit、merge、push、删除工作区或关闭父 Task。
 
 ## 登记范围与依赖
 
-下例是输入结构，不是实际需求、授权或已发生事实。先有父 Task、有效执行计划和真实来源文件；路径均为项目相对路径，Task ID / Work ID / 步骤需替换为现场真实值。
+下例是输入结构，不是实际需求、授权或已发生事实。先有父 Task、有效执行计划和真实来源文件；路径均为项目相对路径，Task ID / Work ID / 步骤需替换为现场真实值。`ACTUAL-COORDINATOR-AGENT` 必须替换为已记录的真实协调者标识；创建时未记录agent则保持空字符串，不合成 main-agent。新Task默认项目经理；旧显式计划真实记录的生命周期等协调身份仍有效，命令必须按该记录传参，不因示例改名迁移历史。
 
 ```json
 {
@@ -24,7 +24,7 @@
 ```
 
 ```bash
-tp-spec workitem create --task TASK-ID --id TASK-ID-W01 --file work-spec.json --role tp-software-lifecycle --agent main-agent --db RUNTIME-DB
+tp-spec workitem create --task TASK-ID --id TASK-ID-W01 --file work-spec.json --role tp-project-manager --agent ACTUAL-COORDINATOR-AGENT --db RUNTIME-DB
 tp-spec workitem claim --task TASK-ID --id TASK-ID-W01 --role tp-development-engineer --agent dev-a --db RUNTIME-DB
 ```
 
@@ -51,7 +51,7 @@ tp-spec workitem claim --task TASK-ID --id TASK-ID-W01 --role tp-development-eng
 ```bash
 tp-spec workitem complete --task TASK-ID --id TASK-ID-W01 --role tp-development-engineer --agent dev-a --result work-result.json --db RUNTIME-DB
 tp-spec workitem list --task TASK-ID --json --db RUNTIME-DB
-tp-spec workitem receive --task TASK-ID --id TASK-ID-W01 --result-event 123 --role tp-software-lifecycle --agent main-agent --summary "已比对该结果与实际证据，尚未代替整任务验收" --db RUNTIME-DB
+tp-spec workitem receive --task TASK-ID --id TASK-ID-W01 --result-event 123 --role tp-project-manager --agent ACTUAL-COORDINATOR-AGENT --summary "已比对该结果与实际证据，尚未代替整任务验收" --db RUNTIME-DB
 ```
 
 `123` 必须换成上一步返回的真实结果事件 ID。完成要求 Work 已认领、身份相同、关联工作段已结束；角色工作段的开始/等待/结束仍用原 `work start/update/end --item`，不让 Work 状态代替角色参与。
@@ -67,7 +67,7 @@ tp-spec workitem receive --task TASK-ID --id TASK-ID-W01 --result-event 123 --ro
 测试、审查或交付发现当前范围内缺陷后，使用父 Task 当前 step；不用旧 `rework open` 将显式计划退回开发。
 
 ```bash
-tp-spec rework fix --task TASK-ID --id TASK-ID-FIX01 --issue issue-zero-boundary --step TEST --file fix-spec.json --summary "已复现的原范围缺陷" --cause IMPLEMENTATION_DEFECT --role tp-software-lifecycle --agent main-agent --db RUNTIME-DB
+tp-spec rework fix --task TASK-ID --id TASK-ID-FIX01 --issue issue-zero-boundary --step TEST --file fix-spec.json --summary "已复现的原范围缺陷" --cause IMPLEMENTATION_DEFECT --role tp-project-manager --agent ACTUAL-COORDINATOR-AGENT --db RUNTIME-DB
 ```
 
 `fix-spec.json` 与 Work spec 同结构，`step_id=TEST`，明确本次修复路径/AC、来源和实际角色。当前父步骤转 WAITING，已完成开发历史不变。重复同 issue 和相同范围复用原 Work；改变 issue 名称不是扩范围授权，需求变化仍先走原授权流程。没有 Fix 内再创建 Fix 的对象层，不递归制造任务。
@@ -86,7 +86,7 @@ tp-spec workitem release --task TASK-ID --id TASK-ID-FIX01 --role tp-development
 
 ## 固定集成主体与原步骤复验
 
-先在当次授权内由协调者实际应用结果/处理冲突，再记录真实 Task 工作区。只登记，不执行合并：
+先由集成工程师在当次授权内实际应用结果、处理冲突并提交精确结果；项目经理按已记录协调身份接收后，引用真实结果/receipt与处置证据登记 Task 候选。小 Task 没有额外集成工作时不强制新增集成 Work。candidate 为 record-only，只记录当前实际工作区，不执行合并：
 
 ```json
 {
@@ -97,17 +97,17 @@ tp-spec workitem release --task TASK-ID --id TASK-ID-FIX01 --role tp-development
 ```
 
 ```bash
-tp-spec workitem candidate --task TASK-ID --file integration.json --role tp-software-lifecycle --agent main-agent --db RUNTIME-DB
-tp-spec work step --task TASK-ID --step TEST --plan-version 1 --action resume --role tp-software-lifecycle --summary "已接收 Fix 并核对当前候选，恢复原测试步骤" --db RUNTIME-DB
+tp-spec workitem candidate --task TASK-ID --file integration.json --role tp-project-manager --agent ACTUAL-COORDINATOR-AGENT --db RUNTIME-DB
+tp-spec work step --task TASK-ID --step TEST --plan-version 1 --action resume --role tp-project-manager --summary "已接收 Fix 并核对当前候选，恢复原测试步骤" --db RUNTIME-DB
 ```
 
-候选读取父 Task 全部已登记 Git 仓库，绑定真实 Change Set、AC/Subject、结果接收事件及集成证据。沿用既有 Task Change Set 契约；没有有效仓库基线时明确报告，不自动初始化 Git，也不把非 Git 原型快照冒充正式 Git 集成验收。Work 本身可以从实际目录给出文件 snapshot，最终交付应遵守该 Task 原本适用的主体契约。
+候选读取父 Task 全部已登记 Git 仓库，绑定当前代码 Change Set、当前需求/AC Subject、精确结果及接收事件、集成证据和冲突处置。create/receive/candidate仍要求匹配已记录coordinator的角色与已知agent；集成工程师不能仅凭专业角色冒用candidate权限。沿用既有 Task Change Set 契约；没有有效仓库基线时明确报告，不自动初始化 Git，也不把非 Git 原型快照冒充正式 Git 集成验收。Work 本身可以从实际目录给出文件 snapshot，最终交付应遵守该 Task 原本适用的主体契约。
 
 不同 Work 提交同一目标文件但输出不同时，或目标文件与接收结果不一致时，要求明确 `resolutions` 条目：`path`、`owner`（贡献该输出的 Work ID）、`reason`、`evidence_refs`；多仓库另有 `repo_root`。记录真实冲突处置和最终文件，不自动挑“最后一次”结果，也不覆盖产品文件。未知目标仓库拒绝，不借候选扩大父仓库集合。
 
 允许登记**中间候选**，包含当前已接收输出并列出当时 `outstanding_work_items`；这避免“测试 Work 等修复，而修复候选又等测试 Work 完成”的循环。恢复当前父步骤要求必要 Fix 已接收且同一实际候选仍有效；普通当前工作/未来计划工作仍须各自完成，不能借中间候选提前结单。新增接收、源码、AC/Subject 或证据变化会使候选需重新核对。最终预检及 READY Delivery 仍要求全部必要 Work 已完成、接收并进入最终候选。
 
-恢复后进行受影响复验，使用原 `task verify`、`review record`、`task delivery-converge` 等专业入口，最后才 `work step --action complete`。测试/审查步骤中 Fix 后完成会验证相应正式结果仍适用；交付 Fix 要有接收后的真实交付收敛。未改变产品/Subject/证据的有效验证可复用，不要求只因新 Work 元数据就全量重跑；实质变化不能沿用旧 PASS。步骤完成、专业 PASS、Owner Acceptance 与正式 Task complete 不互相代签。
+恢复后进行受影响复验，使用原 `task verify`、`review record`、`task delivery-converge` 等专业入口，最后才 `work step --action complete`。测试/审查步骤中 Fix 后完成会验证相应正式结果仍适用；交付 Fix 要有接收后的真实交付收敛。未改变产品/Subject/证据的有效验证可复用，不要求只因新 Work 元数据就全量重跑；实质变化不能沿用旧 PASS。步骤完成、专业 PASS、Owner Acceptance 与正式 Task complete 不互相代签。步骤计划内的参与角色或 coordinator 均保留原有完成权限；不是项目经理独占按钮，未结束参与/必要Work/候选与专业门禁仍须满足。
 
 ## 查看、学习输入与恢复
 

@@ -65,13 +65,8 @@ def load_contract(base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
 
 
 def load_role_catalog(base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
-    return config_loader.load_config(
-        "governance/role-catalog.yaml",
-        schema_name="role-catalog",
-        base_root=base_root,
-        strict_unknown_fields=True,
-        use_cache=True,
-    )
+    from .role_registry import load_role_catalog as load
+    return load(base_root)
 
 
 def load_role_topology(base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
@@ -518,14 +513,53 @@ def _latest_code_review(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, 
     return None
 
 
-def _latest_checkpoint_activity(events: Iterable[Dict[str, Any]], *, actor: str, phase: str) -> Optional[Dict[str, Any]]:
-    for e in reversed(list(events)):
+def _latest_checkpoint_activity(events: Iterable[Dict[str, Any]], *, actor: str, phase: str,
+                                trusted: bool = False) -> Optional[Dict[str, Any]]:
+    for e in sorted(events, key=lambda row: int(row.get("id") or 0), reverse=True):
         if e.get("event_type") != "FACT" or e.get("actor_role") != actor:
             continue
         d = _parse_detail(e.get("detail_json"))
+        # Formal checkpoints bind row-level stages. event sync keeps caller detail
+        # verbatim but never writes these columns, including for older imports.
+        if trusted and (d.get("producer") != "record-first" or not d.get("transaction_id")
+                        or not e.get("from_stage") or e.get("to_stage") != phase):
+            continue
         if str(d.get("operation") or "").upper() == "CHECKPOINT" and str(d.get("phase") or e.get("to_stage") or "") == phase:
             return {"event": e, "detail": d, "semantics": event_contract.normalize_event_semantics("FACT", d)}
     return None
+
+
+def _stage_checkpoint_activity(stage: str, events: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    activities = [_latest_checkpoint_activity(events, actor=actor,
+                    phase=orchestration_policy.stage_phase(stage), trusted=True)
+                  for actor in orchestration_policy.checkpoint_actor_ids(stage)]
+    return max((item for item in activities if item),
+               key=lambda item: int(item["event"]["id"]), default=None)
+
+
+def requirement_role_for_task(task: dict, events: list[dict]) -> str:
+    """Explicit responsibilities take precedence; VERSION never opts old work in."""
+    from .execution import project_execution
+    from .task_coordinator import read_creation_coordinator
+    current, legacy = orchestration_policy.checkpoint_actor_ids("requirement")
+    facts = project_execution(task, events)
+    plan = facts.get("plan")
+    if plan:
+        requirements = [step for step in facts["steps"]
+                        if step["phase"] == orchestration_policy.stage_phase("requirement")]
+        pending = [step for step in requirements if step["status"] != "COMPLETED"]
+        for step in pending or list(reversed(requirements)):
+            for role in step["roles"]:
+                if role in (current, legacy):
+                    return role
+        if (plan["coordinator"]["role"] == "tp-project-manager"
+                or any(current in step["roles"] for step in plan["steps"])):
+            return current
+    if read_creation_coordinator(task, events)["coordinator"]:
+        return current
+    if _latest_checkpoint_activity(events, actor=current, phase="requirement", trusted=True):
+        return current
+    return legacy
 
 
 def _latest_checkpoint(events: Iterable[Dict[str, Any]], *, actor: str, phase: str) -> Optional[Dict[str, Any]]:
@@ -567,16 +601,9 @@ def _current_bound_change_set(binding: Dict[str, Any]) -> Optional[Dict[str, Any
 
 
 def _stage_completion_event(stage: str, events: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    mapping = {
-        "requirement": ("tp-product-manager", "requirement"),
-        "product": ("tp-product-manager", "product"),
-        "architecture": ("tp-software-architect", "architecture"),
-        "planning": ("tp-tech-lead", "planning"),
-        "development": ("tp-development-engineer", "development"),
-    }
-    if stage in mapping:
-        actor, phase = mapping[stage]
-        return _latest_checkpoint(events, actor=actor, phase=phase)
+    if stage in orchestration_policy.STAGES and orchestration_policy.checkpoint_actor_ids(stage):
+        activity = _stage_checkpoint_activity(stage, events)
+        return activity["event"] if activity and activity["semantics"]["result_status"] == "COMPLETED" else None
     if stage == "architecture_review":
         r = _latest_arch_review(events)
         return r["event"] if r and r["decision"] == "PASS" else None
@@ -595,16 +622,8 @@ def _stage_done(stage: str, events: List[Dict[str, Any]]) -> bool:
 def _stage_has_activity(stage: str, events: List[Dict[str, Any]]) -> bool:
     if _stage_done(stage, events):
         return True
-    mapping = {
-        "requirement": ("tp-product-manager", "requirement"),
-        "product": ("tp-product-manager", "product"),
-        "architecture": ("tp-software-architect", "architecture"),
-        "planning": ("tp-tech-lead", "planning"),
-        "development": ("tp-development-engineer", "development"),
-    }
-    if stage in mapping:
-        actor, phase = mapping[stage]
-        return _latest_checkpoint_activity(events, actor=actor, phase=phase) is not None
+    if stage in orchestration_policy.STAGES and orchestration_policy.checkpoint_actor_ids(stage):
+        return _stage_checkpoint_activity(stage, events) is not None
     if stage == "architecture_review":
         return _latest_arch_review(events) is not None
     if stage == "verification":
@@ -884,37 +903,23 @@ def _knowledge_result_for_request(events: List[Dict[str, Any]], request: Dict[st
     return None
 
 
-def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]], contract: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]], contract: Optional[Dict[str, Any]] = None,
+                        *, catalog: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Build compact deterministic input so delivery can do targeted convergence only."""
+    catalog = load_role_catalog() if catalog is None else catalog
     facts: Dict[str, Dict[str, Any]] = {}
     knowledge_signals: List[Dict[str, Any]] = []
     delivery_signals: List[str] = []
     verification_binding: Optional[Dict[str, Any]] = None
-    for stage, actor in (("requirement", "tp-product-manager"),
-                         ("product", "tp-product-manager"),
-                         ("architecture", "tp-software-architect"),
-                         ("architecture_review", "tp-software-architect"),
-                         ("planning", "tp-tech-lead"),
-                         ("development", "tp-development-engineer"),
-                         ("verification", "tp-test-engineer"),
-                         ("review", "tp-code-reviewer")):
-        if stage == "verification":
-            latest = _latest_verification(events)
-            selected = latest["event"] if latest else None
-        elif stage == "architecture_review":
-            latest_review = _latest_arch_review(events)
-            selected = latest_review["event"] if latest_review else None
-        elif stage == "review":
-            latest_review = _latest_code_review(events)
-            selected = latest_review["event"] if latest_review else None
-        else:
-            selected = _latest_checkpoint(events, actor=actor, phase=stage)
-        if not selected:
-            continue
+    def collect(stage, selected):
         detail = _parse_detail(selected.get("detail_json"))
         source_refs = list(detail.get("source_refs") or [])
         evidence = list(detail.get("evidence") or [])
-        facts[stage] = {
+        for signal in detail.get("knowledge_signals") or []:
+            if isinstance(signal, dict):
+                source_refs.extend(ref for ref in signal.get("source_refs") or [] if ref not in source_refs)
+        fact = {
+            "role_id": selected.get("actor_role"),
             "event_id": int(selected.get("id") or 0),
             "summary": str(selected.get("summary") or ""),
             "evidence": evidence,
@@ -930,17 +935,45 @@ def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]], cont
                 item["evidence"] = evidence
             if source_refs and not item.get("source_refs"):
                 item["source_refs"] = source_refs
-            knowledge_signals.append(item)
+            if item not in knowledge_signals:
+                knowledge_signals.append(item)
         for raw in detail.get("delivery_signals") or []:
             value = str(raw or "").strip()
             if value and value not in delivery_signals:
                 delivery_signals.append(value)
+        return fact
+
+    for stage in orchestration_policy.STAGES:
+        if stage == "delivery":
+            continue
+        if stage == "verification":
+            latest = _latest_verification(events)
+            selected = latest["event"] if latest else None
+        elif stage == "architecture_review":
+            latest_review = _latest_arch_review(events)
+            selected = latest_review["event"] if latest_review else None
+        elif stage == "review":
+            latest_review = _latest_code_review(events)
+            selected = latest_review["event"] if latest_review else None
+        else:
+            selected = _stage_completion_event(stage, events)
+        if not selected:
+            continue
+        detail = _parse_detail(selected.get("detail_json"))
+        facts[stage] = collect(stage, selected)
         if stage == "verification":
             verification_binding = {
                 "event_id": int(selected.get("id") or 0),
                 "subject_digest": str(detail.get("subject_digest") or ""),
                 "decision": event_contract.normalize_event_semantics("VERIFICATION_COMPLETED", detail)["decision"],
             }
+    specialist_facts = []
+    ux = next(role for role in catalog["roles"] if role["workflow_role"] == "tp-ux-designer")
+    for phase in ux["phases"]:
+        activity = _latest_checkpoint_activity(events, actor=ux["workflow_role"], phase=phase, trusted=True)
+        if activity:
+            specialist_facts.append({**collect(phase, activity["event"]), "phase": phase,
+                                     "result_status": activity["semantics"]["result_status"]})
     return {
         "mode": "FAST_PATH",
         "max_incremental_ai_overhead_percent": (contract or load_contract())["execution"]["delivery_fast_path"]["max_incremental_ai_overhead_percent"],
@@ -950,12 +983,15 @@ def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]], cont
             "flow_level": task.get("flow_level"),
         },
         "stage_facts": facts,
+        "specialist_facts": specialist_facts,
         "knowledge_signals": knowledge_signals,
         "delivery_signals": delivery_signals,
         "verification_binding": verification_binding,
         "knowledge_effect": {
             "scope": "current project + shared",
-            "request_when_signals_present": True,
+            "assessment_required": True,
+            "request_policy": "per_task_new_ready",
+            "signals_are_candidates": True,
             "result_owner": "tp-knowledge",
             "result_dispositions": ["CREATED", "UPDATED", "DUPLICATE", "NO_DURABLE_INSIGHT"],
             "integration_writes_result": False,
@@ -992,6 +1028,9 @@ def _conditional_role_recommendations(contract: Dict[str, Any], catalog: Dict[st
         elif trigger == "deep_review":
             matched = "workflow:deep-review" in signals
             reason = "DEEP_REVIEW"
+        elif trigger == "ux_design":
+            matched = "workflow:ux-design" in signals
+            reason = "UX_DESIGN"
         if not matched or role_id not in role_map:
             continue
         recommendations.append({
@@ -1131,10 +1170,10 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
         context["current_effective"] = task["_current_effective"]
     from .execution import project_execution
     execution_facts = project_execution(task, task.get("_events") or [], retired=bool(task.get("_retired")))
-    if execution_facts["status"] != "NOT_RECORDED":
+    if execution_facts["status"] != "NOT_RECORDED" or execution_facts.get("coordinator"):
         context = dict(context or {})
         context["execution"] = {key: execution_facts[key] for key in (
-            "schema", "status", "plan_version", "coordinator", "current_step", "next_step", "issues", "terminal")}
+            "schema", "status", "plan_version", "coordinator", "coordinator_source", "current_step", "next_step", "issues", "terminal")}
     from . import security_authority as authority
     try:
         security = authority.project(task.get("_events") or [], str(task.get("task_id") or ""), task.get("_task_dir"))
@@ -1371,7 +1410,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
     if state == "BLOCKED":
         blocker = next((str(e.get("summary") or "") for e in reversed(events) if e.get("event_type") == "BLOCKER"), "task is BLOCKED")
         from .waiting import active_wait
-        waiting_fact = active_wait(events, state)
+        waiting_fact = active_wait(events, state, actors=(*role_map, catalog["human_actor"]["id"]))
         result = _route_dict(task, level, next_stage=None, role_id=None, skill_path=None,
                            blocker=blocker, reason_codes=["TASK_BLOCKED"], action="task_resume_after_resolution",
                            confirmation_policy=policy, context={"waiting": waiting_fact} if waiting_fact else None)
@@ -1468,12 +1507,8 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             code = "VERIFICATION_FAIL_REASSESS"
         target_completion = _stage_completion_event(target, events)
         if not target_completion or int(target_completion.get("id") or 0) <= int(verification["event"].get("id") or 0):
-            stage_to_role = {
-                "requirement": "tp-product-manager",
-                "architecture": "tp-software-architect",
-                "development": "tp-development-engineer",
-            }
-            rid = stage_to_role[target]
+            rid = (requirement_role_for_task(task, events) if target == "requirement"
+                   else orchestration_policy.STAGES[target][0])
             mode = "COMPARATIVE" if target == "architecture" and "workflow:multiple-feasible-routes" in signals else "DIRECT"
             return _route_role_boundary(
                 task, level, events, policy=policy, next_stage=target, role_id=rid,
@@ -1574,7 +1609,7 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
         if completion is not None and (int(completion.get("id") or 0) > dependency_id or reusable_review or reusable_verification or reusable_delivery):
             if stage in {"development", "verification", "review", "delivery"}:
                 upstream_completion_id = max(upstream_completion_id, int(completion.get("id") or 0))
-            previous_role = str(step.get("role") or "") or None
+            previous_role = str(completion.get("actor_role") or step.get("role") or "") or None
             previous_stage = stage
             previous_completion = completion
             continue
@@ -1585,12 +1620,12 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
             return _full_repository_scope_wait(task, level, policy)
         if stage == "delivery" and verification and verification["detail"].get("verification_scope") == "technical":
             return _full_verification_wait(task, level, policy)
-        rid = str(step["role"])
+        rid = requirement_role_for_task(task, events) if stage == "requirement" else str(step["role"])
         role = role_map.get(rid)
         if role is None:
             raise OrchestrationError(f"pipeline references unknown role: {rid}")
         mode = _execution_mode(step, level, signals)
-        context = _delivery_fact_pack(task, events, contract) if stage == "delivery" else None
+        context = _delivery_fact_pack(task, events, contract, catalog=catalog) if stage == "delivery" else None
         recommended_roles = _conditional_role_recommendations(
             contract, catalog, phase=str(step.get("phase") or stage), signals=signals,
             risk_signals=task.get("_risk_signals") or [],
@@ -1778,8 +1813,10 @@ def resolve_progress(
 
     for step in included:
         stage = str(step.get("stage") or "")
-        role = str(step.get("role") or "")
+        role = requirement_role_for_task(task, events) if stage == "requirement" else str(step.get("role") or "")
         completion = _delivery_completion_event(events, task_dir, task=task) if stage == "delivery" else _stage_completion_event(stage, events)
+        if completion is not None:
+            role = str(completion.get("actor_role") or role)
         completion_source = ""
         completion_event_id = 0
         undeclared_completion = False
@@ -1800,16 +1837,8 @@ def resolve_progress(
             completion_source = "runtime_event"
             completion_event_id = int(completion.get("id") or 0)
         else:
-            checkpoint_map = {
-                "requirement": ("tp-product-manager", "requirement"),
-                "product": ("tp-product-manager", "product"),
-                "architecture": ("tp-software-architect", "architecture"),
-                "planning": ("tp-tech-lead", "planning"),
-                "development": ("tp-development-engineer", "development"),
-            }
-            if stage in checkpoint_map:
-                actor0, phase0 = checkpoint_map[stage]
-                activity = _latest_checkpoint_activity(events, actor=actor0, phase=phase0)
+            if orchestration_policy.checkpoint_actor_ids(stage):
+                activity = _stage_checkpoint_activity(stage, events)
                 if activity and activity["semantics"]["result_status"] == "NOT_RECORDED":
                     undeclared_completion = True
             if undeclared_completion:

@@ -68,6 +68,7 @@ def execution_brief(facts: dict[str, Any]) -> dict[str, Any]:
             "id", "title", "status", "roles", "waiting_work_items", "wait_reason", "expected_next_actor")}
     return {"status": facts.get("status", "NOT_RECORDED"), "source": "task_event.execution",
             "plan_version": facts.get("plan_version", 0), "coordinator": facts.get("coordinator"),
+            "coordinator_source": facts.get("coordinator_source"),
             "current_step": step(facts.get("current_step")), "next_step": step(facts.get("next_step")),
             "current_roles": facts.get("current_roles", []), "last_recorded_at": facts.get("last_recorded_at"),
             "issues": facts.get("issues", []), "runtime_status": "UNKNOWN"}

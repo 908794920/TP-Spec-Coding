@@ -21,7 +21,10 @@
 
 | Name | ID | 执行契约 |
 | --- | --- | --- |
+| tp-项目经理 | `tp-project-manager` | [`skills/roles/tp-project-manager/SKILL.md`](../../skills/roles/tp-project-manager/SKILL.md) |
 | tp-产品经理 | `tp-product-manager` | [`skills/roles/tp-product-manager/SKILL.md`](../../skills/roles/tp-product-manager/SKILL.md) |
+| tp-需求经理 | `tp-requirements-manager` | [`skills/roles/tp-requirements-manager/SKILL.md`](../../skills/roles/tp-requirements-manager/SKILL.md) |
+| tp-用户体验设计师 | `tp-ux-designer` | [`skills/roles/tp-ux-designer/SKILL.md`](../../skills/roles/tp-ux-designer/SKILL.md) |
 | tp-软件架构师 | `tp-software-architect` | [`skills/roles/tp-software-architect/SKILL.md`](../../skills/roles/tp-software-architect/SKILL.md) |
 | tp-技术主管 | `tp-tech-lead` | [`skills/roles/tp-tech-lead/SKILL.md`](../../skills/roles/tp-tech-lead/SKILL.md) |
 | tp-安全工程师 | `tp-security-engineer` | [`skills/roles/tp-security-engineer/SKILL.md`](../../skills/roles/tp-security-engineer/SKILL.md) |
@@ -32,6 +35,16 @@
 | tp-集成交付工程师 | `tp-integration-engineer` | [`skills/roles/tp-integration-engineer/SKILL.md`](../../skills/roles/tp-integration-engineer/SKILL.md) |
 
 <!-- TP-SPEC:AGENT-TOPOLOGY-END -->
+
+## 协调、专业工作与来源
+
+主Agent承担项目经理 `tp-project-manager` 的统筹责任，不额外常驻委派一层PM。需求经理负责当前有效规则与AC，产品经理负责价值/范围取舍；UX按真实设计信号进入现有phase，不新增固定设计阶段。
+
+新Task在既有STATE→NEW事务记录 `tp-spec.task-coordinator/v1`；可选 `task create --agent` 仅携带真实调用者标识，空值显示未记录。创建actor仍是生命周期，coordinator默认PM。无计划的NOT_RECORDED仅说明计划未登记，Task/route/status仍提供coordinator_source及来源事件；旧无marker历史不从owner或最后actor猜协调身份，不按相同版本追补。
+
+协调者、当前实际参与角色与下一责任分开显示；终态当前角色/步骤为空，未结束历史不证明在线。需要未来接班时用既有版本化计划，旧已开始步骤、产品经理历史事件和来源不改写。没有物理DB迁移；代码回退不撤销新元数据语义，旧版不应继续写已采用的新在途事实。
+
+专业执行者提交精确结果，PM按已记录协调身份接收；集成工程师执行获准的apply/冲突处置并提交结果，PM接收后record-only登记候选，绑定当前代码、需求/AC Subject、结果/receipt及处置证据。candidate仍严格匹配coordinator的角色与已知agent；专业集成角色没有默认候选权限。步骤参与角色或coordinator保留原step complete权限，小Task不强制新增集成Work。细节见[执行事实](../EXECUTION_FACTS.md)与[Work结果](../WORK_UNITS.md)。
 
 ## 相关文档
 
@@ -217,7 +230,7 @@ tp-spec task checkpoint --task <TASK> --task-dir <TASK_DIR> --db <DB> --actor tp
 开发、验证与独立 CODE 审查通过其原职责入口完成可信登记后，协调者可以直接使用返回/查询到的原事件 ID，与本批短摘要一次汇合，无需复制报告、重写机器字段或重新签署：
 
 ```text
-tp-spec task checkpoint --task <TASK> --task-dir <TASK_DIR> --db <DB> --actor tp-software-lifecycle --phase other --summary "本批实际结果、未验项与下一步" --request-id <汇合ID> --recorded-result <开发事件ID> --recorded-result <验证事件ID> --recorded-result <CODE事件ID>
+tp-spec task checkpoint --task <TASK> --task-dir <TASK_DIR> --db <DB> --actor tp-project-manager --phase other --summary "本批实际结果、未验项与下一步" --request-id <汇合ID> --recorded-result <开发事件ID> --recorded-result <验证事件ID> --recorded-result <CODE事件ID>
 ```
 
 仅接受同 Task、契约有效的 record-first Development FACT、正式 Verification 和 CODE/IMPLEMENTATION/ULTRA_REVIEW 原结果；读取原 actor、scope、subject、事务、证据及回执绑定，在提交边界再核对。不接收自由文本 FACT 冒充专业结果，不让调用者传 actor/decision JSON 来签独立 PASS。缺失、损坏、跨 Task、重复或发生竞争的引用整批拒绝。旧结果只能按历史身份引用，不能变成当前主体的新 PASS；汇合摘要仍不能绕过后续门禁的新鲜度检查。

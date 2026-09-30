@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Alert, Button, Pagination, Select, Tag, Typography } from 'antd';
-import { record, records, stageLabel, text, timestampText } from '../facts';
+import { record, records, stageLabel, text, timestampText, workflowNextResponsibility } from '../facts';
 import type { WorkflowHandle, WorkflowProps } from './WorkflowStrip';
 import { Disclosure, Fields } from './Facts';
 import { actions, currentDescription, filterEvents, groupParticipations, latestHandoff, newestEvents,
@@ -131,6 +131,8 @@ export const ExecutionWorkflow = forwardRef<WorkflowHandle, WorkflowProps>(({ wo
     const currentRoles = terminal || !currentId ? [] : strings(facts.current_roles);
     const issues = strings(facts.issues);
     const noPlan = !facts.status || facts.status === 'NOT_RECORDED';
+    const coordination = { coordinator: facts.coordinator || '历史未记录', coordinator_source: facts.coordinator_source || '历史未记录' };
+    const nextResponsibility = workflowNextResponsibility(workflow, terminal);
     const latestBlockers = task.state === 'BLOCKED' ? records(blockers) : [];
     useEffect(() => { setExpanded(old => old.filter(id => steps.some(step => step.id === id))); }, [facts.steps]);
     function locate() {
@@ -152,6 +154,7 @@ export const ExecutionWorkflow = forwardRef<WorkflowHandle, WorkflowProps>(({ wo
             <p><span>当前记录阶段</span><strong>{terminal ? '任务已结束' : stageLabel(recordedStage) || text(task.phase) || '尚未记录'}</strong></p>
             <p><span>下一步</span><strong>{terminal ? '无后续执行' : stageLabel(workflow.next_step) || '尚未解析'}</strong><small>流程建议不代表已开始执行</small></p>
           </div>
+          <Fields value={{ ...coordination, current_roles: terminal ? '无（任务已结束）' : currentRoles.length ? currentRoles : '未登记', next_responsibility: nextResponsibility }}/>
           {!!latestBlockers.length && <div className="task-blocker" role="status"><strong>任务阻塞</strong>{latestBlockers.map((blocker, index) => <p key={index}>{text(blocker.reason) || '原因未记录'}</p>)}</div>}
           {!!text(workflow.error) && <Alert type="warning" showIcon title="流程路由未解析" description={text(workflow.error)}/>}
           <Disclosure label="流程与评估来源"><p>当前展示流程配置和已有事件；此任务未登记独立执行计划，不补造步骤起止或角色参与记录。</p><Fields value={{ risk_level: task.risk_level, flow_level: task.flow_level, effective_level: workflow.effective_level, phase: task.phase, route: workflow.route }}/></Disclosure>
@@ -172,6 +175,7 @@ export const ExecutionWorkflow = forwardRef<WorkflowHandle, WorkflowProps>(({ wo
         <p><span>当前步骤</span><strong>{currentDescription(facts, terminal)}</strong>{!!next.id && <small>下一计划步骤：{text(next.title)}</small>}</p>
         <p><span>当前参与角色</span><strong>{terminal ? '无，以下为历史记录' : currentRoles.length ? currentRoles.map(roleLabel).join('、') : '暂无已登记的当前参与'}</strong><small>未结束参与不代表执行者在线</small></p>
       </div>
+      <Fields value={{ ...coordination, next_responsibility: nextResponsibility }}/>
       {!!latestBlockers.length && <div className="task-blocker" role="status"><strong>任务阻塞</strong>{latestBlockers.map((blocker, i) => <div key={i}><p>{text(blocker.reason) || '原因未记录'}</p><small>来源：Task 阻塞记录 · <RecordedTime value={blocker.created_at}/> · 结构化下一责任：未记录</small></div>)}</div>}
       {!!text(current.wait_reason) && <div className="step-wait-summary"><strong>步骤等待：</strong>{text(current.wait_reason)}<small>下一责任：{text(current.expected_next_actor) ? roleLabel(current.expected_next_actor) : '未记录'} · 来源：步骤记录 · <RecordedTime value={timeline.find(row => row.step_id === currentId && !row.participation_id)?.created_at}/></small></div>}
       <div className="section-heading execution-list-heading"><h3 ref={heading} tabIndex={-1}>执行步骤</h3><div className="step-list-actions"><span className="muted">{noPlan ? '尚未登记' : `已记录完成 ${steps.filter(step => step.status === 'COMPLETED').length} / 共 ${steps.length} 步`}</span><Button size="small" onClick={locate}>定位当前步骤</Button></div></div>
@@ -186,7 +190,7 @@ export const ExecutionWorkflow = forwardRef<WorkflowHandle, WorkflowProps>(({ wo
         })}
       </ol>}
       {!noPlan && !steps.length && <p>没有可可靠展示的执行步骤，请查看上方读取提示。</p>}
-      <Disclosure label={`计划调整与协调记录 · ${records(facts.plan_history).length} 版`}><Fields value={{ coordinator: facts.coordinator, history: facts.plan_history,
+      <Disclosure label={`计划调整与协调记录 · ${records(facts.plan_history).length} 版`}><Fields value={{ ...coordination, history: facts.plan_history,
         scope_refs: plan.scope_refs, source: facts.source, last_recorded_at: facts.last_recorded_at, legacy_event_ids: facts.legacy_event_ids, legacy_issues: facts.legacy_issues }}/></Disclosure>
       <p className="muted execution-note">步骤完成、角色参与结束与验证通过分别记录。专业验证与验收见任务详情。</p>
     </section>;

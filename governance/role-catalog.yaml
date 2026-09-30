@@ -1,6 +1,6 @@
 catalog_version: "5.3.7"
 base_version: "5.3.7"
-generated_utc: 20260930T045744Z
+generated_utc: 20260930T110021Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -23,7 +23,7 @@ roles:
   phases: [intake, requirement, product, discovery, architecture, planning, development, verification, review, delivery]
   capabilities: [lifecycle.routing, role.resolution, workflow.coordination]
   owns_states: [NEW]
-  content_sha256: 51341F68181CF61E7707350E1820F72CD7EADC04629E72AA01C6A428855A73E7
+  content_sha256: E0670799E17B8FE2F93EE2F598EB442F51A39723F2A921477D2DFF73C164676A
 - workflow_role: tp-project-autonomy
   display_name: tp-项目自治维护
   type: control-role
@@ -85,20 +85,57 @@ roles:
     - {id: tp-wiki-scheduled-maintenance, path: skills/wiki/tp-wiki-scheduled-maintenance/SKILL.md, mode: conditional}
   owns_states: []
   content_sha256: ED2073BFF6B678F59C360D9A61AC3C2F2597F9A77F2EA6F29F15AFE8FF204A93
+- workflow_role: tp-project-manager
+  display_name: tp-项目经理
+  type: workflow-role
+  skill_path: skills/roles/tp-project-manager/SKILL.md
+  domain: software
+  phases: [intake, requirement, product, discovery, architecture, planning, development, verification, review, delivery, other]
+  capabilities: [project.coordination, dependency.coordination, blocker.coordination, work.receipt, integration.candidate, delivery.coordination]
+  subskills:
+    - {id: task-decomposition, path: skills/capabilities/task-decomposition/SKILL.md, mode: conditional}
+    - {id: delivery-convergence, path: skills/capabilities/delivery-convergence/SKILL.md, mode: conditional}
+    - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
+  owns_states: []
+  content_sha256: B06F96856224671F5D8F5A50C4CF36F7A2C79926090AF866DEA70A589353E415
 - workflow_role: tp-product-manager
   display_name: tp-产品经理
   type: workflow-role
   skill_path: skills/roles/tp-product-manager/SKILL.md
   domain: software
   phases: [intake, requirement, product]
-  capabilities: [product.planning, requirement.analysis, requirement.clarification, requirement.decomposition, scope.management, business_rules.analysis, acceptance.criteria, requirement.impact, product.design]
+  capabilities: [product.planning, product.goal, user.value, scope.management, priority.management, experience.goal, requirement.collaboration]
   subskills:
-    - {id: ui-prototype-design, path: skills/capabilities/ui-prototype-design/SKILL.md, mode: conditional}
     - {id: requirement-clarification, path: skills/capabilities/requirement-clarification/SKILL.md, mode: conditional}
     - {id: assumption-management, path: skills/capabilities/assumption-management/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 43FE607F0E312F1C411EA8EDF8704A09CC185469F5EC95C688DDD28EE90E2474
+  content_sha256: 732F1FA054B21CD5D424876725BA3D2511ABE2EA80F781655F94AD825E10140A
+- workflow_role: tp-requirements-manager
+  display_name: tp-需求经理
+  type: workflow-role
+  skill_path: skills/roles/tp-requirements-manager/SKILL.md
+  domain: software
+  phases: [intake, requirement]
+  capabilities: [requirement.analysis, requirement.clarification, requirement.decomposition, business_rules.analysis, acceptance.criteria, requirement.traceability, requirement.impact]
+  subskills:
+    - {id: requirement-clarification, path: skills/capabilities/requirement-clarification/SKILL.md, mode: conditional}
+    - {id: assumption-management, path: skills/capabilities/assumption-management/SKILL.md, mode: conditional}
+    - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
+  owns_states: []
+  content_sha256: E3BFAE91C4E9091D3B36D3AC96417A1CD59762D8AC7C5B12BDBE8DD95EF43052
+- workflow_role: tp-ux-designer
+  display_name: tp-用户体验设计师
+  type: workflow-role
+  skill_path: skills/roles/tp-ux-designer/SKILL.md
+  domain: software
+  phases: [requirement, product, development, verification]
+  capabilities: [interaction.design, ui.design, state.design, prototype.design, usability.design, accessibility.design, design_implementation.mapping]
+  subskills:
+    - {id: ui-prototype-design, path: skills/capabilities/ui-prototype-design/SKILL.md, mode: conditional}
+    - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
+  owns_states: []
+  content_sha256: B10292B2DC7A3F16964A92EC8EA2ED11B8D30D0A50036CBD6DA4E961CC6A3CB5
 - workflow_role: tp-software-architect
   display_name: tp-软件架构师
   type: workflow-role
@@ -126,7 +163,7 @@ roles:
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
     - {id: technical-review, path: skills/capabilities/technical-review/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 58871E79C58C0BB19F8DDEF96D53165FAA270379B1215E8CFC880D41BA3FB077
+  content_sha256: BA4621326E34A52E6AD9023F4A70D9E3434F01369335A079800004B1137D5ED2
 - workflow_role: tp-security-engineer
   display_name: tp-安全工程师
   type: workflow-role
@@ -196,13 +233,13 @@ roles:
   skill_path: skills/roles/tp-integration-engineer/SKILL.md
   domain: software
   phases: [delivery]
-  capabilities: [change.inspection, integration.readiness, git_state.validation, conflict.analysis, git.integration, post_integration.verification, release.readiness, residual_risk.summary, task_delivery.result]
+  capabilities: [change.inspection, integration.readiness, git_state.validation, conflict.analysis, git.integration, post_integration.verification, release.readiness, residual_risk.summary, task_delivery.result, task_learning.assessment, task_learning.coverage]
   subskills:
     - {id: delivery-convergence, path: skills/capabilities/delivery-convergence/SKILL.md, mode: conditional}
     - {id: knowledge-capture, path: skills/capabilities/knowledge-capture/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 9D94EB952C72D2BF6FA31059730AA104A4D558AB867BF7F56A36AB3818BF143C
+  content_sha256: 90FFBDDAB8217B12EE39978DB8205E50DA284CE5FC2C40B6D34A63123003D302
 topology:
   schema: tp-spec.role-topology/v1
   generated: true
@@ -244,11 +281,29 @@ topology:
       kind: domain-agent
       path: agents/tp-wiki/SKILL.md
       domain: wiki
+    tp-project-manager:
+      id: tp-project-manager
+      name: tp-项目经理
+      kind: formal-role
+      path: skills/roles/tp-project-manager/SKILL.md
+      domain: software
     tp-product-manager:
       id: tp-product-manager
       name: tp-产品经理
       kind: formal-role
       path: skills/roles/tp-product-manager/SKILL.md
+      domain: software
+    tp-requirements-manager:
+      id: tp-requirements-manager
+      name: tp-需求经理
+      kind: formal-role
+      path: skills/roles/tp-requirements-manager/SKILL.md
+      domain: software
+    tp-ux-designer:
+      id: tp-ux-designer
+      name: tp-用户体验设计师
+      kind: formal-role
+      path: skills/roles/tp-ux-designer/SKILL.md
       domain: software
     tp-software-architect:
       id: tp-software-architect
@@ -403,11 +458,21 @@ topology:
       name: Wiki 定时维护
       kind: capability-skill
       path: skills/wiki/tp-wiki-scheduled-maintenance/SKILL.md
-    ui-prototype-design:
-      id: ui-prototype-design
-      name: 原型与交互设计
+    task-decomposition:
+      id: task-decomposition
+      name: 任务拆解
       kind: capability-skill
-      path: skills/capabilities/ui-prototype-design/SKILL.md
+      path: skills/capabilities/task-decomposition/SKILL.md
+    delivery-convergence:
+      id: delivery-convergence
+      name: 交付收敛
+      kind: capability-skill
+      path: skills/capabilities/delivery-convergence/SKILL.md
+    tp-memory-capture:
+      id: tp-memory-capture
+      name: 项目记忆捕获
+      kind: capability-skill
+      path: skills/capabilities/tp-memory-capture/SKILL.md
     requirement-clarification:
       id: requirement-clarification
       name: 需求澄清
@@ -418,11 +483,11 @@ topology:
       name: 假设管理
       kind: capability-skill
       path: skills/capabilities/assumption-management/SKILL.md
-    tp-memory-capture:
-      id: tp-memory-capture
-      name: 项目记忆捕获
+    ui-prototype-design:
+      id: ui-prototype-design
+      name: 原型与交互设计
       kind: capability-skill
-      path: skills/capabilities/tp-memory-capture/SKILL.md
+      path: skills/capabilities/ui-prototype-design/SKILL.md
     architecture-design:
       id: architecture-design
       name: 架构设计与复审
@@ -433,11 +498,6 @@ topology:
       name: 交付计划
       kind: capability-skill
       path: skills/capabilities/delivery-planning/SKILL.md
-    task-decomposition:
-      id: task-decomposition
-      name: 任务拆解
-      kind: capability-skill
-      path: skills/capabilities/task-decomposition/SKILL.md
     technical-review:
       id: technical-review
       name: 独立技术审查
@@ -468,11 +528,6 @@ topology:
       name: 分层测试
       kind: capability-skill
       path: skills/capabilities/testing-strategy/SKILL.md
-    delivery-convergence:
-      id: delivery-convergence
-      name: 交付收敛
-      kind: capability-skill
-      path: skills/capabilities/delivery-convergence/SKILL.md
     knowledge-capture:
       id: knowledge-capture
       name: 知识提炼
@@ -495,7 +550,16 @@ topology:
     to: tp-wiki
     relation: routes-to
   - from: tp-software-lifecycle
+    to: tp-project-manager
+    relation: owns-role
+  - from: tp-software-lifecycle
     to: tp-product-manager
+    relation: owns-role
+  - from: tp-software-lifecycle
+    to: tp-requirements-manager
+    relation: owns-role
+  - from: tp-software-lifecycle
+    to: tp-ux-designer
     relation: owns-role
   - from: tp-software-lifecycle
     to: tp-software-architect
@@ -605,8 +669,16 @@ topology:
     to: tp-wiki-scheduled-maintenance
     relation: uses-skill
     mode: conditional
-  - from: tp-product-manager
-    to: ui-prototype-design
+  - from: tp-project-manager
+    to: task-decomposition
+    relation: uses-skill
+    mode: conditional
+  - from: tp-project-manager
+    to: delivery-convergence
+    relation: uses-skill
+    mode: conditional
+  - from: tp-project-manager
+    to: tp-memory-capture
     relation: uses-skill
     mode: conditional
   - from: tp-product-manager
@@ -618,6 +690,26 @@ topology:
     relation: uses-skill
     mode: conditional
   - from: tp-product-manager
+    to: tp-memory-capture
+    relation: uses-skill
+    mode: conditional
+  - from: tp-requirements-manager
+    to: requirement-clarification
+    relation: uses-skill
+    mode: conditional
+  - from: tp-requirements-manager
+    to: assumption-management
+    relation: uses-skill
+    mode: conditional
+  - from: tp-requirements-manager
+    to: tp-memory-capture
+    relation: uses-skill
+    mode: conditional
+  - from: tp-ux-designer
+    to: ui-prototype-design
+    relation: uses-skill
+    mode: conditional
+  - from: tp-ux-designer
     to: tp-memory-capture
     relation: uses-skill
     mode: conditional

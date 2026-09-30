@@ -13,6 +13,7 @@ export function WorkResults({ value }: { value: unknown }) {
   return <section className="detail-section work-results" aria-label="子工作与集成候选">
     <h3>子工作与集成候选</h3>
     <p className="muted">结果提交、协调者接收、集成候选与 Task 验收是不同事实。登记的角色 / 工作区不证明进程在线或宿主强隔离。</p>
+    <p className="muted">专业执行者提交结果；集成工程师在获准范围实际 apply、处理冲突并提交结果。项目经理承担已记录协调责任时精确接收，再以 record-only 方式登记候选；小 Task 不强制新增集成 Work，历史协调身份仍按原记录核对。</p>
     {Array.isArray(facts.issues) && facts.issues.length > 0 && <Alert type="warning" showIcon title="子工作记录待核对" description={facts.issues.map(text).join('；')}/>}
     {!items.length ? <p role="status">未登记子工作；不从 Wxx 名称或旧事件猜测 Fix 与父 Task 关系。</p> :
       items.map(item => {

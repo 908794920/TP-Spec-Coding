@@ -50,8 +50,8 @@ def effective_level(conn, task) -> str:
 
 
 def role_ids() -> set[str]:
-    from .orchestration import load_role_catalog
-    return {str(item["workflow_role"]) for item in load_role_catalog()["roles"]} | {"tp-spec-coding", "tp-software-lifecycle", "human_owner"}
+    from .role_registry import actor_ids
+    return set(actor_ids())
 
 
 def validate_refs(conn, task_id: str, values) -> list[str]:
@@ -73,13 +73,13 @@ def validate_items(conn, task_id: str, values) -> list[str]:
     return items
 
 
-def normalize_plan(conn, task, raw) -> tuple[dict, int]:
+def normalize_plan(conn, task, raw, *, coordinator=None) -> tuple[dict, int]:
     raw = _keys(raw, {"expected_version", "coordinator", "assessment", "reason", "scope_refs", "steps"}, "plan")
     expected = raw.get("expected_version")
     if type(expected) is not int or expected < 0:
         raise ValueError("expected_version must be a non-negative integer (0 for first adoption)")
     roles = role_ids()
-    owner = _keys(raw.get("coordinator"), {"role", "agent"}, "coordinator")
+    owner = _keys(raw.get("coordinator", coordinator), {"role", "agent"}, "coordinator")
     owner = {"role": _text(owner.get("role"), "coordinator.role"),
              "agent": _text(owner.get("agent", ""), "coordinator.agent", required=False)}
     if owner["role"] not in roles:
@@ -260,7 +260,17 @@ def cmd_work_plan(args) -> int:
         print(f"ERROR: plan file: {exc}", file=sys.stderr)
         return 2
     def write(conn, task, facts):
-        body, expected = normalize_plan(conn, task, raw)
+        inherited = facts["coordinator"] if facts["plan"] is None else None
+        if (facts["plan"] is not None and isinstance(raw, dict)
+                and raw.get("expected_version") == 0 and "coordinator" not in raw):
+            # Retry the initial normalized payload using its creation identity,
+            # never the coordinator of a later handoff.
+            from .task_coordinator import read_creation_coordinator
+            inherited = read_creation_coordinator(task, execution.read_events(conn, args.task))["coordinator"]
+        body, expected = normalize_plan(conn, task, raw, coordinator=inherited)
+        if facts["plan"] is None and inherited and (body["coordinator"]["role"] != inherited["role"]
+                or (inherited["agent"] and body["coordinator"]["agent"] != inherited["agent"])):
+            raise ValueError("TASK_COORDINATOR_CONFLICT: first plan must preserve recorded coordination identity")
         fingerprint = execution.digest(body)
         if facts["plan"] == body:
             return {"task_id": args.task, "plan_version": facts["plan_version"], "replayed": True,

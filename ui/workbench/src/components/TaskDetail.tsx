@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Tabs } from 'antd';
 import type { GraphObject } from '../graph/model';
 import type { CloseoutData, DetailData, Envelope, ReadState, TaskData } from '../types';
-import { record, stateLabel, stageLabel } from '../facts';
+import { record, stateLabel, stageLabel, workflowNextResponsibility } from '../facts';
 import { CopyText, Disclosure, Fields, Problems, ReadStatus } from './Facts';
 import { VerificationDetail, Outcome } from './VerificationDetail';
 import { EvidenceList } from './EvidenceList';
@@ -48,6 +48,7 @@ export function TaskDetail({ object, snapshot, initialTab, defaultTab, details, 
   }, [object.id, requestedTab, onDetails]);
   function selectTab(next: Tab) { setTab(next); if (next !== 'overview') onDetails(); }
   const data = details.data?.data, task = record(snapshot.data.task), workflow = record(snapshot.data.workflow);
+  const execution = record(workflow.execution);
   const terminal = task.state === 'COMPLETED' || task.state === 'CANCELLED' || workflow.retired === true;
   const mismatch = !!details.data && details.data.read.task_revision !== snapshot.read.task_revision;
   return <dialog className="task-detail task-detail-modal" ref={dialog} aria-labelledby="detail-heading" onCancel={e => { e.preventDefault(); onClose(); }} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}>
@@ -64,7 +65,9 @@ export function TaskDetail({ object, snapshot, initialTab, defaultTab, details, 
         <section className="detail-section"><h4>当前 Task 的实际流程</h4>
           <Fields value={{ task_state: stateLabel('task', task.state), current: terminal ? '无（任务已结束）' : stageLabel(workflow.current_step) || '当前步骤未解析', next: terminal ? '无（任务已结束）' : stageLabel(workflow.next_step) || '下一步未解析',
             current_source: workflow.current_step_source, next_source: workflow.next_step_source, effective_level: workflow.effective_level,
-            coordinator: record(workflow.execution).coordinator,
+            coordinator: execution.coordinator || '历史未记录', coordinator_source: execution.coordinator_source || '历史未记录',
+            current_roles: terminal ? '无（任务已结束）' : execution.current_roles,
+            next_responsibility: workflowNextResponsibility(workflow, terminal),
             completed_at: task.completed_at, read_at: snapshot.read.completed_at }} labels={{ task_state: 'Task 正式状态', current: '当前步骤', next: '下一步', current_source: '当前步骤来源', next_source: '下一步来源', effective_level: '有效流程等级', coordinator: 'Task 协调责任（独立于本步角色）', completed_at: '正式结束时间', read_at: '读取时间' }}/>
           <Disclosure label="路由与来源字段"><Fields value={{ current: workflow.current_step, next: workflow.next_step, route: workflow.route }}/></Disclosure>
         </section>

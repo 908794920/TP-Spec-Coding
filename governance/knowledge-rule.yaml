@@ -62,6 +62,19 @@ responsibility:
     responsibilities:
     - "存在业务/历史知识缺口时优先使用标准 Knowledge Retrieval，而不是全库扫描历史资料"
     - "Knowledge 与当前需求/源码冲突时标注冲突，不静默采用"
+  tp-requirements-manager:
+    role: "需求知识消费者与来源提供者"
+    responsibilities:
+    - "为当前规则、边界和 AC 的具体缺口定向检索，并回当前事实核对；与产品维护同一有效需求"
+    - "提供有来源的需求变更与稳定规则候选，不把临时决定或未知事实写成长期知识"
+  tp-ux-designer:
+    role: "设计知识消费者与来源提供者"
+    responsibilities:
+    - "按当前设计问题复用有效规范与经验，提供实际设计/实现映射和验证边界，不以原型代替体验 PASS"
+  tp-project-manager:
+    role: "每 Task 学习责任的协调者"
+    responsibilities:
+    - "跟踪实际输入覆盖、候选交接与正式 Result，不以接收回执代签知识评估或 canonical 处置"
   tp-software-architect:
     role: "知识消费者与长期价值信号提供者"
     responsibilities:
@@ -69,10 +82,11 @@ responsibility:
     - "不得直接把检索命中当成当前源码事实；代码事实仍回 Source/Wiki 核验"
     - "可以标记候选长期知识价值，但不直接维护 canonical Knowledge"
   tp-integration-engineer:
-    role: "交付事实提供者"
+    role: "交付事实与每 Task 学习评估责任人"
     responsibilities:
-    - "只形成 verified delivery facts / residual risk / integration result，不裁决长期 Knowledge"
-    - "仅在可信长期知识信号存在时由 Runtime 写 KNOWLEDGE_CONVERGENCE_REQUEST；Integration 不写最终 Result"
+    - "形成真实 delivery facts / residual risk / integration result，并实际阅读当前有效需求与实际步骤材料，整理知识/记忆候选及输入覆盖"
+    - "每个 Task 的新 READY 由 Runtime 创建或复用当前 KNOWLEDGE_CONVERGENCE_REQUEST；无 signals 不能跳过评估，Integration 不写最终 Result"
+    - "评估不要求新增条目；稳定输入复用有效结果，变化只重评受影响部分，不每个 Work 重跑全套收敛"
   tp-knowledge:
     role: "Knowledge Content System 权威维护 Agent"
     responsibilities:
@@ -89,16 +103,17 @@ workflow:
     - "canonical 命中优先；需要证明时下钻 source/evidence"
     - "涉及当前代码实现时再用 Wiki 缩小范围并回 Source Code 核验"
   task_capture:
-    trigger: "可信 Verification/Review/Delivery 事实含长期知识信号，或 human_owner 明确要求"
+    trigger: "每个 Task（L0–L3）的新 READY Delivery，覆盖当前有效需求和实际步骤材料；knowledge_signals 仅为线索，或 human_owner 明确要求"
     states: [NOT_REQUIRED, NOT_RUN, CREATED, UPDATED, DUPLICATE, NO_DURABLE_INSIGHT]
     steps:
-    - "Delivery READY 在有信号时同事务写 KNOWLEDGE_CONVERGENCE_REQUEST；无信号不创建 Request，投影 NOT_REQUIRED"
+    - "新 READY Delivery 同事务创建或复用绑定当前输入的 KNOWLEDGE_CONVERGENCE_REQUEST；无 signals 也实际评估，必评估不等于必新增条目"
     - "tp-software-lifecycle 对未完成 Request 返回 dispatch_effect(tp-knowledge)，不新增 lifecycle stage"
     - "tp-knowledge 只做 current project + registered shared targeted search，并保存 query receipt / Task source / reason_code"
     - "CREATED/UPDATED 绑定 exact canonical，并通过局部 lint + 单条增量 index；DUPLICATE 必须命中已有 canonical；NO_DURABLE_INSIGHT 也必须证明已检索"
     - "Request 存在但无可信 Result 时投影 NOT_RUN，不得写 NO_CHANGE 伪装已执行"
+    - "稳定输入复用有效 Request/Result；变化只重评受影响部分，记录知识与各步骤记忆的实际处置，不为记账重跑有效测试"
     completion_gate: conditional
-    completion_rule: "没有 Request 时不增加门禁；存在当前 Request 时必须有同 Request/Change Set 的可信 Result"
+    completion_rule: "新 READY 的每 Task 评估必须有同 Request/当前输入/Change Set 的可信 Result；旧 markerless Delivery 与终态保留历史解释，不补造 Request 或新义务"
   external_ingest:
     protocol: "automation/knowledge/ingest-batch.md"
     invariant: "Registered Source Accountability = 100%；不要求每个 Source 生成 canonical"

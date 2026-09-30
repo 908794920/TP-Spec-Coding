@@ -76,7 +76,7 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
     # ARTIFACT_REFRESH：commit --refresh 的内部动作记录；不推进状态、不影响门禁，
     # 但只能由 commit 产生（不允许 event add/sync 伪造审计噪声）。
     "ARTIFACT_REFRESH": _policy("governance", ("commit",), False, _EVENT_SCHEMA_FIELDS + ("flush_id",)),
-    "STATE": _policy("governance", ("commit", "transition_task", "admin_recovery", "record-first"), True, _EVENT_SCHEMA_FIELDS + ("flush_id",)),
+    "STATE": _policy("governance", ("commit", "transition_task", "admin_recovery", "record-first", "task_create"), True, _EVENT_SCHEMA_FIELDS + ("flush_id",)),
     "HANDOFF": _policy("governance", ("commit", "transition_task", "admin_recovery"), True, _EVENT_SCHEMA_FIELDS + ("flush_id", "to_state", "handoff_id")),
     "REVIEW_COMPLETED": _policy("governance", ("review_record", "commit"), True, _REVIEW_IDENTITY_FIELDS),
     "REVIEW": _policy("governance", ("review_record", "commit"), True, _EVENT_SCHEMA_FIELDS),

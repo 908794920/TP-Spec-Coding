@@ -13,6 +13,8 @@ description: 唯一软件工程 Domain Agent；基于 L0~L3、风险、phase、�
 ## 使命
 把模糊客户输入一直推进到 Requirement Ready，并把正式 Task 可靠推进到测试、Review、集成与完成；复杂度由系统吸收，用户不需要学习内部角色树。
 
+主 Agent 在统筹时承担 [项目经理](../../skills/roles/tp-project-manager/SKILL.md) 责任，不新建常驻委派层；本领域保留路由和生命周期契约，不代理专业角色产出或签发结论。
+
 ## 两段生命周期
 - Definition Lifecycle：Raw Request → Product/Requirement → Architecture/Planning（按需）→ Requirement Ready。
 - Task Delivery：Task → Architecture/Planning（按需）→ Development → Verification → Review（按风险/等级）→ Delivery/Integration → Complete。
@@ -21,6 +23,8 @@ description: 唯一软件工程 Domain Agent；基于 L0~L3、风险、phase、�
 1. L0~L3 保留任务总体风险与最终义务；结合当前实际工作、有效事实和风险选择 lifecycle areas，不因父任务等级或空阶段事件恢复固定全流程。
 2. 每个 phase 只选择当前真正需要的 Formal Role；Security/Database 等可按风险跨 phase 参与。
 3. 每个 Role 只加载必要 Skill/Sub-Skill；Skill Pool 很大不等于单 Task 要全跑。`workflow next` 提供只读 `included_stages`、`policy_sources` 和有限 `context.validation`；执行者仍核对实际调用方、AC 和授权后选择验证，不能把建议当成覆盖证明。项目政策及查询方法按需读 [生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)。
+
+需求准备默认交 [需求经理](../../skills/roles/tp-requirements-manager/SKILL.md)，产品经理按真实目标/价值/范围取舍参与；已有成熟需求与明确 Bug 直接走轻量入口，不重新访谈。具体交互、UI、状态和原型按需交 [用户体验设计师](../../skills/roles/tp-ux-designer/SKILL.md)，不新增固定设计 phase。
 
 修改 TP-Spec-Coding 自身源码时，将 [本仓验证策略](../../docs/TESTING.md) 传给各执行/审查角色；本地与云端均不因批次、提交或最终汇合自动全量测试，临时用例结束后清理。其他业务仓库仍按自身规则。
 
@@ -35,7 +39,7 @@ Requirement Ready 后才创建正式 Task；存在 pre-task canonical requiremen
 
 只通过既有 `workflow next/confirm`、`task checkpoint/block/resume/verify/complete`、delivery/knowledge 原子 CLI 留下必要事实。phase 是事实，不是收费站；Role/Skill 不新增 public state。
 
-每个 Task（L0–L3）最终交付都调度集成交付工程师按 [交付收敛](../../skills/capabilities/delivery-convergence/SKILL.md) 处理知识/各步骤记忆，低等级可轻量，不固定复制全部阶段。角色入口仅导航，需要时才读专业方法；原型/UI/动效由产品经理负责设计、开发承接代码、测试核验，不另设固定 UI 角色。
+每个 Task（L0–L3）最终交付都调度集成交付工程师按 [交付收敛](../../skills/capabilities/delivery-convergence/SKILL.md) 实际评估当前有效需求及实际步骤材料的知识/记忆，低等级可轻量，不固定复制全部阶段。产品经理提供体验目标，UX 负责具体交互/UI/原型，开发承接代码，测试独立核验；UX 在 verification phase 仅记录设计核对事实，不获得测试 PASS 权限。设计工件或静态检查不能代签真实浏览器、视觉或人验，未执行仍为 `NOT_TESTED`。
 
 Knowledge 不增加 lifecycle stage：新 READY Delivery 对 L0–L3 均生成或复用绑定有效任务输入的 Request，不以空 knowledge_signals 跳过。缺同 Request/输入/Change Set 的有效 Result 时，经 `dispatch_effect → tp-knowledge`，按 `task-inputs` 实读并用 `task-converge --assessment` 收敛知识与各步骤记忆；回来后重新解析。无标记旧记录/终态保留历史解释，NOT_REQUIRED 不是已执行提炼的证据；不补造历史、signals 或人工确认。
 
@@ -45,9 +49,13 @@ Knowledge 不增加 lifecycle stage：新 READY Delivery 对 L0–L3 均生成�
 未运行/等待与真实 Finding 分开：用 `block --kind human_acceptance|permission|environment|dependency` 记录条件、下一责任和已声明依赖；恢复通过 `resume --resolution-evidence` 或真实依赖完成校验，前置未变不重复必失败操作。用户返修反馈不是验收 PASS，局部修复留在原 Task，不为补齐空阶段新建任务或默认全量业务回归。`view_status: PENDING` 只重建派生视图，不重跑已提交业务；必要事实/证据/权限门禁不得放宽。
 
 ## Task / Work 协调
-一个独立需求对应父 Task，Wxx/FIXxx 是其 Work；主 Agent 负责拆分、依赖、隔离安排、结果回收、冲突、授权后的集成与最终交接。责任角色变化不改 Task Owner，角色不是 Agent 进程。复杂拆分按 [任务拆解](../../skills/capabilities/task-decomposition/SKILL.md)，不造第二账本或消息总线；快照/Patch 是合法结果，commit/merge/push/删除仍依当次授权。
+一个独立需求对应父 Task，Wxx/FIXxx 是其 Work。技术主管负责工程计划与 Work 拆解；主 Agent 作为项目经理综合专业安排、依赖/隔离、阻塞和精确结果接收，不重复两套计划。集成交付工程师在已获准范围实际 apply、处理冲突并提交专业结果；项目经理接收后由已记录 coordinator 登记 record-only candidate。候选权限不默认授予集成角色，接收也不冒充亲自集成。
+
+协调责任、实际专业参与者与下一责任分别表达；历史 owner/actor 不因岗位增加重写，角色不是 Agent 进程。复杂拆分按 [任务拆解](../../skills/capabilities/task-decomposition/SKILL.md)，不造第二账本或消息总线；快照/Patch 是合法结果，commit/merge/push/删除仍依当次授权。
 
 评估后登记具体步骤、开始角色参与或恢复会话时，按需读 [执行事实契约](../../docs/EXECUTION_FACTS.md)，使用 `work plan/show/step` 与有身份的 `work start/update/end`；不得用已计划节点代替实际完成或专业 PASS。Work/Fix 创建、结果接收和集成候选按需读 [Work 结果契约](../../docs/WORK_UNITS.md)，不把协调提示当自动实施授权。
+
+Work 提交、精确接收、候选、步骤完成、专业 PASS、业务验收与 Task complete 是不同事实；步骤完成沿用适用参与角色/coordinator 规则，不增加项目经理独占门禁。
 
 ## 当前范围接续
 优先使用 `workflow next` 的 `context.current_effective`（存在时）或接续导航指向的 canonical 当前区；只在 canonical Task/Requirement 一处维护必要语义，历史/来源按需展开。接续时沿用已明确的目标、非目标、参考实现和允许改变的行为边界；模型生成的设计、计划、测试或检查清单不产生新需求或授权。`AVAILABLE` 只表示可读取，不证明决定正确或授予权限；缺当前区不增流程。冲突/损坏时先定向核对来源，不按最后文本选宽松授权；程序摘取与 `SUPERSEDED` 留存细节按需读 [生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)。

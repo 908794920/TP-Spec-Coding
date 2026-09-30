@@ -335,13 +335,18 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
     roles = "无（任务已结束）" if terminal else "、".join(execution.get("current_roles") or []) or "未记录（计划角色不等于已参与）"
     next_role = "无（任务已结束）" if terminal else status_context.get("next_responsibility") or "未知"
     next_text = "无（任务已结束）" if terminal else (f"{next_step.get('id')} · {next_step.get('title')}（计划，尚未发生）" if next_step else "未知 / 无后续计划步骤")
+    coordinator = execution.get("coordinator") or {}
+    source = execution.get("coordinator_source") or {}
+    coordination_source = f"{source['kind']} · 事件 #{source['event_id']}" if source.get("kind") and source.get("event_id") else "历史未记录"
     body = (
         "# 任务接续区\n\n"
         f"- 状态：{state}\n"
         f"- 当前步骤：{step_text}\n"
-        f"- 当前执行角色：{roles}\n"
+        f"- 当前参与角色：{roles}\n"
         f"- 计划版本：{execution.get('plan_version', '历史未记录')}\n"
-        f"- Task 协调责任：{(execution.get('coordinator') or {}).get('role') or '历史未记录'}\n"
+        f"- Task 协调责任：{coordinator.get('role') or '历史未记录'}\n"
+        f"- 协调执行者标识：{coordinator.get('agent') or '未记录'}\n"
+        f"- Task 协调来源：{coordination_source}\n"
         f"- 最后阶段（历史）：{phase}\n"
         f"- 最近记录角色（历史）：{last_actor}；时间：{latest.get('time') or '历史未记录'}\n"
         f"- 最新 Change Set：{status_context.get('change_set_id') or quality.get('change_set_id') or 'NOT_RECORDED'}\n"

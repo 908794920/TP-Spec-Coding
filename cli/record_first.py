@@ -18,18 +18,12 @@ from . import projection_cmd
 from . import event_contract
 from . import command_context
 from . import recording
+from .role_registry import actor_ids
 from .version import active_version
 
 PHASES = (
     "intake", "requirement", "product", "discovery", "architecture", "planning",
     "development", "verification", "review", "delivery", "other",
-)
-ACTORS = (
-    "tp-spec-coding", "tp-software-lifecycle", "tp-product-manager",
-    "tp-software-architect", "tp-tech-lead", "tp-security-engineer",
-    "tp-development-engineer", "tp-database-engineer", "tp-test-engineer",
-    "tp-code-reviewer", "tp-integration-engineer", "tp-knowledge",
-    "tp-wiki", "tp-base-maintenance", "tp-project-autonomy", "human_owner",
 )
 PUBLIC_STATES = {"NEW", "ACTIVE", "BLOCKED", "COMPLETED", "CANCELLED"}
 TERMINAL_STATES = {"COMPLETED", "CANCELLED"}
@@ -263,7 +257,7 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
                db: Optional[str] = None) -> Dict[str, Any]:
     if phase not in PHASES:
         raise ValueError(f"invalid phase {phase!r}; choose one of: {', '.join(PHASES)}")
-    if actor not in ACTORS:
+    if actor not in actor_ids():
         raise ValueError(f"invalid actor: {actor}")
     if change_impact is not None and (change_impact != "non-behavioral"
             or phase != "development" or actor != "tp-development-engineer"):
@@ -460,7 +454,7 @@ def block(*, task_id: str, task_dir: str, actor: str, reason: str,
           requires_tasks: Optional[Iterable[str]] = None,
           prerequisite_evidence: Optional[Iterable[str]] = None,
           db: Optional[str] = None) -> Dict[str, Any]:
-    if actor not in ACTORS:
+    if actor not in actor_ids():
         raise ValueError(f"invalid actor: {actor}")
     if phase is not None and phase not in PHASES:
         raise ValueError(f"invalid phase: {phase}")
@@ -513,7 +507,7 @@ def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
            phase: Optional[str] = None, resolution_evidence: Optional[Iterable[str]] = None,
            db: Optional[str] = None, expected_block_event_id: Optional[int] = None,
            expected_wait_kind: Optional[str] = None) -> Dict[str, Any]:
-    if actor not in ACTORS:
+    if actor not in actor_ids():
         raise ValueError(f"invalid actor: {actor}")
     tdir = _task_dir(task_dir)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
@@ -1128,7 +1122,7 @@ def complete(*, task_id: str, task_dir: str, actor: Optional[str], summary: str,
     try:
         task = _load(conn, task_id)
         actor0 = str(actor or task["owner_role"] or "").strip()
-        if actor0 not in ACTORS:
+        if actor0 not in actor_ids():
             raise ValueError(f"invalid actor: {actor0 or '<missing>'}")
 
         def checked(dbconn):

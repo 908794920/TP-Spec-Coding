@@ -34,6 +34,7 @@ from pathlib import Path
 
 
 from . import db as dbmod
+from .role_registry import actor_argument, actor_ids
 from .version import active_version
 from .sensitive_scanner import (
     scan_resource_ref,
@@ -52,7 +53,6 @@ _ACTION_TYPES = (
     "PRODUCTION_ACTION",
     "EXTERNAL_CALL",
 )
-_ALLOWED_ACTORS = ("tp-product-manager", "tp-software-architect", "tp-tech-lead", "tp-security-engineer", "tp-development-engineer", "tp-database-engineer", "tp-test-engineer", "tp-code-reviewer", "tp-integration-engineer", "human_owner")
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 # --- B-16：provenance 轻量判定规则（版本化 + 内容哈希双锚点） ---
@@ -173,7 +173,7 @@ def _normalize_sha256(value: str, *, field: str) -> str:
 def cmd_receipt(args) -> int:
     if not args.task or not args.task_dir:
         raise ValueError("--task and --task-dir are required for 'receipt'")
-    if args.actor not in _ALLOWED_ACTORS:
+    if args.actor not in actor_ids(formal_only=True):
         raise ValueError("unsupported actor")
     task_dir = Path(args.task_dir).resolve()
     status_path = task_dir / "status.yaml"
@@ -237,7 +237,7 @@ def add_receipt_subparsers(subparsers) -> None:
     p = subparsers.add_parser("receipt", help="Record an immutable high-risk execution receipt without changing workflow state")
     p.add_argument("--task", required=False)
     p.add_argument("--task-dir", required=False)
-    p.add_argument("--actor", required=False, choices=sorted(_ALLOWED_ACTORS))
+    p.add_argument("--actor", required=False, type=actor_argument(formal_only=True))
     p.add_argument("--action-type", required=False, choices=sorted(_ACTION_TYPES))
     p.add_argument("--summary", required=False, help="What happened (action or scope summary)")
     p.add_argument("--authorized-by", required=False, help="Optional operator note; not an approval identity")
