@@ -1,7 +1,7 @@
 ---
 name: tp-knowledge-scheduled-maintenance
 display_name: Knowledge 定时维护
-version: 5.3.6
+version: 5.3.7
 description: 用于 human_owner 已配置的 Knowledge Scheduler 唤起对话模型执行当前维护协议、定向更新并报告阻塞；不由定时器自行扩权。
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: tp-wiki-recovery
 display_name: Wiki 异常恢复
-version: 5.3.6
+version: 5.3.7
 description: 用于 Wiki Anchor、引用行号、来源或基线异常的定向诊断与获准恢复；只在 repairable 条件成立时修复，不手改指纹或虚构旧源码。
 ---
 

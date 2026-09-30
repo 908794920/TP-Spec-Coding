@@ -66,9 +66,10 @@ CLI / Runtime                  自动维护 Task / Event / Evidence / Workflow
 6. 只有 installation 配置缺失或明确需要修复时才运行 base configure。
 7. 只有项目尚未注册/绑定时才运行 project init；已有合法 binding 时不要重新初始化。
 8. 对需要同步的项目运行 base sync-project --apply，然后运行 base resolve 验证解析结果。
-9. 遇到路径不存在、project id 冲突、多个工作区候选、需要覆盖现有配置或身份不明确时停止并询问，不要自动猜。
-10. 不修改业务源码、生产数据库或 Runtime 事实源，不新增服务。
-11. 最后报告：实际使用的 Base/Wiki/Knowledge/项目路径、写入或保持不变的配置、项目绑定、doctor/resolve 结果和仍需我决定的事项。
+9. 首次 Knowledge 按 Getting Started 显式登记已绑定项目并建立投影；已有正常配置保持不变。用 knowledge doctor 确认项目 scope 与投影，不把安装健康当作知识库已就绪。
+10. 遇到路径不存在、project id 冲突、多个工作区候选、需要覆盖现有配置或身份不明确时停止并询问，不要自动猜。
+11. 不修改业务源码、生产数据库或手工改写 Runtime 事实，不新增服务。
+12. 最后报告：实际使用的 Base/Wiki/Knowledge/项目路径、写入或保持不变的配置、项目绑定、doctor/resolve 和 Knowledge 结果，以及仍需我决定的事项。
 ```
 
 常用命令的完整参数见 [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)。这里的关键动作是 `base configure`、`base installation-doctor`、`project init`、`base sync-project --apply` 和 `base resolve`，但是否执行写操作必须先依据当前机器事实判断。
@@ -100,6 +101,16 @@ python -m cli.main base resolve --workspace-root "<project-root>"
 ```
 
 已有安装或已有项目 binding 时不要机械重复 configure/init；先 doctor/resolve，再做最小必要修复。
+
+首次安装完成项目绑定后，还需显式准备该项目的 Knowledge 登记与检索投影，才能完成后续任务的知识评估：
+
+```bash
+python -m cli.main knowledge init --workspace-root "<project-root>" --register-project
+python -m cli.main knowledge index build --workspace-root "<project-root>"
+python -m cli.main knowledge doctor --workspace-root "<project-root>"
+```
+
+该登记复用已有 Binding，不生成知识正文或历史证据；已有正常 Knowledge 保持不变。细节见 [首次 Knowledge 准备](docs/GETTING_STARTED.md#首次准备当前项目的-knowledge)。
 
 ## 本地可视化工作台
 

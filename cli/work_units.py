@@ -482,8 +482,15 @@ def integration_status(conn, task, *, check_content=True, required_items=None):
                 snapshot = capture_change_set(candidate["repo_roots"])
                 if not same_bound_product_content(candidate, snapshot):
                     issues.append("WORK_CANDIDATE_PRODUCT_CHANGED")
-                if candidate["subject_digest"] != compute_verification_subject_digest(task_dir(conn, task["task_id"])):
-                    issues.append("WORK_CANDIDATE_SUBJECT_CHANGED")
+                current_subject = compute_verification_subject_digest(task_dir(conn, task["task_id"]))
+                if candidate["subject_digest"] != current_subject:
+                    issues.append(
+                        f"WORK_CANDIDATE_SUBJECT_CHANGED: candidate={candidate['subject_digest']}; current={current_subject}; "
+                        f"candidate_event_id={candidate.get('event_id')}; "
+                        "review the changed task/acceptance subject, explicitly refresh with workitem candidate "
+                        "using the current integration summary/evidence/resolutions, then retry the same step. "
+                        "This does not rebind old verification or require rerunning checks only for bookkeeping."
+                    )
             except (ValueError, OSError, RuntimeError) as exc:
                 issues.append(str(exc))
     return {"status": "STALE" if candidate and issues else "MISSING" if not candidate else "CURRENT" if check_content else "RECORDED",

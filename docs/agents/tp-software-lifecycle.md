@@ -146,6 +146,10 @@ tp-spec task checkpoint --task <TASK> --task-dir <TASK_DIR> --db <DB> --actor tp
 
 `checkpoint` 与 `verify` 支持 `--request-id`：同 Task 的同逻辑请求重试返回原始回执，不新增事件；新工作、新验收或改变参数使用新 ID。回执 `replayed: true` 指向原操作，**不是本次执行或当前版本的新 PASS**。已有绑定证据缺失/变更会拒绝重放，不能直接重跑原工作掩盖损坏。未给 ID 时自动生成并返回；发生响应丢失而调用方未保存 ID 时，不能保证调用方下一次随机 ID 被去重。当前并未扩展到所有写命令。
 
+纯说明修改可由实际开发工程师在同一 checkpoint 显式加 `--change-impact non-behavioral`，并在 summary 说明判断。该评估涵盖当前 Task 的完整改动，包括已提交内容；绑定当前 ChangeSet、仓库范围及验收 Subject，内容或范围变化后不能沿用。Runtime 只做保守的明显冲突检查：代码、配置、执行位文件、Skill/Agent/规则指令和未知文件类型不接受此声明；当前 HEAD 差异不是完整历史影响的自动证明，`.md` 后缀本身也不是免验依据。
+
+此参数只影响 L0 默认 `behavioral_change` 的适用性，不新增阶段或人工批准。L1+、`required: true`、明确 include/行为变化信号、既有 Verification（包括失败），以及未完成的真实 AC/页面/数据库验收要求仍保留原约束。它不是 `human_owner` 的 skip/waive 决定，也不清除既有证据或把未知结果改为 PASS。
+
 ### 一次接收已有结果报告
 
 已有 pytest JUnit XML、Playwright原生JSON、历史 Base 测试报告 JSON 或 `tp-spec.code-review-result/v1` JSON 时，可与本批短摘要一起接收，不必手写测试数量、耗时或 Event/Evidence 元数据：
@@ -197,7 +201,7 @@ tp-spec task run-pytest --task <TASK> --task-dir <TASK_DIR> --db <DB> --test tes
 默认不读取报告声明的其他文件。已审核本次输出目录及数据范围后可以显式接收其图片、视频、ZIP和HTML：
 
 ```text
-tp-spec task checkpoint --task <TASK> --task-dir <TASK_DIR> --db <DB> --actor tp-test-engineer --phase testing --summary "选定场景实际结果、未验边界和下一步" --request-id <本次登记ID> --result-report <本次原生JSON> --report-artifact-root <已批准输出目录>
+tp-spec task checkpoint --task <TASK> --task-dir <TASK_DIR> --db <DB> --actor tp-test-engineer --phase verification --summary "选定场景实际结果、未验边界和下一步" --request-id <本次登记ID> --result-report <本次原生JSON> --report-artifact-root <已批准输出目录>
 ```
 
 `--report-artifact-root` 必须与 `--result-report` 合用，且至少有一份 Playwright报告；相对附件路径以该目录为基准，绝对路径必须仍在其中。只复制报告实际声明的受限媒体，不递归扫目录、不访问网络、不解压/渲染。拒绝越界、链接/重解析点、缺失、扩展名与媒体类型不符和变化中的文件；不因HTML/MIME名称就宣称内容安全或视觉正确。原生JSON上限4MiB，整个批次沿用既有采集数量/单文件大小限制；大报告或其他格式可显式 `--collect` 保留原件，但不返回解析汇总。独立 Midscene HTML 同样用 `--collect`，不将 HTML 文本签成视觉判定。
@@ -274,6 +278,16 @@ CLI 不再注册卡片命令，也不为新诊断生成 `card` 计时区段；�
 
 `task verify` 默认 `--scope full`，继续校验当前要求的视觉证据。这里的 full 是结果的验收范围，不是自动执行全量测试的授权。命令只接收已经发生的检查和真实产物，不执行测试、不代替人验。
 
+已有真实结果可在这次 Verify 中精确登记技术 AC，不再另外手改验收表：
+
+```text
+tp-spec task verify --task <TASK> --task-dir <TASK_DIR> --db <DB> --decision PASS --summary "AC-01 的实际检查结果" --request-id <本次结果ID> --ac-result-json '{"ac":"AC-01","verdict":"PASS","evidence":"evidence/<已采集的真实结果>"}'
+```
+
+`--ac-result-json` 可重复，每项必须恰好包含 `ac`、`verdict`、`evidence`，只更新唯一且已声明 `technical` 见证的那一行。Evidence 使用已存在的非空 `evidence/*` 文件（也接受现有 local_file 对象）；Runtime 校验并绑定实际字节摘要。未知/重复 AC、human 行、原 Owner 处置、waive/defer 均拒绝。AC 结论沿用 `PASS` / `PENDING` / `BLOCKED`；未通过项用后两者并记录非 PASS 的 Verify 决策，不将 Verify 的 FAIL/NEEDS_FIX 写成非法 AC 值。
+
+映射、Verify 事件、更新后的 Subject 和验收文件进入同一可恢复事务；未选 AC、条件、见证策略和其他声明不改变，也不批量广播通过。需先收集现成报告时继续用 `checkpoint --collect` / `--result-report`；不得为了记账重新运行已经完成的检查。必需人验仍通过原 Owner 入口处理，`technical` 限定与最终交付检查保持不变。
+
 视觉/人验尚未完成时，可以显式记录当前技术检查，并由实际独立 CODE Reviewer 另行留证：
 
 ```text
@@ -303,6 +317,8 @@ tp-spec task scope-change --task <TASK> --task-dir <TASK_DIR> --db <DB> --actor 
 Runtime 只知道已登记仓库，不能从自然语言自动证明“所有获准仓库都已登记”。Integration 仍需对照 canonical 当前有效范围、全部必要 AC、实际代码/配置/数据影响及真实环境，发现未登记影响先按权限纠正绑定；不得只看最后一次单仓 Diff 或一条退出码。合法排除和 defer/waive 保留各自来源，不自动扩大或撤销。
 
 ChangeSet 原内容 ID 保持原格式；正式新记录额外保留既有快照内的逐仓 `product_digest`，按**仓库身份→内容**校验，避免两个仓库交换内容而总 ID 恰好不变。selected pytest 的 `subject_unchanged` 同样检查逐仓绑定。旧单仓仍可按原内容 ID 校验；旧多仓记录缺逐仓摘要时必须重新登记当前 checkpoint 和实际适用证据，不能补写历史摘要或复用旧 PASS。仅历史提交元数据变化、产品内容未变的原有兼容语义保留；未验证混用旧二进制读取新记录。
+
+若 Work 恢复/完成返回 `WORK_CANDIDATE_SUBJECT_CHANGED`，错误会同时给出候选事件、候选及当前 Subject。核对本次 task/acceptance 变化后，用现有 `workitem candidate --task <TASK> --role <协调角色> --agent <协调代理> --file <当前集成说明JSON> --db <DB>` 显式刷新候选，再重试原来的同一步。它不会自动重绑旧结果或放宽失效判定；需要的真实复验按变化影响判断，不为刷新记账而无关重测。
 
 最终结单重新检查最新 Delivery 及其原始附件；较新的损坏/失败结果不能回退到旧 READY。必要人验/视觉、独立 CODE、临时绕过清理和可信 AC 处置仍执行。范围历史损坏时报告具体阻塞，不静默丢掉较早仓库；提交前主体变化拒绝入账，但不撤销用户的产品修改。普通流转不启动工作台或触发页面刷新。
 

@@ -614,6 +614,56 @@ def _stage_has_activity(stage: str, events: List[Dict[str, Any]]) -> bool:
     return False
 
 
+def non_behavioral_paths(snapshot: Dict[str, Any]) -> bool:
+    """Conservative eligibility for an explicit assessment, never an extension exemption."""
+    from .security_authority import changed_paths
+    paths = changed_paths(snapshot)
+    if not paths:
+        return False
+    for name in paths:
+        path = Path(name)
+        if (path.suffix.lower() not in {".md", ".rst", ".txt"}
+                or path.name.lower() in {"skill.md", "agents.md", "claude.md", "gemini.md", "cmakelists.txt"}
+                or (path.suffix.lower() == ".txt" and path.stem.lower().startswith(("requirements", "constraints")))
+                or set(p.lower() for p in path.parts[:-1]) & {"skills", "agents", "rules", ".agents", ".claude", ".codex"}):
+            return False
+        entries = [row for repo in snapshot.get("repositories", [])
+                   for row in repo.get("entries", []) if row.get("path") == name]
+        if not entries or any(row.get("kind") != "file" or row.get("executable") for row in entries):
+            return False
+    return True
+
+
+def _current_non_behavioral(task: Dict[str, Any], events: List[Dict[str, Any]]) -> bool:
+    from .change_set import same_bound_product_content
+    from .digest import compute_verification_subject_digest
+    from . import delivery_contract, yaml_checks
+    binding = _development_change_set_binding(events)
+    if not binding or binding["event"].get("event_type") != "FACT":
+        return False
+    detail = binding["detail"]
+    impact = detail.get("change_impact") or {}
+    task_dir = task.get("_task_dir")
+    if (not isinstance(impact, dict) or impact.get("classification") != "non-behavioral"
+            or detail.get("producer") != "record-first" or not task_dir
+            or impact.get("change_set_id") != binding["change_set_id"]
+            or impact.get("subject_digest") != compute_verification_subject_digest(task_dir)
+            or not same_bound_product_content(detail, task.get("_current_change_set") or {})
+            or not delivery_contract.full_scope_matches(delivery_contract.repository_scope(events), detail,
+                                                       development_event_id=int(binding["event"]["id"]))):
+        return False
+    # A declaration changes default applicability, never actual acceptance duties.
+    try:
+        acceptance = yaml_checks.check_acceptance_yaml((Path(task_dir) / "acceptance.md").read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return False
+    page = acceptance.page_verification or {}
+    return (acceptance.ok and not acceptance.pending_rows
+            and str(page.get("mode") or "NOT_REQUIRED").upper() == "NOT_REQUIRED"
+            and not (page.get("visual") or {}).get("required")
+            and not any(row.get("status") != "NOT_REQUIRED" for row in acceptance.database_operations))
+
+
 def _stage_included(step: Dict[str, Any], level: str, task: Dict[str, Any], events: List[Dict[str, Any]], signals: set[str]) -> bool:
     stage = str(step["stage"])
     include = f"workflow:include-stage:{stage}"
@@ -637,6 +687,8 @@ def _stage_included(step: Dict[str, Any], level: str, task: Dict[str, Any], even
         return bool(task.get("_risk_signals") or signals & {
             "workflow:security-risk", "workflow:database-risk", "workflow:multiple-feasible-routes"})
     if trigger == "behavioral_change":
+        if level == "L0" and "workflow:behavioral-change" not in signals and _current_non_behavioral(task, events):
+            return False
         snapshot = task.get("_current_change_set") or {}
         empty_patch = "sha256:" + hashlib.sha256(b"").hexdigest()
         changed = any(repo.get("untracked") or repo.get("tracked_patch_sha256") not in {None, empty_patch}

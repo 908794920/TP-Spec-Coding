@@ -1,7 +1,7 @@
 ---
 id: tp-tech-lead
 name: tp-技术主管
-version: 5.3.6
+version: 5.3.7
 status: active
 type: workflow-role
 role: tp-tech-lead

@@ -1,5 +1,25 @@
 # Changelog
 
+## [5.3.7] 安装准备与 Runtime 轻量操作修复 — 2026-09-30
+
+### 普通用户安装准备
+
+- 锁文件中的 170 个 npm tarball 下载主机统一为官方 registry；依赖版本、integrity 与依赖图不变。
+- `knowledge init --register-project` 显式登记当前已绑定项目：复用稳定项目 ID，保留已有 registry 条目，重复登记保持不变；未指定参数时保留原有行为。README 与安装/Knowledge 文档补齐登记、索引及 doctor 步骤，不生成知识正文或历史证据。
+- 生命周期参考修正测试工程师 checkpoint 的 `verification` phase 示例；启动、配置与真实数据仍按原授权边界处理。
+
+### Runtime 操作减负
+
+- Development checkpoint 可选 `--change-impact non-behavioral`，将完整当前任务的非行为影响评估绑定 ChangeSet、仓库范围与验收 Subject，只影响 L0 默认路由。代码、执行性指令与未知输入保守拒绝；L1+、required/include、已有失败及真实验收义务不因此免除。
+- Verify 可选重复 `--ac-result-json`，将精确指定的 technical AC 结果、真实 Evidence、Verify 事件、更新后 Subject 与验收文件纳入既有可恢复事务。保留未选行、human 见证、Owner 处置与最终交付规则；不广播通过，不为记账重复执行检查。
+- 候选 Subject 过期提示补充候选事件、旧/当前 Subject 和显式刷新后重试原步骤的指引；不放宽失效条件，不自动重绑旧 PASS。
+
+### 版本与已执行验证
+
+- 活动契约、Agent/Skill frontmatter、npm 根版本与活动模板统一为 `5.3.7`；仅保留 `templates/5.3.7`。`5.3.6` 加入既有显式迁移来源清单，不自动修改已安装配置、项目/任务契约、Runtime、Wiki 或 Knowledge 数据；无新增公共 Task 状态或数据库表。
+- 安装批次已执行 11 个 Knowledge 登记局部正反例、锁文件下载主机差异核对、官方源安装、工作台构建及 HTTP/进程启动退出检查。Runtime 修复批次执行 9 个基础/回滚场景和 19 个边界/恢复场景，共 28 个局部场景通过；覆盖精确更新、幂等、证据与 Subject 新鲜度、写前并发变化、回滚、提交后恢复及首次投影一致性。临时用例和夹具已清理，合成运行数据与日志不进入发布源码。
+- 上述结果仅对应已执行范围，不代表全系统、Windows 或真实用户现场验收。界面点击审计和展示素材按用户决定暂停，未以 HTTP 成功替代 UI 通过；未恢复全仓测试或自动 CI。版本、Catalog、Manifest 与源码集合按现有工具定向核对，分支源码交付不等于 main 合并、Tag 或 Release。
+
 ## [5.3.6] Open Release Line — 2026-09-29
 
 - 从 **5.3.5** 收敛到 **5.3.6** 版本线：`VERSION`、治理活动契约、Agent/Skill frontmatter、产品入口 SKILL 与活动模板目录统一升级；活动模板目录切换为 `templates/5.3.6`，不再保留 `templates/5.3.5`。

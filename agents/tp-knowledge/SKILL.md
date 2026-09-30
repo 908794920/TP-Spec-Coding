@@ -2,7 +2,7 @@
 id: tp-knowledge
 name: tp-knowledge
 display_name: tp-knowledge
-version: 5.3.6
+version: 5.3.7
 status: active
 type: human-owner-skill
 tool_agnostic: Knowledge 根与项目身份由 Resolver 定位；不依赖特定 IDE、账号、插件或用户目录绝对路径。

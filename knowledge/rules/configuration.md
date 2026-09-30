@@ -91,3 +91,5 @@ retrieval:
 ## 5. Project registry
 
 `project-registry.yaml` is user/data-owned. IDs are stable. `workspace_roots` provides exact workspace → Knowledge project mapping. Aliases/entries may be added, but an established ID must not be silently renamed or reused. Base supplies the schema; the Vault supplies the actual projects.
+
+For a new Vault, `knowledge init --workspace-root <workspace> --register-project` explicitly adds the current, already bound project (`knowledge_id`, otherwise project ID). Existing entries and extension fields are preserved; an existing ID is left unchanged. Missing/invalid binding, malformed registry and duplicate/conflicting IDs fail without replacing the registry. This does not generate canonical prose, Evidence, a projection or a trusted baseline. The default `knowledge init` without this option remains meta-only. Build the first projection separately with `knowledge index build`.

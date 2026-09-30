@@ -1,7 +1,7 @@
 ---
 name: tp-knowledge-maintenance
 display_name: Knowledge 内容维护
-version: 5.3.6
+version: 5.3.7
 description: 用于已登记 source/canonical 的增量变化、定向正文维护、真相扫描、索引、验证与 baseline 推进；不把 Task 收敛扩成全库维护。
 ---
 

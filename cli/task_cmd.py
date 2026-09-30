@@ -2310,6 +2310,7 @@ def cmd_task_checkpoint(args) -> int:
         delivery_signals=args.delivery_signal,
         context_usage=_parse_context_usage_arg(args.context_usage_json),
         repo_roots=args.repo_root, request_id=args.request_id, collect=args.collect,
+        change_impact=getattr(args, "change_impact", None),
         result_reports=getattr(args, "result_report", None),
         report_artifact_root=getattr(args, "report_artifact_root", None),
         recorded_result_ids=getattr(args, "recorded_result", None),
@@ -2347,6 +2348,7 @@ def cmd_task_verify(args) -> int:
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
         decision=args.decision, summary=args.summary, evidence=args.evidence,
         scope=getattr(args, "scope", "full"), checks=getattr(args, "check", None),
+        ac_results=[json.loads(value) for value in (getattr(args, "ac_result_json", None) or [])],
         security_context=authority.explicit_context(args, effect="regression"),
         knowledge_signals=_parse_knowledge_signal_args(args.knowledge_signal_json),
         delivery_signals=args.delivery_signal,
@@ -2524,6 +2526,7 @@ def add_task_subparsers(task_parser) -> None:
     p_cp.add_argument("--delivery-signal", action="append")
     p_cp.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks checkpoint")
     p_cp.add_argument("--repo-root", action="append", default=None, help="explicit product Git root; repeat for multi-repo Development checkpoint")
+    p_cp.add_argument("--change-impact", choices=["non-behavioral"], help="explicit assessment of the full current task change, including committed changes; bound to product/subject and only affects optional L0 behavioral routing")
     p_cp.add_argument("--db", default=None)
     from .security_authority import add_context_args
     add_context_args(p_cp, effect=None, investigation=True)
@@ -2574,6 +2577,7 @@ def add_task_subparsers(task_parser) -> None:
     p_verify.add_argument("--decision", required=True, choices=["PASS", "FAIL", "NEEDS_FIX"])
     p_verify.add_argument("--summary", required=True)
     p_verify.add_argument("--evidence", action="append")
+    p_verify.add_argument("--ac-result-json", action="append", help="exact technical AC result: JSON object with ac, verdict (PASS/PENDING/BLOCKED), evidence (existing evidence/*); repeatable, atomic with verification")
     p_verify.add_argument("--scope", choices=["full", "technical"], default="full", help="full keeps all existing checks; technical is explicitly limited and cannot satisfy delivery/completion")
     p_verify.add_argument("--check", action="append", help="actual check performed; required for technical scope, repeat for multiple checks")
     p_verify.add_argument("--request-id", help="reuse only for retrying the same actual verification record")
