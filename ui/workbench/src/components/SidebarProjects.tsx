@@ -66,8 +66,8 @@ function ProjectRow({ context, expanded, selected, selectedTask, revision, onTog
         {read.error && <Alert type="error" showIcon title={read.error}/>}
         {!read.loading && !read.error && !rows.length && <p className="muted">当前项目没有已取得的任务。</p>}
         {!!rows.length && <ul className="project-task-list">{shown.map(row => <li key={row.task_id}>
-          <button type="button" className={selectedTask === row.task_id ? 'task-link selected' : 'task-link'}
-            aria-current={selectedTask === row.task_id ? 'page' : undefined}
+          <button type="button" className={selected && selectedTask === row.task_id ? 'task-link selected' : 'task-link'}
+            aria-current={selected && selectedTask === row.task_id ? 'page' : undefined}
             title={`${row.task_id} · ${stateLabel('task', row.state)}${row.retired ? ' · 已退休' : ''} · ${timestampText(row.updated_at)}`}
             onClick={() => onOpenTask(row.task_id)}>
             <span>{row.title || row.task_id}</span>
