@@ -19,7 +19,7 @@ KINDS = ("unspecified", "human_acceptance", "permission", "environment", "depend
 _OWNER_KINDS = {"human_acceptance", "permission"}
 
 
-def active_wait(events: Iterable, state: str) -> dict[str, Any]:
+def active_wait(events: Iterable, state: str, *, actors: Iterable[str] | None = None) -> dict[str, Any]:
     if state != "BLOCKED":
         return {}
     for raw in reversed(list(events)):
@@ -39,9 +39,9 @@ def active_wait(events: Iterable, state: str) -> dict[str, Any]:
         if detail.get("producer") != "record-first" or not detail.get("transaction_id") or detail.get("schema") != event_contract.EVENT_SCHEMA:
             raise ValueError("WAIT_FACT_INVALID: typed wait has no trusted BLOCK identity")
         wait = detail["waiting"]
-        from .record_first import ACTORS
+        from .role_registry import actor_ids
         if (not isinstance(wait, dict) or wait.get("kind") not in KINDS[1:]
-                or wait.get("responsibility") not in ACTORS
+                or wait.get("responsibility") not in (actor_ids() if actors is None else actors)
                 or not isinstance(wait.get("condition"), str) or not wait["condition"].strip()):
             raise ValueError("WAIT_FACT_INVALID: malformed waiting fields")
         if wait["kind"] in _OWNER_KINDS and wait["responsibility"] != "human_owner":
@@ -92,9 +92,9 @@ def build_wait(conn, task, task_dir: Path, *, kind: str | None, responsibility: 
         return {}
     if kind not in KINDS:
         raise ValueError(f"unknown waiting kind: {kind}")
-    from .record_first import ACTORS
+    from .role_registry import actor_ids
     owner = responsibility or ("human_owner" if kind in _OWNER_KINDS else str(task["owner_role"] or "tp-test-engineer"))
-    if owner not in ACTORS:
+    if owner not in actor_ids():
         raise ValueError("invalid waiting responsibility")
     if kind in _OWNER_KINDS and owner != "human_owner":
         raise ValueError("OWNER_RESOLUTION_REQUIRED: owner-controlled wait must name human_owner")

@@ -1,7 +1,7 @@
 ---
 name: implementation-control
 display_name: 实现过程控制
-version: 5.3.6
+version: 5.3.7
 description: Use while implementing an TP-Spec-Coding task when code changes, refactoring, reuse decisions, debugging, or scope control are required.
 ---
 
@@ -60,7 +60,7 @@ description: Use while implementing an TP-Spec-Coding task when code changes, re
 
 新增/修改的人工注释默认中文，仅解释 Why/Constraint/Risk；技术术语保留原文，明显代码不强制注释，失效注释及时更新。可读性以熟悉 Java/Spring/Vue、但不熟悉本任务的 1～3 年开发者能维护为基线，优先显式控制流与业务命名，不追求技巧或少行数。复杂反射、DSL、多层泛型、连续函数式组合和单实现多层模式都需当前真实需求支撑。
 
-实现前端时按 [原型与交互设计](../ui-prototype-design/SKILL.md) 的交接边界核对已批准设计与共享组件映射，产品实现不夹带模拟数据/时延/评审壳。SQL/迁移邀请数据库工程师；安全边界邀请安全工程师；原型设计由产品经理负责，开发自测不是独立测试/Review PASS，不主持 UltraReview。测试扩展只对应 AC、直接变更/回归、确定缺陷或真实专项风险。
+实现前端时按 [原型与交互设计](../ui-prototype-design/SKILL.md) 的交接边界核对已批准设计与共享组件映射，产品实现不夹带模拟数据/时延/评审壳。SQL/迁移邀请数据库工程师；安全边界邀请安全工程师；产品经理提供体验目标与价值取舍，UX 设计师负责具体交互与原型，开发自测不是独立测试/Review PASS，不主持 UltraReview。测试扩展只对应 AC、直接变更/回归、确定缺陷或真实专项风险。
 
 范围内 Fix 留在父 Task 的 Work，交回真实 Diff、snapshot/Patch 和定向验证；父步骤等待复验，不抹去历史，也不沿用失效证据。任何 git-visible 业务修改都是 repo_mutation，受 Execution Envelope / allowed_effects 约束。Token 优先用于读代码、实现、调试和验证；不重复手抄工件。
 

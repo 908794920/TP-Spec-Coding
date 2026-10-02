@@ -18,18 +18,12 @@ from . import projection_cmd
 from . import event_contract
 from . import command_context
 from . import recording
+from .role_registry import actor_ids
 from .version import active_version
 
 PHASES = (
     "intake", "requirement", "product", "discovery", "architecture", "planning",
     "development", "verification", "review", "delivery", "other",
-)
-ACTORS = (
-    "tp-spec-coding", "tp-software-lifecycle", "tp-product-manager",
-    "tp-software-architect", "tp-tech-lead", "tp-security-engineer",
-    "tp-development-engineer", "tp-database-engineer", "tp-test-engineer",
-    "tp-code-reviewer", "tp-integration-engineer", "tp-knowledge",
-    "tp-wiki", "tp-base-maintenance", "tp-project-autonomy", "human_owner",
 )
 PUBLIC_STATES = {"NEW", "ACTIVE", "BLOCKED", "COMPLETED", "CANCELLED"}
 TERMINAL_STATES = {"COMPLETED", "CANCELLED"}
@@ -81,7 +75,8 @@ def _semantic_detail(event_type: str, operation: str, flush_id: str, result_stat
 
 def _write_with_projection(conn, task_dir: Path, task, *, operation: str,
                            target_state: str, owner_after: str, flush_id: str,
-                           writer, summary: str, logical_request=None, before_prepare=None) -> Dict[str, Any]:
+                           writer, summary: str, logical_request=None, before_prepare=None,
+                           artifact_texts: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """Reuse the durable journal without exposing commit/handoff semantics."""
     from . import transaction_commit
 
@@ -110,6 +105,10 @@ def _write_with_projection(conn, task_dir: Path, task, *, operation: str,
                 parent = read_execution(dbconn, task)["current_step"]
                 if parent:
                     dbconn.execute("UPDATE task SET current_stage=? WHERE task_id=?", (parent["phase"], task["task_id"]))
+        if artifact_texts:
+            # The journal already backs up these files. Subject-dependent readers
+            # must see the same acceptance content as the just-written result.
+            transaction_commit._stage_and_replace(task_dir, artifact_texts, list(artifact_texts))
         refreshed = dbconn.execute("SELECT * FROM task WHERE task_id=?", (task["task_id"],)).fetchone()
         status_yaml, events_jsonl, warnings = projection_cmd.render_projection(dbconn, refreshed)
         transaction_commit._warn_projection(warnings)
@@ -117,10 +116,10 @@ def _write_with_projection(conn, task_dir: Path, task, *, operation: str,
         if not terminal:
             # Continuation is a rebuildable view, not part of the recovery boundary.
             # Required projections still commit atomically with their DB facts.
-            return {"status.yaml": status_yaml, "events.jsonl": events_jsonl}
+            return {**(artifact_texts or {}), "status.yaml": status_yaml, "events.jsonl": events_jsonl}
         return transaction_commit._finalize_texts(
             task_dir,
-            {"status.yaml": status_yaml, "events.jsonl": events_jsonl},
+            {**(artifact_texts or {}), "status.yaml": status_yaml, "events.jsonl": events_jsonl},
             view_rel,
             lambda: transaction_commit._rebuild_current_view_text(task_dir, refreshed, summary, flush_id),
         )
@@ -133,7 +132,7 @@ def _write_with_projection(conn, task_dir: Path, task, *, operation: str,
 
     try:
         transaction_commit._commit_with_recovery(
-            task_dir, conn, ["status.yaml", "events.jsonl"] + ([view_rel] if terminal else []), db_and_render,
+            task_dir, conn, list(artifact_texts or {}) + ["status.yaml", "events.jsonl"] + ([view_rel] if terminal else []), db_and_render,
             task_id=str(task["task_id"]), operation=operation,
             db_state_before=current, target_state=target_state,
             owner_before=str(task["owner_role"] or ""), owner_after=owner_after,
@@ -249,6 +248,7 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
                delivery_signals: Optional[Iterable[str]] = None,
                context_usage: Optional[Iterable[Dict[str, Any]]] = None,
                repo_roots: Optional[Iterable[str]] = None,
+               change_impact: Optional[str] = None,
                request_id: Optional[str] = None, collect: Optional[Iterable[str]] = None,
                result_reports: Optional[Iterable[str]] = None,
                report_artifact_root: Optional[str] = None,
@@ -257,8 +257,11 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
                db: Optional[str] = None) -> Dict[str, Any]:
     if phase not in PHASES:
         raise ValueError(f"invalid phase {phase!r}; choose one of: {', '.join(PHASES)}")
-    if actor not in ACTORS:
+    if actor not in actor_ids():
         raise ValueError(f"invalid actor: {actor}")
+    if change_impact is not None and (change_impact != "non-behavioral"
+            or phase != "development" or actor != "tp-development-engineer"):
+        raise ValueError("CHANGE_IMPACT_INVALID: non-behavioral is an optional development engineer assessment")
     tdir = _task_dir(task_dir)
     evidence = list(evidence or [])
     knowledge_signals = list(knowledge_signals or [])
@@ -281,7 +284,8 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
         knowledge_signals=knowledge_signals, delivery_signals=delivery_signals,
         repo_roots=repo_roots, collect=collect, context_usage=usage,
         result_reports=result_reports, recorded_result_ids=recorded_result_ids,
-        report_artifact_root=report_artifact_root, security_context=security_context)
+        report_artifact_root=report_artifact_root, security_context=security_context,
+        change_impact=change_impact)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
     conn = dbmod.connect(db_path)
     try:
@@ -326,6 +330,7 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
                 effective_risk = floor
 
         change_set = None
+        impact = None
         roots: List[str] = []
         if phase == "development":
             from . import transaction_commit
@@ -336,6 +341,14 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
             roots = _change_set_roots(conn, task, repo_roots)
             change_set = capture_change_set(roots)
             roots = [str(repo["root_locator"]) for repo in change_set["repositories"]]
+            if change_impact:
+                from .orchestration import non_behavioral_paths
+                from .digest import compute_verification_subject_digest
+                if not non_behavioral_paths(change_set):
+                    raise ValueError("CHANGE_IMPACT_UNSUPPORTED: code, executable instructions and unknown paths retain behavioral verification; omit --change-impact")
+                impact = {"classification": change_impact,
+                          "subject_digest": compute_verification_subject_digest(tdir),
+                          "change_set_id": change_set["content_digest"]}
 
         from . import security_authority as authority
         security = authority.normalize_context(security_context or {
@@ -369,8 +382,17 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
         if change_set:
             result["change_set_id"] = str(change_set["content_digest"])
             result["change_set_snapshot_digest"] = str(change_set["snapshot_digest"])
+        if impact:
+            result["change_impact"] = impact
 
         def writer(dbconn, transaction_id=""):
+            if impact:
+                from .change_set import capture_change_set, same_bound_product_content
+                from .digest import compute_verification_subject_digest
+                if (compute_verification_subject_digest(tdir) != impact["subject_digest"]
+                        or not same_bound_product_content({"change_set": change_set,
+                            "change_set_id": change_set["content_digest"], "repo_roots": roots}, capture_change_set(roots))):
+                    raise ValueError("CHANGE_IMPACT_STALE: reread the current change before recording its impact")
             # A referenced file may have moved while outputs were being collected.
             validate_explicit_evidence()
             authority.check_effect(dbconn, task_id, security, task_dir=tdir)
@@ -407,6 +429,7 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
                      change_set_id=(change_set or {}).get("content_digest"),
                      change_set=_compact_change_set(change_set) if change_set else None,
                      repo_roots=roots if change_set else None,
+                     change_impact=impact,
                  ),
                  ev[0] if ev else None, active_version(), now),
             )
@@ -431,7 +454,7 @@ def block(*, task_id: str, task_dir: str, actor: str, reason: str,
           requires_tasks: Optional[Iterable[str]] = None,
           prerequisite_evidence: Optional[Iterable[str]] = None,
           db: Optional[str] = None) -> Dict[str, Any]:
-    if actor not in ACTORS:
+    if actor not in actor_ids():
         raise ValueError(f"invalid actor: {actor}")
     if phase is not None and phase not in PHASES:
         raise ValueError(f"invalid phase: {phase}")
@@ -484,7 +507,7 @@ def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
            phase: Optional[str] = None, resolution_evidence: Optional[Iterable[str]] = None,
            db: Optional[str] = None, expected_block_event_id: Optional[int] = None,
            expected_wait_kind: Optional[str] = None) -> Dict[str, Any]:
-    if actor not in ACTORS:
+    if actor not in actor_ids():
         raise ValueError(f"invalid actor: {actor}")
     tdir = _task_dir(task_dir)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
@@ -602,6 +625,50 @@ def _latest_verification(conn, task_id: str, task_dir: Optional[Path] = None) ->
     return {"decision": "NOT_RECORDED", "recorded_decision": "NOT_RECORDED", "time": "", "summary": ""}
 
 
+def _prepare_ac_results(task_dir: Path, values: List[Dict[str, Any]], decision: str):
+    """Update only explicitly selected technical result cells; retain all criteria."""
+    import re
+    from .task_cmd import _acceptance_table_rows
+    from .yaml_checks import check_acceptance_yaml
+    from .evidence import validate_evidence_path
+    path = task_dir / "acceptance.md"
+    if not path.is_file():
+        raise ValueError("AC_RESULT_INVALID: acceptance.md is missing")
+    text = path.read_text(encoding="utf-8-sig")
+    rows = _acceptance_table_rows(text)
+    declared = re.findall(r"(?m)^\s*\|\s*(AC-[^|\s]+)\s*\|", text)
+    lines = text.splitlines()
+    results, items, seen = [], [], set()
+    for value in values:
+        if not isinstance(value, dict) or set(value) != {"ac", "verdict", "evidence"}:
+            raise ValueError("AC_RESULT_INVALID: each result requires exactly ac, verdict and evidence")
+        ac, verdict = value["ac"], value["verdict"]
+        if not isinstance(ac, str) or ac not in rows or declared.count(ac) != 1 or ac in seen:
+            raise ValueError("AC_RESULT_INVALID: unknown or duplicate acceptance ID")
+        row = rows[ac]
+        if row["witness"] != "technical" or row["verdict"] in {"DEFERRED_ACCEPTED", "OWNER_WAIVED"}:
+            raise ValueError("AC_RESULT_INVALID: only declared technical rows without owner dispositions may be updated")
+        if verdict not in ("PASS", "PENDING", "BLOCKED") or (decision == "PASS" and verdict != "PASS"):
+            raise ValueError("AC_RESULT_INVALID: use PASS/PENDING/BLOCKED; verification PASS cannot declare pending or blocked results")
+        checked = validate_evidence_path(task_dir, value["evidence"], require_evidence_dir=True)
+        if not checked.ok:
+            raise ValueError(f"AC_RESULT_EVIDENCE_INVALID: {checked.error}")
+        item = checked.item
+        if any(char in item["path"] for char in "|\r\n"):
+            raise ValueError("AC_RESULT_EVIDENCE_INVALID: evidence path cannot break an acceptance table cell")
+        cells = list(row["cells"])
+        cells[6], cells[8] = f" {item['path']} ", f" {verdict} "
+        lines[row["index"]] = "|".join(cells)
+        results.append({"ac": ac, "verdict": verdict, "evidence": item})
+        items.append(item)
+        seen.add(ac)
+    updated = "\n".join(lines) + ("\n" if text.endswith(("\n", "\r\n")) else "")
+    checked = check_acceptance_yaml(updated, enforce_completion=False, allow_human_pending=True)
+    if not checked.ok:
+        raise ValueError("AC_RESULT_INVALID: " + "; ".join(checked.issues))
+    return updated, results, items
+
+
 def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
            summary: str, evidence: Optional[Iterable[str]] = None,
            knowledge_signals: Optional[Iterable[Dict[str, Any]]] = None,
@@ -609,6 +676,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
            context_usage: Optional[Iterable[Dict[str, Any]]] = None,
            request_id: Optional[str] = None,
            scope: str = "full", checks: Optional[Iterable[str]] = None,
+           ac_results: Optional[Iterable[Dict[str, Any]]] = None,
            security_context: Optional[Dict[str, Any]] = None,
            db: Optional[str] = None) -> Dict[str, Any]:
     """Record an actual technical verification result without adding a workflow gate."""
@@ -633,6 +701,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
     evidence = list(evidence or [])
     knowledge_signals = list(knowledge_signals or [])
     delivery_signals = list(delivery_signals or [])
+    ac_results = list(ac_results or [])
     from . import context_usage as context_usage_mod
     usage, context_warnings = context_usage_mod.normalize_context_usage(context_usage)
     context_usage_mod.emit_warnings(context_warnings)
@@ -641,6 +710,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         "verification_scope": scope, "checks": checks,
         "knowledge_signals": knowledge_signals, "delivery_signals": delivery_signals,
         "context_usage": usage,
+        **({"ac_results": ac_results} if ac_results else {}),
         **({"security_context": security_context} if security_context is not None else {}),
     }, request_id)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
@@ -658,13 +728,22 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
             if not checked.ok:
                 raise ValueError(f"verification evidence invalid: {checked.error}")
             items.append(checked.item)
+        acceptance_path = tdir / "acceptance.md"
+        acceptance_before = transaction_commit._sha256_file(acceptance_path)
+        updated_acceptance, accepted_results = None, []
+        if ac_results:
+            updated_acceptance, accepted_results, ac_items = _prepare_ac_results(tdir, ac_results, decision0)
+            for item in ac_items:
+                if item not in items:
+                    items.append(item)
         current = str(task["current_state"] or "")
         if current in TERMINAL_STATES:
             raise ValueError(f"terminal task cannot accept verification: {current}")
         if current == "BLOCKED":
             raise ValueError("task is BLOCKED; resolve the blocker before verification")
         now = dbmod.now_iso(); flush_id = f"VERIFY-{uuid.uuid4().hex}"
-        subject_digest = compute_verification_subject_digest(tdir, scope=scope)
+        original_subject = compute_verification_subject_digest(tdir, scope=scope)
+        subject_digest = compute_verification_subject_digest(tdir, scope=scope, acceptance_text=updated_acceptance)
         development = _latest_development_change_set(conn, task_id)
         current_change_set = None
         if decision0 == "PASS" and development:
@@ -683,7 +762,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         if current_change_set and not security["paths"]:
             security["paths"] = authority.changed_paths(current_change_set)
         authority.check_effect(conn, task_id, security, task_dir=tdir)
-        authority.check_formal_evidence(authority.read(conn, task_id, tdir), tdir, evidence)
+        authority.check_formal_evidence(authority.read(conn, task_id, tdir), tdir, items)
         visual_summary = None
         owner_visual_items: List[Dict[str, Any]] = []
         if decision0 == "PASS":
@@ -697,7 +776,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
             if scope == "full" and acceptance_path.is_file():
                 from . import yaml_checks, artifact_validation
                 acceptance = yaml_checks.check_acceptance_yaml(
-                    acceptance_path.read_text(encoding="utf-8-sig"),
+                    updated_acceptance if updated_acceptance is not None else acceptance_path.read_text(encoding="utf-8-sig"),
                     enforce_completion=False,
                     allow_human_pending=True,
                     require_visual_evidence=True,
@@ -768,8 +847,13 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         if current_change_set:
             result["change_set_id"] = str(current_change_set["content_digest"])
             result["change_set_snapshot_digest"] = str(current_change_set["snapshot_digest"])
+        if accepted_results:
+            result["ac_results"] = accepted_results
 
         def writer(dbconn, transaction_id=""):
+            if ac_results and (transaction_commit._sha256_file(acceptance_path) != acceptance_before
+                    or compute_verification_subject_digest(tdir, scope=scope) != original_subject):
+                raise ValueError("ACCEPTANCE_CHANGED_BEFORE_COMMIT: reread the current acceptance declaration")
             authority.check_effect(dbconn, task_id, security, task_dir=tdir)
             authority.check_formal_evidence(authority.read(dbconn, task_id, tdir), tdir, items)
             recording.validate_bound_items(tdir, items)
@@ -777,7 +861,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                 from .change_set import capture_change_set
                 latest_development = _latest_development_change_set(dbconn, task_id)
                 if (not latest_development or latest_development["event_id"] != development["event_id"]
-                        or compute_verification_subject_digest(tdir, scope=scope) != subject_digest
+                        or compute_verification_subject_digest(tdir, scope=scope) != original_subject
                         or not same_bound_product_content(development["detail"], capture_change_set(development["repo_roots"]))):
                     raise ValueError("VERIFICATION_STALE: subject changed before write")
                 if scope == "full":
@@ -820,6 +904,8 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                 "evidence_items": items, "knowledge_signals": knowledge, "delivery_signals": delivery,
                 "logical_request": request.detail(result), "security_context": security,
             }
+            if accepted_results:
+                detail_obj["ac_results"] = accepted_results
             if development and current_change_set:
                 detail_obj["development_event_id"] = int(development["event_id"])
                 detail_obj["change_set_id"] = str(current_change_set["content_digest"])
@@ -842,7 +928,8 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
 
         projection = _write_with_projection(conn, tdir, task, operation="verify", target_state="ACTIVE",
                                owner_after=actor, flush_id=flush_id, writer=writer, summary=summary,
-                               logical_request=request)
+                               logical_request=request,
+                               artifact_texts={"acceptance.md": updated_acceptance} if ac_results else None)
         if projection.get("replayed"):
             return projection
         return {**result, **projection}
@@ -1035,7 +1122,7 @@ def complete(*, task_id: str, task_dir: str, actor: Optional[str], summary: str,
     try:
         task = _load(conn, task_id)
         actor0 = str(actor or task["owner_role"] or "").strip()
-        if actor0 not in ACTORS:
+        if actor0 not in actor_ids():
             raise ValueError(f"invalid actor: {actor0 or '<missing>'}")
 
         def checked(dbconn):

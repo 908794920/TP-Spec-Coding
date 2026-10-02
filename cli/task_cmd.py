@@ -549,6 +549,13 @@ def cmd_task_create(args) -> int:
             print(f"ERROR: task already exists: {task_id}", file=sys.stderr)
             return 5
         now = dbmod.now_iso()
+        from . import task_coordinator, command_context
+        coordinator_detail = task_coordinator.creation_detail(
+            task_id=task_id, actor_agent=getattr(args, "agent", "") or "",
+            created_at=now, transaction_id=uuid.uuid4().hex,
+            schema_version=active_version(), invocation_id=command_context.invocation_id(),
+        )
+        coordinator = coordinator_detail["coordinator"]
         scaffold_target = None
         scaffold_tmp = None
         adopted_intake: List[str] = []
@@ -582,18 +589,20 @@ def cmd_task_create(args) -> int:
                   (task_id, project_id, title, risk_level, flow_level,
                    current_state, current_stage, owner_role, owner_agent,
                    priority, base_version, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'NEW', 'intake', ?, '', NULL, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, 'NEW', 'intake', ?, ?, NULL, ?, ?, ?)
                 """,
-                (task_id, project_id, args.title or '', args.risk, args.flow, INITIAL_TASK_OWNER, base_version, now, now),
+                (task_id, project_id, args.title or '', args.risk, args.flow,
+                 coordinator["role"], coordinator["agent"], base_version, now, now),
             )
             cur = conn.execute(
                 """
                 INSERT INTO task_event
                   (task_id, event_type, from_state, to_state, from_stage, to_stage,
-                   actor_role, actor_agent, summary, workflow_version, created_at)
-                VALUES (?, 'STATE', NULL, 'NEW', NULL, 'intake', ?, NULL, ?, ?, ?)
+                   actor_role, actor_agent, summary, detail_json, workflow_version, created_at)
+                VALUES (?, 'STATE', NULL, 'NEW', NULL, 'intake', ?, ?, ?, ?, ?, ?)
                 """,
-                (task_id, INITIAL_TASK_OWNER, args.summary or '任务创建', wf.version, now),
+                (task_id, INITIAL_TASK_OWNER, coordinator["agent"], args.summary or '任务创建',
+                 json.dumps(coordinator_detail, ensure_ascii=False), wf.version, now),
             )
             event_id = cur.lastrowid
             if scaffold_tmp is not None and scaffold_target is not None:
@@ -607,7 +616,7 @@ def cmd_task_create(args) -> int:
                 # generated view in the same create transaction instead of leaving
                 # the first role to repair an empty generated/ directory.
                 from . import transaction_commit
-                create_flush_id = f'CREATE-{uuid.uuid4().hex[:12].upper()}'
+                create_flush_id = coordinator_detail["flush_id"]
                 view_rel = transaction_commit._current_view_rel('NEW')
                 view_text = transaction_commit._rebuild_current_view_text(
                     scaffold_tmp, created_task, args.summary or '任务创建', create_flush_id
@@ -2310,6 +2319,7 @@ def cmd_task_checkpoint(args) -> int:
         delivery_signals=args.delivery_signal,
         context_usage=_parse_context_usage_arg(args.context_usage_json),
         repo_roots=args.repo_root, request_id=args.request_id, collect=args.collect,
+        change_impact=getattr(args, "change_impact", None),
         result_reports=getattr(args, "result_report", None),
         report_artifact_root=getattr(args, "report_artifact_root", None),
         recorded_result_ids=getattr(args, "recorded_result", None),
@@ -2347,6 +2357,7 @@ def cmd_task_verify(args) -> int:
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
         decision=args.decision, summary=args.summary, evidence=args.evidence,
         scope=getattr(args, "scope", "full"), checks=getattr(args, "check", None),
+        ac_results=[json.loads(value) for value in (getattr(args, "ac_result_json", None) or [])],
         security_context=authority.explicit_context(args, effect="regression"),
         knowledge_signals=_parse_knowledge_signal_args(args.knowledge_signal_json),
         delivery_signals=args.delivery_signal,
@@ -2500,6 +2511,7 @@ def add_task_subparsers(task_parser) -> None:
     p_create.add_argument("--risk", required=True, choices=["L0", "L1", "L2", "L3"])
     p_create.add_argument("--flow", required=True, choices=["L0", "L1", "L2", "L3"])
     p_create.add_argument("--summary", required=False, default="任务创建")
+    p_create.add_argument("--agent", default="", help="actual calling agent identity; absent remains unrecorded, never synthesized")
     p_create.add_argument("--db", required=False, default=None)
     p_create.add_argument("--scaffold", action="store_true", help="Create the task directory and templates together with the DB task")
     p_create.add_argument("--from-intake", required=False, default=None, help="Adopt pre-task requirement artifacts from an intake directory; implies --scaffold and preserves source")
@@ -2508,10 +2520,11 @@ def add_task_subparsers(task_parser) -> None:
 
     # Record-first daily API: business facts, not workflow bookkeeping.
     from . import record_first
+    from .role_registry import actor_argument
     p_cp = sub.add_parser("checkpoint", help="Record meaningful task progress; auto-activates NEW and rebuilds projections")
     p_cp.add_argument("--task", required=True)
     p_cp.add_argument("--task-dir", required=True)
-    p_cp.add_argument("--actor", required=True, choices=record_first.ACTORS)
+    p_cp.add_argument("--actor", required=True, type=actor_argument())
     p_cp.add_argument("--phase", required=True, choices=record_first.PHASES)
     p_cp.add_argument("--summary", required=True)
     p_cp.add_argument("--evidence", action="append")
@@ -2524,6 +2537,7 @@ def add_task_subparsers(task_parser) -> None:
     p_cp.add_argument("--delivery-signal", action="append")
     p_cp.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks checkpoint")
     p_cp.add_argument("--repo-root", action="append", default=None, help="explicit product Git root; repeat for multi-repo Development checkpoint")
+    p_cp.add_argument("--change-impact", choices=["non-behavioral"], help="explicit assessment of the full current task change, including committed changes; bound to product/subject and only affects optional L0 behavioral routing")
     p_cp.add_argument("--db", default=None)
     from .security_authority import add_context_args
     add_context_args(p_cp, effect=None, investigation=True)
@@ -2545,13 +2559,13 @@ def add_task_subparsers(task_parser) -> None:
     p_block = sub.add_parser("block", help="Record a real blocker and set task state BLOCKED")
     p_block.add_argument("--task", required=True)
     p_block.add_argument("--task-dir", required=True)
-    p_block.add_argument("--actor", required=True, choices=record_first.ACTORS)
+    p_block.add_argument("--actor", required=True, type=actor_argument())
     p_block.add_argument("--reason", required=True)
     p_block.add_argument("--phase", choices=record_first.PHASES)
     p_block.add_argument("--db", default=None)
     from .waiting import KINDS
     p_block.add_argument("--kind", choices=KINDS, default="unspecified")
-    p_block.add_argument("--responsibility", choices=record_first.ACTORS)
+    p_block.add_argument("--responsibility", type=actor_argument())
     p_block.add_argument("--condition", help="specific recovery condition; not an executable expression")
     p_block.add_argument("--requires-task", action="append", help="same-project dependency task; repeatable")
     p_block.add_argument("--prerequisite-evidence", action="append", help="current failed prerequisite evidence/*")
@@ -2560,7 +2574,7 @@ def add_task_subparsers(task_parser) -> None:
     p_resume = sub.add_parser("resume", help="Resolve the explicit blocker and resume ACTIVE work")
     p_resume.add_argument("--task", required=True)
     p_resume.add_argument("--task-dir", required=True)
-    p_resume.add_argument("--actor", required=True, choices=record_first.ACTORS)
+    p_resume.add_argument("--actor", required=True, type=actor_argument())
     p_resume.add_argument("--summary", required=True)
     p_resume.add_argument("--phase", choices=record_first.PHASES)
     p_resume.add_argument("--db", default=None)
@@ -2574,6 +2588,7 @@ def add_task_subparsers(task_parser) -> None:
     p_verify.add_argument("--decision", required=True, choices=["PASS", "FAIL", "NEEDS_FIX"])
     p_verify.add_argument("--summary", required=True)
     p_verify.add_argument("--evidence", action="append")
+    p_verify.add_argument("--ac-result-json", action="append", help="exact technical AC result: JSON object with ac, verdict (PASS/PENDING/BLOCKED), evidence (existing evidence/*); repeatable, atomic with verification")
     p_verify.add_argument("--scope", choices=["full", "technical"], default="full", help="full keeps all existing checks; technical is explicitly limited and cannot satisfy delivery/completion")
     p_verify.add_argument("--check", action="append", help="actual check performed; required for technical scope, repeat for multiple checks")
     p_verify.add_argument("--request-id", help="reuse only for retrying the same actual verification record")
@@ -2604,7 +2619,7 @@ def add_task_subparsers(task_parser) -> None:
     p_complete = sub.add_parser("complete", help="Record terminal completion or run a read-only completion preflight")
     p_complete.add_argument("--task", required=True)
     p_complete.add_argument("--task-dir", required=True)
-    p_complete.add_argument("--actor", required=False, default=None, choices=record_first.ACTORS, help="optional; defaults to current task owner")
+    p_complete.add_argument("--actor", required=False, default=None, type=actor_argument(), help="optional; defaults to current task owner")
     p_complete.add_argument("--summary", required=False, default="")
     p_complete.add_argument("--check", action="store_true", help="read-only preflight; does not write task facts or projections")
     p_complete.add_argument("--db", default=None)

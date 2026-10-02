@@ -84,7 +84,8 @@ class LogicalRequest:
             if (response.get("summary") != row["summary"]
                     or response.get("change_set_id") != detail.get("change_set_id")
                     or (self.operation == "checkpoint" and (
-                        response.get("actor") != row["actor_role"] or response.get("phase") != detail.get("phase")))
+                        response.get("actor") != row["actor_role"] or response.get("phase") != detail.get("phase")
+                        or response.get("change_impact") != detail.get("change_impact")))
                     or (self.operation == "verify" and (
                         row["actor_role"] != "tp-test-engineer"
                         or response.get("verification_scope", "full") != detail.get("verification_scope", "full")
@@ -95,6 +96,8 @@ class LogicalRequest:
                 raise ValueError("REQUEST_RECORD_INVALID: malformed evidence items")
             if self.operation == "checkpoint" and response.get("collected_artifacts", []) != items:
                 raise ValueError("REQUEST_RECORD_INVALID: response substituted the original evidence inventory")
+            if self.operation == "verify" and response.get("ac_results", []) != detail.get("ac_results", []):
+                raise ValueError("REQUEST_RECORD_INVALID: response substituted the recorded AC results")
             validate_bound_items(self.task_dir, items, replay=True)
             self._validate_observations(conn, detail, response)
             expected = recorded_results(conn, self.task_id, self.task_dir, self.recorded_result_ids)
@@ -165,7 +168,7 @@ def checkpoint_request(task_id: str, task_dir: Path, request_id: str | None, *,
                        actor: str, phase: str, summary: str, evidence=(),
                        knowledge_signals=(), delivery_signals=(), repo_roots=(),
                        collect=(), context_usage=(), result_reports=(), recorded_result_ids=(),
-                       report_artifact_root=None, security_context=None) -> LogicalRequest:
+                       report_artifact_root=None, security_context=None, change_impact=None) -> LogicalRequest:
     """One payload definition for checkpoint writes and read-only recovery."""
     return LogicalRequest(task_id, task_dir, "checkpoint", {
         "actor": actor, "phase": phase, "summary": summary, "evidence": list(evidence),
@@ -175,6 +178,7 @@ def checkpoint_request(task_id: str, task_dir: Path, request_id: str | None, *,
         **({"recorded_result_ids": list(recorded_result_ids)} if recorded_result_ids else {}),
         **({"report_artifact_root": report_artifact_root} if report_artifact_root is not None else {}),
         **({"security_context": security_context} if security_context is not None else {}),
+        **({"change_impact": change_impact} if change_impact is not None else {}),
     }, request_id)
 
 

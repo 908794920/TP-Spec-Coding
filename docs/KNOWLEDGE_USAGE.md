@@ -63,11 +63,14 @@ Python `projection.search()` 仍返回原片段列表，保留配置中的默认
 tp-spec knowledge index update --workspace-root <workspace>
 ```
 
-无投影的新安装可显式执行：
+无投影的新安装，先用现有合法项目 Binding 显式登记，再建立投影：
 
 ```text
+tp-spec knowledge init --workspace-root <workspace> --register-project
 tp-spec knowledge index build --workspace-root <workspace>
 ```
+
+登记仅添加缺失项目；重复执行不改已有条目，不建立知识正文或可信 baseline。没有 Binding、registry 损坏或身份冲突时停止，不猜测或覆盖。默认 `knowledge init` 不带该选项时仍只准备 meta。安装路径健康不等于 Knowledge 已可用，完成后用 `knowledge doctor --workspace-root <workspace>` 核对项目 scope 和投影。
 
 这两个现有入口追加新字段 / 读取记录表、补充稳定文档标识，并刷新内容索引。多个工作区指向同一数据库只需对该数据库升级一次。不需要升级 Runtime 业务表，也不会迁移 Wiki 数据库。精确 canonical 更新入口不偷偷升级日志 schema。
 

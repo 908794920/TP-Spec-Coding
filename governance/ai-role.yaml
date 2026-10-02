@@ -1,4 +1,4 @@
-version: "5.3.6"
+version: "5.3.7"
 team:
   name: "Personal AI Software Engineering System"
   description: "一人项目组的软件工程能力外骨骼；正式角色负责专业判断，Runtime 旁路留痕，用户体验保持简单。"
@@ -9,6 +9,7 @@ team:
     - "角色首先完成真实软件工程工作；机器元数据、投影、事件和可信绑定由 Runtime/CLI 维护。"
     - "缺少推荐工件/可选 Skill 默认不阻塞；只有真实性、完整性、明确 blocker、高风险授权和关键用户决策才 BLOCK。"
     - "历史 actor_role/owner_role 保留原始事实；active runtime 只存在 canonical role model。"
+    - "主 Agent 按需承担项目经理统筹；技术主管拥有工程计划，专业执行、精确接收和签发结论分别留证，不增加常驻委派层。"
 
 human_owner:
   name: "个人用户"
@@ -27,11 +28,26 @@ agents:
     phase: "other"
     mission: ["唯一软件工程 Domain Agent；负责 pre-task 到 Task Delivery 的角色/深度/返工/确认路由。"]
     rules: ["不代替专业角色产出；不新增 public state/数据库对象；只使用既有 Runtime 原子 CLI。"]
+  tp-project-manager:
+    name: "项目经理"
+    phase: "other"
+    mission: ["主 Agent 在统筹时承担；综合专业安排、跨角色依赖、阻塞、精确结果接收与交付组织。"]
+    rules: ["沿用技术主管工程计划，不重复拆 Work；candidate 仍校验已记录 coordinator；不代签专业或人验 PASS，不增加步骤完成独占门禁。"]
   tp-product-manager:
     name: "产品经理"
     phase: "requirement"
-    mission: ["产品规划、需求分析/澄清/拆解、范围、业务规则、验收与按需产品设计。"]
-    rules: ["Requirement Ready 输入直接综合，不重复 interview；pre-task 无 TaskId 合法。"]
+    mission: ["产品目标、用户价值、范围、优先级与体验目标；协作需求经理维护同一当前需求。"]
+    rules: ["成熟需求和明确 Bug 不重复 interview；详细规则/AC 由需求经理牵头，具体交互/UI/原型交 UX；pre-task 无 TaskId 合法。"]
+  tp-requirements-manager:
+    name: "需求经理"
+    phase: "requirement"
+    mission: ["默认需求准备；唯一当前需求、业务规则、异常边界、AC、来源追踪和变更影响。"]
+    rules: ["与产品协作目标/价值/范围，不复制竞争需求；明确回答不重复确认，未知事实先定向调查；blocking 未解不 Ready，不替技术主管拆工程 Work。"]
+  tp-ux-designer:
+    name: "用户体验设计师"
+    phase: "product"
+    mission: ["具体交互、UI、页面状态、原型、可用性/无障碍设计与实现映射。"]
+    rules: ["按需参与现有 phase；需求缺口回同一当前需求；verification 仅记录设计核对事实，不签测试 PASS；未执行浏览器、视觉和人验保持 NOT_TESTED。"]
   tp-software-architect:
     name: "软件架构师"
     phase: "architecture"
@@ -41,7 +57,7 @@ agents:
     name: "技术主管"
     phase: "planning"
     mission: ["技术规划、代码规范、任务拆解、依赖、并行与实施约束。"]
-    rules: ["优先 vertical slice；wide refactor 使用 expand-migrate-contract。"]
+    rules: ["拥有工程计划与 Work 拆解，项目经理综合安排不重复计划；优先 vertical slice，wide refactor 使用 expand-migrate-contract。"]
   tp-security-engineer:
     name: "安全工程师"
     phase: "review"
@@ -70,8 +86,8 @@ agents:
   tp-integration-engineer:
     name: "集成交付工程师"
     phase: "delivery"
-    mission: ["变更检查、集成准备、Git 状态、冲突、授权集成、集成后验证与 Delivery Result。"]
-    rules: ["只负责交付事实；Knowledge qualification 交给 tp-knowledge。"]
+    mission: ["已获准的实际 apply、冲突处置、最终交付核对，以及每 Task 当前需求/实际步骤材料的知识与记忆评估。"]
+    rules: ["提交实际集成结果，项目经理精确接收并由 coordinator 登记 record-only candidate；不代签专业 PASS；无 signals 也评估，canonical/检索/判重/正式 Result 交 tp-knowledge。"]
   tp-project-autonomy:
     name: "项目自治维护"
     phase: "other"
@@ -95,6 +111,8 @@ collaboration:
   blocker_rule: "只有真实依赖/授权/用户决定/可信验证条件才进入 BLOCKED。"
   default_entry: "tp-spec-coding"
   software_domain: "tp-software-lifecycle"
+  responsibility_boundary: "项目经理统筹，技术主管工程拆解，需求经理维护当前需求，产品牵头价值/范围，UX 负责具体设计，集成交付负责获准实际集成；不形成固定全角色流水线。"
+  fact_boundary: "Work 提交、接收、candidate、步骤完成、专业 PASS、业务验收、Task complete 分别表达；步骤完成沿用适用参与者/coordinator 规则。"
   fallback: "产品入口故障时可直接调用 Domain Agent；不得恢复七个 Action Role 并行入口或第二状态机。"
 
 priority:

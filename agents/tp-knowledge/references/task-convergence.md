@@ -21,6 +21,7 @@ tp-spec knowledge task-inputs --task <TASK-ID> --task-dir <TASK-DIR> --db <DB> -
 返回当前 request ID、`request_current`、输入 digest、逐项来源/指纹、缺口和相对 Request
 的 added/removed/changed/unchanged。`--request-event-id` 可选择历史请求作对比，不能让旧请求重新有效。
 `--item` 读取该 Task 的作用域、交付语义、事件或 Work 详情；文件按返回的相对 `ref` 定向读取。
+文件缺省以实际 Task 目录为根；标有 `source_root=project` 的条目以 Runtime 登记的项目根为根。
 
 覆盖本 Task 的 canonical 需求、澄清/决定、设计/实现、测试/审查、已记录计划和角色工作段、
 Work 结果及交付材料；事件可指向本 Task 其他明确证据。事件 source 不等于授权。
@@ -29,7 +30,48 @@ Work 结果及交付材料；事件可指向本 Task 其他明确证据。事件
 远程引用只作为可导航来源，清单不声称已联网读过。未登记材料应通过现有事实/引用入口补入，
 而非仅把它写进学习摘要后宣称覆盖。
 
+正式计划的 `plan.assessment.source_refs` / `plan.scope_refs`，步骤与工作段的直接
+`evidence_refs` 按其生产者契约可包含导航 locator。清单仅在有效生产者、事件契约与准确字段
+相符时，将其中绝对本地路径显示为事件的 `source_locators`：`UNRESOLVED_LOCATOR` /
+`NOT_READ`。支持既有无计划工作段，不补造执行绑定。该标记表示不在 Task-relative 输入契约内，
+不是文件不存在；清单不访问、读取或散列外部目标，也不产生文件输入或读取回执。
+评估包含它的事件，只覆盖已记录的结果、发现、计划与作用域文字，并明确外部正文未读。
+需要依赖外部正文时，通过现有正式收集/checkpoint 选择并绑定真实版本；不能按同名文件
+替换为内容不同的历史副本。
+
+上述合格相对 locator 还支持有限的历史路径兼容：Runtime 登记的项目根与显式 Task 目录
+必须对应同一 Task 的 `.tp-spec/tasks/<Task>` 或 `.tp-spec/tasksHistory/<YYYYMM>/<Task>`。
+`../../docs/<path>` 保留原活动 Task 的项目文档语义，和 `.tp-spec/docs/<path>` 一样仅读取
+该项目 `.tp-spec/docs` 下的真实文件；归档不会改用归档目录旁的同名 docs。
+`.tp-spec/tasks/<同Task>/evidence/<path>` 映射到上述经核验的实际 Task evidence；显式
+tasksHistory 引用还须与所选归档月份完全一致。不搜索其他 Task、月份或项目，不猜项目根。
+绝对、drive-relative、根相对、ADS 路径、目录、空文件及链接越界均不授予兼容读取。
+
+成功兼容引用保留原 `ref`、准确 `field` 和 `source_event_ids`，并以 `RESOLVED_FILE / READ`
+关联规范 `input_id`、`resolved_ref`、读取根与实际字节 SHA256。别名共享同一正文输入，
+不会删改原事件。项目文档条目的 ID 为 `file:project:<project-relative-ref>`，带
+`source_root=project`；Request/候选来源使用 `project:<ref>`，Result 的相应 `source_items`
+同样保留 `source_root=project`，不冒充 Task-relative 治理证据。`READ` 只证明输入字节已读取
+并散列，不证明专业角色已经理解正文或获得人工授权；原 Knowledge/Memory 评估仍须执行。
+
+普通 Task 相对文件仍按原路径/字节（或测试指南规范化内容）索引。只有上述合格 locator 字段中的
+相对引用无法作为文件消费时，保留原值、准确字段与原因作为 `source_locators` 警告，
+不生成文件输入或阻塞 issue：目录、缺失、空文件、越界等未读正文的情况为 `NOT_READ`，
+访问或读取尝试失败为 `READ_FAILED`，不能声称完全未尝试。目录不展开，不读取越界目标正文。
+包含它的完整事件仍须评估；未读或读取失败的正文不能当作已核验证据。
+事件行的 evidence、实际 `evidence_items` 等证据及交付材料不享有 locator 处理；同一目标也被
+强制证据引用时仍严格校验，缺失、空文件、越界或不可读继续报缺口。错误生产者、损坏执行契约、
+嵌套同名字段和 typed `local_file` 不会变成可忽略来源。原有效文件后来无法消费会改变输入索引，
+旧 Request 变 stale；仅刷新并重新评估受影响输入，不能静默复用依赖旧正文的判断。
+受影响的旧 Request 保留历史，通过正常 `delivery-converge` 向前刷新输入索引后继续评估；
+事件正文指纹与去重规则不变，技术 Subject 未变时复用仍有效的 Verification/candidate。
+
 `generated/`、status/events 视图和本次 Request/Result 不反向成为输入。
+上述合格 locator 字段可引用同 Task 的历史 Knowledge Result：仅在正式生产者、角色、事件契约
+及其对应可信历史 Request 的学习结果绑定通过有限校验时，显示为 `source_locators` 的
+`EXCLUDED_FROM_LEARNING` 导航。包含该引用的事件仍须评估，Result 不生成内容输入、不递归展开
+其来源，也不因此重新成为当前 PASS。不存在、跨 Task、损坏绑定或真正强制证据中的同目标引用
+仍报缺口；旧 Request 因后续真实输入过时后，按既有 Delivery/Request 流程向前刷新。
 真实源码/AC/原绑定证据变化仍由原 Subject 契约决定技术结果是否失效；
 仅新增或修改知识用的非主体来源，不强制重跑源码验证。
 输入 `issues` 非空或最终候选失效时不得提交成功 Result；先解决缺口，再重发/复用 Delivery。

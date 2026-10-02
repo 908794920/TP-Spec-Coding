@@ -1,8 +1,8 @@
 ---
 name: requirement-clarification
 display_name: 需求澄清
-version: 5.3.6
-description: Use when a requirement is ambiguous, incomplete, conflicts with project facts, or contains material decisions with prerequisites. Ask only high-value questions and keep facts, assumptions, decisions, and unknowns distinct.
+version: 5.3.7
+description: Use when a requirement is ambiguous, incomplete, conflicts with project facts, or contains material decisions with prerequisites.
 ---
 
 # 需求澄清 — Record-first
@@ -10,6 +10,8 @@ description: Use when a requirement is ambiguous, incomplete, conflicts with pro
 ## 目的
 
 用尽量少的用户交互消除真正影响实现或验收的不确定性；能通过已有事实自行确认的内容不反问用户。Requirement Frontier 是本 Skill 内部的条件方法，不是新的 Skill、流程阶段或固定问卷。
+
+需求经理牵头当前需求与澄清，产品经理协作目标、价值、范围和优先级；具体交互/状态问题交 UX。结论回到同一 canonical Task/Requirement，不因角色增加复制需求或重开成熟材料的访谈。
 
 ## 按需导航
 
@@ -21,9 +23,9 @@ description: Use when a requirement is ambiguous, incomplete, conflicts with pro
 
 1. 将信息分为：确认事实、AI 假设、待确认决策、未知现状。
 2. 围绕业务目标、用户/入口、范围/非范围、业务规则与异常、数据/权限/接口、兼容性和验收组织问题。
-3. 先问会改变方案、范围、架构、风险、兼容性或验收的高价值问题；每个问题说明为什么现在需要决定、主要可选路径、推荐答案及影响。
-4. 未知技术事实优先定向读取 Wiki、Knowledge、Memory、代码、配置或文档并执行只读调查，不把用户当作代码检索工具。
-5. 用户确认后记录稳定 decision；不得把 AI 推荐或假设静默升级为 human decision。
+3. 先问会改变方案、范围、架构、风险、兼容性或验收的高价值问题；每个问题说明为什么现在需要决定、主要可选路径、完整推荐行动结论及影响。例如问“是否增加批量删除”而建议不增加时，写“建议本次不增加批量删除”，不只写“建议否”。
+4. 未知技术事实优先定向读取 Wiki、Knowledge、Memory、代码、配置或文档并执行已授权的定向调查，不把用户当作代码检索工具。文字不能判定的体验或性能问题，按已有授权交 UX/相关专业角色做最小观察原型或测量；证据回来只更新受影响问题并原位接续，blocking 未解不 Ready。
+5. 用户说“同意你的建议”时，沿用该建议的完整行动结论与来源，不能把同意机械反转成题面的肯定。回答已清楚就记录并继续；只有本项确有影响范围的歧义才局部澄清，不重复确认或重开问卷。没有用户同意时，推荐或假设仍不是 human decision。
 
 ## 当前有效范围与决策
 

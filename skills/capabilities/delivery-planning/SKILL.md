@@ -1,7 +1,7 @@
 ---
 name: delivery-planning
 display_name: 交付计划
-version: 5.3.6
+version: 5.3.7
 description: Use when a task benefits from an explicit technical delivery plan. Produce an implementation-ready, risk-aware plan without creating mandatory workflow gates or handoff bookkeeping.
 ---
 
@@ -20,7 +20,7 @@ description: Use when a task benefits from an explicit technical delivery plan. 
 7. 复杂任务可调用 `task-decomposition` 拆成可独立验证的工作项；简单任务避免为拆解而拆解。
 
 ## 工程约束与责任
-根据目标项目既有规范引用 coding standard，不另造同义规则；计划说明必要角色及检查，但不代替产品改需求、架构做选型或 Reviewer 对具体 Diff 签 PASS。复杂范围依 [任务拆解](../task-decomposition/SKILL.md) 组织父 Task 内 Work，由主 Agent 负责集成。
+根据目标项目既有规范引用 coding standard，不另造同义规则；计划说明必要角色及检查，但不代替产品改需求、架构做选型或 Reviewer 对具体 Diff 签 PASS。复杂范围由技术主管依 [任务拆解](../task-decomposition/SKILL.md) 组织父 Task 内 Work；主 Agent/项目经理统筹并精确接收，集成交付工程师执行已获准的实际 apply/冲突处置，candidate 仍由已记录 coordinator 按 record-only 契约登记。
 
 ## 完成判定
 后续开发 AI 能知道：为什么这样改、允许改什么、关键风险是什么、如何自测/验收、什么时候必须停止扩大范围。这是“计划可执行”的判定，不是 Task 已交付；最终由 [交付收敛](../delivery-convergence/SKILL.md) 核对结果，不为计划完整增加阶段许可证。

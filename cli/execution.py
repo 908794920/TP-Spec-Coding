@@ -145,6 +145,9 @@ def _project_execution(task, rows, *, retired: bool = False) -> dict:
     steps: dict[str, dict] = {}
     participations: dict[str, dict] = {}
     history, activities, issues, legacy, legacy_issues = [], [], [], [], []
+    from .task_coordinator import read_creation_coordinator
+    creation = read_creation_coordinator(task, rows)
+    issues.extend(creation["issues"])
     for raw in rows:
         row = dict(raw)
         if row.get("task_id") != task.get("task_id"):
@@ -178,6 +181,11 @@ def _project_execution(task, rows, *, retired: bool = False) -> dict:
                     raise ValueError("invalid step identities")
                 if not isinstance(body.get("coordinator"), dict):
                     raise ValueError("invalid coordinator")
+                initial = creation["coordinator"]
+                if version == 0 and initial and (
+                        body["coordinator"]["role"] != initial["role"]
+                        or (initial["agent"] and body["coordinator"]["agent"] != initial["agent"])):
+                    raise ValueError("first plan changed creation coordinator")
                 # A revision may change future work, never rewrite the meaning of begun work.
                 begun = [key for key, value in steps.items() if value["status"] != "PLANNED"]
                 for key in begun:
@@ -322,7 +330,9 @@ def _project_execution(task, rows, *, retired: bool = False) -> dict:
     latest_record = max([*activities, *history], key=lambda item: item.get("event_id", 0), default={})
     return {"schema": SCHEMA, "status": "INVALID" if issues else "RECORDED" if plan else "NOT_RECORDED",
             "source": "task_event", "plan_version": version, "plan": plan, "plan_history": history,
-            "coordinator": (plan or {}).get("coordinator"), "terminal": terminal,
+            "coordinator": plan["coordinator"] if plan else creation["coordinator"],
+            "coordinator_source": {"kind": "execution_plan", "event_id": history[-1]["event_id"], "schema": SCHEMA}
+                                  if plan else creation["source"], "terminal": terminal,
             "current_step": current, "next_step": next_step, "steps": list(steps.values()),
             "participations": list(participations.values()), "timeline": activities,
             "current_roles": [] if terminal else list(dict.fromkeys(p["role"] for p in current_participations)),
@@ -336,8 +346,11 @@ def read_execution(conn, task, *, rows=None, retired=False) -> dict:
 
 
 def recorded_coordinator(conn, task) -> dict | None:
-    """Absence preserves legacy owner semantics; a valid explicit plan opts in."""
+    """Creation or a plan opts in; absence preserves legacy owner semantics."""
     facts = read_execution(conn, task)
+    invalid = [issue for issue in facts["issues"] if issue.startswith("TASK_COORDINATOR_INVALID:")]
+    if invalid:
+        raise ValueError("; ".join(invalid))
     return facts.get("coordinator")
 
 

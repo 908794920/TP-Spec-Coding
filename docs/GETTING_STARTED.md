@@ -68,6 +68,20 @@ python -m cli.main base resolve --workspace-root "<project-root>"
 
 Portable project binding 只保存稳定 identity，不重复保存 Wiki/Knowledge 的机器绝对路径。
 
+### 首次准备当前项目的 Knowledge
+
+`installation-doctor` 确认安装路径，不代表 Knowledge 的项目登记和检索投影已经就绪。首次安装还需显式登记已经绑定的项目，再建立投影：
+
+```bash
+python -m cli.main knowledge init --workspace-root "<project-root>" --register-project
+python -m cli.main knowledge index build --workspace-root "<project-root>"
+python -m cli.main knowledge doctor --workspace-root "<project-root>"
+```
+
+`--register-project` 从当前合法 Binding 读取 `knowledge_id`（未指定则用 project id），只添加缺失的登记，不猜目录身份、不重命名已有 ID，也不编写知识正文或历史 Evidence。同项目重复执行保持 registry 不变；已有其他条目及扩展配置保留。缺少 Binding、登记损坏或身份冲突时停止并先核对，不覆盖原件。不带该选项的 `knowledge init` 仍只准备机器 meta。
+
+已有正常 Knowledge 不必重复初始化；已存在的投影需要刷新时使用 `knowledge index update`。最终 Task 的知识评估需要可用的项目 scope 和投影，即使评估结论是不新增知识；不能用安装健康或空目录代替这一步。详见 [Knowledge 使用说明](KNOWLEDGE_USAGE.md#3-显式升级与恢复)。
+
 ## 5. 让 AI 开始软件研发
 
 唯一默认产品入口是 [`entry/tp-spec-coding/SKILL.md`](../entry/tp-spec-coding/SKILL.md)。软件意图交给 `tp-software-lifecycle`；具体 Role/Skill 由当前工作流事实和配置按需解析。
@@ -165,16 +179,16 @@ python -m cli.main base resolve --workspace-root "<project-root>"
 
 ### 跨版本更新至当前契约
 
-当前活动契约为 `5.3.6`。仅替换 Base 源码不会自动更新 project/task 的 `base_version`，也不会补造执行、Work、知识或历史验证记录。外部 `skill list/read` 和能力页面查询本身不要求迁移业务 Task；需要继续写入旧契约项目或在途任务时，才按授权走既有显式路径。
+当前活动契约为 `5.3.7`。仅替换 Base 源码不会自动更新 project/task 的 `base_version`，也不会补造执行、Work、知识或历史验证记录。外部 `skill list/read` 和能力页面查询本身不要求迁移业务 Task；需要继续写入旧契约项目或在途任务时，才按授权走既有显式路径。
 
 先备份实际 Runtime、任务工件及机器配置，并只读核对：
 
 ```text
-python -m cli.main project upgrade-contract --id <PROJECT> --to 5.3.6 --db <DB-PATH> --dry-run
+python -m cli.main project upgrade-contract --id <PROJECT> --to 5.3.7 --db <DB-PATH> --dry-run
 python -m cli.main task migration-plan --project <PROJECT> --db <DB-PATH>
 ```
 
-确认项目/任务身份、原契约、schema、工件及真实迁移范围后，由用户或已获授权的执行者去掉 `--dry-run` 切换项目契约，再逐个执行 `task migrate --task <TASK-ID> --task-dir <TASK-DIR> --to 5.3.6 --db <DB-PATH>`。项目升级不连带迁移 Task；终态/已退役任务不迁移。支持的来源由 `cli/migrations/__init__.py` 的显式清单决定，不手改版本字段绕过检查，也不使用一个合成夹具的成功结果替代现场数据验收。
+确认项目/任务身份、原契约、schema、工件及真实迁移范围后，由用户或已获授权的执行者去掉 `--dry-run` 切换项目契约，再逐个执行 `task migrate --task <TASK-ID> --task-dir <TASK-DIR> --to 5.3.7 --db <DB-PATH>`。项目升级不连带迁移 Task；终态/已退役任务不迁移。支持的来源由 `cli/migrations/__init__.py` 的显式清单决定，不手改版本字段绕过检查，也不使用一个合成夹具的成功结果替代现场数据验收。
 
 外部来源目录和 `external-skills.yaml` 不在 Base 发布面；源码升级、模板迁移和逆向补丁都不删除或改写它们。CLI 与工作台应指向同一用户根；旧宿主会话需重新读取当前入口指令。
 

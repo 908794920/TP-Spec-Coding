@@ -1,4 +1,4 @@
-version: "5.3.6"
+version: "5.3.7"
 entry_role: tp-software-lifecycle
 level_resolution:
   rule: MAX_RISK_FLOW
@@ -36,6 +36,7 @@ signals:
   security_risk: "workflow:security-risk"
   database_risk: "workflow:database-risk"
   knowledge_required: "workflow:knowledge-required"
+  ux_design: "workflow:ux-design"
 presentation:
   stages:
     requirement: {label: 需求, description: 澄清并确认需求与验收边界。}
@@ -60,6 +61,10 @@ presentation:
     EACH_STAGE_POLICY: {label: 等待阶段确认, description: 用户配置要求角色/阶段边界逐次确认。}
     MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION: {label: 等待架构实施确认, description: L2/L3 从架构进入实现前需要重要决策确认。}
 conditional_roles:
+  - role: tp-ux-designer
+    trigger: ux_design
+    phases: [requirement, product, development, verification]
+    read_effects: []
   - role: tp-database-engineer
     trigger: database_risk
     phases: [requirement, architecture, planning, development, verification, review]
@@ -81,7 +86,7 @@ pipelines:
     - {stage: review, phase: review, role: tp-code-reviewer, required: false, trigger: deep_review, mode: AUTO_REVIEW, effects: []}
     - {stage: delivery, phase: delivery, role: tp-integration-engineer, required: true, mode: DIRECT, effects: []}
   L1:
-    - {stage: requirement, phase: requirement, role: tp-product-manager, required: false, trigger: unresolved_scope, mode: DIRECT, effects: []}
+    - {stage: requirement, phase: requirement, role: tp-requirements-manager, required: false, trigger: unresolved_scope, mode: DIRECT, effects: []}
     - {stage: architecture, phase: architecture, role: tp-software-architect, required: false, trigger: architecture_risk, mode: AUTO_PLANNING, effects: []}
     - {stage: planning, phase: planning, role: tp-tech-lead, required: false, trigger: contextual, mode: DIRECT, effects: []}
     - {stage: development, phase: development, role: tp-development-engineer, required: true, mode: DIRECT, effects: [repo_mutation]}
@@ -89,7 +94,7 @@ pipelines:
     - {stage: review, phase: review, role: tp-code-reviewer, required: false, trigger: deep_review, mode: AUTO_REVIEW, effects: []}
     - {stage: delivery, phase: delivery, role: tp-integration-engineer, required: true, mode: DIRECT, effects: []}
   L2:
-    - {stage: requirement, phase: requirement, role: tp-product-manager, required: false, trigger: unresolved_scope, mode: DIRECT, effects: []}
+    - {stage: requirement, phase: requirement, role: tp-requirements-manager, required: false, trigger: unresolved_scope, mode: DIRECT, effects: []}
     - {stage: product, phase: product, role: tp-product-manager, required: false, trigger: contextual, mode: DIRECT, effects: []}
     - {stage: architecture, phase: architecture, role: tp-software-architect, required: false, trigger: architecture_risk, mode: AUTO_PLANNING, effects: []}
     - {stage: architecture_review, phase: architecture, role: tp-software-architect, required: false, trigger: architecture_risk, mode: DIRECT, effects: []}
@@ -99,7 +104,7 @@ pipelines:
     - {stage: review, phase: review, role: tp-code-reviewer, required: true, mode: AUTO_REVIEW, effects: []}
     - {stage: delivery, phase: delivery, role: tp-integration-engineer, required: true, mode: DIRECT, effects: []}
   L3:
-    - {stage: requirement, phase: requirement, role: tp-product-manager, required: false, trigger: unresolved_scope, mode: DIRECT, effects: []}
+    - {stage: requirement, phase: requirement, role: tp-requirements-manager, required: false, trigger: unresolved_scope, mode: DIRECT, effects: []}
     - {stage: product, phase: product, role: tp-product-manager, required: false, trigger: contextual, mode: DIRECT, effects: []}
     - {stage: architecture, phase: architecture, role: tp-software-architect, required: false, trigger: architecture_risk, mode: AUTO_PLANNING, effects: []}
     - {stage: architecture_review, phase: architecture, role: tp-software-architect, required: false, trigger: architecture_risk, mode: DIRECT, effects: []}

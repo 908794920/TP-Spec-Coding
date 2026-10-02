@@ -2,9 +2,17 @@
 
 ## 适用范围
 
-需求评估之后，由主协调者登记适用步骤；它描述本 Task 接下来实际要做的工作，不生成第二套 Task/Work 账本，不产生实施授权。Task 公共状态仍为 NEW / ACTIVE / BLOCKED / COMPLETED / CANCELLED。步骤、参与和专业门禁是三个不同事实，不能相互代替。
+实际需要显式计划时，技术主管提供工程拆解，项目经理统筹并由已记录协调者登记适用步骤；它描述本 Task 接下来实际要做的工作，不生成第二套 Task/Work 账本，不产生实施授权。Task 公共状态仍为 NEW / ACTIVE / BLOCKED / COMPLETED / CANCELLED。步骤、参与和专业门禁是三个不同事实，不能相互代替。
 
 采用新机制的任务使用 `tp-spec.execution/v1` 标记。所有事实仍追加到既有 `task_event.detail_json`，关联既有 `work_item_id`；不新增表、不在只读查询时迁库。普通命令不启动浏览器或 Agent，不执行产品测试、merge、push 或部署。
+
+## 创建协调责任与可选计划
+
+新 `task create` 在既有 `STATE NULL→NEW` 同一事务写入 `coordinator_schema: tp-spec.task-coordinator/v1`、`coordinator: {role: tp-project-manager, agent: ...}` 及 `producer: task_create`。创建入口actor仍为 `tp-software-lifecycle`；owner采用记录的协调身份，专业checkpoint/verify/delivery保留自己的actor。可选 `--agent` 只记录真实调用者标识，缺省空字符串表示未记录，不从机器、会话或最后actor合成。
+
+不新增表、物理migration、公共状态或用户必填角色账本。新Task没有显式计划时仍为 `plan=None / plan_version=0 / status=NOT_RECORDED`，但coordinator及 `coordinator_source={kind: task_create, event_id, schema}` 可查询；该status只表示计划未记录，不表示没有协调责任。轻量Work Session和未采用结果契约的WorkItem无需因此强制建计划。
+
+新Task首次 `work plan` 可省coordinator并继承创建值；显式填写须保持已知角色/非空agent，原未知agent可按真实上下文补录。有效计划的来源为 `kind: execution_plan` 及该计划事件。已有计划通过原expected_version规则修订未来职责/接班，不回写创建事实或已开始步骤。旧无创建marker任务保持原owner解释，首次计划仍需显式coordinator；旧生命周期coordinator记录继续有效，不按5.3.7版本号追补采用或改历史actor。
 
 ## 评估后登记计划
 
@@ -15,7 +23,7 @@
 ```json
 {
   "expected_version": 0,
-  "coordinator": {"role": "tp-software-lifecycle", "agent": "main-agent"},
+  "coordinator": {"role": "tp-project-manager", "agent": ""},
   "assessment": {
     "summary": "范围窄，开发中完成必要定向检查，随后交付收敛。",
     "source_refs": ["requirement.md#current"],
@@ -66,7 +74,7 @@ tp-spec work start --task TASK-ID --step DEV --plan-version 1 --role tp-developm
 
 返回 `session_id` / `participation_id`（同一个真实 ID）。步骤仍是计划态且前面步骤已完成时，这次 start 在同一事务登记步骤开始和参与开始；不写一半。也可由协调者先显式 `work step --action start` 再开始角色参与。下一步骤不能越过未完成步骤；Task 已 BLOCKED 时不开始新步骤/参与或恢复执行。
 
-一个角色可在同一步骤由不同实际执行者或不同 Work 分别参与；相同 role/agent/step/Work 的未结束参与不重复开始，使用其现有 ID 恢复或结束。角色不是 Agent 进程，也不等于强隔离。协调责任由计划中的 coordinator 独立保存，checkpoint/验证/交付等事件只记录自己的 actor，不覆盖 Task owner。
+一个角色可在同一步骤由不同实际执行者或不同 Work 分别参与；相同 role/agent/step/Work 的未结束参与不重复开始，使用其现有 ID 恢复或结束。角色不是 Agent 进程，也不等于强隔离。协调责任由可信创建或有效计划中的 coordinator 独立保存，checkpoint/验证/交付等事件只记录自己的 actor，不覆盖 Task owner。
 
 下面的 `WORK-ID` 必须换成真实回执 ID，不可编造：
 
@@ -83,7 +91,7 @@ tp-spec work step --task TASK-ID --step DEV --plan-version 1 --action complete -
 
 `work end --reason handed_off` 须写下一责任；`waiting_human` / `waiting_agent` / `blocked` 须写等待原因及下一责任。`--finding`、`--decision`、`--evidence` 可重复；决定记录不是人工授权。完成时清除旧“当前等待”，早先发现/等待仍留在该参与历史里。
 
-结束一条参与不自动完成步骤；协调者确认并接收所有必要结果后记录步骤完成。仍有未结束参与时拒绝步骤完成。结束后的参与不重开，下一次真实参与产生新身份；同一个未结束参与等待/恢复保留原身份。计划后续修订不改变老参与的开始版本，结束仍绑定原 START、角色、执行者、步骤及 Work。
+结束一条参与不自动完成步骤；必要结果按原契约接收后，本步骤计划内的参与角色或 coordinator 可记录步骤完成，保留原权限，不新增项目经理独占门禁。仍有未结束参与时拒绝步骤完成。结束后的参与不重开，下一次真实参与产生新身份；同一个未结束参与等待/恢复保留原身份。计划后续修订不改变老参与的开始版本，结束仍绑定原 START、角色、执行者、步骤及 Work。
 
 所有新计划/步骤/参与命令返回 JSON；未采用计划的旧式 `work start/end` 保留原文字成功回执。写入前置错误非零退出且事务不留部分边界；故障后先 `work show` 核对，不盲目补写。计划与 Work 创建/结果/接收/候选的相同有效载荷重放按各自契约处理；步骤和参与边界不猜测两次同摘要是否同一操作。
 
@@ -101,7 +109,7 @@ tp-spec work step --task TASK-ID --step DEV --plan-version 1 --action complete -
 
 新显式计划的终态或退休步骤/参与只读，当前/下一步骤、当前角色均为空。历史未结束记录如实保留；不为显示整齐改写已完成任务。错误的新增格式或身份绑定返回可见问题，不静默降级为旧记录。未结束历史、主体新鲜度、事实来源与操作权限分别判断；本地 actor 字符串不是防篡改身份认证。
 
-本接口不升级物理 DB schema。仅源码回滚无需删除新事件；旧代码不会理解新步骤完整性/协调语义，因此已采用新计划的在途任务不应在旧版继续写入。需回退时先按原流程停止受影响写入、保留数据库备份，由有权限者选择恢复同一一致快照或继续新代码；不能删除事件或重算哈希伪造未采用记录。
+本接口不升级物理 DB schema。仅源码回滚无需删除新事件；旧代码不会理解新创建协调元数据或新步骤完整性/协调语义，因此已采用这些事实的在途任务不应在旧版继续写入。需回退时先按原流程停止受影响写入、保留数据库备份，由有权限者选择恢复同一一致快照或继续新代码；不能删除事件或重算哈希伪造未采用记录。
 
 ## 安全行为与步骤范围
 

@@ -165,7 +165,8 @@ VERIFICATION_SUBJECT_DIGEST_PARTS = (
 )
 
 
-def compute_verification_subject_digest(task_dir: Union[str, Path], *, scope: str = "full") -> str:
+def compute_verification_subject_digest(task_dir: Union[str, Path], *, scope: str = "full",
+                                        acceptance_text: str | None = None) -> str:
     """计算 verification review subject digest（当前受评审技术内容指纹）。
 
     覆盖 canonical task/requirement、acceptance criteria / implementation.md / requirement-test-guide.md；
@@ -178,8 +179,9 @@ def compute_verification_subject_digest(task_dir: Union[str, Path], *, scope: st
     parts: list[str] = []
     for name in VERIFICATION_SUBJECT_DIGEST_PARTS:
         p = base / name
-        if p.is_file():
-            text = _normalize_subject_part(name, _read(p))
+        if p.is_file() or (name == "acceptance.md" and acceptance_text is not None):
+            pending = acceptance_text if name == "acceptance.md" else None
+            text = _normalize_subject_part(name, pending if pending is not None else _read(p))
             if scope == "technical" and name == "acceptance.md":
                 # Only execution evidence/verdict cells may be supplemented after
                 # review. Criteria, method, witness policy and visual config remain

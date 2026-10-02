@@ -1,7 +1,14 @@
-version: 5.3.6
+version: 5.3.7
 mode: record-first
 principle: business work first; Runtime owns bookkeeping
 daily_api:
+  task_create:
+    command: tp-spec task create --id <TASK> --project <PROJECT> --risk <L0-L3> --flow <L0-L3> [--agent <ACTUAL-AGENT>] [--scaffold] --db <DB>
+    purpose: Create the Task and its lightweight coordination identity in the existing STATE NULL-to-NEW transaction.
+    notes:
+    - tp-spec.task-coordinator/v1 metadata uses producer task_create; the creation actor remains tp-software-lifecycle and the recorded coordinator defaults to tp-project-manager.
+    - Optional agent is a real caller identifier; absent stays empty. No generated main-agent identity, mandatory plan, new phase or physical migration.
+    - NOT_RECORDED describes absence of an execution plan; coordinator_source still identifies the actual creation event. Legacy markerless records retain old interpretation.
   task_checkpoint:
     command: tp-spec task checkpoint --task <TASK> --task-dir <DIR> --actor <ROLE>
       --phase <PHASE> --summary <TEXT> [--evidence evidence/... ] [--request-id <ID>] [--collect <OUTPUT>] [--result-report <REPORT>] [--recorded-result <EVENT-ID>]
@@ -85,11 +92,16 @@ daily_api:
     purpose: Explicit versioned steps and distinct role participations in the existing event ledger; see docs/EXECUTION_FACTS.md for each subcommand.
     notes:
     - Plan registration does not invent completed work. Parent progress stays forward; waiting, child Fix and evidence applicability are separate facts.
-    - The coordinator owns Task integration; role/agent strings, working directory and unfinished participation do not prove identity, hard isolation or liveness.
+    - Coordination comes from trusted creation or an effective plan; actual role participation and next responsibility remain separate. Empty agents are unrecorded, not inferred from the last actor.
+    - Expected step participants or the recorded coordinator may complete a step under the existing checks; no PM-only completion permission is added.
+    - Versioned future handoffs preserve begun history. Old markerless and terminal Tasks are not backfilled; code rollback cannot erase the semantics of new recorded facts.
+    - Role/agent strings, working directory and unfinished participation do not prove identity, hard isolation or liveness.
   work_results:
     command: tp-spec workitem create|claim|complete|receive|candidate|release|retry|list --task <TASK> --db <DB> ...
     purpose: Scoped Work results, exact coordinator receipts and actual integration candidates; see docs/WORK_UNITS.md.
     notes:
+    - Professional executors submit results; integration engineers perform authorized apply/conflict resolution and submit their actual outputs. The recorded coordinator (PM by default) receives exact results and records a record-only candidate; small Tasks do not require an extra integration Work.
+    - Candidate/receipt permissions still match the recorded coordinator role and known agent; integration expertise alone does not grant those permissions. Candidate binds current code, requirements/AC Subject, exact results/receipts and conflict evidence.
     - New JSON Work specs use tp-spec.work-unit/v1 and one security_context; do not mix legacy CLI scope overrides with --file.
     - rework fix binds the existing parent step and issue identity. Work completion does not complete its parent step/Task or grant merge/push/cleanup authority.
   security_change:
@@ -101,14 +113,14 @@ daily_api:
 project_api:
   project_bootstrap_check: tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only
   project_bootstrap: tp-spec project bootstrap --id <PROJECT> --root <ROOT>
-  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.3.6
+  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.3.7
 errors:
   PROJECT_BOOTSTRAP_AVAILABLE: read-only bootstrap check found a pristine project that may be initialized only after explicit human_owner action
   PROJECT_NOT_INITIALIZED: project ledger is not initialized; run project bootstrap/init first
   PROJECT_BOOTSTRAP_UNSAFE: bootstrap refused because the project is not pristine or ledger state is ambiguous
 runtime_owned:
 - task identity / contract metadata
-- current_state / legacy phase-owner facts / explicit plan coordinator and step-participation projections
+- current_state / legacy phase-owner facts / trusted creation or explicit plan coordinator with source event / step-participation projections
 - status.yaml / events.jsonl / generated/continuation.md / generated/final-result.md / generated/terminal-manifest.json
 - provenance for adopted intake artifacts
 - durable journal and SQLite transaction recovery

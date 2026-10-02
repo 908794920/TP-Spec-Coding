@@ -10,6 +10,7 @@ from pathlib import Path
 import uuid
 
 from . import db as dbmod, record_first, security_authority as authority, transaction_commit
+from .role_registry import actor_argument
 
 
 def _write(args, prepare, event_type, actor):
@@ -108,6 +109,6 @@ def add_security_subparsers(sub):
         parser.add_argument("--db", default=None)
         if parser is not show:
             parser.add_argument("--task-dir", required=True)
-            parser.add_argument("--actor", default="tp-spec-coding", choices=record_first.ACTORS)
+            parser.add_argument("--actor", default="tp-spec-coding", type=actor_argument())
             parser.add_argument("--summary", required=True)
         parser.set_defaults(func=func)

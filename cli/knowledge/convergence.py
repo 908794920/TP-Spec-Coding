@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path, PurePosixPath
+import re
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 SCHEMA = "tp-spec.task-learning/v1"
@@ -53,22 +54,56 @@ def detail_of(row) -> dict:
         return {}
 
 
-def _references(value):
+def _reference_entries(value, path=()):
     if isinstance(value, dict):
         for key, child in value.items():
             if key in {"source_refs", "scope_refs", "evidence", "evidence_refs", "evidence_items", "acceptance_evidence_items"}:
                 for ref in child if isinstance(child, list) else [child]:
                     if isinstance(ref, str):
-                        yield ref
+                        yield ref, path + (key,)
                     elif isinstance(ref, dict) and isinstance(ref.get("path"), str):
-                        yield ref["path"]
+                        yield ref["path"], path + (key, "path")
             elif key == "artifact" and isinstance(child, str):
-                yield child
+                yield child, path + (key,)
             elif isinstance(child, (dict, list)):
-                yield from _references(child)
+                yield from _reference_entries(child, path + (key,))
     elif isinstance(value, list):
-        for child in value:
-            yield from _references(child)
+        for index, child in enumerate(value):
+            yield from _reference_entries(child, path + (str(index),))
+
+
+def _references(value):
+    return (ref for ref, _ in _reference_entries(value))
+
+
+def _locator_fields(task, rows):
+    """仅正式生产者的准确字段是导航；不改变事件内容或证据契约。"""
+    from cli import execution, event_contract
+    from cli.work_session_cmd import pair_work_sessions, _REASON_CODES
+
+    fields = {}
+    projected = execution.project_execution(task, rows)
+    for plan in projected["plan_history"]:
+        fields[plan["event_id"]] = {("detail", "plan", "assessment", "source_refs"),
+                                    ("detail", "plan", "scope_refs")}
+    for activity in projected["timeline"]:
+        if activity["event_type"] in {execution.STEP, "WORK_SESSION_UPDATED", "WORK_SESSION_ENDED"}:
+            fields[activity["event_id"]] = {("detail", "evidence_refs")}
+
+    # 旧无计划END确实由同一writer接受locator，不要求补造新执行schema。
+    # 有现代绑定字段却缺schema的损坏记录，不能借此退回旧契约。
+    by_id = {row["id"]: row for row in rows}
+    modern = {"execution_schema", "step_id", "plan_version", "transaction_id"}
+    for pair in pair_work_sessions(rows)["pairs"]:
+        start, end = by_id[pair["start_event_id"]], by_id[pair["end_event_id"]]
+        first, last = detail_of(start), detail_of(end)
+        if any(modern & detail.keys() or detail.get("producer") != "work_session"
+               or event_contract.validate_event_semantics(row["event_type"], detail)
+               for row, detail in ((start, first), (end, last))):
+            continue
+        if execution._valid_boundary(last) and last.get("reason") in _REASON_CODES:
+            fields[end["id"]] = {("detail", "evidence_refs")}
+    return fields
 
 
 def _event_content(row: dict) -> dict | None:
@@ -99,6 +134,47 @@ def delivery_content(delivery: dict) -> dict:
             "delivery_mode", "applicability", "evidence", "acceptance_evidence_items", "repo_snapshot")}
 
 
+def file_source_ref(item: dict) -> str:
+    return "project:" + item["ref"] if item.get("source_root") == "project" else item["ref"]
+
+
+def file_source_items(index: dict) -> list[dict]:
+    return [{"type": "local_file", "path": item["ref"], "sha256": item["digest"],
+             "hash_mode": item.get("hash_mode", "bytes"),
+             **({"source_root": "project"} if item.get("source_root") == "project" else {})}
+            for item in index["items"] if item["id"].startswith("file:")]
+
+
+def _historical_learning_result(ref: str, events: dict) -> dict | None:
+    """只核对同Task历史绑定；不求当前PASS，也不递归构建学习索引。"""
+    from cli import event_contract, workflow_controls
+
+    if not re.fullmatch(r"event:[1-9][0-9]*", ref):
+        return None
+    row = events.get(int(ref[6:]))
+    if row is None:
+        return None
+    detail = workflow_controls.trusted_event_detail(row,
+        event_type="KNOWLEDGE_CONVERGENCE_RESULT", producer="knowledge_task_converge", actor="tp-knowledge")
+    if (detail is None or detail.get("learning_schema") != SCHEMA
+            or detail.get("result_status") != "COMPLETED"
+            or event_contract.validate_event_semantics(row["event_type"], detail)):
+        return None
+    request_id = detail.get("request_event_id")
+    request = events.get(request_id) if type(request_id) is int and request_id > 0 else None
+    if request is None:
+        return None
+    saved = workflow_controls.trusted_event_detail(request,
+        event_type="KNOWLEDGE_CONVERGENCE_REQUEST", producer="delivery_converge", actor="tp-integration-engineer")
+    if (saved is None or saved.get("learning_schema") != SCHEMA
+            or saved.get("result_status") != "PENDING"
+            or event_contract.validate_event_semantics(request["event_type"], saved)
+            or detail.get("change_set_id") != saved.get("change_set_id")
+            or not valid_result(detail, {"event": request, "detail": saved})):
+        return None
+    return detail
+
+
 def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dict:
     """Read only this Task's known artifacts and explicitly referenced evidence.
 
@@ -108,10 +184,16 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
     """
     from cli.digest import _normalize_subject_part, compute_text_artifact_digest
     from cli.evidence import validate_evidence_path
+    from .source_paths import resolve_locator_file
 
     task = dict(task)
+    events = [dict(row) for row in events if row["task_id"] == task["task_id"]]
+    events_by_id = {row["id"]: row for row in events}
+    locator_fields = _locator_fields(task, events)
     items, issues, contents = [], [], {}
     refs = {name for name in FILES if (task_dir / name).exists()}
+    strict_refs = set(refs)
+    locator_refs, locator_events, event_items = {}, {}, {}
     if "task.md" not in refs:
         issues.append("TASK_SOURCE_MISSING: task.md")
 
@@ -121,6 +203,7 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
 
     add("task", "scope", scope_content(task))
     seen_events = set()
+    qualified_sources = {}
     for value in events:
         row = dict(value)
         if row.get("task_id") != task["task_id"]:
@@ -129,12 +212,37 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
         if content is None:
             continue
         fingerprint = digest(content)
+        # 内容去重不丢弃来源不同的严格引用；仅完整来源/契约相同的重复
+        # 可以复用已验证的locator资格（重复END不会再次被会话配对接受）。
+        source = digest({**{key: value for key, value in row.items() if key not in {"id", "detail_json"}},
+                         "detail": detail_of(row)})
+        allowed_fields = locator_fields.get(row["id"], ())
+        if allowed_fields:
+            qualified_sources[source] = allowed_fields
+        else:
+            allowed_fields = qualified_sources.get(source, ())
+        locators = []
+        for ref, field in _reference_entries(content):
+            normalized = ref.replace("\\", "/").strip()
+            if (field in allowed_fields
+                    and (PurePosixPath(normalized).is_absolute() or PureWindowsPath(normalized).is_absolute())):
+                locators.append({"ref": ref, "field": ".".join(field),
+                    "status": "UNRESOLVED_LOCATOR", "read_status": "NOT_READ",
+                    "reason": "outside Task-relative input contract; target was not accessed"})
+            else:
+                refs.add(ref)
+                if field in allowed_fields and not normalized.startswith(("https://", "http://")):
+                    locator_refs.setdefault(ref, []).append((fingerprint, field))
+                    locator_events.setdefault((ref, fingerprint, field), set()).add(int(row["id"]))
+                else:
+                    strict_refs.add(ref)  # 强制出现独立保留，不被同目标导航引用消掉。
         if fingerprint in seen_events:
             continue
         seen_events.add(fingerprint)
         add(f"event:{row['id']}", "event", content, event_id=int(row["id"]),
-            event_type=row["event_type"], role=row.get("actor_role"), work_item_id=row.get("work_item_id"))
-        refs.update(_references(content))
+            event_type=row["event_type"], role=row.get("actor_role"), work_item_id=row.get("work_item_id"),
+            **({"source_locators": sorted(locators, key=lambda item: (item["field"], item["ref"]))} if locators else {}))
+        event_items[fingerprint] = items[-1]
 
     for value in work_items:
         row = dict(value)
@@ -146,12 +254,47 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
 
     closeout = delivery_content(delivery)
     add("delivery", "delivery", closeout)
-    refs.update(_references(closeout))
+    delivery_refs = set(_references(closeout))
+    refs.update(delivery_refs)
+    strict_refs.update(delivery_refs)
+    strict_event_refs = {str(ref).replace("\\", "/").strip() for ref in strict_refs}
+
+    def unresolved_locator(raw, reason, read_status):
+        if raw in strict_refs or raw not in locator_refs:
+            return False
+        for fingerprint, field in locator_refs[raw]:
+            navigation = event_items[fingerprint].setdefault("source_locators", [])
+            locator = {"ref": raw, "field": ".".join(field), "status": "UNRESOLVED_LOCATOR",
+                       "read_status": read_status, "reason": reason}
+            if locator not in navigation:
+                navigation.append(locator)
+        return True
+
+    def resolved_locator(raw, source, key, fingerprint):
+        for event_fingerprint, field in set(locator_refs[raw]):
+            navigation = event_items[event_fingerprint].setdefault("source_locators", [])
+            navigation.append({"ref": raw, "field": ".".join(field), "status": "RESOLVED_FILE",
+                "read_status": "READ", "input_id": key, "resolved_ref": source.ref,
+                "source_root": source.source_root, "sha256": fingerprint,
+                "source_event_ids": sorted(locator_events[(raw, event_fingerprint, field)])})
+
     for raw in sorted(refs):
         ref = str(raw).replace("\\", "/").strip()
         if ref.startswith("event:"):
             if ref not in contents:
-                issues.append(f"UNRESOLVED_EVENT_SOURCE: {ref}")
+                historical = (_historical_learning_result(ref, events_by_id)
+                              if raw in locator_refs and ref not in strict_event_refs else None)
+                if historical is None:
+                    issues.append(f"UNRESOLVED_EVENT_SOURCE: {ref}")
+                else:
+                    for fingerprint, field in locator_refs[raw]:
+                        navigation = event_items[fingerprint].setdefault("source_locators", [])
+                        locator = {"ref": raw, "field": ".".join(field), "status": "EXCLUDED_FROM_LEARNING",
+                            "event_type": "KNOWLEDGE_CONVERGENCE_RESULT",
+                            "request_event_id": historical["request_event_id"],
+                            "reason": "trusted historical result binding checked; not a learning input or current PASS"}
+                        if locator not in navigation:
+                            navigation.append(locator)
             continue
         # A remote citation is navigable provenance, never evidence of a fetch.
         if ref.startswith(("https://", "http://")):
@@ -160,8 +303,43 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
         # A fragment navigates within a file; it is not part of its disk name.
         # Index the actual bytes without claiming to validate the named anchor.
         ref = ref.split("#", 1)[0]
-        checked = validate_evidence_path(task_dir, ref, require_evidence_dir=False)
+        source = None
+        if raw in locator_refs and raw not in strict_refs:
+            try:
+                source = resolve_locator_file(task, task_dir, ref)
+            except (ValueError, OSError, RuntimeError) as exc:
+                read_status = ("NOT_READ" if isinstance(exc, (ValueError, RuntimeError, FileNotFoundError,
+                               NotADirectoryError)) else "READ_FAILED")
+                unresolved_locator(raw, str(exc), read_status)
+                continue
+        if source is not None:
+            key = "file:" + ("project:" if source.source_root == "project" else "") + source.ref
+            if key not in contents:
+                try:
+                    raw_bytes = source.path.read_bytes()
+                except OSError as exc:
+                    unresolved_locator(raw, f"locator body read failed: {exc}", "READ_FAILED")
+                    continue
+                if not raw_bytes:
+                    unresolved_locator(raw, "locator became empty during body read", "READ_FAILED")
+                    continue
+                hash0 = hashlib.sha256(raw_bytes).hexdigest()
+                contents[key] = {"path": source.ref, "sha256": hash0}
+                items.append({"id": key, "kind": "evidence", "ref": source.ref,
+                    "digest": hash0, "hash_mode": "bytes",
+                    **({"source_root": "project"} if source.source_root == "project" else {})})
+            resolved_locator(raw, source, key, contents[key]["sha256"])
+            continue
+        try:
+            checked = validate_evidence_path(task_dir, ref, require_evidence_dir=False)
+        except OSError as exc:
+            if unresolved_locator(raw, f"relative locator access/read failed: {exc}", "READ_FAILED"):
+                continue
+            raise
         if not checked.ok:
+            read_status = "READ_FAILED" if checked.error.startswith("evidence file is not readable:") else "NOT_READ"
+            if unresolved_locator(raw, checked.error, read_status):
+                continue
             issues.append(f"SOURCE_UNAVAILABLE: {ref}: {checked.error}")
             continue
         ref = str(checked.path)
@@ -170,7 +348,12 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
         key = "file:" + ref
         if key in contents:
             continue
-        raw_bytes = (task_dir / ref).read_bytes()
+        try:
+            raw_bytes = (task_dir / ref).read_bytes()
+        except OSError as exc:
+            if unresolved_locator(raw, f"relative locator body read failed: {exc}", "READ_FAILED"):
+                continue
+            raise
         # Only the existing runtime-owned guide fields are normalized. Acceptance
         # outcomes and actual Task/requirement text remain learning inputs.
         if ref == "requirement-test-guide.md":
@@ -182,6 +365,9 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
         contents[key] = {"path": ref, "sha256": hash0}
         items.append({"id": key, "kind": FILES.get(ref, "evidence"), "ref": ref,
                       "digest": hash0, "hash_mode": mode})
+    for item in event_items.values():
+        if "source_locators" in item:
+            item["source_locators"].sort(key=lambda locator: (locator["field"], locator["ref"]))
     items.sort(key=lambda item: item["id"])
     index = {"schema": SCHEMA, "task_id": task["task_id"], "items": items, "issues": sorted(set(issues))}
     index["digest"] = digest(index)
@@ -189,7 +375,8 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
 
 
 def load_index(conn, task_id: str, task_dir: Path, delivery: dict) -> dict:
-    task = conn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
+    task = conn.execute("SELECT t.*, p.root_path AS project_root_path FROM task t "
+                        "LEFT JOIN project p ON p.project_id=t.project_id WHERE t.task_id=?", (task_id,)).fetchone()
     if task is None:
         raise ValueError(f"task not found: {task_id}")
     events = conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id,)).fetchall()
@@ -439,9 +626,7 @@ def valid_result(detail: dict, request: dict) -> bool:
             return False
         if detail.get("input_digest") != request["detail"]["input_index"]["digest"]:
             return False
-        expected_sources = [{"type": "local_file", "path": item["ref"], "sha256": item["digest"],
-                             "hash_mode": item.get("hash_mode", "bytes")}
-                            for item in request["detail"]["input_index"]["items"] if item["id"].startswith("file:")]
+        expected_sources = file_source_items(request["detail"]["input_index"])
         if detail.get("source_items") != expected_sources:
             return False
         memory = detail["memory_assessment"]

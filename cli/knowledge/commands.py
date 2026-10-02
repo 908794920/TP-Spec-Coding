@@ -61,9 +61,17 @@ def cmd_doctor(args) -> int:
 
 def cmd_init(args) -> int:
     try:
-        cfg=_cfg(args); paths=meta_paths(cfg); paths["root"].mkdir(parents=True,exist_ok=True)
-        # Init only machine-owned state root. It never invents project registry/canonical prose.
-        _emit({"schema":"tp-spec.knowledge-init/v1","status":"PASS","meta_root":str(paths["root"]),"database":str(cfg.paths.knowledge_projection_db),"baseline_created":False}); return 0
+        cfg=_cfg(args); paths=meta_paths(cfg)
+        registration = None
+        if getattr(args, "register_project", False):
+            from .bootstrap import register_bound_project
+            registration = register_bound_project(cfg)
+        paths["root"].mkdir(parents=True,exist_ok=True)
+        # Default stays meta-only; opt-in registration never invents canonical prose or a baseline.
+        result = {"schema":"tp-spec.knowledge-init/v1","status":"PASS","meta_root":str(paths["root"]),"database":str(cfg.paths.knowledge_projection_db),"baseline_created":False}
+        if registration is not None:
+            result["project_registration"] = registration
+        _emit(result); return 0
     except Exception as exc:
         _emit({"schema":"tp-spec.knowledge-init/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
@@ -496,12 +504,14 @@ def add_knowledge_subparsers(root_subparsers) -> None:
     k=root_subparsers.add_parser("knowledge",help="Standardized long-lived Knowledge Content System")
     sub=k.add_subparsers(dest="knowledge_cmd",required=True)
     for name,help_text,fn in [
-        ("doctor","Resolve Knowledge paths and health",cmd_doctor),("init","Initialize machine-owned Knowledge meta only",cmd_init),
+        ("doctor","Resolve Knowledge paths and health",cmd_doctor),("init","Initialize Knowledge meta; optionally register the bound project",cmd_init),
         ("scan","Stage Knowledge truth diff",cmd_scan),("maintain","Daily deterministic preflight; baseline unchanged",cmd_maintain),
         ("lint","Run deterministic canonical/evidence lint",cmd_lint),("verify","Run L1-L3 Knowledge quality gates",cmd_verify),
         ("status","Show Knowledge truth/projection/baseline state",cmd_status),("snapshot-commit","Advance trusted Knowledge baseline after bound PASS",cmd_snapshot_commit),
     ]:
         p=sub.add_parser(name,help=help_text); _common(p); p.set_defaults(func=fn)
+        if name == "init":
+            p.add_argument("--register-project", action="store_true", help="explicitly add the validated bound project to the Knowledge registry; preserve existing entries")
     def usage_options(parser):
         parser.add_argument("--project")
         parser.add_argument("--scope", choices=["project", "global"], default=None,

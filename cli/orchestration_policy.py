@@ -12,7 +12,7 @@ from typing import Any, Iterable
 
 PREFIX = "orchestration."
 STAGES = {
-    "requirement": ("tp-product-manager", "requirement"),
+    "requirement": ("tp-requirements-manager", "requirement"),
     "product": ("tp-product-manager", "product"),
     "architecture": ("tp-software-architect", "architecture"),
     "architecture_review": ("tp-software-architect", "architecture"),
@@ -31,12 +31,24 @@ SIGNALS = {
     "security_risk": "workflow:security-risk",
     "database_risk": "workflow:database-risk",
     "knowledge_required": "workflow:knowledge-required",
+    "ux_design": "workflow:ux-design",
 }
 TRIGGERS = {"contextual", "unresolved_scope", "architecture_risk", "behavioral_change", "deep_review"}
 
 
 class PolicyError(ValueError):
     pass
+
+
+def stage_phase(stage: str) -> str:
+    return STAGES[stage][1]
+
+
+def checkpoint_actor_ids(stage: str) -> tuple[str, ...]:
+    role, _ = STAGES[stage]
+    if stage in {"architecture_review", "verification", "review", "delivery"}:
+        return ()
+    return (role, "tp-product-manager") if stage == "requirement" else (role,)
 
 
 def _invalid(path: str, reason: str) -> None:
@@ -148,7 +160,7 @@ def validate(data: dict[str, Any], catalog: dict[str, Any]) -> None:
     conditional = data.get("conditional_roles", [])
     if not isinstance(conditional, list):
         _invalid("conditional_roles", "list required")
-    expected = {"tp-security-engineer": "security_risk", "tp-database-engineer": "database_risk", "tp-code-reviewer": "deep_review"}
+    expected = {"tp-security-engineer": "security_risk", "tp-database-engineer": "database_risk", "tp-code-reviewer": "deep_review", "tp-ux-designer": "ux_design"}
     seen_roles = set()
     for rule in conditional:
         if not isinstance(rule, dict) or set(rule) - {"role", "trigger", "phases", "read_effects", "mutation_effects"}:

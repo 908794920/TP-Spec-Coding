@@ -24,11 +24,12 @@ function useAllTasks(contexts: Context[], revision: number, enabled: boolean) {
     const [rows, setRows] = useState<Hit[]>([]), [loading, setLoading] = useState(false), [error, setError] = useState('');
     useEffect(() => {
         setLoading(false);
+        setRows([]);
+        setError('');
         if (!enabled || !scope)
             return;
         const controller = new AbortController();
         setLoading(true);
-        setError('');
         Promise.all(latest.current.map(async context => {
             const result = await api.project(context.context_key, controller.signal);
             const name = context.name || context.project_id;

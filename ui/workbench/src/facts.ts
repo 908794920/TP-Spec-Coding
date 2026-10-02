@@ -15,6 +15,19 @@ export function valueText(value: unknown): string {
         return value ? '是' : '否';
     return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
 }
+export function workflowNextResponsibility(workflow: FactRecord, terminal: boolean): string {
+    if (terminal) return '无（任务已结束）';
+    const route = record(workflow.route), waiting = record(record(route.context).waiting);
+    const responsibility = text(route.next_responsibility) || text(waiting.responsibility);
+    if (responsibility) return responsibility;
+    if (route.current_state === 'BLOCKED') return '未记录';
+    const current = record(record(workflow.execution).current_step);
+    // Task/结果等待覆盖步骤等待；未来计划角色不是当前责任。
+    return (current.status === 'WAITING' ? text(current.expected_next_actor) : '')
+        || text(route.role_id)
+        || (workflow.next_step_source === 'workflow_contract' ? text(record(workflow.next_step).role) : '')
+        || '未记录';
+}
 /* Times arrive from several sources whose ISO offsets differ inside one response
    (workbench reads carry +00:00, Runtime records carry +08:00). They are rendered on one clock —
    the viewer's local zone — so the same instant never shows two different wall times. The exact
@@ -53,7 +66,10 @@ const roleNames: Record<string, string> = {
     'tp-software-lifecycle': '软件工程生命周期',
     'tp-project-autonomy': '项目自治维护',
     'tp-base-maintenance': '基座维护',
+    'tp-project-manager': '项目经理',
     'tp-product-manager': '产品经理',
+    'tp-requirements-manager': '需求经理',
+    'tp-ux-designer': '用户体验设计师',
     'tp-software-architect': '软件架构师',
     'tp-tech-lead': '技术主管',
     'tp-security-engineer': '安全工程师',
@@ -70,7 +86,7 @@ const explanations: Record<string, Record<string, string>> = {
     default_workspace_status: { not_defined: '未定义' },
     /* Skill topology: what a node is and how an edge links it. `mode` already covers 默认 / 条件性,
        which is exactly the two values those edges carry. */
-    kind: { 'product-entry': '产品入口', 'domain-agent': '领域 Agent', 'formal-role': '正式角色', 'capability-skill': '能力 SKILL' },
+    kind: { 'product-entry': '产品入口', 'domain-agent': '领域 Agent', 'formal-role': '正式角色', 'capability-skill': '能力 SKILL', task_create: 'Task 创建记录', execution_plan: '执行计划记录' },
     relation: { 'routes-to': '路由到', 'owns-role': '拥有角色', 'uses-skill': '使用 SKILL' },
     identity_source: { 'project-binding': '项目 Binding 文件' },
     source: { 'registry-root': '注册表根', installation_config: '安装配置' },
@@ -101,6 +117,11 @@ const explanations: Record<string, Record<string, string>> = {
        share one map — `owner` keeps its own non-role value. */
     actor: roleNames,
     actor_role: roleNames,
+    role: roleNames,
+    role_id: roleNames,
+    current_roles: roleNames,
+    expected_next_actor: roleNames,
+    next_responsibility: roleNames,
     owner: { human_owner: '人工负责人', ...roleNames },
 };
 export function explainValue(key: string, value: unknown): string {
@@ -159,6 +180,9 @@ const fieldLabels: Record<string, string> = {
     milestone_id: '里程碑 ID', presentation: '展示信息', event_label: '事件名称',
     reason_label: '原因说明', status_class: '状态分类', source: '来源', name: '名称',
     actor_role: '角色标识', knowledge_signals: 'Knowledge 信号', delivery_signals: 'Delivery 信号',
+    role: '角色', role_id: '角色 ID', agent: '执行者标识', actor_agent: '记录执行者标识',
+    coordinator: 'Task 协调责任', coordinator_source: '协调来源', current_roles: '当前登记参与角色',
+    expected_next_actor: '记录的下一责任', next_responsibility: '下一责任（记录/建议）',
     evidence_count: '证据条目数', development_event_id: '开发事件 ID',
     /* Panel-level fields: the surface that is visible before any nested "展开字段" */
     status: '状态', exists: '是否存在', registry: '注册表', registry_path: '注册表路径',

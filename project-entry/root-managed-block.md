@@ -2,7 +2,7 @@
 
 - 默认入口 `tp-spec-coding`；软件工作交 `tp-software-lifecycle`。已有 Task 先读 `tp-spec workflow next --task <TASK> --db <DB> --json`，按 Resolver 定位的 Base 内 `governance/role-catalog.yaml` 加载对应 Role，再按触发读 Skill，不预载全部能力。
 - 遵守根 `AGENTS.md` 自有规则和本次授权；安全发现、Review/测试、计划/子工作与生成文档都不增加需求或动作权限。真实 scope/高风险取舍交 human_owner。
-- 一个需求一个 Task，批次/返修归 Work；主 Agent 负责获准集成，父步骤等待后原位复验，旧 PASS 的适用性另核。每 Task 交付必评估知识和各步骤记忆，不等于强制写入。
+- 一个需求一个 Task，批次/返修归 Work；主 Agent 统筹获准集成，集成交付工程师负责实际 apply 和冲突处置，项目经理精确接收，由已记录 coordinator 登记 record-only candidate；父步骤等待后原位复验，旧 PASS 的适用性另核。每 Task 交付必评估知识和各步骤记忆，不等于强制写入。
 - 项目身份来自 `.tp-spec/config/project-binding.yaml`；Base/Wiki/Knowledge 位置只经 `tp-spec base resolve --workspace-root <workspace-root>` 解析，不依赖旧 Junction 或硬编码机器路径。解析不可靠时停止受影响动作并报告，不恢复旧流程。
 - Source Code 是当前技术事实，Wiki 是导航，Knowledge 是长期知识；需知识时使用 `tp-spec knowledge search`，默认 current project + shared，不擅自全局检索。
 - 根 `AGENTS.md` 自有区保留必要硬约束和高价值经验的薄入口（问题现象/关键术语 + 精确相对指针）；详细规则归项目 Memory，方法归项目 Skill，临时进度/授权/验收留 Task。沉淀时同时核对入口可发现性，不强制每次新增。已知目标直达，未知且需要时才读 `.tp-spec/memory/INDEX.md`；可选缓存缺失不阻塞，秘密和机器配置不沉淀。
