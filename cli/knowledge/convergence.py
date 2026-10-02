@@ -134,6 +134,17 @@ def delivery_content(delivery: dict) -> dict:
             "delivery_mode", "applicability", "evidence", "acceptance_evidence_items", "repo_snapshot")}
 
 
+def file_source_ref(item: dict) -> str:
+    return "project:" + item["ref"] if item.get("source_root") == "project" else item["ref"]
+
+
+def file_source_items(index: dict) -> list[dict]:
+    return [{"type": "local_file", "path": item["ref"], "sha256": item["digest"],
+             "hash_mode": item.get("hash_mode", "bytes"),
+             **({"source_root": "project"} if item.get("source_root") == "project" else {})}
+            for item in index["items"] if item["id"].startswith("file:")]
+
+
 def _historical_learning_result(ref: str, events: dict) -> dict | None:
     """只核对同Task历史绑定；不求当前PASS，也不递归构建学习索引。"""
     from cli import event_contract, workflow_controls
@@ -173,6 +184,7 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
     """
     from cli.digest import _normalize_subject_part, compute_text_artifact_digest
     from cli.evidence import validate_evidence_path
+    from .source_paths import resolve_locator_file
 
     task = dict(task)
     events = [dict(row) for row in events if row["task_id"] == task["task_id"]]
@@ -181,7 +193,7 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
     items, issues, contents = [], [], {}
     refs = {name for name in FILES if (task_dir / name).exists()}
     strict_refs = set(refs)
-    locator_refs, event_items = {}, {}
+    locator_refs, locator_events, event_items = {}, {}, {}
     if "task.md" not in refs:
         issues.append("TASK_SOURCE_MISSING: task.md")
 
@@ -221,6 +233,7 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
                 refs.add(ref)
                 if field in allowed_fields and not normalized.startswith(("https://", "http://")):
                     locator_refs.setdefault(ref, []).append((fingerprint, field))
+                    locator_events.setdefault((ref, fingerprint, field), set()).add(int(row["id"]))
                 else:
                     strict_refs.add(ref)  # 强制出现独立保留，不被同目标导航引用消掉。
         if fingerprint in seen_events:
@@ -257,6 +270,14 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
                 navigation.append(locator)
         return True
 
+    def resolved_locator(raw, source, key, fingerprint):
+        for event_fingerprint, field in set(locator_refs[raw]):
+            navigation = event_items[event_fingerprint].setdefault("source_locators", [])
+            navigation.append({"ref": raw, "field": ".".join(field), "status": "RESOLVED_FILE",
+                "read_status": "READ", "input_id": key, "resolved_ref": source.ref,
+                "source_root": source.source_root, "sha256": fingerprint,
+                "source_event_ids": sorted(locator_events[(raw, event_fingerprint, field)])})
+
     for raw in sorted(refs):
         ref = str(raw).replace("\\", "/").strip()
         if ref.startswith("event:"):
@@ -282,6 +303,33 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
         # A fragment navigates within a file; it is not part of its disk name.
         # Index the actual bytes without claiming to validate the named anchor.
         ref = ref.split("#", 1)[0]
+        source = None
+        if raw in locator_refs and raw not in strict_refs:
+            try:
+                source = resolve_locator_file(task, task_dir, ref)
+            except (ValueError, OSError, RuntimeError) as exc:
+                read_status = ("NOT_READ" if isinstance(exc, (ValueError, RuntimeError, FileNotFoundError,
+                               NotADirectoryError)) else "READ_FAILED")
+                unresolved_locator(raw, str(exc), read_status)
+                continue
+        if source is not None:
+            key = "file:" + ("project:" if source.source_root == "project" else "") + source.ref
+            if key not in contents:
+                try:
+                    raw_bytes = source.path.read_bytes()
+                except OSError as exc:
+                    unresolved_locator(raw, f"locator body read failed: {exc}", "READ_FAILED")
+                    continue
+                if not raw_bytes:
+                    unresolved_locator(raw, "locator became empty during body read", "READ_FAILED")
+                    continue
+                hash0 = hashlib.sha256(raw_bytes).hexdigest()
+                contents[key] = {"path": source.ref, "sha256": hash0}
+                items.append({"id": key, "kind": "evidence", "ref": source.ref,
+                    "digest": hash0, "hash_mode": "bytes",
+                    **({"source_root": "project"} if source.source_root == "project" else {})})
+            resolved_locator(raw, source, key, contents[key]["sha256"])
+            continue
         try:
             checked = validate_evidence_path(task_dir, ref, require_evidence_dir=False)
         except OSError as exc:
@@ -327,7 +375,8 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
 
 
 def load_index(conn, task_id: str, task_dir: Path, delivery: dict) -> dict:
-    task = conn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
+    task = conn.execute("SELECT t.*, p.root_path AS project_root_path FROM task t "
+                        "LEFT JOIN project p ON p.project_id=t.project_id WHERE t.task_id=?", (task_id,)).fetchone()
     if task is None:
         raise ValueError(f"task not found: {task_id}")
     events = conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id,)).fetchall()
@@ -577,9 +626,7 @@ def valid_result(detail: dict, request: dict) -> bool:
             return False
         if detail.get("input_digest") != request["detail"]["input_index"]["digest"]:
             return False
-        expected_sources = [{"type": "local_file", "path": item["ref"], "sha256": item["digest"],
-                             "hash_mode": item.get("hash_mode", "bytes")}
-                            for item in request["detail"]["input_index"]["items"] if item["id"].startswith("file:")]
+        expected_sources = file_source_items(request["detail"]["input_index"])
         if detail.get("source_items") != expected_sources:
             return False
         memory = detail["memory_assessment"]

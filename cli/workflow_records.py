@@ -349,7 +349,7 @@ def _task_knowledge_request_input(conn, *, task_id: str, verification_detail: Di
         index = convergence.load_index(conn, task_id, task_dir, delivery_detail)
         # Missing explicit inputs are visible in the request; they do not become
         # an empty no-value success. task-inputs explains the recovery work.
-        source_refs = [item["ref"] for item in index["items"] if item["id"].startswith("file:")]
+        source_refs = [convergence.file_source_ref(item) for item in index["items"] if item["id"].startswith("file:")]
         return {"learning_schema": convergence.SCHEMA, "input_index": index,
                 "applicability": dict(delivery_detail.get("applicability") or {}),
                 "trigger_reason_codes": sorted({"TASK_DELIVERY_REQUIRED", *[x["reason_code"] for x in triggers]}),

@@ -21,6 +21,7 @@ tp-spec knowledge task-inputs --task <TASK-ID> --task-dir <TASK-DIR> --db <DB> -
 返回当前 request ID、`request_current`、输入 digest、逐项来源/指纹、缺口和相对 Request
 的 added/removed/changed/unchanged。`--request-event-id` 可选择历史请求作对比，不能让旧请求重新有效。
 `--item` 读取该 Task 的作用域、交付语义、事件或 Work 详情；文件按返回的相对 `ref` 定向读取。
+文件缺省以实际 Task 目录为根；标有 `source_root=project` 的条目以 Runtime 登记的项目根为根。
 
 覆盖本 Task 的 canonical 需求、澄清/决定、设计/实现、测试/审查、已记录计划和角色工作段、
 Work 结果及交付材料；事件可指向本 Task 其他明确证据。事件 source 不等于授权。
@@ -38,7 +39,22 @@ Work 结果及交付材料；事件可指向本 Task 其他明确证据。事件
 需要依赖外部正文时，通过现有正式收集/checkpoint 选择并绑定真实版本；不能按同名文件
 替换为内容不同的历史副本。
 
-有效相对文件引用仍按原路径/字节（或测试指南规范化内容）索引。只有上述合格 locator 字段中的
+上述合格相对 locator 还支持有限的历史路径兼容：Runtime 登记的项目根与显式 Task 目录
+必须对应同一 Task 的 `.tp-spec/tasks/<Task>` 或 `.tp-spec/tasksHistory/<YYYYMM>/<Task>`。
+`../../docs/<path>` 保留原活动 Task 的项目文档语义，和 `.tp-spec/docs/<path>` 一样仅读取
+该项目 `.tp-spec/docs` 下的真实文件；归档不会改用归档目录旁的同名 docs。
+`.tp-spec/tasks/<同Task>/evidence/<path>` 映射到上述经核验的实际 Task evidence；显式
+tasksHistory 引用还须与所选归档月份完全一致。不搜索其他 Task、月份或项目，不猜项目根。
+绝对、drive-relative、根相对、ADS 路径、目录、空文件及链接越界均不授予兼容读取。
+
+成功兼容引用保留原 `ref`、准确 `field` 和 `source_event_ids`，并以 `RESOLVED_FILE / READ`
+关联规范 `input_id`、`resolved_ref`、读取根与实际字节 SHA256。别名共享同一正文输入，
+不会删改原事件。项目文档条目的 ID 为 `file:project:<project-relative-ref>`，带
+`source_root=project`；Request/候选来源使用 `project:<ref>`，Result 的相应 `source_items`
+同样保留 `source_root=project`，不冒充 Task-relative 治理证据。`READ` 只证明输入字节已读取
+并散列，不证明专业角色已经理解正文或获得人工授权；原 Knowledge/Memory 评估仍须执行。
+
+普通 Task 相对文件仍按原路径/字节（或测试指南规范化内容）索引。只有上述合格 locator 字段中的
 相对引用无法作为文件消费时，保留原值、准确字段与原因作为 `source_locators` 警告，
 不生成文件输入或阻塞 issue：目录、缺失、空文件、越界等未读正文的情况为 `NOT_READ`，
 访问或读取尝试失败为 `READ_FAILED`，不能声称完全未尝试。目录不展开，不读取越界目标正文。

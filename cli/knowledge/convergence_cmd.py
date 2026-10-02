@@ -109,7 +109,8 @@ def _candidate_sources(candidate, index, request):
         elif key == "delivery":
             ref = "event:" + str(request["detail"]["delivery_event_id"])
         else:
-            ref = indexed[key].get("ref", key)
+            item = indexed[key]
+            ref = learning.file_source_ref(item) if item["id"].startswith("file:") else item.get("ref", key)
         if ref not in locators:
             locators.append(ref)
     return locators
@@ -331,9 +332,7 @@ def cmd_converge(args):
         primary = next((item for disp in ("CREATED", "UPDATED", "DUPLICATE", "NO_DURABLE_INSIGHT")
                         for item in results if item["disposition"] == disp))
         source_refs = request["detail"]["source_refs"]
-        source_items = [{"type": "local_file", "path": item["ref"], "sha256": item["digest"],
-                         "hash_mode": item.get("hash_mode", "bytes")}
-                        for item in index["items"] if item["id"].startswith("file:")]
+        source_items = learning.file_source_items(index)
 
         def recheck(dbconn):
             check_current(dbconn)
