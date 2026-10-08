@@ -1,5 +1,5 @@
 # SHA-256 Manifest for TP-Spec-Coding working tree
-# Generated: 2026-10-02T02:03:18Z
+# Generated: 2026-10-05T04:07:16Z
 # Generator: update_manifest.py (SHA-256, UTF-8 byte-safe)
 # Repository: TP-Spec-Coding/
 # Note: records Git-visible working-tree files (tracked-existing + untracked non-ignored), except this manifest
@@ -320,9 +320,10 @@ B20002DC8CD5AE60CAE88E65CD87E6C45E95872D93713BC74356171350F08901  skills/capabil
 599A0A453E8FE365ABEB9AE6EDB9E9F3D3398056C44227D918A505CD835DDDA4  skills/capabilities/testing-strategy/references/test-value.md
 59430DB0BF41DCDB27759C8D9C66B397CF879C1D1E7FD64AFC424F7B8EE42925  skills/capabilities/testing-strategy/references/visual-qa.md
 42B35967895174224EAACEE4C0DF541084A2803E87FCB71F58A0385A89CA96A6  skills/capabilities/tp-memory-capture/SKILL.md
-BFECB5A3F9185B9AD8BD698798B1F676DBC38F80D4C5179CBA1E00542E19B307  skills/capabilities/ui-prototype-design/SKILL.md
+74F4D09B6C1E994636A3AC96B1F8B65ED3F797DD5A2B9B5EE67748FC5DE89C46  skills/capabilities/ui-prototype-design/SKILL.md
 5A0D9CCC8BBAB154B4E4C2FA4C5C7C10BDAB5505B71FC3419162BD3B94B7344A  skills/capabilities/ui-prototype-design/agents/openai.yaml
-5E7446BFA2DF3EBFEFA3E05C8B171F362F51042792FE6011FEC2C272322C52F1  skills/capabilities/ui-prototype-design/references/design-baseline.md
+60E6F20BD51C690310C06B37D2194DF831F260A6F74FB239D23FFD4E8CB53543  skills/capabilities/ui-prototype-design/references/component-consumption-example.md
+2D6861A802F7F820594A608CC925A134459CAC038AB500DBF8234A965A0656EF  skills/capabilities/ui-prototype-design/references/design-baseline.md
 2838E05C54C51CF26EF5B6B91E973D5822BC12F7D87F3B764F58D7319FE82EB4  skills/capabilities/ui-prototype-design/references/interaction-and-motion.md
 2A8897C5E54408B7C03BCD67C1DA97963F15B7DC083AE332CD92B74753DDFD72  skills/knowledge/tp-knowledge-ingestion/SKILL.md
 74CA0AC2262BAB0794F463A041F26A3656FB72394B3A1304CD6C03002113D79A  skills/knowledge/tp-knowledge-maintenance/SKILL.md
