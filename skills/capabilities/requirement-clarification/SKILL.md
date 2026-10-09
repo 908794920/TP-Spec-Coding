@@ -1,7 +1,7 @@
 ---
 name: requirement-clarification
 display_name: 需求澄清
-version: 5.3.7
+version: 5.3.8
 description: Use when a requirement is ambiguous, incomplete, conflicts with project facts, or contains material decisions with prerequisites.
 ---
 

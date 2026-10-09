@@ -1,7 +1,7 @@
 ---
 name: tp-base-project-integration
 display_name: 项目接入维护
-version: 5.3.7
+version: 5.3.8
 description: 用于项目 Binding、入口文档同步、Content Systems override 规范化、Runtime root rebind、旧链接处置及明确授权的项目初始化。
 ---
 

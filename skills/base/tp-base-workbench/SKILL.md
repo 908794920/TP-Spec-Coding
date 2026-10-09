@@ -1,7 +1,7 @@
 ---
 name: tp-base-workbench
 display_name: 工作台维护
-version: 5.3.7
+version: 5.3.8
 description: 用于本地工作台启动、停止、重启、实际源码与运行版本核对，以及升级后旧进程、接口或页面异常；不承担工作台功能开发。
 ---
 

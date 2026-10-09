@@ -1,7 +1,7 @@
 ---
 id: tp-product-manager
 name: tp-产品经理
-version: 5.3.7
+version: 5.3.8
 status: active
 type: workflow-role
 role: tp-product-manager

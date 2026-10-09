@@ -16,6 +16,7 @@ SOURCE_CONTRACTS = frozenset({
     "5.3.4",  # Supplied baseline; explicit existing journal-backed migration only.
     "5.3.5",  # Previous release-line input baseline; same explicit migration path only.
     "5.3.6",  # Previous release-line input baseline; same explicit migration path only.
+    "5.3.7",  # Previous release-line input baseline; same explicit migration path only.
 })
 
 
