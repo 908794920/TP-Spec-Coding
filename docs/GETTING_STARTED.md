@@ -179,16 +179,16 @@ python -m cli.main base resolve --workspace-root "<project-root>"
 
 ### 跨版本更新至当前契约
 
-当前活动契约为 `5.3.7`。仅替换 Base 源码不会自动更新 project/task 的 `base_version`，也不会补造执行、Work、知识或历史验证记录。外部 `skill list/read` 和能力页面查询本身不要求迁移业务 Task；需要继续写入旧契约项目或在途任务时，才按授权走既有显式路径。
+当前活动契约为 `5.3.8`。仅替换 Base 源码不会自动更新 project/task 的 `base_version`，也不会补造执行、Work、知识或历史验证记录。外部 `skill list/read` 和能力页面查询本身不要求迁移业务 Task；需要继续写入旧契约项目或在途任务时，才按授权走既有显式路径。
 
 先备份实际 Runtime、任务工件及机器配置，并只读核对：
 
 ```text
-python -m cli.main project upgrade-contract --id <PROJECT> --to 5.3.7 --db <DB-PATH> --dry-run
+python -m cli.main project upgrade-contract --id <PROJECT> --to 5.3.8 --db <DB-PATH> --dry-run
 python -m cli.main task migration-plan --project <PROJECT> --db <DB-PATH>
 ```
 
-确认项目/任务身份、原契约、schema、工件及真实迁移范围后，由用户或已获授权的执行者去掉 `--dry-run` 切换项目契约，再逐个执行 `task migrate --task <TASK-ID> --task-dir <TASK-DIR> --to 5.3.7 --db <DB-PATH>`。项目升级不连带迁移 Task；终态/已退役任务不迁移。支持的来源由 `cli/migrations/__init__.py` 的显式清单决定，不手改版本字段绕过检查，也不使用一个合成夹具的成功结果替代现场数据验收。
+确认项目/任务身份、原契约、schema、工件及真实迁移范围后，由用户或已获授权的执行者去掉 `--dry-run` 切换项目契约，再逐个执行 `task migrate --task <TASK-ID> --task-dir <TASK-DIR> --to 5.3.8 --db <DB-PATH>`。项目升级不连带迁移 Task；终态/已退役任务不迁移。支持的来源由 `cli/migrations/__init__.py` 的显式清单决定，不手改版本字段绕过检查，也不使用一个合成夹具的成功结果替代现场数据验收。
 
 外部来源目录和 `external-skills.yaml` 不在 Base 发布面；源码升级、模板迁移和逆向补丁都不删除或改写它们。CLI 与工作台应指向同一用户根；旧宿主会话需重新读取当前入口指令。
 

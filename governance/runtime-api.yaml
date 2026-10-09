@@ -1,14 +1,20 @@
-version: 5.3.7
+version: 5.3.8
 mode: record-first
 principle: business work first; Runtime owns bookkeeping
 daily_api:
   task_create:
-    command: tp-spec task create --id <TASK> --project <PROJECT> --risk <L0-L3> --flow <L0-L3> [--agent <ACTUAL-AGENT>] [--scaffold] --db <DB>
+    command: tp-spec task create --id <TASK> --project <PROJECT> [--workflow-mode standard|quick] [--risk <L0-L3>] [--flow <L0-L3>] [--mode-source <ACTUAL-USER-INSTRUCTION>] [--mode-source-ref <CONTEXT-REF>] [--agent <ACTUAL-AGENT>] [--scaffold] --db <DB>
     purpose: Create the Task and its lightweight coordination identity in the existing STATE NULL-to-NEW transaction.
     notes:
     - tp-spec.task-coordinator/v1 metadata uses producer task_create; the creation actor remains tp-software-lifecycle and the recorded coordinator defaults to tp-project-manager.
     - Optional agent is a real caller identifier; absent stays empty. No generated main-agent identity, mandatory plan, new phase or physical migration.
     - NOT_RECORDED describes absence of an execution plan; coordinator_source still identifies the actual creation event. Legacy markerless records retain old interpretation.
+    - Standard requires real risk/flow grades. Quick requires the actual user choice and reference; grades may remain null. Missing historical workflow_mode means standard, never an inferred quick choice.
+  task_mode_select:
+    command: tp-spec task mode-select --task <TASK> --task-dir <DIR> --workflow-mode standard|quick --mode-source <ACTUAL-USER-INSTRUCTION> --mode-source-ref <CONTEXT-REF> --request-id <ID> [--actor <ACTUAL-RECORDER>] [--risk <L0-L3>] [--flow <L0-L3>] --db <DB>
+    purpose: Append a trusted TASK_MODE_SELECTED to the current Task using existing logical-request replay; never a scope change or implicit completion.
+    notes:
+    - Current material decisions and real permission waits remain applicable. The instruction source is supplied from the actual user context by the entry point, not authenticated by matching example wording.
   task_checkpoint:
     command: tp-spec task checkpoint --task <TASK> --task-dir <DIR> --actor <ROLE>
       --phase <PHASE> --summary <TEXT> [--evidence evidence/... ] [--request-id <ID>] [--collect <OUTPUT>] [--result-report <REPORT>] [--recorded-result <EVENT-ID>]
@@ -73,17 +79,22 @@ daily_api:
     - No event, checkpoint, Change Set, cleanup, test or Knowledge request is created by preflight. Stable facts and applicable results are reused.
     - One SQLite read snapshot does not lock product/evidence files; formal writes recheck their applicable inputs. See docs/agents/tp-software-lifecycle.md.
   workflow_confirm:
-    command: tp-spec workflow confirm --task <TASK> --task-dir <DIR>
-    purpose: human_owner-only audited confirmation for the currently bound ordinary(each_stage) or material workflow boundary.
+    command: tp-spec workflow confirm --task <TASK> --task-dir <DIR> [--user-source <ACTUAL-OWNER-INSTRUCTION>] [--user-source-ref <CONTEXT-REF>] [--request-id <ID>] --db <DB>
+    purpose: Audited current material decision or explicit quick completion instruction with actual user source.
     notes:
-    - It records WORKFLOW_CONFIRMATION with confirmation_kind=ordinary|material, bound to source event/digest + target role/stage/mode; it is not a business DECISION.
+    - New confirmation_kind is material|completion. Historical ordinary is readable; new each_stage input is retired. Completion requires --user-source, --user-source-ref and --request-id, bound to current delivery, ChangeSet, subject and mode source.
     - A short Wake Prompt is returned only after the bound confirmation is accepted.
+  workflow_retire_confirmation_wait:
+    command: tp-spec workflow retire-confirmation-wait --task <TASK> --task-dir <DIR> [--actor tp-software-lifecycle] --db <DB> [--json]
+    purpose: Resume only the currently bound and trusted historical EACH_STAGE_POLICY ordinary wait, recording policy retirement without fabricating human approval.
+    notes:
+    - Material, permission, completion and unrelated waits are not retired. Persisted known each_stage preferences read as material with migration metadata; writing material performs the actual migration and preserves unrelated settings.
   task_delivery_converge:
     command: tp-spec task delivery-converge --task <TASK> --task-dir <DIR> --delivery-status READY|BLOCKED --reason <TEXT> ...
     purpose: L0-L3 structured Delivery convergence with current product binding and the professional verification/review results required by the effective route; inapplicable results are NOT_REQUIRED, never synthetic PASS.
     notes:
     - A plain delivery checkpoint never satisfies this contract.
-    - New READY Delivery records adopt tp-spec.closeout/v1 and always emit or reuse a task-input-bound KNOWLEDGE_CONVERGENCE_REQUEST, including when knowledge_signals is empty. Delivery cannot sign a Knowledge disposition.
+    - Standard READY Delivery emits or reuses a task-input-bound KNOWLEDGE_CONVERGENCE_REQUEST. Quick uses applicable actual checks/disclosures and emits no compulsory Knowledge request; READY remains ACTIVE pending explicit owner completion.
     - A current Request without a trusted Result is routed as dispatch_effect(tp-knowledge); tp-spec.task-learning/v1 checks effective Task/step/Work input coverage, targeted Knowledge handling and Memory assessment.
     - Stable inputs reuse valid Delivery/Request/Result. Changed relevant inputs require reassessment; markerless historical deliveries retain legacy interpretation without fabricating a past assessment or retrofitting terminal Tasks.
     - Task-bound Context Usage may be attached with --context-usage-json; invalid telemetry is WARN+DROP and never changes the operation result.
@@ -113,7 +124,7 @@ daily_api:
 project_api:
   project_bootstrap_check: tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only
   project_bootstrap: tp-spec project bootstrap --id <PROJECT> --root <ROOT>
-  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.3.7
+  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.3.8
 errors:
   PROJECT_BOOTSTRAP_AVAILABLE: read-only bootstrap check found a pristine project that may be initialized only after explicit human_owner action
   PROJECT_NOT_INITIALIZED: project ledger is not initialized; run project bootstrap/init first

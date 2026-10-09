@@ -43,7 +43,10 @@ def build_delivery_detail(*, task_id: str, transaction_id: str, flush_id: str,
                           responsibility: Optional[str] = None,
                           delivery_mode: str = "full", applicability: Optional[Dict[str, str]] = None,
                           acceptance_digest: str = "",
-                          acceptance_evidence_items: Optional[Iterable[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                          acceptance_evidence_items: Optional[Iterable[Dict[str, Any]]] = None,
+                          actor: str = 'tp-integration-engineer',
+                          unverified_items: Optional[Iterable[str]] = None,
+                          mode_source_digest: str = '') -> Dict[str, Any]:
     delivery_status0 = str(delivery_status or '').upper()
     detail: Dict[str, Any] = {
         'schema': event_contract.EVENT_SCHEMA,
@@ -54,7 +57,7 @@ def build_delivery_detail(*, task_id: str, transaction_id: str, flush_id: str,
         'producer': 'delivery_converge',
         'schema_version': schema_version,
         'task_id': task_id,
-        'actor_role': 'tp-integration-engineer',
+        'actor_role': actor,
         'created_at': created_at,
         'verification_event_id': int(verification_event_id),
         'verification_subject_digest': str(verification_subject_digest),
@@ -69,6 +72,8 @@ def build_delivery_detail(*, task_id: str, transaction_id: str, flush_id: str,
         'acceptance_evidence_items': list(acceptance_evidence_items or []),
         'reason': str(reason or '').strip(),
     }
+    if delivery_mode == 'quick':
+        detail.update(unverified_items=list(unverified_items or []), mode_source_digest=mode_source_digest)
     if applicability is not None:
         detail["applicability"] = dict(applicability)
     for key, values in {
@@ -105,13 +110,13 @@ def _checked_evidence_items(task_dir: Path, values: Optional[Iterable[str]]) -> 
     return paths, items
 
 
-def _latest_trusted_verification(conn, task_id: str, task_dir: Path):
+def _latest_trusted_verification(conn, task_id: str, task_dir: Path, *, require_full: bool = True):
     from . import event_policies
     from .change_set import capture_change_set
     from .digest import compute_verification_subject_digest
 
     current_subject = compute_verification_subject_digest(task_dir)
-    trusted = event_policies.load_current_verification(conn, task_id, task_dir, require_full=True)
+    trusted = event_policies.load_current_verification(conn, task_id, task_dir, require_full=require_full)
     if trusted is None:
         raise ValueError('DELIVERY_REQUIRES_CURRENT_VERIFICATION_PASS')
     detail = dict(trusted.detail or {})
@@ -189,81 +194,85 @@ def _latest_trusted_code_review(conn, task_id: str, *, subject_digest: str,
 
 
 def confirm_boundary(*, task_id: str, task_dir: str, db: Optional[str] = None,
-                     confirmation_policy: Optional[str] = None) -> Dict[str, Any]:
-    from . import db as dbmod
-    from . import orchestration, record_first
+                     confirmation_policy: Optional[str] = None, user_source: Optional[str] = None,
+                     user_source_ref: Optional[str] = None, request_id: Optional[str] = None) -> Dict[str, Any]:
+    from . import db as dbmod, orchestration, record_first, recording, orchestration_policy
     from .version import active_version
-
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
-    route = orchestration.resolve_route(task_id, db_path=db_path, confirmation_policy=confirmation_policy)
-    autonomy_pending = None
-    if route.get('recommended_action') != 'await_confirmation':
-        try:
-            from . import autonomy_records
-            autonomy_pending = autonomy_records.pending_workflow_confirmation_any(task_id, db_path)
-        except Exception:
-            autonomy_pending = None
-    if autonomy_pending:
-        confirmation_reason = str(autonomy_pending.get('confirmation_reason') or '')
-        binding = autonomy_pending.get('confirmation_binding')
-    else:
-        confirmation_reason = str(route.get('confirmation_reason') or '')
-        binding = route.get('confirmation_binding')
-    if confirmation_reason not in {'EACH_STAGE_POLICY', 'MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION'}:
-        raise ValueError('workflow confirm requires an active bound ordinary/material workflow confirmation')
-    if not isinstance(binding, dict) or not binding:
-        raise ValueError('workflow confirmation binding missing')
-
     tdir = record_first._task_dir(task_dir)
+    source = orchestration_policy.user_source(user_source, user_source_ref) if user_source is not None or user_source_ref is not None else None
+    request = recording.LogicalRequest(task_id, tdir, 'workflow_confirm', {
+        'user_source': source, 'confirmation_policy': confirmation_policy,
+    }, request_id)
     conn = dbmod.connect(db_path)
     try:
+        replay = request.replay(conn)
+        if replay is not None:
+            return replay
         task = record_first._load(conn, task_id)
-        current = str(task['current_state'] or '')
-        if current in record_first.TERMINAL_STATES:
-            raise ValueError(f'terminal task cannot accept workflow confirmation: {current}')
+        if task['current_state'] in record_first.TERMINAL_STATES:
+            raise ValueError('terminal task cannot accept a new workflow confirmation')
+        route = orchestration.resolve_route(task_id, db_path=db_path, confirmation_policy=confirmation_policy, task_dir=tdir)
+        autonomy_pending = None
+        if route.get('recommended_action') != 'await_confirmation':
+            from .autonomy_records import pending_workflow_confirmation_any
+            autonomy_pending = pending_workflow_confirmation_any(task_id, db_path)
+        pending = autonomy_pending or route
+        reason = str(pending.get('confirmation_reason') or '')
+        binding = pending.get('confirmation_binding')
+        if reason not in {'MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION', 'QUICK_COMPLETION_REQUIRED'}:
+            raise ValueError('workflow confirm requires a current material/completion boundary; retired ordinary waits use retire-confirmation-wait')
+        if not isinstance(binding, dict) or not binding:
+            raise ValueError('workflow confirmation binding missing')
+        if binding.get('confirmation_kind') == 'completion' and (source is None or not request_id):
+            raise ValueError('QUICK_COMPLETION_USER_SOURCE_REQUIRED: explicit owner statement, reference and request-id required')
+        current, owner = str(task['current_state']), str(task['owner_role'])
         if current == 'BLOCKED' and not autonomy_pending:
-            raise ValueError("task is BLOCKED; use 'task resume' after the blocker is resolved")
-        now = dbmod.now_iso()
-        flush_id = f'WF-CONFIRM-{uuid.uuid4().hex}'
-        owner = str(task['owner_role'] or '')
-
+            raise ValueError('task is BLOCKED; resolve its real blocker before confirmation')
+        now, flush_id = dbmod.now_iso(), 'WF-CONFIRM-' + uuid.uuid4().hex
+        response = {'task_id': task_id, 'state': current, 'request_id': request.request_id, 'flush_id': flush_id,
+                    'user_source': source, 'confirmation_binding': binding, 'confirmation_reason': reason,
+                    'replayed': False, 'recommended_action': 'next_cycle_resume' if autonomy_pending else 'workflow_next'}
+        def recheck(dbconn):
+            if autonomy_pending:
+                from .autonomy_records import pending_workflow_confirmation_any
+                updated = pending_workflow_confirmation_any(task_id, db_path)
+                if not updated or updated.get('confirmation_binding') != binding:
+                    raise ValueError('WORKFLOW_CONFIRMATION_STALE: current active wait changed')
+            else:
+                facts = orchestration._load_task_facts(task_id, db_path, connection=dbconn, task_dir=tdir)
+                updated = orchestration.resolve_route(task_id, db_path=db_path, _facts=facts, task_dir=tdir, confirmation_policy=confirmation_policy)
+                if updated.get('recommended_action') != 'await_confirmation' or updated.get('confirmation_binding') != binding:
+                    raise ValueError('WORKFLOW_CONFIRMATION_STALE: delivery/subject/mode boundary changed')
         def writer(dbconn, transaction_id=''):
-            detail = build_confirmation_detail(
-                task_id=task_id, binding=binding, transaction_id=transaction_id,
-                flush_id=flush_id, created_at=now, schema_version=active_version(),
-            )
+            recheck(dbconn)
+            detail = build_confirmation_detail(task_id=task_id, binding=binding, transaction_id=transaction_id,
+                flush_id=flush_id, created_at=now, schema_version=active_version())
+            detail['user_source'] = source
             if autonomy_pending:
                 detail['autonomy_next_cycle_effective'] = True
                 detail['autonomy_blocked_generation'] = autonomy_pending.get('generation')
-            kind = str(binding.get('confirmation_kind') or 'ordinary')
-            dbconn.execute(
-                'INSERT INTO task_event (task_id,event_type,actor_role,reason_code,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?)',
-                (task_id, 'WORKFLOW_CONFIRMATION', 'human_owner', confirmation_reason,
-                 f"confirmed {kind} role boundary {binding['source_role']} -> {binding['target_role']}",
-                 json.dumps(detail, ensure_ascii=False), active_version(), now),
-            )
-            dbconn.execute('UPDATE task SET updated_at=? WHERE task_id=?', (now, task_id))
-
-        record_first._write_with_projection(
-            conn, tdir, task, operation='workflow_confirm', target_state=current,
-            owner_after=owner, flush_id=flush_id, writer=writer,
-            summary=f"confirmed {binding.get('confirmation_kind', 'ordinary')} role boundary {binding['source_role']} -> {binding['target_role']}",
-        )
+            errors = event_contract.validate_event_semantics('WORKFLOW_CONFIRMATION', detail)
+            if errors:
+                raise ValueError('; '.join(errors))
+            cursor = dbconn.execute('INSERT INTO task_event(task_id,event_type,actor_role,reason_code,summary,detail_json,workflow_version,created_at) VALUES(?,?,?,?,?,?,?,?)',
+                (task_id,'WORKFLOW_CONFIRMATION','human_owner',reason,
+                 'explicit user ' + binding['confirmation_kind'] + ' confirmation',json.dumps(detail,ensure_ascii=False),active_version(),now))
+            response['event_id'] = int(cursor.lastrowid)
+            detail['logical_request'] = request.detail(response)
+            dbconn.execute('UPDATE task_event SET detail_json=? WHERE id=?',(json.dumps(detail,ensure_ascii=False),cursor.lastrowid))
+            dbconn.execute('UPDATE task SET updated_at=? WHERE task_id=?',(now,task_id))
+        projection = record_first._write_with_projection(conn,tdir,task,operation='workflow_confirm',target_state=current,
+            owner_after=owner,flush_id=flush_id,writer=writer,summary='explicit user workflow confirmation',
+            logical_request=request,before_prepare=recheck)
+        if projection.get('replayed'):
+            return projection
     finally:
         conn.close()
+    resolved = orchestration.resolve_route(task_id,db_path=db_path,confirmation_policy=confirmation_policy,task_dir=tdir)
+    return {**resolved, **response, **projection, 'route': resolved,
+            'recommended_action': 'next_cycle_resume' if autonomy_pending else resolved['recommended_action']}
 
-    if autonomy_pending:
-        return {
-            'schema': 'tp-spec.workflow-route/v1', 'task_id': task_id,
-            'recommended_action': 'next_cycle_resume', 'next_cycle_effective': True,
-            'confirmation_reason': confirmation_reason, 'confirmation_binding': binding,
-            'decision_schema': 'tp-spec.workflow-decision/v1', 'decision': 'AWAIT_NEXT_CYCLE',
-            'requires_human': False, 'required_effects': [], 'reason': 'confirmed_next_cycle',
-        }
-    resolved = orchestration.resolve_route(task_id, db_path=db_path, confirmation_policy=confirmation_policy)
-    if resolved.get('recommended_action') != 'dispatch_role':
-        raise ValueError('workflow confirmation was recorded but current route no longer dispatches; re-run workflow next')
-    return resolved
 
 def _normalize_knowledge_reason_code(value: object) -> str:
     import re
@@ -402,6 +411,23 @@ def build_knowledge_request_detail(*, task_id: str, transaction_id: str, created
     )
 
 
+def validate_quick_acceptance(conn, task_id: str, task_dir: Path, *, require_completion: bool):
+    """Only real declared AC/DB/visual obligations; quick never creates empty ones."""
+    path = task_dir / 'acceptance.md'
+    if not path.is_file():
+        return None
+    from . import yaml_checks, record_first
+    from .delivery_contract import database_disposition
+    acceptance = yaml_checks.check_acceptance_yaml(path.read_text(encoding='utf-8-sig'),
+        enforce_completion=require_completion, allow_human_pending=not require_completion)
+    issues = list(acceptance.issues) + record_first.acceptance_truth_issues(conn, task_id, task_dir)
+    database_issues, _ = database_disposition(task_dir, acceptance)
+    issues.extend(database_issues)
+    if issues:
+        raise ValueError('QUICK_DECLARED_OBLIGATION_PENDING: ' + '; '.join(dict.fromkeys(issues)))
+    return acceptance
+
+
 def _delivery_prerequisites(conn, task_id: str, task_dir: Path, db_path: str):
     """Resolve actual duties once; L0/L1 don't inherit the full L2/L3 review chain."""
     from . import orchestration, record_first
@@ -415,22 +441,33 @@ def _delivery_prerequisites(conn, task_id: str, task_dir: Path, db_path: str):
         raise ValueError("DELIVERY_APPLICABILITY_UNKNOWN: current routing did not resolve obligations")
     level = route["effective_level"]
     need_verify, need_review = bool(selected & {"verification", "review"}), "review" in selected
+    quick = route.get('workflow_mode') == 'quick'
+    if quick:
+        if route.get('next_stage') in {'development', 'architecture'} or route.get('confirmation_reason') == 'MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION':
+            raise ValueError('QUICK_UNRESOLVED_RESULT: ' + ','.join(route.get('reason_codes') or []))
+        need_verify = conn.execute("SELECT 1 FROM task_event WHERE task_id=? AND event_type='VERIFICATION_COMPLETED' LIMIT 1", (task_id,)).fetchone() is not None
+        need_review = False
     verification = review = None
     development = record_first._latest_development_change_set(conn, task_id)
     if not development or not development["repo_roots"]:
         raise ValueError("DELIVERY_CHANGE_SET_REQUIRED: a development candidate must be recorded")
-    require_full_scope(conn, task_id, development["detail"], development_event_id=development["event_id"])
+    if quick:
+        from .delivery_contract import require_scope_checkpoint
+        require_scope_checkpoint(conn, task_id, development_event_id=development['event_id'])
+    else:
+        require_full_scope(conn, task_id, development["detail"], development_event_id=development["event_id"])
     snapshot = capture_change_set(development["repo_roots"])
     if not same_bound_product_content(development["detail"], snapshot):
         raise ValueError("DELIVERY_CHANGE_SET_MISMATCH: current product differs from development candidate")
     subject = compute_verification_subject_digest(task_dir)
     if need_verify:
-        verification, subject, snapshot, _ = _latest_trusted_verification(conn, task_id, task_dir)
+        verification, subject, snapshot, _ = _latest_trusted_verification(conn, task_id, task_dir, require_full=not quick)
     if need_review:
         review = _latest_trusted_code_review(conn, task_id, task_dir=task_dir, subject_digest=subject,
             change_set_id=snapshot["content_digest"], verification_event_id=int(verification.row["id"]))
     return {"verification": verification, "review": review, "subject_digest": subject,
-            "snapshot": snapshot, "mode": "full" if level in {"L2", "L3"} else "lightweight",
+            "snapshot": snapshot, "mode": 'quick' if quick else ("full" if level in {"L2", "L3"} else "lightweight"),
+            'mode_source_digest': (route.get('mode_source') or {}).get('digest', ''),
             "applicability": {"verification": "REQUIRED" if need_verify else "NOT_REQUIRED",
                               "review": "REQUIRED" if need_review else "NOT_REQUIRED"}}
 
@@ -444,6 +481,7 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
                            responsibility: Optional[str] = None,
                            residual_risks: Optional[Iterable[str]] = None,
                            context_usage: Optional[Iterable[Dict[str, Any]]] = None,
+                           actor: Optional[str] = None, unverified_items: Optional[Iterable[str]] = None,
                            db: Optional[str] = None) -> Dict[str, Any]:
     """Record/reuse the same verified delivery, without re-running professional work.
 
@@ -473,6 +511,9 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
         raise ValueError("invalid Delivery Result: " + "; ".join(errors))
     paths = list(evidence or [])
     risks = list(residual_risks or [])
+    unverified = list(unverified_items or [])
+    if any(not isinstance(item, str) or not item.strip() for item in unverified):
+        raise ValueError('unverified_items must contain actual non-empty untested boundaries')
     if any(not isinstance(v, str) or not v.strip() for v in risks):
         raise ValueError("residual_risks must contain non-empty strings")
     usage, warnings = usage_mod.normalize_context_usage(context_usage)
@@ -482,6 +523,15 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
     conn = dbmod.connect(db_path)
     try:
         task = record_first._load(conn, task_id)
+        from .orchestration_policy import resolve_task_mode, continuous_actor_ids
+        events = conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (task_id,)).fetchall()
+        mode = resolve_task_mode(dict(task), events)
+        if mode['issues']:
+            raise ValueError('; '.join(mode['issues']))
+        quick = mode['workflow_mode'] == 'quick'
+        actor0 = actor or (task['owner_role'] if quick else 'tp-integration-engineer')
+        if (not quick and actor0 != 'tp-integration-engineer') or (quick and actor0 not in continuous_actor_ids(dict(task), events)):
+            raise ValueError('DELIVERY_ACTOR_INVALID: use the actual quick executor or Integration owner')
         if task["current_state"] in record_first.TERMINAL_STATES or task["current_state"] == "BLOCKED":
             raise ValueError(f"task cannot accept delivery result in {task['current_state']}")
         now, flush_id = dbmod.now_iso(), f"DELIVERY-{uuid.uuid4().hex}"
@@ -506,11 +556,14 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
                 problems.extend(f"WORK_PENDING: {w['item_id']}" for w in works["items"] if w["status"] != "COMPLETED")
                 if problems:
                     raise ValueError("; ".join(problems))
-                record_first.validate_final_acceptance(dbconn, task_id, tdir)
+                if quick:
+                    validate_quick_acceptance(dbconn, task_id, tdir, require_completion=False)
+                else:
+                    record_first.validate_final_acceptance(dbconn, task_id, tdir)
             from .delivery_contract import acceptance_evidence_items
             # BLOCKED can report an incomplete matrix; READY binds its actual
             # positive claims and executed SQL/results, including implicit refs.
-            acceptance_items = acceptance_evidence_items(tdir) if status == "READY" else []
+            acceptance_items = acceptance_evidence_items(tdir) if status == "READY" and (tdir / 'acceptance.md').is_file() else []
             args = dict(task_id=task_id, flush_id=flush_id, created_at=now, schema_version=active_version(),
                 verification_event_id=int(verification.row["id"]) if verification else 0,
                 verification_subject_digest=prerequisites["subject_digest"],
@@ -521,12 +574,14 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
                 repo_snapshot={"before_head": before_head, "after_head": after_head, "merge_commit": merge_commit},
                 recovery_condition=recovery_condition, blocker_kind=blocker_kind, responsibility=responsibility,
                 delivery_mode=prerequisites["mode"], applicability=prerequisites["applicability"],
+                actor=actor0, unverified_items=unverified,
+                mode_source_digest=prerequisites['mode_source_digest'],
                 acceptance_digest=compute_text_artifact_file_digest(tdir / "acceptance.md"),
                 acceptance_evidence_items=acceptance_items)
             preview = build_delivery_detail(transaction_id="preview", **args)
             request = _task_knowledge_request_input(dbconn, task_id=task_id,
                 verification_detail=dict(verification.detail) if verification else {},
-                delivery_evidence=evidence_paths, task_dir=tdir, delivery_detail=preview) if status == "READY" else None
+                delivery_evidence=evidence_paths, task_dir=tdir, delivery_detail=preview) if status == "READY" and not quick else None
             stable = {k: v for k, v in preview.items() if k not in {
                 "created_at", "flush_id", "transaction_id", "context_usage"}}
             # Knowledge source contents also participate in delivery-request reuse.
@@ -546,10 +601,10 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
         def replay(dbconn, current_digest):
             from .workflow_controls import trusted_event_detail
             row = dbconn.execute("SELECT * FROM task_event WHERE task_id=? AND event_type='DELIVERY_RESULT' "
-                                 "AND actor_role='tp-integration-engineer' ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+                                 "ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
             if row is None:
                 return None
-            detail = trusted_event_detail(dict(row), event_type="DELIVERY_RESULT", producer="delivery_converge", actor="tp-integration-engineer")
+            detail = trusted_event_detail(dict(row), event_type="DELIVERY_RESULT", producer="delivery_converge", actor=actor0)
             if detail is None or validate_delivery_result(detail) or detail.get("delivery_input_digest") != current_digest:
                 return None
             from .delivery_contract import delivery_evidence_matches
@@ -583,7 +638,7 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
             # Knowledge execution or Memory persistence merely from dispatching it.
             cursor = dbconn.execute(
                 'INSERT INTO task_event (task_id,event_type,from_stage,to_stage,actor_role,reason_code,summary,detail_json,evidence_path,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-                (task_id, 'DELIVERY_RESULT', task['current_stage'], 'delivery', 'tp-integration-engineer', status,
+                (task_id, 'DELIVERY_RESULT', task['current_stage'], 'delivery', actor0, status,
                  f"delivery status: {status} — {detail['reason']}", json.dumps(detail, ensure_ascii=False),
                  (detail.get('evidence') or [None])[0], active_version(), now))
             eid = int(cursor.lastrowid)
@@ -602,10 +657,10 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
             written.update(response, knowledge_request_event_id=request_id, delivery_event_id=eid)
             detail["receipt"] = dict(written)
             dbconn.execute("UPDATE task_event SET detail_json=? WHERE id=?", (json.dumps(detail, ensure_ascii=False), eid))
-            dbconn.execute("UPDATE task SET current_state='ACTIVE', current_stage='delivery', owner_role='tp-integration-engineer', updated_at=? WHERE task_id=?", (now, task_id))
+            dbconn.execute("UPDATE task SET current_state='ACTIVE', current_stage='delivery', owner_role=?, updated_at=? WHERE task_id=?", (actor0, now, task_id))
 
         projection = record_first._write_with_projection(conn, tdir, task, operation="delivery_converge",
-            target_state="ACTIVE", owner_after="tp-integration-engineer", flush_id=flush_id, writer=writer,
+            target_state="ACTIVE", owner_after=actor0, flush_id=flush_id, writer=writer,
             summary=f"delivery status: {status}", before_prepare=recheck)
         return projection if projection.get("replayed") else {**written, **projection}
     finally:

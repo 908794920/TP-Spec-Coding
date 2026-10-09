@@ -294,14 +294,12 @@ def _has_arch_review_event(conn, task_id: str) -> bool:
     return _trusted_arch_pass(conn, task_id) is not None
 
 
-def _design_digest(task_dir: Path) -> str:
+def _design_digest(task_dir: Path, design_inputs=None) -> str:
     """当前设计 digest（受评审内容指纹）。
 
-    Third Hardening（P0-2）：统一为 ``cli.digest.compute_architecture_subject_digest``
-    （含 task/knowledge/clarifications/decisions/test-guide/acceptance），
-    与 review record 使用同一算法；排除 architecture-review.md 与 implementation.md。
+    复用单一摘要实现和 Review 事件已绑定的实际输入集合，不重新猜受审范围。
     """
-    return compute_architecture_subject_digest(task_dir)
+    return compute_architecture_subject_digest(task_dir, design_inputs=design_inputs)
 
 
 def _latest_arch_pass_digest(conn, task_id: str) -> Optional[str]:
@@ -515,7 +513,20 @@ def _check_architecture_review(task_dir: Path, conn, task_id: str, issues: List[
         return
     # 完整受信链：producer/schema/transaction_id + artifact digest + subject digest
     # + kind + 结构化 evidence（Fourth Hardening P0-2：证据删除/替换使 PASS 失效）
-    current_subject = _design_digest(task_dir)
+    detail = {}
+    if row["detail_json"]:
+        try:
+            parsed = json.loads(row["detail_json"])
+            detail = parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            pass
+    try:
+        current_subject = _design_digest(task_dir, detail.get("design_inputs"))
+    except (OSError, UnicodeError, ValueError, TypeError) as exc:
+        issues.append(ValidationIssue(code=ARCHITECTURE_REVIEW_STALE,
+            message=f"architecture review inputs unavailable: {exc}",
+            artifact="architecture-review.md", field="design_inputs"))
+        return
     trusted = _trusted_arch_pass(
         conn, task_id,
         artifact_path=task_dir / "architecture-review.md",
@@ -525,22 +536,12 @@ def _check_architecture_review(task_dir: Path, conn, task_id: str, issues: List[
     if trusted is not None:
         return
     # ---- 差异诊断（P0-1/P0-2/P1-1） ----
-    detail = {}
-    if row["detail_json"]:
-        try:
-            parsed = json.loads(row["detail_json"])
-            detail = parsed if isinstance(parsed, dict) else {}
-        except json.JSONDecodeError:
-            detail = {}
     producer = detail.get("producer") or detail.get("source_command") or ""
     tx_id = detail.get("transaction_id")
     kind_ok = str(detail.get("review_kind") or "").upper() == "ARCHITECTURE"
     declared_artifact = detail.get("artifact_digest") or ""
-    import hashlib as _hl
-    try:
-        current_artifact = _hl.sha256((task_dir / "architecture-review.md").read_bytes()).hexdigest()
-    except OSError:
-        current_artifact = ""
+    from .digest import compute_text_artifact_file_digest
+    current_artifact = compute_text_artifact_file_digest(task_dir / "architecture-review.md")
     declared_subject = detail.get("subject_digest") or detail.get("design_digest") or ""
     if not producer or not tx_id:
         issues.append(ValidationIssue(

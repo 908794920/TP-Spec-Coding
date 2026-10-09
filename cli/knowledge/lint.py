@@ -20,11 +20,33 @@ from .common import (
     find_source_ids,
     load_project_registry,
     load_source_registry,
+    source_path_ids,
     read_jsonl,
+    effective_project_identity,
 )
 
 ALLOWED_LINK_PREFIXES = ("10-projects/", "20-shared/", "90-archive/")
 GENERATED_SEGMENTS = {"generated-indexes", "bases"}
+
+
+def unclosed_fences(body: str, start_line: int = 1) -> List[int]:
+    """CommonMark fence delimiters: character, length, indent and info string.
+
+    A shorter or different delimiter inside an open fence is literal content.
+    Four-space indented code and inline backticks are not fence openers.
+    """
+    fence, opening = "", 0
+    for number, line in enumerate(body.splitlines(), start_line):
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if not marker:
+            continue
+        delimiter, tail = marker.groups()
+        if fence:
+            if delimiter[0] == fence[0] and len(delimiter) >= len(fence) and not tail.strip():
+                fence = ""
+        elif not (delimiter[0] == "`" and "`" in tail):
+            fence, opening = delimiter, number
+    return [opening] if fence else []
 
 
 def load_relation_types() -> Dict[str, Dict[str, Any]]:
@@ -85,6 +107,9 @@ def lint_canonical_note(cfg, note: Dict[str, Any]) -> Dict[str, Any]:
     def add(target: List[Dict[str, Any]], rule: str, location: str, message: str) -> None:
         target.append({"path": note.get("rel_path", ""), "rule_id": rule, "location": location, "message": message})
 
+    for line in unclosed_fences(note.get("body") or "", note.get("body_start_line") or 1):
+        add(violations, "K022", f"L{line}", "unclosed Markdown code fence; following facts may be inside code")
+
     fm = note.get("frontmatter")
     if not isinstance(fm, dict):
         add(violations, "K001", "frontmatter", note.get("parse_error") or "frontmatter missing")
@@ -97,6 +122,8 @@ def lint_canonical_note(cfg, note: Dict[str, Any]) -> Dict[str, Any]:
         project = str(fm.get("project") or "")
         if project not in registry_ids and project not in {str(x.get("id") or "") for x in (_registry_data.get("shared_scopes") or []) if isinstance(x, dict)}:
             add(violations, "K004", "project", f"project {project!r} not registered")
+        elif not effective_project_identity(cfg, project, relative=note.get("rel_path", ""), scope="canonical", registry_data=_registry_data)["project"]:
+            add(violations, "K004", "path/project", "canonical declaration conflicts with its registered physical scope")
         kind = str(fm.get("kind") or "")
         if kind not in KINDS:
             add(violations, "K005", "kind", f"unknown kind: {kind!r}")
@@ -163,6 +190,7 @@ def lint_knowledge(cfg) -> Dict[str, Any]:
     registry_data, registry_ids = load_project_registry(cfg)
     rels = load_relation_types()
     source_registry = load_source_registry(cfg)
+    source_paths = source_path_ids(cfg)
     source_ids = find_source_ids(sources, source_registry)
 
     violations: List[Dict[str, Any]] = []
@@ -208,6 +236,8 @@ def lint_knowledge(cfg) -> Dict[str, Any]:
     traceable = 0
 
     for note in canonical:
+        for line in unclosed_fences(note.get("body") or "", note.get("body_start_line") or 1):
+            add(violations, note, "K022", f"L{line}", "unclosed Markdown code fence; following facts may be inside code")
         fm = note.get("frontmatter")
         if not isinstance(fm, dict):
             add(violations, note, "K001", "frontmatter", note.get("parse_error") or "frontmatter missing")
@@ -223,6 +253,8 @@ def lint_knowledge(cfg) -> Dict[str, Any]:
         project = str(fm.get("project") or "")
         if project not in registry_ids:
             add(violations, note, "K004", "project", f"project {project!r} not registered")
+        elif not (note.get("project_identity") or {}).get("project"):
+            add(violations, note, "K004", "path/project", "canonical declaration conflicts with its registered physical scope")
         kind = str(fm.get("kind") or "")
         if kind not in KINDS:
             add(violations, note, "K005", "kind", f"unknown kind: {kind!r}")
@@ -315,6 +347,13 @@ def lint_knowledge(cfg) -> Dict[str, Any]:
                 p = p.with_suffix(".md")
             if not p.is_file():
                 add(violations, note, "K011", "wikilink", f"broken wikilink: {target}")
+
+    for note in sources:
+        identity = note.get("project_identity") or {}
+        if not identity.get("project"):
+            add(advisories, note, "K023", "project", "source identity requires reconciliation: " + str(identity.get("status") or "UNKNOWN"))
+        if not note.get("id") and len(source_paths.get(note["rel_path"], [])) != 1:
+            add(advisories, note, "K024", "id", "source has no unique local stable ID; dependency coverage is unknown")
 
     for nid in sorted(_cycles(part_edges)):
         note = id_map.get(nid)

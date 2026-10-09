@@ -16,6 +16,7 @@
 - semantic/structural 变化没有当前 rebuild plan；
 - Mass Change Guard 未显式复核；
 - Mermaid 代码块未闭合。
+- 正文暴露已确认的密码、绕过值或密钥类字面值；输出仅类别/位置/掩码，定向脱敏 Wiki 副本并保留 source cite。内网 IP、字段名、参数与脱敏占位符不属于这一凭据硬门。
 
 任何 L1 ERROR 都禁止 `snapshot-commit`。
 
@@ -59,6 +60,8 @@
 日常增量必须审计**全部受影响文档**，再加少量高风险抽样；不得因为受影响文档多就截断成样本后推进 baseline。首次接管/首次建立可信 baseline 时执行 `initial-full-repo`，对 manifest 中全部 durable Wiki 文档做一次完整语义迁移审计。风险抽样只能补充，不能替代 mandatory scope。
 
 若 audit plan 含 topology review，`audit-record PASS` 必须显式确认已逐项核查 topology；未做不得写 PASS。
+
+`audit-record --claims-file <JSON>` 可保留实际检查的代表断言关联。JSON 为列表，各项关联实际审计的 `document`，可声明文档行号、简短断言及 `evidence` 源文件/行号；source/subject 默认继承本次已验证身份，显式错版本或越界位置不得作为当前依据。判断理由可复用 summary，不强制每页或每条填写固定七字段。基线保留 summary、audit_scope、确定性 plan 的选择理由/覆盖、已提交 claims 与证据限制；清理临时回执不丢失这些信息。旧缺信息保持历史限制，不补造逐句轨迹，结构关联通过也不保证语义判断正确。
 
 L4 使用**对抗式语义检查**，不是把生成结果顺读一遍。首次 clean build 在进入 L4 前还必须通过独立的 `FIRST_BUILD_READINESS`：默认 Effective Wiki Coverage ≥95%；这不是 L1-L3 coverage Gate，也不要求日常维护永远 95%+，只是防止首次半成品被当作可信 baseline。
 

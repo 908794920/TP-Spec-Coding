@@ -1,7 +1,7 @@
 ---
 id: tp-code-reviewer
 name: tp-代码审查员
-version: 5.3.7
+version: 5.3.8
 status: active
 type: workflow-role
 role: tp-code-reviewer

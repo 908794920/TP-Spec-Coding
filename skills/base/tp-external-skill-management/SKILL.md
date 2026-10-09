@@ -1,7 +1,7 @@
 ---
 name: tp-external-skill-management
 display_name: 自定义 SKILL 管理
-version: 5.3.7
+version: 5.3.8
 description: 用于 TP-Spec 用户级外部方法包的明确来源导入、更新、启停、移除、关联和可用性核验；不管理宿主插件或业务项目 Skill，不自动执行包内脚本。
 ---
 

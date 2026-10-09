@@ -32,3 +32,6 @@ rules:
   K019: { gate: block, class: INTEGRITY } # project-registry schema
   K020: { gate: block, class: INTEGRITY } # source-registry schema
   K021: { gate: block, class: INTEGRITY } # registered content_path 不存在
+  K022: { gate: block, class: INTEGRITY } # 明确未闭合 Markdown 围栏
+  K023: { gate: backlog, class: LEGACY_COMPATIBILITY } # source 身份待核对，不跨项目猜归属
+  K024: { gate: backlog, class: LEGACY_COMPATIBILITY } # 旧 source 无 stable ID，不能宣称依赖全覆盖

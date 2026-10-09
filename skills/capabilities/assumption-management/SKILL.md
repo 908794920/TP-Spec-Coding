@@ -1,7 +1,7 @@
 ---
 name: assumption-management
 display_name: 假设管理
-version: 5.3.7
+version: 5.3.8
 description: Use when a task relies on inferred business, technical, data, permission, compatibility, or risk facts. Keep assumptions explicit, evidence-linked, and unable to silently become confirmed facts.
 ---
 

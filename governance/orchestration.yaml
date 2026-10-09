@@ -1,10 +1,10 @@
-version: "5.3.7"
+version: "5.3.8"
 entry_role: tp-software-lifecycle
 level_resolution:
   rule: MAX_RISK_FLOW
 confirmation:
   default_policy: material
-  supported_policies: [material, each_stage]
+  supported_policies: [material]
   user_preference_path: ~/.tp-spec/preferences.yaml
 runtime:
   new_public_states: false
@@ -58,8 +58,9 @@ presentation:
     none: {label: 无后续动作, description: 当前任务不需要继续调度。}
     task_resume_after_resolution: {label: 解除阻塞后恢复, description: 先解决当前阻塞，再恢复任务。}
   confirmations:
-    EACH_STAGE_POLICY: {label: 等待阶段确认, description: 用户配置要求角色/阶段边界逐次确认。}
+    EACH_STAGE_POLICY: {label: 旧阶段确认（已退役）, description: 历史普通策略等待须经可信来源核验后正式恢复。}
     MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION: {label: 等待架构实施确认, description: L2/L3 从架构进入实现前需要重要决策确认。}
+    QUICK_COMPLETION_REQUIRED: {label: 已交付，待用户结单, description: 技术结果与代码交付已记录，仍需绑定当前交付的明确用户结单指令。}
 conditional_roles:
   - role: tp-ux-designer
     trigger: ux_design

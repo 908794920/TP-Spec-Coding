@@ -8,7 +8,7 @@ import re
 import sqlite3
 import time
 
-from .common import parse_frontmatter
+from .common import parse_frontmatter, effective_project_identity
 from .documents import document_path, find_document, metadata, public_document, resolve_scope
 from . import telemetry
 
@@ -116,7 +116,11 @@ def _text(cfg, row):
         if (after.st_size, after.st_mtime_ns) != (opened.st_size, opened.st_mtime_ns):
             raise telemetry.KnowledgeError("KNOWLEDGE_DOCUMENT_CHANGED_DURING_READ")
     fm, _, _, _ = parse_frontmatter(content)
-    if fm and fm.get("project") and str(fm["project"]) != row["project"]:
+    registered = metadata(row).get("registered_conversion") or {}
+    declared_project = (fm or {}).get("project") or (registered.get("project") if row["rel_path"].startswith("@converted/") else "")
+    identity = effective_project_identity(cfg, str(declared_project or ""),
+                                          relative=row["rel_path"], scope=row["scope"])
+    if not identity["project"] or identity["project"] != row["project"]:
         raise telemetry.KnowledgeError("KNOWLEDGE_DOCUMENT_SCOPE_CHANGED")
     if row["scope"] == "canonical" and fm and fm.get("id") and str(fm["id"]) != row["canonical_id"]:
         raise telemetry.KnowledgeError("KNOWLEDGE_DOCUMENT_ID_CHANGED")

@@ -1,7 +1,7 @@
 ---
 name: security-analysis
 display_name: 安全分析与核验
-version: 5.3.7
+version: 5.3.8
 description: 认证授权、敏感数据或信任边界风险触发时使用；区分发现证据与人工行为变更授权。
 ---
 

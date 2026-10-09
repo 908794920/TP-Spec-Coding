@@ -2,6 +2,7 @@ import { Alert, Button, Typography } from 'antd';
 import { record, records, stateLabel, valueText } from '../facts';
 import type { CloseoutData, Envelope, ReadState } from '../types';
 import { Disclosure, Fields, Problems, ReadStatus, Section } from './Facts';
+import { QuickWorkflowSummary } from './QuickWorkflowSummary';
 
 export function CloseoutPanel({ read, requested, onRequest, taskRevision }: {
   read: ReadState<Envelope<CloseoutData>>; requested: boolean; onRequest: () => void; taskRevision?: string;
@@ -19,9 +20,10 @@ export function CloseoutPanel({ read, requested, onRequest, taskRevision }: {
       {historical && <Alert type="warning" showIcon title="以下是上次预检，不作为当前就绪结论"
         description={mismatch ? '预检与任务的账本观察版本不同，请刷新任务并重新读取预检。' : '刷新尚未完成或读取失败；保留上次结果与原读取时间。'}/>}
       <Problems items={data.problems}/>
+      {(data.workflow_mode === 'quick' || route.workflow_mode === 'quick') && <QuickWorkflowSummary workflow={data.quick_status ? data : route} terminal={data.already_terminal === true}/>}
       <p className="muted">{stateLabel('task', data.state)}</p>
       {data.already_terminal === true
-        ? <Alert type="info" showIcon title={`已记录终态：${stateLabel('task', data.state)}`} description="只读返回原终态，不重复结单、不追补新义务，也未重新验证历史交付。"/>
+        ? <Alert type="info" showIcon title={data.retired === true ? `已退休 · 最后正式状态：${stateLabel('task', data.state)}` : `已记录终态：${stateLabel('task', data.state)}`} description="只读返回历史事实，不重复结单、不追补新义务，也未重新验证历史交付。"/>
         : !historical && (data.ready === true
           ? <Alert type="info" showIcon title="本次预检允许 Complete（尚未执行结单）"/>
           : data.ready === false
@@ -44,7 +46,7 @@ export function CloseoutPanel({ read, requested, onRequest, taskRevision }: {
       </Disclosure>
       <Disclosure label="验收原始问题（可能与检查项重复）"><Fields value={{ acceptance_issues: data.acceptance_issues }}/></Disclosure>
       <Fields value={{ source: data.source, coverage_note: data.coverage_note,
-        effective_level: data.effective_level, included_stages: data.included_stages,
+        ...(data.workflow_mode === 'quick' || route.workflow_mode === 'quick' ? { workflow_mode: '快速开发' } : { effective_level: data.effective_level }), included_stages: data.included_stages,
         responsibility: route.next_responsibility ?? route.role_id, waiting: record(route.context).waiting,
         blocker: route.blocker, reason_codes: route.reason_codes }} labels={{ source: '来源', coverage_note: '覆盖边界',
           effective_level: '统一有效等级', included_stages: '本任务适用步骤',

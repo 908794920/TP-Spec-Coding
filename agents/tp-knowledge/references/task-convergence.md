@@ -1,14 +1,14 @@
 # Task 知识与记忆收敛
 
-适用：新交付 Request 的 `learning_schema=tp-spec.task-learning/v1`。
+适用：standard 新交付 Request 的 `learning_schema=tp-spec.task-learning/v1`。quick 不自动创建该 Request；用户另行明确提出知识工作时，按本次请求及正式 Runtime 事实处理。
 本文件是正式 CLI 的输入/回执说明，不是自动提炼服务，也不是一份待复制的任务报告。
-集成交付工程师触发并核对；knowledge-capture 提炼候选，tp-knowledge 定向检索与维护，
-共享 tp-memory-capture 判断项目记忆。每个 Task 的责任链都执行，Work 只提供紧凑结果。
+集成交付工程师在 standard 交付中触发并核对；knowledge-capture 提炼候选，tp-knowledge 定向检索与维护，
+共享 tp-memory-capture 判断项目记忆。适用的 standard Task 均评估，Work 只提供紧凑结果。
 
 ## 1. 顺序与真实输入
 
 先按 `task complete --check` 处理当前已知缺口，固定最终候选并复用有效技术结果。
-`task delivery-converge ... --delivery-status READY` 为 L0–L3 创建或复用既有
+`task delivery-converge ... --delivery-status READY` 为适用的 standard L0–L3 创建或复用既有
 `KNOWLEDGE_CONVERGENCE_REQUEST`，没有 knowledge_signals 也会创建。
 轻量任务只绑定实际适用的 Verification/Review；不适用的 event ID 为 0，不伪造 PASS。
 

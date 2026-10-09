@@ -1,7 +1,7 @@
 ---
 name: tp-wiki-retrieval
 display_name: Wiki 检索与读取
-version: 5.3.7
+version: 5.3.8
 description: 用于按当前 workspace/repo 查找和读取已有 Wiki，并记录真正采用的来源；已知文档直读，不触发源码维护或为遥测创建任务。
 ---
 

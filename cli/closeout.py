@@ -32,12 +32,17 @@ def terminal_result(conn, task) -> dict[str, Any]:
 def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict[str, Any]:
     task = dict(task)
     task_id, state = task["task_id"], str(task["current_state"])
+    events = [dict(row) for row in conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (task_id,))]
+    from .orchestration_policy import resolve_task_mode
+    mode = resolve_task_mode(task, events)
+    quick = mode['workflow_mode'] == 'quick'
     result: dict[str, Any] = {"schema": SCHEMA, "task_id": task_id, "state": state,
         "ready": False, "already_terminal": state in record_first.TERMINAL_STATES,
         "checks": [], "blockers": [], "unknowns": [], "acceptance_issues": [], "route": None,
         "next_actions": [], "read_only": True,
         "consistency": "one SQLite read snapshot; files are rechecked, not filesystem-locked",
         "coverage_note": "检查已登记的步骤、范围、AC、人验、数据库操作、证据、Work、临时工件及收敛结果；未知项不会视为通过，不证明未登记业务或真实运行效果。"}
+    result.update(workflow_mode=mode['workflow_mode'], mode_source=mode['mode_source'], mode_issues=mode['issues'])
     if result["already_terminal"]:
         result.update(terminal_result(conn, task))
         result["checks"] = [{"id": "transition", "status": "TERMINAL", "required": False,
@@ -89,6 +94,9 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
         # Use the caller's explicit Task directory throughout, not a second implicit source.
         route = orchestration.resolve_route(task_id, db_path=db_path, base_root=base_root, _facts=facts, task_dir=task_dir)
         result["route"] = route
+        for key in ('workflow_mode', 'mode_source', 'applicable_obligations', 'quick_status'):
+            if key in route:
+                result[key] = route[key]
         result["effective_level"] = route["effective_level"]
         result["included_stages"] = list(route.get("included_stages") or [])
         issues = [] if (route.get("next_stage") == "complete" and route.get("recommended_action") == "task_complete") else [
@@ -129,6 +137,8 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
         from .yaml_checks import check_acceptance_yaml
         path = task_dir / "acceptance.md"
         if not path.is_file():
+            if quick:
+                return na('quick未登记额外AC；保留真实验证及未实测说明')
             raise ValueError("ACCEPTANCE_MISSING: explicit AC or no_acceptance_required declaration is needed")
         acceptance = check_acceptance_yaml(path.read_text(encoding="utf-8-sig"), enforce_completion=True, allow_human_pending=False)
         issues = list(acceptance.issues)
@@ -139,6 +149,8 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
 
     def owner_check():
         if acceptance is None:
+            if quick and not (task_dir / 'acceptance.md').is_file():
+                return na('没有登记人工验收项；结单同意不表示已人工运行')
             raise ValueError("OWNER_SCOPE_UNKNOWN: acceptance input is unreadable")
         data = event_policies.effective_owner_acceptance(conn, task_id, task_dir=task_dir)
         issues = [f"OWNER_ACCEPTANCE_PENDING: {item['ac']}" for item in acceptance.human_rows if item["verdict"] in {"PENDING", "BLOCKED"}]
@@ -151,6 +163,8 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
 
     def database_check():
         if acceptance is None:
+            if quick and not (task_dir / 'acceptance.md').is_file():
+                return na('没有数据库操作声明；模式不授予数据库动作权限')
             raise ValueError("DATABASE_SCOPE_UNKNOWN: acceptance input is unreadable")
         issues, items = delivery_contract.database_disposition(task_dir, acceptance)
         return pending(issues, operations=acceptance.database_operations, evidence_items=items)
@@ -172,7 +186,10 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
         if not same_bound_product_content(binding["detail"], snapshot):
             issues.append("CHANGE_SET_STALE: current product differs from the recorded development candidate")
         try:
-            delivery_contract.require_full_scope(conn, task_id, binding["detail"], development_event_id=int(binding["event_id"]))
+            if quick:
+                delivery_contract.require_scope_checkpoint(conn, task_id, development_event_id=int(binding['event_id']))
+            else:
+                delivery_contract.require_full_scope(conn, task_id, binding["detail"], development_event_id=int(binding["event_id"]))
         except ValueError as exc:
             issues.append(str(exc))
         return pending(issues, subject_digest=subject, change_set_id=snapshot["content_digest"],
@@ -181,6 +198,8 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
 
     def visual_check():
         if acceptance is None:
+            if quick and not (task_dir / 'acceptance.md').is_file():
+                return na('未登记必需视觉验收；实际未验边界保留在交付结果')
             raise ValueError("VISUAL_SCOPE_UNKNOWN: acceptance input is unreadable")
         visual = (acceptance.page_verification or {}).get("visual")
         if not isinstance(visual, dict) or visual.get("required") is not True:
@@ -210,7 +229,13 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
         if not set(included) & {"verification", "review"}:
             return na("统一 Runtime 裁剪后无必需 Verification 步骤")
         from .workflow_records import _latest_trusted_verification
-        verification, _, _, _ = _latest_trusted_verification(conn, task_id, task_dir)
+        if quick and not any(row['event_type'] == 'VERIFICATION_COMPLETED' for row in events):
+            delivery_row = orchestration._delivery_completion_event(facts[1], task_dir, task=facts[0]) if facts else None
+            disclosure = orchestration._parse_detail((delivery_row or {}).get('detail_json')).get('unverified_items')
+            if delivery_row and disclosure:
+                return na('没有执行Verification；真实未实测边界已交付并待Owner明确结单')
+            raise ValueError('QUICK_UNVERIFIED_DISCLOSURE_REQUIRED')
+        verification, _, _, _ = _latest_trusted_verification(conn, task_id, task_dir, require_full=not quick)
         return pending([], event_id=int(verification.row["id"]), scope=verification.detail.get("verification_scope", "full"),
                        reusable=True, note="复用当前范围/主体/原证据仍有效的PASS，不执行测试")
     check("verification", "tp-test-engineer", ["subject", "acceptance", "visual", "database"], verification_check)
@@ -232,6 +257,10 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
         if included is None or facts is None:
             raise ValueError("STAGE_DUTIES_UNKNOWN: no resolved pipeline")
         stage_events = facts[1]
+        if quick:
+            development = orchestration._development_change_set_binding(stage_events, task=facts[0])
+            return pending([] if development else ['CHANGE_SET_REQUIRED'],
+                           steps=[{'stage': 'development', 'event_id': (development or {}).get('event', {}).get('id')}])
         rows = [{"stage": s, "event_id": (orchestration._stage_completion_event(s, stage_events) or {}).get("id")}
                 for s in included if s not in {"verification", "review", "delivery"}]
         return pending([f"STAGE_RECORD_MISSING: {r['stage']}" for r in rows if not r["event_id"]], steps=rows)
@@ -260,6 +289,8 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
     resolved = None
     def knowledge_check():
         nonlocal resolved
+        if quick:
+            return na('quick按需使用Knowledge，不生成强制收敛结果')
         if delivery is None:
             return pending(["KNOWLEDGE_INPUT_PENDING: final delivery candidate is not fixed"])
         if request is None:
@@ -275,6 +306,8 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
                        targets=[item.get("knowledge_ref") for item in detail.get("knowledge_results", []) if item.get("knowledge_ref")])
     check("knowledge", "tp-knowledge", ["delivery"], knowledge_check)
     def memory_check():
+        if quick:
+            return na('quick按需使用Memory，不生成强制评估事实')
         if not adopted and delivery is not None:
             return na("旧交付记录没有 Memory 收敛契约，不追补或伪造历史评估")
         if not resolved or not resolved["detail"].get("memory_assessment"):

@@ -1,14 +1,14 @@
 ---
 name: delivery-convergence
 display_name: 交付收敛
-version: 5.3.7
-description: 每个 Task 最终交付时核对范围、候选、验收与知识记忆；复用有效结果，不代签或补造事实。
+version: 5.3.8
+description: standard Task 最终交付时核对范围、候选、验收与知识记忆；复用有效结果，不代签或补造事实。
 ---
 
 # 交付收敛
 
 ## 责任与触发
-每个 Task（L0–L3）最终交付时读取；L0/L1 可紧凑核对，不复制 L2/L3 全部阶段。不是每次 checkpoint 都重跑。项目经理精确接收各 Work、组织依赖与最终交付；集成交付工程师执行已获准的实际 apply、冲突处置和专业收敛，不代签测试/审查/人验，也不借集成顺手修产品 Finding。
+standard Task（L0–L3）最终交付时读取；L0/L1 可紧凑核对，不复制 L2/L3 全部阶段。不是每次 checkpoint 都重跑。quick 不因模式本身要求本能力或固定 Work/Role 链；确有实际集成需要时按其范围使用。项目经理精确接收已有 Work、组织依赖与最终交付；集成交付工程师执行已获准的实际 apply、冲突处置和专业收敛，不代签测试/审查/人验，也不借集成顺手修产品 Finding。
 
 ## 完整范围与事实
 最终核对 canonical 完整有效范围、所有必要 AC 与已登记仓库，不能用最后一次局部 checkpoint 代替早期后端/身份变更；缺口保持未完成，排除项保留 owner 来源。具体接口按需读 [完整仓库范围与最终交付](../../../docs/agents/tp-software-lifecycle.md#完整仓库范围与最终交付)。
@@ -31,17 +31,17 @@ Integration 发现当前范围内真实产品 Finding 交父 Task 下的 Fix Wor
 
 交付前检查并报告由本 Task 制造的临时 Mock、登录绕过、调试日志、一次性脚本、临时依赖和受控 Temp 状态；业务项目已获准保留的正式回归测试，以及对应项目 `.tp-spec/memory/` 中的可复用交互脚本（含基座自身）不是清理对象；其他基座临时用例按本仓策略清理。Delivery READY 遇到已登记的 `TEMP_ARTIFACT_ACTIVE` / `TEMP_ARTIFACT_CLEANUP_PENDING` 必须停止收敛；只处理 TP-Spec ownership manifest 管理的 Temp，不按文件名删除未托管内容。视觉任务若使用临时登录绕过，其清理 Evidence 必须仍然有效。
 
-## 每 Task 知识与项目记忆
-每次交付都由集成交付工程师通过 [knowledge-capture](../knowledge-capture/SKILL.md) 实际阅读本任务当前有效需求与实际步骤材料，整理候选并核对输入覆盖；knowledge_signals 是线索，无 signals 也不能跳过评估。经可信 Request 把候选交 [tp-knowledge](../../../agents/tp-knowledge/SKILL.md) 定向检索、判重/维护 canonical 及正式 Result；Integration 不检索全库、不签 DUPLICATE/NO_DURABLE_INSIGHT，不维护第二份 canonical。项目经理跟踪实际结果，不以接收回执冒充专业评估。
+## standard Task 知识与项目记忆
+standard 交付由集成交付工程师通过 [knowledge-capture](../knowledge-capture/SKILL.md) 实际阅读本任务当前有效需求与实际步骤材料，整理候选并核对输入覆盖；knowledge_signals 是线索，无 signals 也不能跳过评估。经可信 Request 把候选交 [tp-knowledge](../../../agents/tp-knowledge/SKILL.md) 定向检索、判重/维护 canonical 及正式 Result；Integration 不检索全库、不签 DUPLICATE/NO_DURABLE_INSIGHT，不维护第二份 canonical。quick 不自动启动知识收敛；用户明确提出知识工作时按对应能力处理。项目经理跟踪实际结果，不以接收回执冒充专业评估。
 
-同时调用唯一 [tp-memory-capture](../tp-memory-capture/SKILL.md) 判断各步骤稳定 Rule/Fact/Procedure、临时与已替代内容的归位，并核对值得沉淀的问题是否需要新增/更新 AGENTS 触发入口及其可发现性。正文保存、入口保存/已覆盖/无需新增及失败分别记录，不能用 Memory 已保存代替入口核对。必做的是阅读、判断和处置，不是强制新建条目或修改所有 Memory 文件。Work 只提供紧凑结果供父 Task 汇总，不每个 Work 再跑全套收敛。
+standard 交付同时调用唯一 [tp-memory-capture](../tp-memory-capture/SKILL.md) 判断各步骤稳定 Rule/Fact/Procedure、临时与已替代内容的归位，并核对值得沉淀的问题是否需要新增/更新 AGENTS 触发入口及其可发现性。正文保存、入口保存/已覆盖/无需新增及失败分别记录，不能用 Memory 已保存代替入口核对。必做的是阅读、判断和处置，不是强制新建条目或修改所有 Memory 文件。quick 不自动要求项目 Memory 评估。Work 只提供紧凑结果供父 Task 汇总，不每个 Work 再跑全套收敛。
 
 存在交互测试时，按 [Visual QA](../testing-strategy/references/visual-qa.md) 核对脚本保存/更新/已覆盖/不保留的实际处置、目标导航与回放状态；未回放不得报可稳定复用，不因交付重复运行有效测试。
 
 复用既有交付事实记录实际输入覆盖、处置、目标链接、未保存事项/原因，不另造学习、知识、记忆、归档四套报告；同稳定输入复用有效结果，变化只重评受影响部分。未执行不得写已收敛；必要 Knowledge 环境/Request/Result 缺失保持待处理，可选 Memory 写失败按该方法披露，不虚构成功或无关阻塞。
 
 ## Runtime 接入边界
-新 READY 通过现有 delivery-converge 为 L0–L3 创建或复用 `KNOWLEDGE_CONVERGENCE_REQUEST`，
+standard 新 READY 通过现有 delivery-converge 为适用 L0–L3 创建或复用 `KNOWLEDGE_CONVERGENCE_REQUEST`，
 带 `learning_schema=tp-spec.task-learning/v1` 与当前输入索引。先只读 `knowledge task-inputs`，
 实际提炼后由 tp-knowledge 用 `task-converge --assessment FILE|-` 生成一个 Result，
 包含各候选检索/目标与共享 Memory 方法的处置。详细格式按需读

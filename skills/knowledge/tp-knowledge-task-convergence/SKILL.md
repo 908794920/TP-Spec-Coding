@@ -1,15 +1,15 @@
 ---
 name: tp-knowledge-task-convergence
 display_name: Task 知识与记忆收敛
-version: 5.3.7
-description: 用于最终 Task 交付时消费可信 Knowledge Request，逐项评估输入、定向判重或维护 canonical，并记录 Knowledge Result 与项目 Memory 评估；不运行全库维护链。
+version: 5.3.8
+description: 用于 standard Task 最终交付时消费可信 Knowledge Request，逐项评估输入、定向判重或维护 canonical，并记录 Knowledge Result 与项目 Memory 评估；不运行全库维护链。
 ---
 
 # Task 知识与记忆收敛
 
 ## 入口与可信输入
 
-集成交付工程师按每 Task 交付调用 [knowledge-capture](../../capabilities/knowledge-capture/SKILL.md) 提炼有效需求与各步骤材料，并通过正常 `delivery-converge` 为 L0–L3 创建或复用 `KNOWLEDGE_CONVERGENCE_REQUEST`；没有 knowledge signals 也要评估，不强制新增知识。先只读 `tp-spec knowledge task-inputs --task <TASK-ID> --task-dir <TASK-DIR> --db <DB>`，按清单逐项读取来源，再提交 `knowledge task-converge --assessment FILE|-`。`task-inputs` 本身不创建 Request、不查询 Knowledge，也不证明正文已读。
+standard Task 交付由集成交付工程师调用 [knowledge-capture](../../capabilities/knowledge-capture/SKILL.md) 提炼有效需求与各步骤材料，并通过正常 `delivery-converge` 为适用 L0–L3 创建或复用 `KNOWLEDGE_CONVERGENCE_REQUEST`；没有 knowledge signals 也要评估，不强制新增知识。quick 不自动创建 Request 或运行此收敛；用户明确提出知识工作时按相应范围处理。先只读 `tp-spec knowledge task-inputs --task <TASK-ID> --task-dir <TASK-DIR> --db <DB>`，按清单逐项读取来源，再提交 `knowledge task-converge --assessment FILE|-`。`task-inputs` 本身不创建 Request、不查询 Knowledge，也不证明正文已读。
 
 核对可信 Request、`request_current`、当前 READY、有效 Change Set、输入 digest 与实际适用的 Verification/Review。轻量任务不适用的前置为 0，不伪造 PASS。输入问题或最终候选失效时保持待处理，由原交付流程解决后重发或复用 Request；本能力不重裁软件验收，不手改 Runtime。完整字段、命令、复用、失败和历史兼容契约只在本类任务中读 [Task 知识与记忆收敛契约](../../../agents/tp-knowledge/references/task-convergence.md)，并以该原路径为权威。
 

@@ -7,6 +7,7 @@ import { CopyText, Disclosure, Fields, Problems, ReadStatus } from './Facts';
 import { VerificationDetail, Outcome } from './VerificationDetail';
 import { EvidenceList } from './EvidenceList';
 import { CloseoutPanel } from './CloseoutPanel';
+import { QuickWorkflowSummary } from './QuickWorkflowSummary';
 const tabs = [['overview', '概况'], ['blockers', '阻塞'], ['verification', '验证与验收'], ['evidence', '证据与交付']] as const;
 export type TaskDetailTab = typeof tabs[number][0];
 type Tab = TaskDetailTab;
@@ -49,7 +50,9 @@ export function TaskDetail({ object, snapshot, initialTab, defaultTab, details, 
   function selectTab(next: Tab) { setTab(next); if (next !== 'overview') onDetails(); }
   const data = details.data?.data, task = record(snapshot.data.task), workflow = record(snapshot.data.workflow);
   const execution = record(workflow.execution);
-  const terminal = task.state === 'COMPLETED' || task.state === 'CANCELLED' || workflow.retired === true;
+  const terminal = task.state === 'COMPLETED' || task.state === 'CANCELLED' || workflow.retired === true || execution.terminal === true;
+  const quick = workflow.workflow_mode === 'quick';
+  const retired = workflow.retired === true;
   const mismatch = !!details.data && details.data.read.task_revision !== snapshot.read.task_revision;
   return <dialog className="task-detail task-detail-modal" ref={dialog} aria-labelledby="detail-heading" onCancel={e => { e.preventDefault(); onClose(); }} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}>
     <header className="detail-heading"><div><span className="eyebrow">{object.kind === 'task' ? 'Task' : 'WorkItem'} 详情</span><h3 id="detail-heading">{object.title || '标题未记录'}</h3></div><Button size="small" ref={close} onClick={onClose} aria-label="关闭详情并返回节点">关闭</Button></header>
@@ -58,17 +61,22 @@ export function TaskDetail({ object, snapshot, initialTab, defaultTab, details, 
     <Tabs className="detail-tabs" activeKey={tab} onChange={key => selectTab(key as Tab)} destroyOnHidden
       items={tabs.map(([key, label]) => ({ key, label, children: key === tab ? <div className="detail-body nowheel nopan">
       <CopyText value={object.objectId}/><p>{stateLabel(object.kind, object.status)}</p>
+      {retired && <Alert type="info" showIcon title="已退休 · 历史只读"
+        description={`行政退休与流程完成分别记录；最后正式工作流状态：${stateLabel('task', task.state)}。未验项与历史证据保持原记录。`}/>}
       {tab === 'overview' ? <>
         <Fields value={{ object_type: object.kind, owner: object.owner, parent_task: object.parentTaskId,
           relationship: object.kind === 'task' ? '当前 Task' : object.belongs ? '由正式 task_id 确认' : '归属未确认', issues: object.issues }}
           labels={{ object_type: '对象类型', owner: object.kind === 'task' && terminal ? 'Task 责任记录（历史，不是当前执行者）' : '对象负责人', parent_task: '父 Task', relationship: '归属依据', issues: '数据问题' }}/>
-        <section className="detail-section"><h4>当前 Task 的实际流程</h4>
-          <Fields value={{ task_state: stateLabel('task', task.state), current: terminal ? '无（任务已结束）' : stageLabel(workflow.current_step) || '当前步骤未解析', next: terminal ? '无（任务已结束）' : stageLabel(workflow.next_step) || '下一步未解析',
-            current_source: workflow.current_step_source, next_source: workflow.next_step_source, effective_level: workflow.effective_level,
+        <section className="detail-section"><h4>{retired ? 'Task 历史工作流' : '当前 Task 的实际流程'}</h4>
+          {quick && <QuickWorkflowSummary workflow={workflow} terminal={terminal}/>}
+          <Fields value={{ task_state: stateLabel('task', task.state), ...(retired ? { retirement_state: '已退休（历史只读）' } : {}),
+            current: retired ? '无（已退休，历史只读）' : terminal ? '无（任务已结束）' : stageLabel(workflow.current_step) || '当前步骤未解析',
+            next: retired ? '无（已退休，历史只读）' : terminal ? '无（任务已结束）' : stageLabel(workflow.next_step) || '下一步未解析',
+            current_source: workflow.current_step_source, next_source: workflow.next_step_source, ...(!quick ? { effective_level: workflow.effective_level } : {}),
             coordinator: execution.coordinator || '历史未记录', coordinator_source: execution.coordinator_source || '历史未记录',
-            current_roles: terminal ? '无（任务已结束）' : execution.current_roles,
+            current_roles: retired ? '无（已退休，历史只读）' : terminal ? '无（任务已结束）' : execution.current_roles,
             next_responsibility: workflowNextResponsibility(workflow, terminal),
-            completed_at: task.completed_at, read_at: snapshot.read.completed_at }} labels={{ task_state: 'Task 正式状态', current: '当前步骤', next: '下一步', current_source: '当前步骤来源', next_source: '下一步来源', effective_level: '有效流程等级', coordinator: 'Task 协调责任（独立于本步角色）', completed_at: '正式结束时间', read_at: '读取时间' }}/>
+            completed_at: task.completed_at, read_at: snapshot.read.completed_at }} labels={{ task_state: retired ? '最后正式工作流状态' : 'Task 正式状态', retirement_state: '行政退休记录', current: '当前步骤', next: '下一步', current_source: '当前步骤来源', next_source: '下一步来源', effective_level: '有效流程等级', coordinator: 'Task 协调责任（独立于本步角色）', completed_at: '正式结束时间', read_at: '读取时间' }}/>
           <Disclosure label="路由与来源字段"><Fields value={{ current: workflow.current_step, next: workflow.next_step, route: workflow.route }}/></Disclosure>
         </section>
         <Disclosure label="Task 最近记录与工作段（只读）">

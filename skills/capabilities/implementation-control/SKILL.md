@@ -1,7 +1,7 @@
 ---
 name: implementation-control
 display_name: 实现过程控制
-version: 5.3.7
+version: 5.3.8
 description: Use while implementing an TP-Spec-Coding task when code changes, refactoring, reuse decisions, debugging, or scope control are required.
 ---
 

@@ -32,6 +32,7 @@ class LogicalRequest:
         self.task_id = task_id
         self.task_dir = task_dir
         self.operation = operation
+        self.actor = payload.get('actor')
         self.result_report_count = len(payload.get("result_reports") or [])
         self.report_artifact_root = payload.get("report_artifact_root")
         self.recorded_result_ids = list(payload.get("recorded_result_ids") or [])
@@ -51,7 +52,7 @@ class LogicalRequest:
             return None
         rows = conn.execute(
             "SELECT * FROM task_event WHERE task_id=? "
-            "AND event_type IN ('FACT','VERIFICATION_COMPLETED') ORDER BY id", (self.task_id,))
+            "AND event_type IN ('FACT','VERIFICATION_COMPLETED','TASK_MODE_SELECTED','WORKFLOW_CONFIRMATION') ORDER BY id", (self.task_id,))
         found = None
         for row in rows:
             raw = str(row["detail_json"] or "{}")
@@ -65,6 +66,31 @@ class LogicalRequest:
                 continue
             saved = detail.get("logical_request")
             if not isinstance(saved, dict) or saved.get("request_id") != self.request_id:
+                continue
+            if self.operation in {'task_mode_select', 'workflow_confirm'}:
+                producer = self.operation
+                expected_type = 'TASK_MODE_SELECTED' if producer == 'task_mode_select' else 'WORKFLOW_CONFIRMATION'
+                response = saved.get('response')
+                from .workflow_controls import trusted_event_detail
+                if (row['event_type'] != expected_type or not isinstance(response, dict)
+                        or trusted_event_detail(dict(row), event_type=expected_type, producer=producer,
+                            actor=str(row['actor_role'] or '')) is None
+                        or detail.get('schema') != event_contract.EVENT_SCHEMA
+                        or event_contract.validate_event_semantics(expected_type, detail)):
+                    raise ValueError('REQUEST_RECORD_INVALID: untrusted mode/confirmation receipt')
+                if saved.get('operation') != self.operation or saved.get('payload_sha256') != self.payload_sha256:
+                    raise ValueError('REQUEST_ID_CONFLICT: the ID belongs to different semantics; use a new ID for new work')
+                field = 'workflow_mode' if producer == 'task_mode_select' else 'confirmation_binding'
+                actual = detail.get(field) if producer == 'task_mode_select' else {
+                    key: detail.get(key) for key in response.get(field, {})}
+                if (found is not None or response.get('task_id') != self.task_id
+                        or response.get('request_id') != self.request_id or response.get('event_id') != row['id']
+                        or response.get('user_source') != detail.get('user_source')
+                        or response.get(field) != actual or response.get('flush_id') != detail.get('flush_id')):
+                    raise ValueError('REQUEST_RECORD_INVALID: mode/confirmation response changed')
+                found = {**response, 'replayed': True, 'facts_committed': True,
+                         'receipt_event_id': int(row['id']), 'view_status': 'NOT_REFRESHED',
+                         'result_scope': 'original logical request, not current task state or a new approval'}
                 continue
             if (detail.get("producer") != "record-first" or not detail.get("transaction_id")
                     or detail.get("schema") != event_contract.EVENT_SCHEMA):
@@ -87,7 +113,8 @@ class LogicalRequest:
                         response.get("actor") != row["actor_role"] or response.get("phase") != detail.get("phase")
                         or response.get("change_impact") != detail.get("change_impact")))
                     or (self.operation == "verify" and (
-                        row["actor_role"] != "tp-test-engineer"
+                        row["actor_role"] != response.get("actor", "tp-test-engineer")
+                        or response.get('actor', 'tp-test-engineer') != (self.actor or 'tp-test-engineer')
                         or response.get("verification_scope", "full") != detail.get("verification_scope", "full")
                         or response.get("checks", []) != detail.get("checks", [])))):
                 raise ValueError("REQUEST_RECORD_INVALID: response changes the recorded actor, subject or scope")

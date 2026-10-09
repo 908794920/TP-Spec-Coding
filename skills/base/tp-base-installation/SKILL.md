@@ -1,7 +1,7 @@
 ---
 name: tp-base-installation
 display_name: 安装与健康检查
-version: 5.3.7
+version: 5.3.8
 description: 用于 TP-Spec 用户级安装配置、Base/Wiki/Knowledge 路径解析、Workspace Inventory 和安装健康诊断；项目接入与契约升级分别交对应能力。
 ---
 

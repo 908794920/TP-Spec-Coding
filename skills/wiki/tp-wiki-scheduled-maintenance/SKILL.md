@@ -1,7 +1,7 @@
 ---
 name: tp-wiki-scheduled-maintenance
 display_name: Wiki 定时维护
-version: 5.3.7
+version: 5.3.8
 description: 用于 human_owner 已配置的 Wiki Scheduler 唤起维护；读取当前短 bootstrap 与 canonical daily protocol，保留零变化快路径，不自行创建或扩大定时任务。
 ---
 

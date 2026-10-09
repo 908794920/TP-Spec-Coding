@@ -36,4 +36,4 @@
 
 ## 边界
 
-每个 Task 交付必须提炼有效需求与各步骤材料，无长期价值也需真实判断和定向检索依据；不强制新增知识。必要 Request/Result 缺失不能称已收敛，可选 Memory 未持久化按其自身边界披露。新 READY Delivery 对 L0–L3 均生成或复用绑定有效 Task 输入的 Request，与是否存在 knowledge_signals 无关。通过 task-inputs 定向读取，再用 task-converge --assessment 记录覆盖、检索和记忆判断；稳定输入重放不重复写入。无标记旧 Request/终态保留旧解释，不伪造过去的提炼；正式 Evidence 和任务状态仍以 Runtime 事实为准。
+standard Task 交付必须提炼有效需求与各步骤材料，无长期价值也需真实判断和定向检索依据；不强制新增知识。必要 Request/Result 缺失不能称已收敛，可选 Memory 未持久化按其自身边界披露。standard 新 READY Delivery 按适用的 L0–L3 义务生成或复用绑定有效 Task 输入的 Request，与是否存在 knowledge_signals 无关。quick 不自动要求知识/记忆收敛或消费计数。standard 通过 task-inputs 定向读取，再用 task-converge --assessment 记录覆盖、检索和记忆判断；稳定输入重放不重复写入。无标记旧 Request/终态保留旧解释，不伪造过去的提炼；正式 Evidence 和任务状态仍以 Runtime 事实为准。

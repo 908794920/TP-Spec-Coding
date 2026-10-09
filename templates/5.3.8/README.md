@@ -1,4 +1,4 @@
-# V5.3.7 Task 模板 — Record-first
+# V5.3.8 Task 模板 — Record-first
 
 这套模板服务于 **完成开发任务 + 事后溯源**。SQLite/event ledger 是权威记录；Markdown 只承载有业务价值的内容。
 
@@ -44,7 +44,7 @@ L0～L3 继续作为风险/查询标签，但不决定一条固定昂贵链路�
 
 ## 真实性边界
 
-账本/状态完整性、未解决 blocker、高风险动作授权及真实验证继续按当前契约校验；实际结单还需核对当前适用的步骤、Work/候选、验收、证据、交付和知识/记忆结果。使用 `task complete --check` 读取同源预检，不把本模板概述当作全部门禁清单。
+账本/状态完整性、未解决 blocker、高风险动作授权及真实验证继续按当前契约校验；standard 结单还需核对当前适用的步骤、Work/候选、验收、证据、交付和知识/记忆结果。quick 由用户明确选择，交付和用户结单分别记录，不自动要求知识/记忆收敛；使用 `task complete --check` 读取同源预检，不把本模板概述当作全部门禁清单。
 
 未测试不能写 PASS；human_owner 可对已按声明范围实际核验的人工/视觉项通过官方 `acceptance-override --mode accept` 留证，也可对未执行项 defer/waive，但不得伪装成 PASS。Owner 决策不解除无关 blocker。
 

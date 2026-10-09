@@ -24,18 +24,24 @@ def claims_creation_metadata(detail, raw) -> bool:
 
 def creation_detail(*, task_id: str, actor_agent: str, created_at: str,
                     transaction_id: str, schema_version: str,
-                    invocation_id: str | None = None) -> dict:
+                    invocation_id: str | None = None, workflow_mode: str = 'standard',
+                    user_source: dict | None = None) -> dict:
     if (not isinstance(actor_agent, str)
             or any(not isinstance(value, str) or not value.strip()
                    for value in (task_id, created_at, transaction_id, schema_version))):
         raise ValueError("TASK_COORDINATOR_INVALID: creation identity requires strings")
     detail = {
+        "workflow_mode": workflow_mode,
+        "user_source": user_source,
         "coordinator_schema": SCHEMA,
         "coordinator": {"role": DEFAULT_COORDINATOR_ROLE, "agent": actor_agent.strip()},
         "transaction_id": transaction_id, "flush_id": "CREATE-" + transaction_id,
         "schema_version": schema_version, "task_id": task_id,
         "actor_role": CREATION_ACTOR, "created_at": created_at,
     }
+    from .orchestration_policy import valid_user_source
+    if workflow_mode not in {'standard', 'quick'} or (workflow_mode == 'quick' and not valid_user_source(user_source)):
+        raise ValueError('TASK_MODE_INVALID: quick requires the actual user choice source')
     if invocation_id:
         detail["cli_invocation_id"] = invocation_id
     return event_contract.add_event_semantics(

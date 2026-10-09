@@ -200,10 +200,30 @@ def refresh_manifest(
     blank/comment-only source drift from either spending model Tokens or leaving stale line
     numbers behind.
     """
+    manifest = load_manifest(wiki_repo_root)
+    discovered_documents = _discover_documents(wiki_repo_root)
+    view = source_view(repo_root, source_cfg)
+    if view.mode == "GIT_REF":
+        referenced_files: set[str] = set()
+        for doc in manifest.get("documents") or []:
+            if not isinstance(doc, dict):
+                continue
+            for field in ("dependencies", "citations"):
+                rows = doc.get(field)
+                if not isinstance(rows, list):
+                    continue
+                for row in rows:
+                    if isinstance(row, dict) and row.get("file"):
+                        referenced_files.add(str(row["file"]).replace("\\", "/"))
+        # Markdown may add references that are not yet in the old manifest.
+        # Reuse the pinned view for both anchor relocation and fingerprinting.
+        for document in discovered_documents:
+            for cite in extract_citations(document.read_text(encoding="utf-8")):
+                referenced_files.add(cite["file"])
+        view.preload_blobs(sorted(referenced_files))
     relocation = apply_cosmetic_citation_relocations(
         wiki_repo_root=wiki_repo_root, repo_root=repo_root, source_cfg=source_cfg
     )
-    manifest = load_manifest(wiki_repo_root)
     if not manifest:
         manifest = {
             "schema": MANIFEST_SCHEMA,
@@ -221,7 +241,7 @@ def refresh_manifest(
     manifest["workspace_id"] = workspace_id
     manifest["repo_id"] = repo_id
     manifest["repo_root"] = str(repo_root)
-    manifest["source"] = source_view(repo_root, source_cfg).identity()
+    manifest["source"] = view.identity()
     manifest["generated_at"] = utc_now()
     # A single manifest-level AI generator is not truthful after incremental maintenance:
     # documents may come from different models/runs.  Keep deterministic refresh provenance
@@ -251,7 +271,7 @@ def refresh_manifest(
     if not isinstance(docs, list):
         raise ValueError("manifest.documents must be a list")
     by_path = {str(d.get("path") or "").replace("\\", "/"): d for d in docs if isinstance(d, dict) and d.get("path")}
-    for discovered in _discover_documents(wiki_repo_root):
+    for discovered in discovered_documents:
         rel = discovered.relative_to(wiki_repo_root).as_posix()
         if rel not in by_path:
             inferred = _infer_document(wiki_repo_root, discovered)

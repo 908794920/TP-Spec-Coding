@@ -1,7 +1,7 @@
 ---
 name: tp-wiki-initial-build
 display_name: Wiki 首次构建
-version: 5.3.7
+version: 5.3.8
 description: 用于首次构建或获准全量重建单个 repo 的可信 Wiki baseline；处理语义聚类、首次覆盖阈值和全仓语义审计，不将日常增量扩大成全量重建。
 ---
 

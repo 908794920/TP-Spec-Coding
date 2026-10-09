@@ -191,8 +191,8 @@ def validate_contract(base_root: Optional["str | Path"] = None) -> List[str]:
     confirmation = contract.get("confirmation") or {}
     if confirmation.get("default_policy") != "material":
         errors.append("Base default confirmation policy must remain material")
-    if set(confirmation.get("supported_policies") or []) != {"material", "each_stage"}:
-        errors.append("confirmation policies must be exactly material + each_stage")
+    if set(confirmation.get("supported_policies") or []) != {"material"}:
+        errors.append("confirmation policies must be exactly material")
     if confirmation.get("user_preference_path") != "~/.tp-spec/preferences.yaml":
         errors.append("confirmation preference must be user-level ~/.tp-spec/preferences.yaml")
     if contract.get("runtime", {}).get("ordinary_confirmation_persisted") is not True:
@@ -389,6 +389,7 @@ def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_pro
             "FROM task_event WHERE task_id=? ORDER BY id", (task_id,),
         ).fetchall()
         task, facts = dict(row), [dict(e) for e in events]
+        task.update(orchestration_policy.resolve_task_mode(task, facts))
         task["_knowledge_work_items"] = [dict(item) for item in conn.execute(
             "SELECT * FROM work_item WHERE task_id=? ORDER BY item_id", (task_id,))]
         task["_orchestration_overrides"] = orchestration_policy.read_rows(conn)
@@ -406,7 +407,20 @@ def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_pro
                 security = authority.project(facts, task_id, task_dir)
                 for event in facts:
                     if event["event_type"] in {"VERIFICATION_COMPLETED", "REVIEW_COMPLETED"}:
-                        event["_security_current"] = authority.formal_record_current(security, task_dir, _parse_detail(event["detail_json"]))
+                        detail = _parse_detail(event['detail_json'])
+                        event["_security_current"] = authority.formal_record_current(security, task_dir, detail)
+                        if (event['event_type'] == 'REVIEW_COMPLETED' and str(detail.get('review_kind') or '').upper() == 'ARCHITECTURE'
+                                and not task['_retired'] and task.get('current_state') not in TERMINAL):
+                            from .digest import compute_architecture_subject_digest, compute_text_artifact_file_digest
+                            from .evidence import validate_evidence_path
+                            checked = validate_evidence_path(task_dir, detail.get('artifact'))
+                            try:
+                                event['_architecture_current'] = bool(checked.ok
+                                    and detail.get('artifact_digest') == compute_text_artifact_file_digest(task_dir / checked.path)
+                                    and detail.get('subject_digest') == compute_architecture_subject_digest(task_dir,
+                                        design_inputs=detail.get('design_inputs')))
+                            except (ValueError, OSError, TypeError):
+                                event['_architecture_current'] = False
             except (ValueError, OSError, KeyError, TypeError):
                 for event in facts:
                     if event["event_type"] in {"VERIFICATION_COMPLETED", "REVIEW_COMPLETED"}:
@@ -473,9 +487,11 @@ def _decision_signals(events: Iterable[Dict[str, Any]], contract: Optional[Dict[
     return set(_decision_signal_ids(events, contract))
 
 
-def _latest_verification(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _latest_verification(events: Iterable[Dict[str, Any]], task=None) -> Optional[Dict[str, Any]]:
+    events = list(events)
+    quick = task is not None and orchestration_policy.resolve_task_mode(task, events)['workflow_mode'] == 'quick'
     for e in reversed(list(events)):
-        if e.get("event_type") != "VERIFICATION_COMPLETED" or e.get("actor_role") != "tp-test-engineer":
+        if e.get("event_type") != "VERIFICATION_COMPLETED" or (not quick and e.get("actor_role") != "tp-test-engineer"):
             continue
         d = _parse_detail(e.get("detail_json"))
         if e.get("_security_current") is False:
@@ -495,6 +511,8 @@ def _latest_arch_review(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, 
         if e.get("_security_current") is False:
             return None
         decision = event_contract.normalize_event_semantics(str(e.get("event_type") or ""), d)["decision"]
+        if e.get('_architecture_current') is False:
+            return {'decision': decision + '_STALE', 'recorded_decision': decision, 'detail': d, 'event': e}
         return {"decision": decision, "detail": d, "event": e}
     return None
 
@@ -516,7 +534,7 @@ def _latest_code_review(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, 
 def _latest_checkpoint_activity(events: Iterable[Dict[str, Any]], *, actor: str, phase: str,
                                 trusted: bool = False) -> Optional[Dict[str, Any]]:
     for e in sorted(events, key=lambda row: int(row.get("id") or 0), reverse=True):
-        if e.get("event_type") != "FACT" or e.get("actor_role") != actor:
+        if e.get("event_type") != "FACT" or (actor is not None and e.get("actor_role") != actor):
             continue
         d = _parse_detail(e.get("detail_json"))
         # Formal checkpoints bind row-level stages. event sync keeps caller detail
@@ -569,9 +587,10 @@ def _latest_checkpoint(events: Iterable[Dict[str, Any]], *, actor: str, phase: s
     return None
 
 
-def _development_change_set_binding(events: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _development_change_set_binding(events: Iterable[Dict[str, Any]], task=None) -> Optional[Dict[str, Any]]:
     events = list(events)
-    activity = _latest_checkpoint_activity(events, actor="tp-development-engineer", phase="development")
+    quick = task is not None and orchestration_policy.resolve_task_mode(task, events)['workflow_mode'] == 'quick'
+    activity = _latest_checkpoint_activity(events, actor=None if quick else "tp-development-engineer", phase="development", trusted=quick)
     from .work_units import candidate_binding
     candidate = candidate_binding(events)
     if candidate and (not activity or candidate["event_id"] > int(activity["event"]["id"])):
@@ -766,6 +785,9 @@ def _current_verification_for_delivery(events: List[Dict[str, Any]], task_dir: O
     return verification
 
 def _delivery_completion_event(events: List[Dict[str, Any]], task_dir: Optional[Path], *, task=None) -> Optional[Dict[str, Any]]:
+    if task is not None and orchestration_policy.resolve_task_mode(task, events)['workflow_mode'] == 'quick':
+        latest = next((event for event in reversed(events) if event.get('event_type') == 'DELIVERY_RESULT'), None)
+        return delivery_contract.current_quick_delivery(latest, task, task_dir) if latest else None
     latest = next((e for e in reversed(events) if e.get("event_type") == "DELIVERY_RESULT"
                    and e.get("actor_role") == "tp-integration-engineer"), None)
     if latest and _parse_detail(latest.get("detail_json")).get("delivery_mode") == "lightweight":
@@ -1154,10 +1176,17 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
         "risk_signals": list(task.get("_risk_signals", [])),
         "recommended_skills": sorted({str(x) for x in (recommended_skills or []) if str(x)}),
     }
+    obligations = orchestration_policy.resolve_task_obligations(task, task.get('_events') or [])
+    data.update({key: obligations[key] for key in ('workflow_mode', 'mode_source', 'applicable_obligations')})
+    if task.get('_quick_status') is not None:
+        data['quick_status'] = task['_quick_status']
     contract = task.get("_effective_contract")
     if contract is not None:
-        data["included_stages"] = [step["stage"] for step in contract["pipelines"][level]
-            if _stage_included(step, level, task, task["_events"], task["_signals"])]
+        data["included_stages"] = (['development', 'verification', 'delivery'] if data['workflow_mode'] == 'quick' else
+            [step["stage"] for step in contract["pipelines"][level]
+            if _stage_included(step, level, task, task["_events"], task["_signals"])])
+        data['applicable_obligations'] = orchestration_policy.resolve_task_obligations(
+            task, task.get('_events') or [], data['included_stages'])['applicable_obligations']
     if action in {"dispatch_role", "task_complete"} and task.get("_task_dir") is not None:
         context = dict(context or {})
         context["validation"] = _validation_advice(task)
@@ -1299,38 +1328,6 @@ def _route_role_boundary(task: Dict[str, Any], level: str, events: List[Dict[str
     binding: Optional[Dict[str, Any]] = None
     wake_prompt: Optional[str] = None
     transition = bool(source_event and source_role and source_role != role_id)
-    if policy == "each_stage" and transition:
-        binding = workflow_controls.build_boundary_binding(
-            task_id=str(task.get("task_id") or ""),
-            source_stage=str(source_stage or source_event.get("to_stage") or task.get("current_stage") or "other"),
-            source_role=str(source_role),
-            source_event_id=int(source_event.get("id") or 0),
-            source_event_digest=workflow_controls.event_digest(source_event),
-            target_stage=next_stage,
-            target_role=role_id,
-            execution_mode=execution_mode,
-            confirmation_kind='ordinary',
-        )
-        confirmed = human_confirmation_already_satisfied or workflow_controls.find_matching_confirmation(events, binding) is not None
-        if not confirmed:
-            return _route_dict(
-                task, level, next_stage=next_stage, role_id=role_id, skill_path=None,
-                execution_mode=execution_mode, confirmation_required=True,
-                confirmation_reason="EACH_STAGE_POLICY", reason_codes=reason_codes,
-                action="await_confirmation", context=context,
-                transition_from_role=source_role, confirmation_policy=policy,
-                confirmation_binding=binding, required_effects=required_effects,
-                allowed_effects=allowed_effects, recommended_roles=recommended_roles,
-            )
-        wake_prompt = workflow_controls.build_wake_prompt(
-            task_id=str(task.get("task_id") or ""),
-            workspace=str(task.get("project_root_path") or ""),
-            source_stage=str(source_stage or source_event.get("to_stage") or task.get("current_stage") or "other"),
-            source_role=str(source_role),
-            target_stage=next_stage,
-            target_role=role_id,
-            execution_mode=execution_mode,
-        )
     return _route_dict(
         task, level, next_stage=next_stage, role_id=role_id, skill_path=skill_path,
         execution_mode=execution_mode, confirmation_required=False,
@@ -1375,7 +1372,12 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
     state = str(task.get("current_state") or "")
     if state not in PUBLIC_STATES:
         raise OrchestrationError(f"unknown public state: {state!r}")
-    level = resolve_effective_level(task.get("risk_level"), task.get("flow_level"))
+    mode_fact = orchestration_policy.resolve_task_mode(task, events)
+    if mode_fact['issues']:
+        raise OrchestrationError('; '.join(mode_fact['issues']))
+    task.update(mode_fact)
+    quick = task['workflow_mode'] == 'quick'
+    level = None if quick else resolve_effective_level(task.get("risk_level"), task.get("flow_level"))
     project_root = str(task.get("project_root_path") or "").strip()
     explicit_task_dir = task_dir
     risk_scan = {"floor": None, "signals": []}
@@ -1383,18 +1385,21 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
         task_dir = explicit_task_dir or Path(project_root) / ".tp-spec" / "tasks" / task_id
         risk_scan = risk_signals.scan_task_artifacts(task_dir, base_root=root)
         floor = str(risk_scan.get("floor") or "")
-        if _rank(floor) > _rank(level):
+        if not quick and _rank(floor) > _rank(level):
             level = floor
     task["_effective_level"] = level
-    task["_risk_escalation_signals"] = list(risk_scan.get("signals") or []) if _rank(str(risk_scan.get("floor") or "")) > _rank(resolve_effective_level(task.get("risk_level"), task.get("flow_level"))) else []
+    task["_risk_escalation_signals"] = list(risk_scan.get("signals") or []) if not quick and _rank(str(risk_scan.get("floor") or "")) > _rank(resolve_effective_level(task.get("risk_level"), task.get("flow_level"))) else []
     task["_task_dir"] = task_dir
     from . import current_context
     task["_current_effective"] = current_context.read_current(task_dir, task_id=task_id)
     task["_risk_signals"] = list(risk_scan.get("signals") or [])
+    task['_risk_scan_floor'] = risk_scan.get('floor')
     role_map = {str(r["workflow_role"]): r for r in catalog.get("roles") or []}
     signal_ids = _decision_signal_ids(events, contract)
     signals = set(signal_ids)
     task["_effective_contract"], task["_events"], task["_signals"] = contract, events, signals
+    if quick:
+        task['_quick_status'] = _quick_result_status(task, events)
     task["_role_recommendations"] = {
         stage: _conditional_role_recommendations(contract, catalog, phase=phase,
                  signals=signals, risk_signals=task["_risk_signals"])
@@ -1464,6 +1469,9 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                 context={"work_items": related, "instructions": "核对并登记实际集成候选，随后在原步骤恢复和补受影响复验；不重跑已完成父步骤。"})
     integration = candidate_binding(events) if execution_facts["plan"] else None
     repair_event_id = int(integration["event_id"]) if integration else 0
+
+    if quick:
+        return _resolve_quick_route(task, events, role_map, policy=policy, allowed_effects=allowed_set)
 
     review = _latest_arch_review(events)
     if review and review["decision"] == "REVISE" and int(review["event"]["id"]) > repair_event_id:
@@ -1727,6 +1735,140 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                        confirmation_policy=policy)
 
 
+def _quick_result_status(task, events):
+    allowed = orchestration_policy.continuous_actor_ids(task, events)
+    verification = next((event for event in reversed(events) if event.get('event_type') == 'VERIFICATION_COMPLETED'), None)
+    vd = (workflow_controls.trusted_event_detail(verification, event_type='VERIFICATION_COMPLETED',
+          producer='record-first', actor=verification['actor_role']) if verification and verification['actor_role'] in allowed else None) or {}
+    delivery = next((event for event in reversed(events) if event.get('event_type') == 'DELIVERY_RESULT'), None)
+    dd = (workflow_controls.trusted_event_detail(delivery, event_type='DELIVERY_RESULT', producer='delivery_converge',
+          actor=delivery['actor_role']) if delivery and delivery['actor_role'] in allowed else None) or {}
+    if vd and event_contract.validate_event_semantics('VERIFICATION_COMPLETED', vd):
+        vd = {}
+    if dd and delivery_contract.validate_delivery_result(dd):
+        dd = {}
+    return {'delivery_status': 'READY_STALE' if dd.get('delivery_status') == 'READY' else (dd.get('delivery_status') or 'NOT_RECORDED'),
+        'recorded_delivery_status': dd.get('delivery_status'), 'delivery_current': False,
+        'awaiting_completion': False, 'verification_scope': vd.get('verification_scope') if vd else None,
+        'verification_decision': 'PASS_STALE' if vd.get('decision') == 'PASS' and not task.get('_current_verification') else (vd.get('decision') or ('INVALID' if verification else 'NOT_RECORDED')),
+        'verification_current': bool(task.get('_current_verification')),
+        'verification_event_id': verification.get('id') if vd else None,
+        'delivery_event_id': delivery.get('id') if dd else None,
+        'checks': list(vd.get('checks') or []), 'unverified_items': list(dd.get('unverified_items') or [])}
+
+
+def _resolve_quick_route(task, events, role_map, *, policy, allowed_effects):
+    """Continuous execution with real result freshness and explicit owner closeout."""
+    directory = task.get('_task_dir')
+    development = _development_change_set_binding(events, task=task)
+    actor = (development or {}).get('event', {}).get('actor_role') or task.get('owner_role') or 'tp-development-engineer'
+    def dispatch(stage, codes, source=None):
+        role = actor if actor in role_map else 'tp-development-engineer'
+        return _route_role_boundary(task, None, events, policy=policy, next_stage=stage,
+            role_id=role, skill_path=str(role_map[role]['skill_path']), execution_mode='DIRECT',
+            reason_codes=codes, source_event=source, source_role=actor,
+            required_effects=['repo_mutation'] if stage == 'development' else [], allowed_effects=allowed_effects)
+    verification = _latest_verification(events, task=task)
+    vd = (verification or {}).get('detail') or {}
+    latest_delivery = next((event for event in reversed(events) if event.get('event_type') == 'DELIVERY_RESULT'), None)
+    dd = _parse_detail((latest_delivery or {}).get('detail_json'))
+    architecture_review = _latest_arch_review(events)
+    if architecture_review and architecture_review['decision'] == 'REVISE':
+        repaired = _stage_completion_event('architecture', events)
+        if not repaired or int(repaired['id']) <= int(architecture_review['event']['id']):
+            return dispatch('architecture', ['ARCHITECTURE_REVIEW_REVISE'], architecture_review['event'])
+    mode_event = next((row for row in events if row.get('id') == (task.get('mode_source') or {}).get('event_id')), None)
+    material = _parse_detail((mode_event or {}).get('detail_json')).get('retained_material_binding')
+    design_sources = [row for row in (_stage_completion_event(stage, events) for stage in ('architecture','architecture_review','planning')) if row]
+    if material is not None and architecture_review and architecture_review['decision'].endswith('_STALE'):
+        return dispatch('architecture_review', ['MATERIAL_SOURCE_STALE'], architecture_review['event'])
+    if material is not None and any(int(row['id']) > int((mode_event or {}).get('id') or 0) for row in design_sources):
+        material = None  # A newly recorded design requires its own current boundary.
+    if material is None:
+        architecture = _stage_completion_event('architecture', events)
+        material_risk = max(_rank(task.get('risk_level')), _rank(task.get('flow_level')), _rank(task.get('_risk_scan_floor'))) >= 2
+        if architecture and (material_risk or 'workflow:multiple-feasible-routes' in task.get('_signals', set())):
+            latest = max(design_sources, key=lambda row: int(row['id']))
+            if not development or int(development['event']['id']) < int(latest['id']):
+                material = workflow_controls.build_boundary_binding(task_id=task['task_id'],
+                    source_stage=latest.get('to_stage') or 'architecture', source_role=latest['actor_role'],
+                    source_event_id=int(latest['id']), source_event_digest=workflow_controls.event_digest(latest),
+                    target_stage='development', target_role=actor, execution_mode='DIRECT', confirmation_kind='material')
+    if material is not None:
+        if not isinstance(material, dict) or material.get('confirmation_kind') != 'material':
+            raise OrchestrationError('RETAINED_MATERIAL_BINDING_INVALID')
+        source = next((row for row in events if row.get('id') == material.get('source_event_id')), None)
+        if source is None or workflow_controls.event_digest(source) != material.get('source_event_digest'):
+            raise OrchestrationError('RETAINED_MATERIAL_BINDING_INVALID: source event changed')
+        if workflow_controls.find_matching_confirmation(events, material) is None:
+            if allowed_effects is not None and 'repo_mutation' not in allowed_effects:
+                return _route_dict(task,None,next_stage='development',role_id=None,skill_path=None,
+                    action='await_effect_approval',confirmation_policy=policy,required_effects=['repo_mutation'],
+                    allowed_effects=allowed_effects,reason_codes=['EXECUTION_BOUNDARY_REACHED'])
+            return _route_dict(task,None,next_stage='development',role_id=material.get('target_role'),skill_path=None,
+                action='await_confirmation',confirmation_policy=policy,confirmation_required=True,
+                confirmation_reason='MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION',confirmation_binding=material,
+                required_effects=['repo_mutation'],allowed_effects=allowed_effects,reason_codes=['MATERIAL_DECISION_RETAINED'])
+    if not development or not development.get('change_set_id') or not development.get('repo_roots'):
+        task['_quick_status']['verification_current'] = False
+        if task['_quick_status']['verification_decision'] == 'PASS':
+            task['_quick_status']['verification_decision'] = 'PASS_STALE'
+        return dispatch('development', ['CHANGE_SET_REQUIRED'])
+    snapshot = _current_bound_change_set(development)
+    task['_current_change_set'] = snapshot
+    from .change_set import same_bound_product_content
+    current_verification = task.get('_current_verification') or {}
+    task['_quick_status']['verification_current'] = bool(snapshot and current_verification
+        and same_bound_product_content(current_verification, snapshot))
+    if task['_quick_status']['verification_decision'] in {'PASS', 'PASS_STALE'}:
+        task['_quick_status']['verification_decision'] = 'PASS' if task['_quick_status']['verification_current'] else 'PASS_STALE'
+    if not snapshot or not same_bound_product_content(development['detail'], snapshot):
+        return dispatch('development', ['CHANGE_SET_STALE'], development['event'])
+    known = delivery_contract.repository_scope(events)
+    if int(development['event']['id']) <= known['scope_event_id']:
+        return _full_repository_scope_wait(task, None, policy)
+    task['_full_repository_scope'] = delivery_contract.full_scope_matches(known, development['detail'],
+        development_event_id=int(development['event']['id']))
+    if verification and verification['decision'] in {'FAIL', 'NEEDS_FIX'}:
+        # A later same-content checkpoint cannot erase a known failing result.
+        if (vd.get('change_set_id') == snapshot.get('content_digest')
+                or int(development['event']['id']) <= int(verification['event']['id'])):
+            return dispatch('development', ['VERIFICATION_NEEDS_FIX'], verification['event'])
+    code_review = _latest_code_review(events)
+    if code_review and code_review['decision'] in {'FAIL', 'REVISE', 'NEEDS_FIX'}:
+        if (code_review['detail'].get('change_set_id') == snapshot.get('content_digest')
+                or int(development['event']['id']) <= int(code_review['event']['id'])):
+            return dispatch('development', ['CODE_REVIEW_REWORK'], code_review['event'])
+    review = _latest_arch_review(events)
+    if review and review['decision'] == 'REVISE':
+        repaired = _stage_completion_event('architecture', events)
+        if not repaired or int(repaired['id']) <= int(review['event']['id']):
+            return dispatch('architecture', ['ARCHITECTURE_REVIEW_REVISE'], review['event'])
+    current = task.get('_current_verification') or {}
+    any_verify = next((event for event in reversed(events) if event.get('event_type') == 'VERIFICATION_COMPLETED'), None)
+    if any_verify and (not current or not same_bound_product_content(current, snapshot)):
+        return dispatch('verification', ['CURRENT_VERIFICATION_REQUIRED'], any_verify)
+    delivery = _delivery_completion_event(events, directory, task=task)
+    if delivery is None:
+        return dispatch('delivery' if current else 'verification', ['QUICK_DELIVERY_REQUIRED'])
+    dd = _parse_detail(delivery.get('detail_json'))
+    binding = workflow_controls.build_boundary_binding(task_id=task['task_id'], source_stage='delivery',
+        source_role=delivery['actor_role'], source_event_id=int(delivery['id']),
+        source_event_digest=workflow_controls.event_digest(delivery), target_stage='complete',
+        target_role='human_owner', execution_mode='DIRECT', confirmation_kind='completion',
+        change_set_id=dd['change_set_id'], subject_digest=dd['verification_subject_digest'],
+        mode_source_digest=task['mode_source']['digest'])
+    confirmed = workflow_controls.find_matching_confirmation(events, binding)
+    task['_quick_status'].update(delivery_status='READY', delivery_current=True, delivery_event_id=int(delivery['id']),
+        awaiting_completion=confirmed is None, unverified_items=list(dd.get('unverified_items') or []))
+    return _route_dict(task, None, next_stage='complete', role_id='human_owner' if confirmed is None else None,
+        skill_path=None, action='await_confirmation' if confirmed is None else 'task_complete',
+        confirmation_required=confirmed is None,
+        confirmation_reason='QUICK_COMPLETION_REQUIRED' if confirmed is None else None,
+        confirmation_binding=binding if confirmed is None else None, confirmation_policy=policy,
+        reason_codes=['QUICK_DELIVERED_AWAITING_COMPLETION' if confirmed is None else 'QUICK_COMPLETION_CONFIRMED'])
+
+
 def _full_repository_scope_wait(task: Dict[str, Any], level: str, policy: str) -> Dict[str, Any]:
     reason = "当前开发记录仅覆盖局部仓库或早于有效范围决定，不能据此授予整任务PASS。"
     waiting = {"reason": reason, "reason_code": "FULL_SCOPE_CHECKPOINT_REQUIRED",
@@ -1751,12 +1893,47 @@ def _full_verification_wait(task: Dict[str, Any], level: str, policy: str) -> Di
     return result
 
 
+def _quick_progress(task, events, route, role_map, presentation, mode_fields):
+    steps = []
+    for stage in ('development', 'verification', 'delivery'):
+        if stage == 'development':
+            binding = _development_change_set_binding(events, task=task)
+            event = (binding or {}).get('event')
+            status = '已完成' if binding and binding.get('change_set_id') else '未记录'
+        elif stage == 'verification':
+            item = _latest_verification(events, task=task)
+            event = (item or {}).get('event')
+            detail = (item or {}).get('detail') or {}
+            status = ('技术检查通过（限定范围）' if detail.get('verification_scope') == 'technical' else '已完成') if item and item['decision'] == 'PASS' else '待修复'
+        else:
+            event = next((row for row in reversed(events) if row.get('event_type') == 'DELIVERY_RESULT'), None)
+            status = '已交付，待用户结单' if (route.get('quick_status') or {}).get('awaiting_completion') else ('已完成' if (route.get('quick_status') or {}).get('delivery_status') == 'READY' else '待交付')
+        if event is None:
+            continue
+        role = str(event.get('actor_role') or '')
+        steps.append({'stage': stage, 'phase': stage, 'stage_display': _display_entry(presentation, stage),
+            'role': role, 'role_display': _role_display(role_map, role), 'status': status, 'required': True,
+            'trigger': '', 'definition_source': 'runtime_actual_event', 'completion_event_id': int(event['id']),
+            'completion_source': 'runtime_event'})
+    next_stage, role = str(route.get('next_stage') or ''), str(route.get('role_id') or '')
+    next_step = ({'stage': next_stage, 'stage_display': _display_entry(presentation, next_stage),
+        'role': role, 'role_display': _role_display(role_map, role), 'action': route.get('recommended_action'),
+        'confirmation_required': bool(route.get('confirmation_required')),
+        'confirmation_reason': route.get('confirmation_reason') or '', 'reason_codes': route.get('reason_codes') or []} if next_stage else {})
+    return {**task['_progress_facts'], **mode_fields, 'effective_level': None, 'retired': bool(task.get('_retired')),
+        'steps': steps, 'completed_steps': [step for step in steps if step['status'] in {'已完成', '技术检查通过（限定范围）'}],
+        'current_step': next((step for step in steps if step['stage'] == task.get('current_stage')), {}),
+        'next_step': next_step, 'next_step_source': 'workflow_quick', 'conditional_roles': [], 'reference_steps': [],
+        'route': route, 'error': route.get('error', '')}
+
+
 def resolve_progress(
     task_id: str,
     *,
     db_path: Optional[str] = None,
     base_root: Optional["str | Path"] = None,
     connection: Optional[sqlite3.Connection] = None,
+    task_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Return display-oriented workflow progress from the same orchestration facts.
 
@@ -1776,23 +1953,29 @@ def resolve_progress(
         for item in (catalog.get("roles") or [])
         if isinstance(item, dict) and item.get("workflow_role")
     }
-    task, events = _load_task_facts(task_id, db_path, include_progress=True, connection=connection)
+    task, events = _load_task_facts(task_id, db_path, include_progress=True, connection=connection, task_dir=task_dir)
     contract = orchestration_policy.resolve(contract, catalog, task["_orchestration_overrides"],
                                             project_id=str(task["project_id"]), task_id=task_id)
     execution_facts = task["_progress_facts"]["execution"]
     try:
-        route = resolve_route(task_id, db_path=db_path, base_root=root, _facts=(task, events))
+        route = resolve_route(task_id, db_path=db_path, base_root=root, _facts=(task, events), task_dir=task_dir)
     except Exception as exc:
         # A failed gate lookup does not erase explicit progress or turn old terminal
         # tasks into current work. It stays a separately reported read problem.
         if execution_facts["status"] == "NOT_RECORDED" and not execution_facts["terminal"]:
             raise
         route = {"error": str(exc), "reason_codes": ["WORKFLOW_UNRESOLVED"]}
+    mode_fields = orchestration_policy.resolve_task_obligations(task, events, route.get('included_stages'))
+    mode_fields = {key: mode_fields[key] for key in ('workflow_mode', 'mode_source', 'applicable_obligations')}
+    if route.get('quick_status') is not None:
+        mode_fields['quick_status'] = route['quick_status']
     if execution_facts["status"] != "NOT_RECORDED":
         from .execution import progress_view
-        level = route.get("effective_level") or resolve_effective_level(task.get("risk_level"), task.get("flow_level"))
+        level = None if mode_fields['workflow_mode'] == 'quick' else (route.get("effective_level") or resolve_effective_level(task.get("risk_level"), task.get("flow_level")))
         return {**task["_progress_facts"], **progress_view(execution_facts, effective_level=level,
-                role_map=role_map, route=route), "error": route.get("error", ""), "retired": bool(task.get("_retired"))}
+                role_map=role_map, route=route), **mode_fields, "error": route.get("error", ""), "retired": bool(task.get("_retired"))}
+    if mode_fields['workflow_mode'] == 'quick':
+        return _quick_progress(task, events, route, role_map, stage_presentation, mode_fields)
     task["_risk_signals"] = route.get("risk_signals", [])
     level = str(route.get("effective_level") or resolve_effective_level(task.get("risk_level"), task.get("flow_level")))
     signals = _decision_signals(events, contract)
@@ -1802,7 +1985,7 @@ def resolve_progress(
                 else _stage_included(step, level, task, events, signals))]
 
     project_root = str(task.get("project_root_path") or "").strip()
-    task_dir = Path(project_root) / ".tp-spec" / "tasks" / task_id if project_root else None
+    task_dir = task_dir or (Path(project_root) / ".tp-spec" / "tasks" / task_id if project_root else None)
     current_phase = str(task.get("current_stage") or "")
     task_state = str(task.get("current_state") or "")
     waiting_fact = (route.get("context") or {}).get("waiting") or {}
@@ -1926,6 +2109,7 @@ def resolve_progress(
         next_step["waiting"] = waiting_fact
     return {
         "effective_level": level,
+        **mode_fields,
         **task["_progress_facts"],
         "retired": bool(task.get("_retired")),
         **({"current_effective": route["context"]["current_effective"]}
@@ -1939,6 +2123,7 @@ def resolve_progress(
         "conditional_roles": conditional_roles,
         "reference_steps": [],
         "route": {
+            **mode_fields,
             "decision": str(route.get("decision") or ""),
             "recommended_action": str(route.get("recommended_action") or ""),
             "next_stage": str(route.get("next_stage") or ""),

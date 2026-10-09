@@ -85,6 +85,7 @@ def read_note(path: Path, *, root: Path, scope: str) -> Dict[str, Any]:
         raw_ev = fm.get("evidence_refs") or []
         if isinstance(raw_ev, list):
             evidence_refs = [v for v in raw_ev if isinstance(v, dict)]
+    raw_project = project
     parts = rel.split("/")
     if not project and len(parts) >= 2 and parts[0] == "10-projects":
         project = parts[1]
@@ -100,6 +101,8 @@ def read_note(path: Path, *, root: Path, scope: str) -> Dict[str, Any]:
         "frontmatter": fm,
         "parse_error": error,
         "project": project,
+        "raw_project": raw_project,
+        "truth_project": project,
         "kind": kind,
         "id": note_id,
         "title": title,
@@ -159,6 +162,9 @@ def collect_notes(root: Path, cfg: ResolvedConfig) -> Tuple[List[Dict[str, Any]]
             sources.append(read_note(p, root=root, scope="source"))
     canonical.sort(key=lambda n: n["rel_path"])
     sources.sort(key=lambda n: n["rel_path"])
+    registry_data, _ = load_project_registry(cfg)
+    for note in canonical + sources:
+        apply_note_identity(cfg, note, registry_data=registry_data)
     return canonical, sources
 
 
@@ -175,6 +181,63 @@ def load_project_registry(cfg: ResolvedConfig) -> Tuple[Dict[str, Any], set[str]
         if isinstance(p, dict) and p.get("id"):
             ids.add(str(p["id"]))
     return data, ids
+
+
+def effective_project_identity(cfg, raw_project: str, *, relative: str = "", scope: str = "source", registry_data=None) -> Dict[str, Any]:
+    """Resolve declared identity against exact registered names and physical scope.
+
+    Historical names are accepted only for sources. Canonical metadata continues
+    to use the registered ID contract. No case folding or title inference occurs.
+    An empty declaration may use an exact registered physical project directory.
+    Virtual originals rely on their explicit registration, never an origin path.
+    """
+    data = registry_data if registry_data is not None else load_project_registry(cfg)[0]
+    entries = [(row, shared) for field, shared in (("projects", False), ("shared_scopes", True))
+               for row in data.get(field) or [] if isinstance(row, dict) and row.get("id")]
+    raw = str(raw_project or "").strip()
+    exact = [(row, shared) for row, shared in entries if str(row["id"]) == raw]
+    matches = list(exact)
+    for row, shared in ([] if exact else entries):
+        names = {str(row["id"])}
+        if scope == "source":
+            names.update(str(row.get(key) or "") for key in ("display_name", "source_dir", "name", "title"))
+            names.update(str(value) for value in row.get("aliases") or [])
+        if raw and raw in names:
+            matches.append((row, shared))
+    relative = str(relative or "").replace("\\", "/")
+    physical = ""
+    parts = relative.split("/")
+    projects_dir = str(cfg.knowledge_canonical.get("projects_dir") or "10-projects")
+    shared_dir = str(cfg.knowledge_canonical.get("shared_dir") or "20-shared")
+    source_dir = str(cfg.knowledge_canonical.get("source_dir") or "90-sources")
+    if relative and not relative.startswith("@"):
+        if len(parts) >= 3 and parts[0] == projects_dir:
+            physical = parts[1]
+            valid_layer = parts[2] == source_dir if scope == "source" else parts[2] in CANONICAL_SUBDIRS
+            if not valid_layer:
+                return {"raw_project": raw, "project": "", "status": "PHYSICAL_SCOPE_CONFLICT", "physical_project": physical}
+        elif parts[0] == shared_dir and scope == "canonical":
+            physical = "@shared"
+        else:
+            return {"raw_project": raw, "project": "", "status": "PHYSICAL_SCOPE_CONFLICT", "physical_project": physical}
+    if not raw and physical and physical != "@shared":
+        matches = [(row, shared) for row, shared in entries if str(row["id"]) == physical and not shared]
+    if len(matches) != 1:
+        return {"raw_project": raw, "project": "", "status": "AMBIGUOUS_PROJECT" if matches else "UNREGISTERED_PROJECT", "physical_project": physical}
+    row, shared = matches[0]
+    project = str(row["id"])
+    if physical and ((shared and physical != "@shared") or (not shared and physical != project)):
+        return {"raw_project": raw, "project": "", "status": "PHYSICAL_SCOPE_CONFLICT", "physical_project": physical}
+    if shared and scope == "source":
+        return {"raw_project": raw, "project": "", "status": "PHYSICAL_SCOPE_CONFLICT", "physical_project": physical}
+    return {"raw_project": raw, "project": project, "status": "REGISTERED_ID" if raw == project else "LEGACY_ALIAS" if raw else "PHYSICAL_ID", "physical_project": physical}
+
+
+def apply_note_identity(cfg, note: Dict[str, Any], *, registry_data=None) -> Dict[str, Any]:
+    identity = effective_project_identity(cfg, note.get("raw_project", note.get("project", "")),
+                                          relative=note.get("rel_path", ""), scope=note.get("scope", "source"), registry_data=registry_data)
+    note.update(raw_project=identity["raw_project"], project=identity["project"], project_identity=identity)
+    return note
 
 
 
@@ -314,6 +377,24 @@ def stable_hash(value: Any) -> str:
     return hashlib.sha256(blob).hexdigest()
 
 
+def registered_conversion_versions(cfg) -> Dict[str, Any]:
+    """Versions of exact already-registered Markdown outputs, never originals."""
+    from .documents import registered_conversion_path
+    versions = {}
+    for record in read_jsonl(meta_paths(cfg)["source_registry"]):
+        if record.get("conversion_status") != "converted" or record.get("disposition") in {"quarantined", "excluded"}:
+            continue
+        key = "@converted/" + stable_hash([record.get("batch"), str(record.get("origin_path") or ""), str(record.get("project") or "")])
+        item = {"scope": "source", "id": str(record.get("source_id") or ""), "project": str(record.get("project") or "")}
+        try:
+            path = registered_conversion_path(cfg, record)
+            item.update(sha256=hashlib.sha256(path.read_bytes()).hexdigest(), status="RESOLVED")
+        except (ValueError, OSError, RuntimeError):
+            item["status"] = "UNAVAILABLE"
+        versions[key] = item
+    return versions
+
+
 def knowledge_truth_snapshot(cfg: ResolvedConfig) -> Dict[str, Any]:
     root = cfg.paths.knowledge_physical_root
     canonical, sources = collect_notes(root, cfg)
@@ -323,8 +404,11 @@ def knowledge_truth_snapshot(cfg: ResolvedConfig) -> Dict[str, Any]:
             "scope": note["scope"],
             "sha256": note["sha256"],
             "id": note["id"],
-            "project": note["project"],
+            "project": note["truth_project"],
         }
+    for relative, item in registered_conversion_versions(cfg).items():
+        if item.get("status") == "RESOLVED":
+            files[relative] = {key: item[key] for key in ("scope", "sha256", "id", "project")}
     # Registry/dictionaries are data-owned knowledge configuration and affect interpretation.
     registry = cfg.paths.knowledge_registry
     if registry.is_file() and registry.is_relative_to(root):
@@ -367,15 +451,16 @@ def classify_snapshot(old: Optional[Dict[str, Any]], new: Dict[str, Any]) -> Dic
     }
 
 
-def load_source_registry(cfg: ResolvedConfig) -> Dict[str, Dict[str, Any]]:
+def source_registry_records(cfg: ResolvedConfig) -> List[Dict[str, Any]]:
+    """Keep each registered path; a stable source ID may cover several files."""
     rows = read_jsonl(meta_paths(cfg)["source_registry"])
-    by_id = {str(r.get("source_id")): r for r in rows if r.get("source_id")}
+    modern_ids = {str(r["source_id"]) for r in rows if r.get("source_id")}
     # Compatibility: historical final source catalog remains readable as evidence mapping.
     legacy = cfg.paths.knowledge_physical_root / "00-system" / "migration" / "source-catalog.jsonl"
     for r in read_jsonl(legacy):
         sid = str(r.get("source_id") or "")
-        if sid and sid not in by_id:
-            by_id[sid] = {
+        if sid and sid not in modern_ids:
+            rows.append({
                 "source_id": sid,
                 "project": str(r.get("project") or r.get("project_id") or ""),
                 "origin_path": str(r.get("old_path") or r.get("origin_path") or "legacy"),
@@ -383,8 +468,26 @@ def load_source_registry(cfg: ResolvedConfig) -> Dict[str, Dict[str, Any]]:
                 "sha256": str(r.get("sha256") or r.get("source_sha256") or ""),
                 "disposition": "source_only",
                 "legacy": True,
-            }
+            })
+    return rows
+
+
+def load_source_registry(cfg: ResolvedConfig) -> Dict[str, Dict[str, Any]]:
+    by_id = {}
+    for row in source_registry_records(cfg):
+        sid = str(row.get("source_id") or "")
+        if sid and (not row.get("legacy") or sid not in by_id):
+            by_id[sid] = row
     return by_id
+
+
+def source_path_ids(cfg, *, records=None) -> Dict[str, List[str]]:
+    paths = {}
+    for row in source_registry_records(cfg) if records is None else records:
+        path = str(row.get("content_path") or "").replace("\\", "/")
+        if path and row.get("source_id"):
+            paths.setdefault(path, set()).add(str(row["source_id"]))
+    return {path: sorted(ids) for path, ids in paths.items()}
 
 
 def find_source_ids(source_notes: List[Dict[str, Any]], registry: Dict[str, Dict[str, Any]]) -> set[str]:

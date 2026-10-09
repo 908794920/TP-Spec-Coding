@@ -1,7 +1,7 @@
 ---
 id: tp-spec-coding
 name: tp-软件生命周期
-version: 5.3.7
+version: 5.3.8
 status: active
 type: control-role
 role: tp-spec-coding
@@ -42,3 +42,6 @@ description: TP-Spec-Coding 唯一默认产品入口；以低上下文成本识�
 
 ## 边界
 不得决定 L0~L3 pipeline、不得写业务代码、不得直接修改 Runtime、不得替代 Domain Agent 做专业判断。
+
+## 软件任务模式
+软件任务按 Runtime 唯一模式解释确定适用义务。旧 Task 或没有真实用户模式选择的 Task 按 standard；只有用户明确选择 quick 时才使用 quick。AI 可以建议 quick，但用户沉默、拒绝或未作选择都不构成 quick 选择。模式选择只裁剪流程义务，不扩大 SQL、生产、发布、权限或结单授权。具体流程和最终字段见 [软件工程生命周期](../../agents/tp-software-lifecycle/SKILL.md)。

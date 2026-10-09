@@ -38,6 +38,10 @@ def cmd_doctor(args) -> int:
         proj=projection_status(cfg)
         if proj.get("status")=="MISSING": warnings.append("retrieval projection missing; run knowledge index build")
         warnings.extend(proj.get("warnings") or [])
+        warnings.extend(proj.get("issues") or [])
+        reachability = proj.get("reachability") or {}
+        if reachability.get("unreachable"):
+            warnings.append(f"indexed documents outside formal registered scope: {reachability['unreachable']}; inspect projection.reachability reasons/samples")
         legacy=[]
         for rel in ("tools/kb-index","tools/kb-rebuild","tools/kb-ingest","00-system/schemas","00-system/templates","AI知识库维护体系V1.md","外部文档知识沉淀流水线V1.md"):
             if (root/rel).exists(): legacy.append(rel)
@@ -179,7 +183,14 @@ def cmd_audit(args) -> int:
 
 
 def cmd_audit_record(args) -> int:
-    try: _emit(record_audit(_cfg(args),result=args.result,summary=args.summary,documents=args.document or [])); return 0
+    try:
+        assertion_path = getattr(args, "assertions_file", None)
+        assertions = json.loads(Path(assertion_path).read_text(encoding="utf-8-sig")) if assertion_path else []
+        if not isinstance(assertions, list):
+            raise ValueError("audit assertions file must contain a JSON array")
+        _emit(record_audit(_cfg(args), result=args.result, summary=args.summary, documents=args.document or [],
+                           audit_scope=getattr(args, "audit_scope", "") or "", assertions=assertions))
+        return 0
     except Exception as exc: _emit({"schema":"tp-spec.knowledge-semantic-audit-receipt/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 
@@ -537,7 +548,10 @@ def add_knowledge_subparsers(root_subparsers) -> None:
     p=sub.add_parser("migrate-plan",help="Read-only plan for legacy Knowledge Vault runtime/rule assets"); _common(p); p.set_defaults(func=cmd_migrate_plan)
     p=sub.add_parser("migrate-normalize",help="Deterministic legacy canonical frontmatter normalization; dry-run by default"); _common(p); p.add_argument("--apply",action="store_true",help="apply only semantics-preserving safe transformations and write a receipt/review queue"); p.set_defaults(func=cmd_migrate_normalize)
     p=sub.add_parser("audit",help="Create deterministic L4 semantic audit scope"); _common(p); p.add_argument("--full",action="store_true"); p.set_defaults(func=cmd_audit)
-    p=sub.add_parser("audit-record",help="Record conversational-model L4 result"); _common(p); p.add_argument("--result",required=True,choices=["PASS","FAIL","pass","fail"]); p.add_argument("--summary",required=True); p.add_argument("--document",action="append",default=[]); p.set_defaults(func=cmd_audit_record)
+    p=sub.add_parser("audit-record",help="Record conversational-model L4 result"); _common(p); p.add_argument("--result",required=True,choices=["PASS","FAIL","pass","fail"]); p.add_argument("--summary",required=True); p.add_argument("--document",action="append",default=[])
+    p.add_argument("--audit-scope", default="", help="actual reviewed scope; defaults to the bound plan mode")
+    p.add_argument("--assertions-file", help="JSON array of actual representative checks: document, locator, assertion, source_ref, source_locator, source_version, judgment, reason; no fixed per-page form")
+    p.set_defaults(func=cmd_audit_record)
 
     from .convergence_cmd import cmd_inputs
     p = sub.add_parser("task-inputs", help="Read-only Task input index and changed/reusable judgment navigation")

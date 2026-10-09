@@ -25,6 +25,7 @@ controlled:
     - START
     - END
     - WORKFLOW_CONFIRM
+    - TASK_MODE_SELECT
     - DELIVERY_CONVERGE
     - KNOWLEDGE_REQUEST
     - KNOWLEDGE_CONVERGE
@@ -63,6 +64,9 @@ event_families:
   WORKFLOW_CONFIRMATION:
     required: [operation, result_status]
     operation: WORKFLOW_CONFIRM
+  TASK_MODE_SELECTED:
+    required: [operation, result_status, workflow_mode, previous_mode, user_source]
+    operation: TASK_MODE_SELECT
   DELIVERY_RESULT:
     required: [operation, result_status, verification_change_set_id, review_event_id, review_change_set_id, change_set_id]
     operation: DELIVERY_CONVERGE

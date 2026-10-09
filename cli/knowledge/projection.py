@@ -17,7 +17,8 @@ import warnings
 from . import telemetry
 from .documents import document_key, public_document, query_documents, resolve_scope
 
-from .common import collect_notes, load_source_registry, now_iso, stable_hash, resolve_knowledge_project, meta_paths, read_jsonl
+from .common import collect_notes, source_path_ids, now_iso, stable_hash, resolve_knowledge_project, meta_paths, read_jsonl, apply_note_identity, effective_project_identity
+from .contracts import projection_contract, projection_source_subject
 
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
@@ -201,6 +202,8 @@ def _note_metadata(note):
     fm = note.get("frontmatter") or {}
     # Only explicitly recorded maintenance facts. Missing is unknown, not healthy.
     return {"metadata_version": 1, "evidence_refs": fm.get("evidence_refs") or [],
+            "raw_project": note.get("raw_project", fm.get("project", "")),
+            "project_identity": note.get("project_identity") or {},
             **{key: fm[key] for key in ("status", "superseded", "replaced_by", "relations", "last_verified", "expires_at") if key in fm}}
 
 
@@ -210,19 +213,20 @@ def _registered_sources(conn, cfg, notes):
     Converted Markdown already has its own source document. A source_id can name
     several files; the synthetic relative locator includes batch + origin path.
     """
-    from .documents import scopes, registered_conversion_path
+    from .documents import registered_conversion_path
     from .common import read_note
     known = {note["rel_path"]: note for note in notes}
-    registered = {row["id"] for row in scopes(cfg)}
     conn.execute("DELETE FROM fts_chunks WHERE rowid IN (SELECT c.id FROM chunks c JOIN documents d ON c.doc_id=d.id WHERE substr(d.rel_path,1,11)='@converted/')")
     conn.execute("DELETE FROM documents WHERE substr(rel_path,1,12)='@registered/' OR substr(rel_path,1,11)='@converted/'")
     for record in read_jsonl(meta_paths(cfg)["source_registry"]):
-        project, origin = str(record.get("project") or ""), str(record.get("origin_path") or "")
-        if project not in registered or not origin:
-            continue
+        raw_project, origin = str(record.get("project") or ""), str(record.get("origin_path") or "")
         converted = str(record.get("conversion_path") or record.get("content_path") or "").replace("\\", "/")
+        identity = effective_project_identity(cfg, raw_project, relative=converted if converted in known else "", scope="source")
+        project = identity["project"]
+        if not origin:
+            continue
         origin_meta = {k: record[k] for k in ("source_id", "origin_path", "batch", "sha256", "disposition") if k in record}
-        if converted in known:
+        if converted in known and project and project == known[converted]["project"]:
             note = known[converted]
             metadata = {**_note_metadata(note), "origin": origin_meta, "conversion": converted}
             conn.execute("UPDATE documents SET metadata_json=? WHERE rel_path=?", (json.dumps(metadata, ensure_ascii=False), converted))
@@ -230,12 +234,12 @@ def _registered_sources(conn, cfg, notes):
         # Ingest conversions are already registered outputs, not a request for
         # conversion. Keep them in the existing source/chunk index with a stable
         # virtual locator; reading rechecks the live registration and boundary.
-        if record.get("conversion_status") == "converted" and record.get("disposition") not in {"quarantined", "excluded"}:
+        if project and record.get("conversion_status") == "converted" and record.get("disposition") not in {"quarantined", "excluded"}:
             try:
                 path = registered_conversion_path(cfg, record)
                 note = read_note(path, root=path.parent, scope="source")
-                relative = "@converted/" + stable_hash([record.get("batch"), origin, project])
-                note.update(rel_path=relative, project=project, kind="source", id=str(record.get("source_id") or ""),
+                relative = "@converted/" + stable_hash([record.get("batch"), origin, raw_project])
+                note.update(rel_path=relative, project=project, raw_project=raw_project, project_identity=identity, kind="source", id=str(record.get("source_id") or ""),
                             title=note.get("title") or Path(origin).name)
                 _insert_doc(conn, note, {}, cfg)
                 metadata = {**_note_metadata(note), "origin": origin_meta, "conversion": converted,
@@ -244,8 +248,9 @@ def _registered_sources(conn, cfg, notes):
                 continue
             except (ValueError, OSError, RuntimeError):
                 pass  # Preserve registered original metadata when its output is unavailable.
-        relative = "@registered/" + stable_hash([record.get("batch"), origin, project])
+        relative = "@registered/" + stable_hash([record.get("batch"), origin, raw_project])
         metadata = {"metadata_only": True, "origin": origin_meta,
+                    "raw_project": raw_project, "project_identity": identity,
                     "conversion": converted or None, "status": record.get("disposition"),
                     "updated_at": record.get("updated_at") or record.get("registered_at")}
         conn.execute("""INSERT OR REPLACE INTO documents(rel_path,scope,project,kind,source_id,title,sha256,indexed_at,document_key,metadata_json)
@@ -255,16 +260,16 @@ def _registered_sources(conn, cfg, notes):
                       json.dumps(metadata, ensure_ascii=False)))
 
 
-def _source_id(note: Dict[str, Any], source_registry: Dict[str, Dict[str, Any]]) -> str:
+def _source_id(note: Dict[str, Any], source_paths: Dict[str, List[str]]) -> str:
     if note.get("id"):
         return str(note["id"])
-    for sid, rec in source_registry.items():
-        if str(rec.get("content_path") or "").replace("\\", "/") == note["rel_path"]:
-            return sid
-    return ""
+    ids = source_paths.get(note["rel_path"], [])
+    return ids[0] if len(ids) == 1 else ""
 
 
-def _insert_doc(conn: sqlite3.Connection, note: Dict[str, Any], source_registry: Dict[str, Dict[str, Any]], cfg=None) -> None:
+def _insert_doc(conn: sqlite3.Connection, note: Dict[str, Any], source_registry: Dict[str, List[str]], cfg=None) -> None:
+    if cfg is not None and not note.get("project_identity"):
+        note = apply_note_identity(cfg, dict(note))
     source_id = _source_id(note, source_registry) if note["scope"] == "source" else ""
     canonical_id = str(note.get("id") or "") if note["scope"] == "canonical" else ""
     freshness = datetime.fromtimestamp(note["mtime_ns"] / 1e9, timezone.utc).strftime("%Y-%m-%d")
@@ -307,7 +312,7 @@ def _rebuild_graph(conn: sqlite3.Connection, canonical: List[Dict[str, Any]], mo
         except Exception: conf = 0.0
         conn.execute("""INSERT OR REPLACE INTO graph_nodes(canonical_id,kind,title,project,status,layer,rel_path,source_refs,confidence,last_verified)
                         VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                     (cid, str(fm.get("kind") or ""), str(fm.get("title") or ""), str(fm.get("project") or ""),
+                     (cid, str(fm.get("kind") or ""), str(fm.get("title") or ""), str(n.get("project") or ""),
                       str(fm.get("status") or "active"), "canonical", n["rel_path"],
                       json.dumps(fm.get("source_refs") or [], ensure_ascii=False), conf, str(fm.get("last_verified") or "")))
     for n in canonical:
@@ -329,43 +334,57 @@ def _rebuild_graph(conn: sqlite3.Connection, canonical: List[Dict[str, Any]], mo
 
 def build_projection(cfg, *, clean: bool = True) -> Dict[str, Any]:
     root = cfg.paths.knowledge_physical_root; db = cfg.paths.knowledge_projection_db
-    canonical, sources = collect_notes(root, cfg); registry = load_source_registry(cfg)
+    contract_id = projection_contract(cfg)["contract_id"]
+    source_subject = projection_source_subject(cfg)
+    canonical, sources = collect_notes(root, cfg); registry = source_path_ids(cfg)
     conn = _connect(db)
-    conn.execute("BEGIN")
-    upgrade_projection_schema(conn, cfg)
-    if clean:
-        # Preserve telemetry and retired-compatible model tables; all active retrieval projections are rebuilt.
-        conn.execute("DELETE FROM fts_chunks"); conn.execute("DELETE FROM doc_links"); conn.execute("DELETE FROM chunks"); conn.execute("DELETE FROM documents")
-    for n in canonical + sources:
-        _insert_doc(conn, n, registry, cfg)
-    _registered_sources(conn, cfg, canonical + sources)
-    _rebuild_graph(conn, canonical, str(cfg.knowledge_projection.get("graph_mode") or "optional"))
-    subject = stable_hash({n["rel_path"]: n["sha256"] for n in canonical + sources})
-    meta = {
-        "projection_schema": "tp-spec.knowledge-projection/v1",
-        "projection_subject": subject,
-        "build_at": now_iso(),
-        "build_doc_count": str(conn.execute("SELECT count(*) FROM documents").fetchone()[0]),
-        "build_chunk_count": str(conn.execute("SELECT count(*) FROM chunks").fetchone()[0]),
-        "vector_state": str(cfg.knowledge_projection.get("vector_mode") or "retired-compatible"),
-        "retrieval_authority": str(cfg.knowledge_retrieval.get("strategy") or "canonical-first-fts5"),
-    }
-    for k, v in meta.items(): conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES(?,?)", (k, str(v)))
-    conn.commit()
-    result = projection_status(cfg, conn=conn)
-    conn.close()
-    return result
+    try:
+        conn.execute("BEGIN")
+        upgrade_projection_schema(conn, cfg)
+        if clean:
+            # Preserve telemetry and retired-compatible model tables; all active retrieval projections are rebuilt.
+            conn.execute("DELETE FROM fts_chunks"); conn.execute("DELETE FROM doc_links"); conn.execute("DELETE FROM chunks"); conn.execute("DELETE FROM documents")
+        for n in canonical + sources:
+            _insert_doc(conn, n, registry, cfg)
+        _registered_sources(conn, cfg, canonical + sources)
+        _rebuild_graph(conn, canonical, str(cfg.knowledge_projection.get("graph_mode") or "optional"))
+        subject = stable_hash({n["rel_path"]: n["sha256"] for n in canonical + sources})
+        meta = {
+            "projection_schema": "tp-spec.knowledge-projection/v1",
+            "projection_subject": subject,
+            "projection_contract_id": contract_id,
+            "projection_source_subject": source_subject,
+            "build_at": now_iso(),
+            "build_doc_count": str(conn.execute("SELECT count(*) FROM documents").fetchone()[0]),
+            "build_chunk_count": str(conn.execute("SELECT count(*) FROM chunks").fetchone()[0]),
+            "vector_state": str(cfg.knowledge_projection.get("vector_mode") or "retired-compatible"),
+            "retrieval_authority": str(cfg.knowledge_retrieval.get("strategy") or "canonical-first-fts5"),
+        }
+        for k, v in meta.items(): conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES(?,?)", (k, str(v)))
+        if projection_contract(cfg)["contract_id"] != contract_id:
+            raise ValueError("projection contract changed during index write")
+        if projection_source_subject(cfg) != source_subject:
+            raise ValueError("registered source inputs changed during index write")
+        conn.commit()
+        result = projection_status(cfg, conn=conn)
+        return result
 
 
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 def update_canonical_note_projection(cfg, note: Dict[str, Any]) -> Dict[str, Any]:
     """只增量索引一条精确 canonical note，不扫描整个 Knowledge vault。"""
     if note.get("scope") != "canonical" or not str(note.get("id") or "").strip():
         raise ValueError("exact Knowledge index requires one canonical note with stable id")
+    note = apply_note_identity(cfg, dict(note))
     db = cfg.paths.knowledge_projection_db
     if not db.is_file():
         raise ValueError("knowledge projection database missing; run knowledge index build")
-    registry = load_source_registry(cfg)
+    registry = {}  # exact canonical indexing needs no source catalog inventory
     conn = _connect(db)
     try:
         canonical_id = str(note["id"])
@@ -397,7 +416,7 @@ def update_canonical_note_projection(cfg, note: Dict[str, Any]) -> Dict[str, Any
             conn.execute(
                 """INSERT OR REPLACE INTO graph_nodes(canonical_id,kind,title,project,status,layer,rel_path,source_refs,confidence,last_verified)
                    VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                (canonical_id, str(fm.get("kind") or ""), str(fm.get("title") or ""), str(fm.get("project") or ""),
+                (canonical_id, str(fm.get("kind") or ""), str(fm.get("title") or ""), str(note.get("project") or ""),
                  str(fm.get("status") or "active"), "canonical", rel_path,
                  json.dumps(fm.get("source_refs") or [], ensure_ascii=False), confidence, str(fm.get("last_verified") or "")),
             )
@@ -441,31 +460,48 @@ def update_projection(cfg) -> Dict[str, Any]:
     db = cfg.paths.knowledge_projection_db
     if not db.is_file():
         return build_projection(cfg, clean=True)
+    contract_id = projection_contract(cfg)["contract_id"]
+    source_subject = projection_source_subject(cfg)
     root = cfg.paths.knowledge_physical_root; canonical, sources = collect_notes(root, cfg); notes = canonical + sources
-    current = {n["rel_path"]: n for n in notes}; registry = load_source_registry(cfg)
+    current = {n["rel_path"]: n for n in notes}; registry = source_path_ids(cfg)
     conn = _connect(db)
-    conn.execute("BEGIN")
-    upgrade_projection_schema(conn, cfg)
-    old = {r[0]: (int(r[1]), r[2]) for r in conn.execute("SELECT rel_path,id,sha256 FROM documents WHERE substr(rel_path,1,1) != '@'")}
-    removed = set(old) - set(current)
-    changed = [n for p,n in current.items() if p not in old or old[p][1] != n["sha256"]]
-    for rel in removed | {n["rel_path"] for n in changed if n["rel_path"] in old}:
-        doc_id = old[rel][0]
-        for (cid,) in conn.execute("SELECT id FROM chunks WHERE doc_id=?", (doc_id,)).fetchall():
-            conn.execute("DELETE FROM fts_chunks WHERE rowid=?", (cid,))
-        conn.execute("DELETE FROM doc_links WHERE doc_id=?", (doc_id,)); conn.execute("DELETE FROM chunks WHERE doc_id=?", (doc_id,)); conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))
-    for n in changed: _insert_doc(conn, n, registry, cfg)
-    for n in notes:
-        conn.execute("UPDATE documents SET metadata_json=? WHERE rel_path=?", (json.dumps(_note_metadata(n), ensure_ascii=False), n["rel_path"]))
-    _registered_sources(conn, cfg, notes)
-    _rebuild_graph(conn, canonical, str(cfg.knowledge_projection.get("graph_mode") or "optional"))
-    subject = stable_hash({n["rel_path"]: n["sha256"] for n in notes})
-    conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('projection_subject',?)", (subject,))
-    conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('last_update',?)", (now_iso(),))
-    conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('retrieval_authority',?)", (str(cfg.knowledge_retrieval.get("strategy") or "canonical-first-fts5"),))
-    conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('vector_state',?)", (str(cfg.knowledge_projection.get("vector_mode") or "retired-compatible"),))
-    conn.commit(); result = projection_status(cfg, conn=conn); result["delta"]={"added_or_modified":len(changed),"deleted":len(removed)}; conn.close(); return result
+    try:
+        conn.execute("BEGIN")
+        upgrade_projection_schema(conn, cfg)
+        saved_contract = conn.execute("SELECT value FROM build_meta WHERE key='projection_contract_id'").fetchone()
+        contract_changed = not saved_contract or saved_contract[0] != contract_id
+        old = {r[0]: (int(r[1]), r[2], r[3]) for r in conn.execute("SELECT rel_path,id,sha256,source_id FROM documents WHERE substr(rel_path,1,1) != '@'")}
+        removed = set(old) - set(current)
+        changed = [n for p,n in current.items() if contract_changed or p not in old or old[p][1] != n["sha256"]
+                   or (n["scope"] == "source" and _source_id(n, registry) != old[p][2])]
+        for rel in removed | {n["rel_path"] for n in changed if n["rel_path"] in old}:
+            doc_id = old[rel][0]
+            for (cid,) in conn.execute("SELECT id FROM chunks WHERE doc_id=?", (doc_id,)).fetchall():
+                conn.execute("DELETE FROM fts_chunks WHERE rowid=?", (cid,))
+            conn.execute("DELETE FROM doc_links WHERE doc_id=?", (doc_id,)); conn.execute("DELETE FROM chunks WHERE doc_id=?", (doc_id,)); conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))
+        for n in changed: _insert_doc(conn, n, registry, cfg)
+        for n in notes:
+            conn.execute("UPDATE documents SET metadata_json=? WHERE rel_path=?", (json.dumps(_note_metadata(n), ensure_ascii=False), n["rel_path"]))
+        _registered_sources(conn, cfg, notes)
+        _rebuild_graph(conn, canonical, str(cfg.knowledge_projection.get("graph_mode") or "optional"))
+        subject = stable_hash({n["rel_path"]: n["sha256"] for n in notes})
+        conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('projection_subject',?)", (subject,))
+        conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('projection_contract_id',?)", (contract_id,))
+        conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('projection_source_subject',?)", (source_subject,))
+        conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('last_update',?)", (now_iso(),))
+        conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('retrieval_authority',?)", (str(cfg.knowledge_retrieval.get("strategy") or "canonical-first-fts5"),))
+        conn.execute("INSERT OR REPLACE INTO build_meta(key,value) VALUES('vector_state',?)", (str(cfg.knowledge_projection.get("vector_mode") or "retired-compatible"),))
+        if projection_contract(cfg)["contract_id"] != contract_id:
+            raise ValueError("projection contract changed during index write")
+        if projection_source_subject(cfg) != source_subject:
+            raise ValueError("registered source inputs changed during index write")
+        conn.commit(); result = projection_status(cfg, conn=conn); result["delta"]={"added_or_modified":len(changed),"deleted":len(removed)}; return result
 
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 def projection_status(cfg, *, conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
     db = cfg.paths.knowledge_projection_db
@@ -481,8 +517,16 @@ def projection_status(cfg, *, conn: Optional[sqlite3.Connection] = None) -> Dict
     canonical, sources = collect_notes(cfg.paths.knowledge_physical_root, cfg)
     current_subject = stable_hash({n["rel_path"]: n["sha256"] for n in canonical + sources})
     row = conn.execute("SELECT value FROM build_meta WHERE key='projection_subject'").fetchone(); stored = row[0] if row else ""
-    fresh = bool(stored and stored == current_subject)
+    current_contract = projection_contract(cfg)["contract_id"]
+    contract_row = conn.execute("SELECT value FROM build_meta WHERE key='projection_contract_id'").fetchone()
+    stored_contract = contract_row[0] if contract_row else ""
+    contract_current = bool(stored_contract and stored_contract == current_contract)
+    source_row = conn.execute("SELECT value FROM build_meta WHERE key='projection_source_subject'").fetchone()
+    source_current = bool(source_row and source_row[0] == projection_source_subject(cfg))
+    fresh = bool(stored and stored == current_subject and contract_current and source_current)
     if not fresh: issues.append("projection subject is stale")
+    if not contract_current: issues.append("projection derived contract is historical or stale")
+    if not source_current: issues.append("registered source projection inputs are historical or stale")
     excluded_roots = [".ai-kb", "tools"]
     maintenance = dict(cfg.knowledge.get("maintenance") or {})
     excluded_roots.extend(str(x).strip("/\\") for x in maintenance.get("local_out_of_scope_roots") or [] if str(x).strip("/\\"))
@@ -515,12 +559,58 @@ def projection_status(cfg, *, conn: Optional[sqlite3.Connection] = None) -> Dict
         "issues":issues, "warnings":warnings,
         "usage_collection": {"enabled": usage_enabled, "ready": usage_ready,
                              "status": "disabled" if not usage_enabled else "available" if usage_ready else "legacy"},
+        "projection_contract_id": stored_contract, "current_projection_contract_id": current_contract,
+        "registered_source_inputs_current": source_current,
+        "contract_current": contract_current, "reachability": projection_reachability(cfg, conn, current_notes=canonical + sources),
     }
     return result
 
 
-def _query_scope(conn: sqlite3.Connection, expr: str, scope: str, projects: Optional[List[str]], kind: Optional[str], limit: int) -> List[Dict[str, Any]]:
+def projection_reachability(cfg, conn, *, current_notes=None) -> Dict[str, Any]:
+    """Explain indexed versus formally visible documents; never certify evidence truth."""
+    from .documents import scope_condition, metadata
+    condition, params = scope_condition(cfg)
+    visible = {int(row[0]) for row in conn.execute("SELECT d.id FROM documents d WHERE " + condition, params)}
+    notes_by_path = {note["rel_path"]: note for note in current_notes or []}
+    groups = {"canonical": {"indexed": 0, "reachable": 0}, "physical_source": {"indexed": 0, "reachable": 0},
+              "registered_source_metadata": {"indexed": 0, "reachable": 0}}
+    reasons, samples = {}, []
+    row_factory = conn.row_factory
+    conn.row_factory = sqlite3.Row
+    rows = [dict(row) for row in conn.execute("SELECT * FROM documents")]
+    conn.row_factory = row_factory
+    for row in rows:
+        group = "canonical" if row["scope"] == "canonical" else "registered_source_metadata" if row["rel_path"].startswith("@") else "physical_source"
+        groups[group]["indexed"] += 1
+        meta = metadata(row)
+        note = notes_by_path.get(row["rel_path"])
+        relative = row["rel_path"]
+        conversion = str(meta.get("conversion") or "").replace("\\", "/")
+        if relative.startswith("@") and conversion.startswith(str(cfg.knowledge_canonical.get("projects_dir") or "10-projects") + "/"):
+            relative = conversion
+        identity = (note or {}).get("project_identity") or effective_project_identity(cfg,
+            meta.get("raw_project", row["project"]), relative=relative, scope=row["scope"])
+        if row["id"] in visible and identity["project"] == row["project"]:
+            groups[group]["reachable"] += 1
+            continue
+        reason = identity["status"] if not identity["project"] else "INDEX_IDENTITY_STALE"
+        reasons[reason] = reasons.get(reason, 0) + 1
+        if len(samples) < 10:
+            samples.append({"path": row["rel_path"], "layer": row["scope"], "raw_project": identity["raw_project"],
+                            "indexed_project": row["project"], "reason": reason})
+    total = len(rows)
+    reachable = sum(group["reachable"] for group in groups.values())
+    return {"indexed": total, "reachable": reachable, "unreachable": total - reachable,
+            "groups": groups, "reasons": reasons, "samples": samples,
+            "evidence_truth_verified": False}
+
+
+def _query_scope(conn: sqlite3.Connection, expr: str, scope: str, projects: Optional[List[str]], kind: Optional[str], limit: int, cfg=None) -> List[Dict[str, Any]]:
     where = ["d.scope = ?"]; params: List[Any] = [expr, scope]
+    if cfg is not None:
+        from .documents import scope_condition
+        condition, scope_params = scope_condition(cfg, projects)
+        where.append(condition); params.extend(scope_params)
     if projects:
         where.append("d.project IN (" + ",".join("?" for _ in projects) + ")")
         params.extend(projects)
@@ -624,17 +714,17 @@ def search(
         fallback = ""
         with telemetry.connect_readonly(cfg.paths.knowledge_projection_db) as conn:
             if layer in {"canonical", "source"}:
-                hits = _query_scope(conn, expr, layer, projects, kind, limit)
+                hits = _query_scope(conn, expr, layer, projects, kind, limit, cfg)
             else:
-                hits = _query_scope(conn, expr, "canonical", projects, kind, limit)
+                hits = _query_scope(conn, expr, "canonical", projects, kind, limit, cfg)
                 if len(hits) < limit and cfg.knowledge_retrieval.get("source_fallback", True):
-                    sources = _query_scope(conn, expr, "source", projects, kind, limit-len(hits))
+                    sources = _query_scope(conn, expr, "source", projects, kind, limit-len(hits), cfg)
                     hits.extend(sources)
                     if sources: fallback = "source-fallback"
                 if not hits and requested_scope == "project" and cfg.knowledge_retrieval.get("global_fallback", False):
-                    hits = _query_scope(conn, expr, "canonical", None, kind, limit)
+                    hits = _query_scope(conn, expr, "canonical", None, kind, limit, cfg)
                     if len(hits) < limit and cfg.knowledge_retrieval.get("source_fallback", True):
-                        hits.extend(_query_scope(conn, expr, "source", None, kind, limit-len(hits)))
+                        hits.extend(_query_scope(conn, expr, "source", None, kind, limit-len(hits), cfg))
                     fallback = "global-fallback"
         for hit in hits:
             hit["document_key"] = document_key(cfg, hit["layer"], hit["id"] if hit["layer"] == "canonical" else "", hit["path"])

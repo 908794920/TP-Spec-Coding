@@ -1,7 +1,7 @@
 ---
 name: tp-knowledge-normalization
 display_name: Legacy Knowledge 标准化
-version: 5.3.7
+version: 5.3.8
 description: 用于明确授权的旧 Knowledge Vault 迁移与结构标准化，先做确定性 safe changes，再将语义歧义交定向人工判断。
 ---
 

@@ -334,8 +334,12 @@ def cmd_audit_record(args) -> int:
         cfg, targets = _resolve(args)
         if len(targets) != 1:
             raise ValueError("audit-record requires exactly one repo; use --repo")
-        _source_cfg(cfg, targets[0])
-        receipt = record_semantic_audit(targets[0].wiki_repo_root, result=args.result, summary=args.summary, documents=args.document or [], topology_reviewed=bool(args.topology_reviewed))
+        source_cfg = _source_cfg(cfg, targets[0])
+        claims_file = getattr(args, "claims_file", None)
+        claims = json.loads(Path(claims_file).read_text(encoding="utf-8-sig")) if claims_file else None
+        receipt = record_semantic_audit(targets[0].wiki_repo_root, result=args.result, summary=args.summary,
+            documents=args.document or [], topology_reviewed=bool(args.topology_reviewed), claims=claims,
+            repo_root=targets[0].repo_root, source_cfg=source_cfg)
         _emit(receipt)
         return 0 if receipt["result"] == "PASS" else 1
     except Exception as exc:
@@ -744,6 +748,7 @@ def add_wiki_subparsers(root_subparsers) -> None:
     _add_common(p)
     p.add_argument("--result", required=True, choices=["PASS", "FAIL", "pass", "fail"])
     p.add_argument("--summary", required=True)
+    p.add_argument("--claims-file", help="optional JSON list of representative claims actually inspected; source/subject inherit this verified audit")
     p.add_argument("--document", action="append", default=[])
     p.add_argument("--topology-reviewed", action="store_true", help="confirm every item in the deterministic audit plan topology_review was actually examined")
     p.set_defaults(func=cmd_audit_record)

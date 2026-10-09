@@ -20,7 +20,7 @@ from cli import event_presentation
 from cli import event_contract
 from cli import event_policies
 from cli import environment
-from cli import orchestration, skill_catalog
+from cli import orchestration, orchestration_policy, skill_catalog
 from cli.workbench.evidence_view import build_evidence_view
 from cli.content_systems import load_content_systems
 from cli.knowledge import common as knowledge_common
@@ -427,6 +427,7 @@ def _task_list_row(
     *,
     retired: bool = False,
     work_items: Optional[Dict[str, Any]] = None,
+    mode_facts: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     event = latest.get(str(row["task_id"])) or {}
     return {
@@ -434,6 +435,7 @@ def _task_list_row(
         "title": str(row["title"] or ""),
         "state": str(row["current_state"] or ""),
         "retired": retired,
+        **{key: value for key, value in (mode_facts or {}).items() if key != "issues"},
         "runtime_status": "UNKNOWN",
         "work_items": work_items or {},
         "phase": str(row["current_stage"] or ""),
@@ -564,6 +566,18 @@ def build_project_snapshot(
                         (project_id,),
                     ).fetchall()
                     ids = [str(row["task_id"]) for row in rows]
+                    mode_events: Dict[str, List[Dict[str, Any]]] = {}
+                    for event in conn.execute(
+                        "SELECT e.* FROM task_event e JOIN task t ON t.task_id=e.task_id "
+                        "WHERE t.project_id=? AND e.event_type IN ('STATE','TASK_MODE_SELECTED') ORDER BY e.id",
+                        (project_id,),
+                    ):
+                        mode_events.setdefault(str(event["task_id"]), []).append(dict(event))
+                    modes = {str(row["task_id"]): orchestration_policy.resolve_task_mode(
+                        dict(row), mode_events.get(str(row["task_id"]), [])) for row in rows}
+                    for tid, mode in modes.items():
+                        for issue in mode["issues"]:
+                            problems.append(_problem("TASK_MODE_INVALID", f"{tid}: {issue}"))
                     retired_ids = {
                         task_id for task_id in ids
                         if event_policies.is_task_retired(conn, task_id)
@@ -603,7 +617,8 @@ def build_project_snapshot(
                     current_ids = [task_id for task_id in ids if task_id not in retired_ids]
                     stats["verification_attention"] = _verification_attention(conn, current_ids)
                     in_progress = [
-                        _task_list_row(row, latest, work_items=milestone_facts[str(row["task_id"])])
+                        _task_list_row(row, latest, work_items=milestone_facts[str(row["task_id"])],
+                                       mode_facts=modes[str(row["task_id"])])
                         for row in rows
                         if str(row["task_id"]) not in retired_ids
                         and str(row["current_state"] or "") in {"NEW", "ACTIVE", "BLOCKED"}
@@ -614,13 +629,15 @@ def build_project_snapshot(
                             latest,
                             retired=str(row["task_id"]) in retired_ids,
                             work_items=milestone_facts[str(row["task_id"])],
+                            mode_facts=modes[str(row["task_id"])],
                         )
                         for row in rows
                         if str(row["current_state"] or "") in {"COMPLETED", "CANCELLED"}
                         or str(row["task_id"]) in retired_ids
                     ]
                     task_index = [_task_list_row(row, latest, retired=str(row["task_id"]) in retired_ids,
-                                                  work_items=milestone_facts[str(row["task_id"])]) for row in rows]
+                                                  work_items=milestone_facts[str(row["task_id"])],
+                                                  mode_facts=modes[str(row["task_id"])]) for row in rows]
                     prow = conn.execute("SELECT project_name,base_version FROM project WHERE project_id=?", (project_id,)).fetchone()
                     if prow is not None:
                         project["name"] = str(prow["project_name"] or project["name"])
@@ -745,6 +762,7 @@ def build_task_snapshot(
     registry_path: Optional[str] = None,
     base_root: "str | Path | None" = None,
     connection: Optional[sqlite3.Connection] = None,
+    task_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     task_id0 = str(task_id or "").strip()
     if not task_id0:
@@ -790,16 +808,22 @@ def build_task_snapshot(
                 raise LookupError(task_id0)
             task_row = dict(row)
             event_rows = [dict(e) for e in conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id0,)).fetchall()]
+            mode_facts = orchestration_policy.resolve_task_obligations(task_row, event_rows)
+            for issue in mode_facts["issues"]:
+                problems.append(_problem("TASK_MODE_INVALID", issue))
             from cli.report_cmd import task_progress_facts
+            retired = event_policies.is_task_retired(conn, task_id0)
             progress_facts = task_progress_facts(conn, task_row, events=event_rows,
-                                                 retired=event_policies.is_task_retired(conn, task_id0))
+                                                 retired=retired)
             try:
-                workflow = orchestration.resolve_progress(task_id0, db_path=str(resolved_db), base_root=base_root, connection=conn)
+                workflow = orchestration.resolve_progress(task_id0, db_path=str(resolved_db), base_root=base_root,
+                                                           connection=conn, task_dir=task_dir)
             except Exception as exc:
                 workflow = {
                     "completed_steps": [], "current_step": {}, "next_step": {}, "steps": [],
-                    "reference_steps": ["需求确认", "方案/规划", "实现", "验证", "交付", "Knowledge/Wiki 收敛", "完成"],
-                    "route": {}, "error": str(exc),
+                    "reference_steps": [] if mode_facts["workflow_mode"] == "quick" else ["需求确认", "方案/规划", "实现", "验证", "交付", "Knowledge/Wiki 收敛", "完成"],
+                    **{key: value for key, value in mode_facts.items() if key != "issues"},
+                    "retired": retired, "route": {}, "error": str(exc),
                 }
                 problems.append(_problem("WORKFLOW_UNRESOLVED", f"工作流无法可靠解析：{exc}"))
             if workflow.get("error") and not any(p["code"] == "WORKFLOW_UNRESOLVED" for p in problems):
@@ -835,6 +859,8 @@ def build_task_snapshot(
         }
 
     latest_checkpoint: Dict[str, Any] = {}
+    verification_actors = (orchestration_policy.continuous_actor_ids(task_row, event_rows)
+                           if mode_facts["workflow_mode"] == "quick" else {"tp-test-engineer"})
     verification: Dict[str, Any] = {"status": "NOT_RECORDED", "summary": "", "created_at": ""}
     current_blocker: Dict[str, Any] = {}
     for event in event_rows:
@@ -846,7 +872,7 @@ def build_task_snapshot(
                 "actor": str(event.get("actor_role") or ""),
                 "created_at": str(event.get("created_at") or ""),
             }
-        if event.get("event_type") == "VERIFICATION_COMPLETED" and str(event.get("actor_role") or "") == "tp-test-engineer":
+        if event.get("event_type") == "VERIFICATION_COMPLETED" and str(event.get("actor_role") or "") in verification_actors:
             semantics = event_contract.normalize_event_semantics("VERIFICATION_COMPLETED", detail)
             from ..event_policies import verification_scope
             try:
@@ -882,12 +908,13 @@ def build_task_snapshot(
     summary_source = "not_recorded"
     task = {
         "task_id": task_id0,
+        **{key: workflow.get(key, value) for key, value in mode_facts.items() if key != "issues"},
         "title": str(task_row.get("title") or ""),
         "project_id": str(task_row.get("project_id") or ""),
         "project_name": str(task_row.get("project_name") or ""),
         "project_root": str(task_row.get("project_root_path") or ""),
-        "risk_level": str(task_row.get("risk_level") or ""),
-        "flow_level": str(task_row.get("flow_level") or ""),
+        "risk_level": task_row.get("risk_level") if mode_facts["workflow_mode"] == "quick" else str(task_row.get("risk_level") or ""),
+        "flow_level": task_row.get("flow_level") if mode_facts["workflow_mode"] == "quick" else str(task_row.get("flow_level") or ""),
         "state": str(task_row.get("current_state") or ""),
         "phase": str(task_row.get("current_stage") or ""),
         "owner": str(task_row.get("owner_role") or ""),
