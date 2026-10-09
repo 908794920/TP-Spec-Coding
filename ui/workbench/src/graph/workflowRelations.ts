@@ -84,8 +84,9 @@ function recordedStage(event: FactRecord): string {
 export function buildWorkflowRelations(contextKey: string, data: TaskData): WorkflowRelations {
     const task = record(data.task), workflow = record(data.workflow), execution = record(workflow.execution);
     const explicit = !!text(execution.status) && execution.status !== 'NOT_RECORDED';
+    const quick = workflow.workflow_mode === 'quick';
     const terminal = execution.terminal === true || workflow.retired === true || ['COMPLETED', 'CANCELLED'].includes(text(task.state));
-    const steps = records(explicit ? execution.steps : workflow.steps);
+    const steps = records(explicit ? execution.steps : quick ? [] : workflow.steps);
     const currentKey = terminal ? '' : explicit ? text(record(execution.current_step).id)
         : text(record(workflow.current_step).stage) || text(task.phase);
     const nextKey = terminal ? '' : text(record(explicit ? execution.next_step : workflow.next_step)[explicit ? 'id' : 'stage']);
@@ -170,7 +171,7 @@ export function buildWorkflowRelations(contextKey: string, data: TaskData): Work
     const activityStages: WorkflowStage[] = [], remaining: FactRecord[] = [];
     for (const event of unassigned) {
         const detail = record(event.detail);
-        const key = explicit && !text(event.step_id ?? detail.step_id) && !text(event.participation_id) ? recordedStage(event) : '';
+        const key = (explicit || quick) && !text(event.step_id ?? detail.step_id) && !text(event.participation_id) ? recordedStage(event) : '';
         if (!key) { remaining.push(event); continue; }
         let stage = activityStages.find(item => item.key === key);
         if (!stage) {

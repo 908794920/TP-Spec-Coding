@@ -2,7 +2,7 @@
 
 ## 适用范围
 
-实际需要显式计划时，技术主管提供工程拆解，项目经理统筹并由已记录协调者登记适用步骤；它描述本 Task 接下来实际要做的工作，不生成第二套 Task/Work 账本，不产生实施授权。Task 公共状态仍为 NEW / ACTIVE / BLOCKED / COMPLETED / CANCELLED。步骤、参与和专业门禁是三个不同事实，不能相互代替。
+实际需要显式计划时，技术主管提供工程拆解，项目经理统筹并由已记录协调者登记适用步骤；它描述本 Task 接下来实际要做的工作，不生成第二套 Task/Work 账本，不产生实施授权。计划、步骤和 Work 都按实际需要使用，quick 不因模式本身强制建立它们。Task 公共状态仍为 NEW / ACTIVE / BLOCKED / COMPLETED / CANCELLED。步骤、参与和专业门禁是三个不同事实，不能相互代替。
 
 采用新机制的任务使用 `tp-spec.execution/v1` 标记。所有事实仍追加到既有 `task_event.detail_json`，关联既有 `work_item_id`；不新增表、不在只读查询时迁库。普通命令不启动浏览器或 Agent，不执行产品测试、merge、push 或部署。
 
@@ -12,7 +12,7 @@
 
 不新增表、物理migration、公共状态或用户必填角色账本。新Task没有显式计划时仍为 `plan=None / plan_version=0 / status=NOT_RECORDED`，但coordinator及 `coordinator_source={kind: task_create, event_id, schema}` 可查询；该status只表示计划未记录，不表示没有协调责任。轻量Work Session和未采用结果契约的WorkItem无需因此强制建计划。
 
-新Task首次 `work plan` 可省coordinator并继承创建值；显式填写须保持已知角色/非空agent，原未知agent可按真实上下文补录。有效计划的来源为 `kind: execution_plan` 及该计划事件。已有计划通过原expected_version规则修订未来职责/接班，不回写创建事实或已开始步骤。旧无创建marker任务保持原owner解释，首次计划仍需显式coordinator；旧生命周期coordinator记录继续有效，不按5.3.7版本号追补采用或改历史actor。
+新Task首次 `work plan` 可省coordinator并继承创建值；显式填写须保持已知角色/非空agent，原未知agent可按真实上下文补录。有效计划的来源为 `kind: execution_plan` 及该计划事件。已有计划通过原expected_version规则修订未来职责/接班，不回写创建事实或已开始步骤。旧无创建marker任务保持原owner解释，首次计划仍需显式coordinator；旧生命周期coordinator记录继续有效，不按5.3.8版本号追补采用或改历史actor。
 
 ## 评估后登记计划
 
@@ -56,7 +56,7 @@ tp-spec work show --task TASK-ID --db RUNTIME-DB
 
 `work plan` 返回真实 `event_id`、`plan_version`、`effective_level` 与是否重放。首次 `expected_version=0`；修改未来步骤时使用 `work show` 的当前版本并说明原因。相同规范化载荷重试复用原记录，不重复版本。版本冲突必须先重读，不能忽略冲突覆盖他人更改。
 
-有效等级复用 risk/flow 与现有风险信号解释。L0–L3 都包含开发、交付收敛；L1 以上包含验证，L2/L3 包含代码审查。L0/L1 对省略的独立验证/审查步骤说明依据；UI/人验等已批准 AC 义务仍保留。验证、审查、交付节点须分别包含测试、代码审查和集成交付角色。其他角色按需参与，可同一步骤有多个角色，不按等级机械增加所有阶段。
+standard 的有效等级复用 risk/flow 与现有风险信号解释。L0–L3 都包含开发、交付收敛；L1 以上包含验证，L2/L3 包含代码审查。L0/L1 对省略的独立验证/审查步骤说明依据；UI/人验等已批准 AC 义务仍保留。验证、审查、交付节点须分别包含测试、代码审查和集成交付角色。其他角色按需参与，可同一步骤有多个角色，不按等级机械增加所有阶段。quick 不要求 risk/flow 字段或按等级创建计划步骤，适用义务由唯一模式 reader 解释；实际明确 AC 和风险仍保留。
 
 步骤数组是明确的父步骤顺序；`depends_on` 只引用前面的实际 step ID，不是通用并发流程引擎。Work 并发仍由既有 Work 与宿主安排。步骤 ID 不从标题/Wxx 名称猜测。`work_item_ids` 只允许本 Task 已存在的 WorkItem；计划后创建的新 Work 也可通过[Work 结果契约](WORK_UNITS.md)显式绑定该步骤，不重写已开始步骤定义。开始参与时 `--item` 必须属于上述可信关联。
 

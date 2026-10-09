@@ -95,6 +95,8 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
     # non-terminal historical instance from the active set (for example when it was
     # superseded by a rebuilt task). The last workflow state remains auditable.
     "TASK_RETIRED": _policy("governance", ("task_retire",), True, _EVENT_SCHEMA_FIELDS + ("reason",)),
+    "TASK_MODE_SELECTED": _policy("governance", ("task_mode_select",), True,
+        _EVENT_SCHEMA_FIELDS + ("workflow_mode", "previous_mode", "user_source", "flush_id")),
     "OWNER_ACCEPTANCE_DECISION": _policy("governance", ("task_acceptance_override",), True, _EVENT_SCHEMA_FIELDS + ("mode", "acs", "reason", "residual_risk")),
     "WORKFLOW_CONFIRMATION": _policy(
         "governance", ("workflow_confirm",), True,
@@ -550,12 +552,28 @@ def load_current_verification(conn, task_id: str, task_dir: Union[str, Path], *,
     Product ChangeSet freshness is checked by callers against their captured snapshot.
     Never search past a newer failure, unknown scope, or damaged evidence for a PASS.
     """
+    from .orchestration_policy import resolve_task_mode, continuous_actor_ids
+    task = conn.execute('SELECT * FROM task WHERE task_id=?', (task_id,)).fetchone()
+    events = conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (task_id,)).fetchall()
+    mode = resolve_task_mode(dict(task), events) if task is not None else {'workflow_mode': 'standard', 'issues': []}
+    if mode['issues']:
+        return None
+    quick = mode['workflow_mode'] == 'quick'
     current = load_trusted_governance_event(
-        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer",
+        conn, task_id, event_type="VERIFICATION_COMPLETED", actor=None if quick else "tp-test-engineer",
         decision="PASS", evidence_dir=task_dir, latest_only=True,
     )
     if current is None or not verification_subject_matches(current.detail, task_dir):
         return None
+    if quick and current.row['actor_role'] not in continuous_actor_ids(dict(task), events):
+        return None
+    if quick:
+        from .workflow_controls import trusted_event_detail
+        from .event_contract import validate_event_semantics
+        if (trusted_event_detail(dict(current.row), event_type='VERIFICATION_COMPLETED', producer='record-first',
+                actor=current.row['actor_role']) is None
+                or validate_event_semantics('VERIFICATION_COMPLETED', current.detail)):
+            return None
     scope = verification_scope(current.detail)
     from .delivery_contract import load_repository_scope, full_scope_matches
     known = load_repository_scope(conn, task_id)

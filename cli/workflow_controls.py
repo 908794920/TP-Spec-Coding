@@ -8,15 +8,27 @@ from typing import Any, Dict, Optional
 import yaml
 
 PREFERENCES_SCHEMA = 'tp-spec.preferences/v1'
-SUPPORTED_CONFIRMATION_POLICIES = {'material', 'each_stage'}
+SUPPORTED_CONFIRMATION_POLICIES = {'material'}
 
 
 class PreferenceError(ValueError):
     pass
 
 
-def _policy(value: Any, *, source: str) -> str:
+def confirmation_policy_argument(value: str) -> str:
+    import argparse
+    try:
+        return _policy(value, source='CLI')
+    except PreferenceError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _policy(value: Any, *, source: str, persisted: bool = False) -> str:
     policy = str(value or '').strip()
+    if policy == 'each_stage':
+        if persisted:
+            return 'material'
+        raise PreferenceError(f'{source}: EACH_STAGE_REMOVED: each_stage was retired; use material')
     if policy not in SUPPORTED_CONFIRMATION_POLICIES:
         raise PreferenceError(f"{source}: confirmation_policy must be one of {sorted(SUPPORTED_CONFIRMATION_POLICIES)}")
     return policy
@@ -39,7 +51,16 @@ def read_user_confirmation_policy(preferences_path: Path) -> Optional[str]:
         raise PreferenceError(f'{p}: workflow must be a mapping')
     if 'confirmation_policy' not in workflow:
         return None
-    return _policy(workflow.get('confirmation_policy'), source=str(p))
+    return _policy(workflow.get('confirmation_policy'), source=str(p), persisted=True)
+
+
+def confirmation_policy_migration(preferences_path: Path) -> Dict[str, Any]:
+    """Expose a known retired value without writing or swallowing malformed input."""
+    effective = read_user_confirmation_policy(preferences_path)
+    data = yaml.safe_load(Path(preferences_path).read_text(encoding='utf-8-sig')) if Path(preferences_path).is_file() else {}
+    configured = ((data or {}).get('workflow') or {}).get('confirmation_policy')
+    return {'configured_confirmation_policy': configured, 'effective_confirmation_policy': effective,
+            'migration_required': configured == 'each_stage'}
 
 
 def resolve_confirmation_policy(cli_policy: Optional[str], preferences_path: Path, base_default: str) -> str:
@@ -101,10 +122,12 @@ def _canonical_digest(data: Dict[str, Any]) -> str:
 def build_boundary_binding(*, task_id: str, source_stage: str, source_role: str,
                            source_event_id: int, source_event_digest: str,
                            target_stage: str, target_role: str,
-                           execution_mode: str, confirmation_kind: str = 'ordinary') -> Dict[str, Any]:
+                           execution_mode: str, confirmation_kind: str = 'ordinary',
+                           change_set_id: str = '', subject_digest: str = '',
+                           mode_source_digest: str = '') -> Dict[str, Any]:
     kind = str(confirmation_kind or '').strip().lower()
-    if kind not in {'ordinary', 'material'}:
-        raise ValueError('confirmation_kind must be ordinary|material')
+    if kind not in {'ordinary', 'material', 'completion'}:
+        raise ValueError('confirmation_kind must be ordinary|material|completion')
     core: Dict[str, Any] = {
         'confirmation_kind': kind,
         'source_stage': str(source_stage), 'source_role': str(source_role),
@@ -112,6 +135,12 @@ def build_boundary_binding(*, task_id: str, source_stage: str, source_role: str,
         'target_stage': str(target_stage), 'target_role': str(target_role),
         'execution_mode': str(execution_mode),
     }
+    if kind == 'completion':
+        if target_stage != 'complete' or target_role != 'human_owner' or not all(
+                (change_set_id, subject_digest, mode_source_digest, source_event_id, source_event_digest)):
+            raise ValueError('completion confirmation requires current delivery, subject, ChangeSet and mode source')
+        core.update(change_set_id=change_set_id, subject_digest=subject_digest,
+                    mode_source_digest=mode_source_digest)
     core['route_digest'] = _canonical_digest({'task_id': str(task_id), **core})
     return core
 
@@ -122,6 +151,11 @@ def workflow_confirmation_matches(event: Dict[str, Any], binding: Dict[str, Any]
     )
     if detail is None:
         return False
+    if binding.get('confirmation_kind') == 'completion':
+        from .orchestration_policy import valid_user_source
+        from .event_contract import validate_event_semantics
+        if not valid_user_source(detail.get('user_source')) or validate_event_semantics('WORKFLOW_CONFIRMATION', detail):
+            return False
     return all(detail.get(key) == expected for key, expected in binding.items())
 
 

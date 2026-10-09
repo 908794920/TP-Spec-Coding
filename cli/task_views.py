@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -103,13 +104,47 @@ def source_names(task_dir: Path, state: str) -> list[str]:
     return sorted({name for name in [*names, *projection_source_names()] if (task_dir / name).is_file()})
 
 
-def navigation(task_dir: Path, *, task_id: str = "", current: dict | None = None) -> dict:
+def _archive_doc_links(task_dir: Path, project_root: Path | None) -> list[dict]:
+    if project_root is None:
+        return []
+    project = Path(project_root).resolve()
+    docs = (project / ".tp-spec" / "docs").resolve()
+    if not docs.is_relative_to(project) or not docs.is_dir():
+        return []
+    try:
+        text = read_text(task_dir / "task.md")
+    except (OSError, UnicodeError):
+        return []
+    result = []
+    for number, line in enumerate(text.splitlines(), 1):
+        for match in re.finditer(r"(?<!!)\[([^\]]+)\]\(([^)]+)\)", line):
+            original = match.group(2)
+            mapped = re.fullmatch(r"(?:\.\./)+docs/([^?#]+)", original)
+            if not mapped or (task_dir / original).is_file():
+                continue
+            suffix = Path(mapped.group(1))
+            if suffix.is_absolute() or ".." in suffix.parts or ":" in mapped.group(1) or "\\" in mapped.group(1):
+                continue
+            target = (docs / suffix).resolve()
+            if target.is_relative_to(docs) and target.is_file():
+                result.append({"source_path": "task.md", "source_line": number,
+                               "original_target": original, "resolved_target": str(target),
+                               "path": Path(os.path.relpath(target, task_dir)).as_posix(),
+                               "label": match.group(1), "status": "RESOLVED_ARCHIVE_LINK"})
+    return result
+
+
+def navigation(task_dir: Path, *, task_id: str = "", current: dict | None = None,
+               project_root: Path | None = None, state: str = "UNKNOWN", state_source: str = "") -> dict:
     context = current if current is not None else current_context.read_current(task_dir, task_id=task_id)
     names = [("task.md", "有效范围、决定及历史入口"), ("requirement.md", "独立需求正文（如已采用）"),
              ("requirement-decisions.md", "决定与替代依据"), ("acceptance.md", "验收矩阵及操作声明"),
              ("events.jsonl", "正式事件投影、批次过程与来源"), ("evidence/", "证据（按引用读取）")]
     return {"current_region_status": context["status"], "current_source": context.get("source"),
             "issues": context.get("issues", []),
+            "consistency_diagnostics": current_context.workflow_consistency_diagnostics(
+                task_dir, context, state=state, state_source=state_source),
+            "archive_doc_links": _archive_doc_links(task_dir, project_root),
             "references": [{"path": name, "label": label} for name, label in names if (task_dir / name).exists()],
             "note": "业务声明不等于当前进度、授权或 PASS；历史过程按需读取，不在派生视图复制正文。"}
 
@@ -118,6 +153,10 @@ def render_navigation(nav: dict) -> str:
     lines = ["\n## 范围、验收与历史导航\n", "> " + nav["note"], ""]
     for item in nav["references"]:
         lines.append(f"- [{item['label']}](../{item['path']})")
+    for item in nav.get("archive_doc_links", []):
+        lines.append(f"- [归档资料：{item['label']}](../{item['path']})（已核实真实项目目标；原文保留）")
+    for issue in nav.get("consistency_diagnostics", []):
+        lines.append(f"- 当前文字待核对：`{issue['path']}:{issue['line']}` 声称 {issue['declared_state']}，正式记录为 {issue['formal_state']}。")
     if nav["current_region_status"] in current_context.UNUSABLE:
         lines.append(f"- 当前区待核对：{nav['current_region_status']}。仅报告，不截断或改写来源。")
     elif nav.get("current_source"):
@@ -212,7 +251,8 @@ def inspect_generated(task_dir: Path, rel: str, *, task_id: str = "", state: str
     return result
 
 
-def inspect_task_views(task_dir: Path, task=None, *, task_id: str = "", events=None, execution=None) -> dict:
+def inspect_task_views(task_dir: Path, task=None, *, task_id: str = "", events=None, execution=None,
+                       retirement=None, project_root: Path | None = None, terminal_integrity=None) -> dict:
     """Read Runtime-backed or DB-free archive views without touching sealed material."""
     root = Path(task_dir)
     runtime = dict(task) if task is not None else None
@@ -220,6 +260,12 @@ def inspect_task_views(task_dir: Path, task=None, *, task_id: str = "", events=N
     problems: list[dict[str, str]] = []
     def problem(code, message):
         problems.append({"code": code, "message": str(message)})
+    from .event_policies import TrustedEvent
+    retired = (runtime is not None and isinstance(retirement, TrustedEvent)
+               and retirement.detail.get("task_id") == task_id)
+    retirement_fact = ({"event_id": retirement.row["id"], "at": retirement.row["created_at"],
+                        "reason": retirement.detail.get("reason"), "source": "runtime.TASK_RETIRED"}
+                       if retired else None)
     status: dict = {}
     projected_events: list[dict] = []
     try:
@@ -248,7 +294,7 @@ def inspect_task_views(task_dir: Path, task=None, *, task_id: str = "", events=N
         problem("STATE_OBSERVATION_CONFLICT", "未取得与当前状态相符的最后 STATE；不根据修改时间或长摘要猜测。")
         if runtime is None:
             state = "UNKNOWN"
-    if events is not None:
+    if events is not None and not retired:
         if len(projected_events) != len(events):
             problem("EVENT_PROJECTION_STALE", "事件投影数量与本次 Runtime 读取不符。")
         if status.get("projection_schema") == SCHEMA:
@@ -258,7 +304,8 @@ def inspect_task_views(task_dir: Path, task=None, *, task_id: str = "", events=N
                 problem("EVENT_PROJECTION_STALE", "事件投影内容与本次 Runtime 读取不符。")
             if status.get("fact_revision") != len(events):
                 problem("STATUS_PROJECTION_STALE", "status.yaml 的事实版本落后于 Runtime。")
-    terminal = state in TERMINAL
+    terminal = state in TERMINAL or retired
+    state_source = "runtime.task" if runtime else "archive.status+last_STATE (not authenticated Runtime)"
     brief = execution_brief(execution) if execution is not None else status.get("execution", {})
     if not isinstance(brief, dict):
         brief = {}
@@ -268,13 +315,13 @@ def inspect_task_views(task_dir: Path, task=None, *, task_id: str = "", events=N
         brief = {**brief, "current_step": None, "next_step": None, "current_roles": []}
     selected = FINAL if state == "COMPLETED" else CONTINUATION
     versions = [inspect_generated(root, rel, task_id=task_id, state=state,
-                                  base_version=str((runtime or {}).get("base_version") or status.get("base_version") or ""))
+                                  base_version=("" if retired else str((runtime or {}).get("base_version") or status.get("base_version") or "")))
                 for rel in (CONTINUATION, FINAL) if rel == selected or (root / rel).exists()]
     for view in versions:
         view["selected"] = view["path"] == selected
         if view["status"] != "CURRENT":
             problem("DERIVED_VIEW_" + view["status"], view["path"] + "：" + "；".join(view["issues"]))
-    nav = navigation(root, task_id=task_id)
+    nav = navigation(root, task_id=task_id, project_root=project_root, state=state, state_source=state_source)
     if nav["issues"]:
         problem("CURRENT_CONTEXT_UNAVAILABLE", "有效业务当前区待核对；见范围导航。")
     latest = (dict(events[-1]) if events else {}) if events is not None else (projected_events[-1] if projected_events else {})
@@ -282,16 +329,41 @@ def inspect_task_views(task_dir: Path, task=None, *, task_id: str = "", events=N
                 "time": latest.get("created_at") or latest.get("time"),
                 "event_id": latest.get("id"), "summary": excerpt(latest.get("summary") or latest.get("note"))}
     reliable_projection = not any(p["code"].startswith(("STATUS_", "EVENT_", "STATE_")) for p in problems)
+    integrity = None
+    if terminal:
+        if terminal_integrity is None:
+            from .transaction_commit import terminal_integrity as inspect_integrity
+            terminal_integrity = inspect_integrity(root, task_id=task_id)
+        integrity = dict(terminal_integrity)
+        if integrity.get("modified") or integrity.get("deleted"):
+            integrity.update(change_kind="SEALED_FILES_CHANGED",
+                note="清单内封存文件已修改或删除，须核对原证据；不能按仅新增说明解释，也不重写原 manifest。")
+        elif integrity.get("added"):
+            integrity.update(change_kind="ADDED_ONLY",
+                note="仅发现清单外新增文件；旧 PASS 仍代表原封存内容，新增说明不属于旧清单已验范围。")
+        else:
+            integrity.update(change_kind="NONE" if integrity.get("status") == "CURRENT" else "UNKNOWN",
+                note="按原终态清单只读核对；缺清单或读取异常不补造历史完整性结论。")
+    from .yaml_checks import database_operation_diagnostics
+    database = database_operation_diagnostics(root, task_id=task_id,
+                                             events=events if events is not None else projected_events)
+    database["source"] = ("runtime.event-evidence" if events is not None else
+                          "archive.event-evidence (not authenticated Runtime)")
     return {"schema": SCHEMA, "task_id": task_id, "state": state, "terminal": terminal,
-            "state_source": "runtime.task" if runtime else "archive.status+last_STATE (not authenticated Runtime)",
+            "retired": retired, "retirement": retirement_fact, "last_workflow_state": state,
+            "retirement_status": "RETIRED" if retired else ("NOT_RETIRED" if runtime is not None else "UNKNOWN"),
+            "state_source": state_source,
             "current_roles": [] if terminal else brief.get("current_roles", []),
             "next_responsibility": None if terminal else (status.get("next_responsibility") if reliable_projection else None),
             "execution": brief, "last_activity": activity, "selected_view": selected, "views": versions,
             "quality": status.get("quality_facts", {}) if reliable_projection else {},
             "quality_source": "historical_projection" if terminal else "projection_not_closeout_verdict",
-            "navigation": nav, "problems": problems, "read_only": True,
-            "recovery": ("终态仅查询；保留旧接续、源材料及 terminal manifest，不覆盖、不重算旧 hash。"
+            "navigation": nav, "database_diagnostics": database, "terminal_integrity": integrity,
+            "problems": problems, "read_only": True,
+            "recovery": ("已退休：历史只读；冻结投影无需追上退休事件，保留最后 workflow、PENDING、来源与旧 hash。"
+                         if retired else "终态仅查询；保留旧接续、源材料及 terminal manifest，不覆盖、不重算旧 hash。"
                          if terminal else ("来源缺失或冲突；先核对正式 Runtime，不按未知状态自动修复归档。" if state == "UNKNOWN" else
                                            "在途任务先核对事实；仅派生视图过期可用 projection rebuild --view-only；正式投影漂移用 reconcile。")),
-            "note": ("任务已结束；没有当前执行角色或下一动作。旧当前区/最后阶段是历史，不能覆盖终态；旧任务不追补新步骤或学习义务。"
+            "note": ("任务已退休；最后 workflow 状态与未验项保持历史事实，不表示当前执行或已完成。无当前角色或下一动作。"
+                     if retired else "任务已结束；没有当前执行角色或下一动作。旧当前区/最后阶段是历史，不能覆盖终态；旧任务不追补新步骤或学习义务。"
                      if terminal else "当前角色来自已登记参与，不代表 Agent 在线；生成视图仅供导航，行动以 Runtime 与实际授权为准。")}

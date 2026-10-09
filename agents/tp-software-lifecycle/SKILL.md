@@ -1,7 +1,7 @@
 ---
 id: tp-software-lifecycle
 name: tp-软件工程生命周期
-version: 5.3.7
+version: 5.3.8
 status: active
 type: control-role
 role: tp-software-lifecycle
@@ -18,6 +18,10 @@ description: 唯一软件工程 Domain Agent；基于 L0~L3、风险、phase、�
 ## 两段生命周期
 - Definition Lifecycle：Raw Request → Product/Requirement → Architecture/Planning（按需）→ Requirement Ready。
 - Task Delivery：Task → Architecture/Planning（按需）→ Development → Verification → Review（按风险/等级）→ Delivery/Integration → Complete。
+
+Task 先按唯一 Runtime reader 确认 `standard` 或 `quick`。没有真实、明确的用户 quick 选择（包括历史无模式记录）按 `standard` 解释；AI 只能建议，不能把沉默或拒绝改成 quick。standard 继续承担 L0–L3 对应的适用义务，包括最终交付时的 Knowledge/Memory 评估。quick 保留已确认目标/范围、实际产品变更、必要验证及未验说明、真实代码交付和单独的用户结单；不要求 L0–L3、risk/flow、固定 Work/Role 链、架构工件、独立 Review、完整人验或 Knowledge/Memory。遇到实际风险、明确 AC、数据操作、未解决缺陷或既有授权约束，仍按真实事实处理。
+
+quick 允许实际连续执行者如实记录适用的技术自测和交付，不得标成独立测试或 Review。代码交付仍为 ACTIVE/待用户明确结单；交付不代表结单，未运行和其他未验边界继续保留。模式选择不扩大业务、数据库、生产或发布授权。
 
 ## 三层裁剪
 1. L0~L3 保留任务总体风险与最终义务；结合当前实际工作、有效事实和风险选择 lifecycle areas，不因父任务等级或空阶段事件恢复固定全流程。
@@ -39,9 +43,9 @@ Requirement Ready 后才创建正式 Task；存在 pre-task canonical requiremen
 
 只通过既有 `workflow next/confirm`、`task checkpoint/block/resume/verify/complete`、delivery/knowledge 原子 CLI 留下必要事实。phase 是事实，不是收费站；Role/Skill 不新增 public state。
 
-每个 Task（L0–L3）最终交付都调度集成交付工程师按 [交付收敛](../../skills/capabilities/delivery-convergence/SKILL.md) 实际评估当前有效需求及实际步骤材料的知识/记忆，低等级可轻量，不固定复制全部阶段。产品经理提供体验目标，UX 负责具体交互/UI/原型，开发承接代码，测试独立核验；UX 在 verification phase 仅记录设计核对事实，不获得测试 PASS 权限。设计工件或静态检查不能代签真实浏览器、视觉或人验，未执行仍为 `NOT_TESTED`。
+standard Task（L0–L3）最终交付按 [交付收敛](../../skills/capabilities/delivery-convergence/SKILL.md) 评估当前有效需求及实际步骤材料的知识/记忆；低等级可轻量，不固定复制全部阶段。quick 任务不因进入 quick 自动承担该评估。产品经理提供体验目标，UX 负责具体交互/UI/原型，开发承接代码，测试按适用义务独立核验；UX 在 verification phase 仅记录设计核对事实，不获得测试 PASS 权限。设计工件或静态检查不能代签真实浏览器、视觉或人验，未执行仍为 `NOT_TESTED`。
 
-Knowledge 不增加 lifecycle stage：新 READY Delivery 对 L0–L3 均生成或复用绑定有效任务输入的 Request，不以空 knowledge_signals 跳过。缺同 Request/输入/Change Set 的有效 Result 时，经 `dispatch_effect → tp-knowledge`，按 `task-inputs` 实读并用 `task-converge --assessment` 收敛知识与各步骤记忆；回来后重新解析。无标记旧记录/终态保留历史解释，NOT_REQUIRED 不是已执行提炼的证据；不补造历史、signals 或人工确认。
+Knowledge 不增加 lifecycle stage：standard 的新 READY Delivery 按适用契约生成或复用绑定有效任务输入的 Request，不以空 knowledge_signals 跳过评估；缺同 Request/输入/Change Set 的有效 Result 时，经 `dispatch_effect → tp-knowledge`，按 `task-inputs` 实读并用 `task-converge --assessment` 收敛知识与各步骤记忆。quick 不自动创建该 Request 或要求 Memory 评估；用户另行明确要求知识工作时按对应能力处理。无标记旧记录/终态保留历史解释，NOT_REQUIRED 不是已执行提炼的证据；不补造历史、signals 或人工确认。
 
 
 同一逻辑批次优先一次 `checkpoint --request-id <ID> --collect <真实输出>`（可重复 --collect）；ID 在重试期间保持不变，新工作/新验收另用 ID。CLI 自动采集、哈希和绑定，不让 AI 重抄结果或拼大段账本 JSON；采集不等于测试/Review PASS。`replayed: true` 是原操作回执，不是本轮新执行。详细参数按需读 [生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)。

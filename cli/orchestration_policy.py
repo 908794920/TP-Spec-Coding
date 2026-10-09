@@ -74,7 +74,7 @@ def validate(data: dict[str, Any], catalog: dict[str, Any]) -> None:
     confirmation = data["confirmation"]
     _fields(confirmation, "confirmation", {"default_policy", "supported_policies", "user_preference_path"})
     if (confirmation["default_policy"] != "material"
-            or confirmation["supported_policies"] != ["material", "each_stage"]
+            or confirmation["supported_policies"] != ["material"]
             or confirmation["user_preference_path"] != "~/.tp-spec/preferences.yaml"):
         _invalid("confirmation", "retain material default and existing user preference boundary")
     runtime = data["runtime"]
@@ -239,3 +239,101 @@ def normalize_signal(value: str, configured: dict[str, str]) -> str:
         if not key.endswith("_prefix") and value == actual:
             return canonical
     return value
+
+
+def valid_user_source(source: Any) -> bool:
+    return (isinstance(source, dict) and source.get('kind') == 'user_instruction'
+            and all(isinstance(source.get(key), str) and source[key].strip()
+                    for key in ('reference', 'statement')))
+
+
+def user_source(statement: str | None, reference: str | None) -> dict:
+    source = {'kind': 'user_instruction', 'statement': statement, 'reference': reference}
+    if not valid_user_source(source):
+        raise ValueError('USER_SOURCE_REQUIRED: record the actual user instruction and its context/file reference')
+    return {key: value.strip() for key, value in source.items()}
+
+
+def resolve_task_mode(task: dict, events: Iterable[Any]) -> dict:
+    """The sole mode authority: trusted creation/selection facts, never title or risk."""
+    from . import event_contract, event_policies, task_coordinator, workflow_controls
+    mode, source, issues = 'standard', None, []
+    rows = sorted((dict(row) for row in events), key=lambda row: int(row.get('id') or 0))
+    for row in rows:
+        if row.get('task_id') != task['task_id']:
+            continue
+        raw = row.get('detail_json') or '{}'
+        try:
+            detail = json.loads(raw)
+        except (ValueError, TypeError):
+            detail = None
+        creation = row.get('event_type') == 'STATE' and (
+            isinstance(detail, dict) and detail.get('producer') == 'task_create')
+        selected = row.get('event_type') == 'TASK_MODE_SELECTED'
+        claims = (isinstance(detail, dict) and 'workflow_mode' in detail) or '"workflow_mode"' in str(raw)
+        if not selected and not (creation and claims):
+            if claims and row.get('event_type') == 'STATE' and task_coordinator.claims_creation_metadata(detail, raw):
+                issues.append(f'TASK_MODE_INVALID:{row.get("id")}')
+            continue
+        if creation:
+            trusted = task_coordinator.read_creation_coordinator(task, rows)
+            valid = not trusted['issues'] and trusted['source'] and trusted['source']['event_id'] == row['id']
+        else:
+            valid = (isinstance(detail, dict) and event_policies.event_allowed_for_producer('TASK_MODE_SELECTED', 'task_mode_select')
+                     and workflow_controls.trusted_event_detail(row, event_type='TASK_MODE_SELECTED',
+                         producer='task_mode_select', actor=str(row.get('actor_role') or '')) is not None
+                     and not event_contract.validate_event_semantics('TASK_MODE_SELECTED', detail)
+                     and detail.get('previous_mode') == mode)
+        value = detail.get('workflow_mode') if isinstance(detail, dict) else None
+        origin = detail.get('user_source') if isinstance(detail, dict) else None
+        if not valid or value not in {'standard', 'quick'} or (
+                (selected or value == 'quick' or origin is not None) and not valid_user_source(origin)):
+            issues.append(f'TASK_MODE_INVALID:{row.get("id")}')
+            continue
+        mode = value
+        source = {'kind': 'task_create' if creation else 'task_mode_selected', 'event_id': int(row['id']),
+                  'user_source': origin, 'digest': workflow_controls.event_digest(row)}
+    return {'workflow_mode': mode if not issues else 'standard', 'mode_source': source if not issues else None,
+            'issues': issues}
+
+
+def resolve_task_obligations(task: dict, events: Iterable[Any], included_stages=None) -> dict:
+    rows = [dict(row) for row in events]
+    facts = resolve_task_mode(task, rows)
+    quick = facts['workflow_mode'] == 'quick'
+    if included_stages is None and not quick:
+        from . import orchestration
+        level = orchestration.resolve_effective_level(task.get('risk_level'), task.get('flow_level'))
+        contract = task.get('_effective_contract') or orchestration.load_contract()
+        signals = orchestration._decision_signals(rows, contract)
+        included_stages = [step['stage'] for step in contract['pipelines'][level]
+                           if orchestration._stage_included(step, level, task, rows, signals)]
+    selected = set(included_stages or [])
+    facts['applicable_obligations'] = {
+        'development': True, 'verification': True if quick else bool(selected & {'verification', 'review'}),
+        'review': False if quick else 'review' in selected, 'delivery': True,
+        'acceptance': 'declared' if quick else 'required',
+        'knowledge': not quick, 'memory': not quick, 'completion_confirmation': quick,
+    }
+    return facts
+
+
+def continuous_actor_ids(task: dict, events: Iterable[Any]) -> set[str]:
+    """Actual recorded executor/coordinator identities for quick self checks/delivery."""
+    from .task_coordinator import read_creation_coordinator
+    from .role_registry import actor_ids
+    rows = [dict(row) for row in events]
+    if resolve_task_mode(task, rows)['workflow_mode'] != 'quick':
+        return {'tp-development-engineer', 'tp-test-engineer', 'tp-integration-engineer'}
+    coordinator = read_creation_coordinator(task, rows)['coordinator'] or {}
+    allowed = {'tp-development-engineer', 'tp-test-engineer', 'tp-integration-engineer', coordinator.get('role')}
+    for row in rows:
+        try:
+            detail = json.loads(row.get('detail_json') or '{}')
+        except (ValueError, TypeError):
+            continue
+        if (row.get('event_type') == 'FACT' and isinstance(detail, dict)
+                and detail.get('producer') == 'record-first' and detail.get('transaction_id')
+                and detail.get('operation') == 'CHECKPOINT' and detail.get('phase') == 'development'):
+            allowed.add(row.get('actor_role'))
+    return set(actor_ids()) & allowed - {'human_owner'}

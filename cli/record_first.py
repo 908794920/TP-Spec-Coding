@@ -316,8 +316,13 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
         knowledge = _normalize_knowledge_signals(knowledge_signals)
         delivery = _normalize_delivery_signals(delivery_signals)
         risk_escalation = None
-        effective_risk = str(task["risk_level"] or "L1")
-        if actor == "tp-software-architect" and phase == "architecture":
+        from .orchestration_policy import resolve_task_mode
+        task_events = conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (task_id,)).fetchall()
+        mode = resolve_task_mode(dict(task), task_events)
+        if mode['issues']:
+            raise ValueError('; '.join(mode['issues']))
+        effective_risk = task['risk_level'] if mode['workflow_mode'] == 'quick' else str(task['risk_level'] or 'L1')
+        if mode['workflow_mode'] == 'standard' and actor == "tp-software-architect" and phase == "architecture":
             from . import risk_signals
             scan = risk_signals.scan_task_artifacts(tdir)
             order = {"L0": 0, "L1": 1, "L2": 2, "L3": 3}
@@ -506,7 +511,7 @@ def block(*, task_id: str, task_dir: str, actor: str, reason: str,
 def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
            phase: Optional[str] = None, resolution_evidence: Optional[Iterable[str]] = None,
            db: Optional[str] = None, expected_block_event_id: Optional[int] = None,
-           expected_wait_kind: Optional[str] = None) -> Dict[str, Any]:
+           expected_wait_kind: Optional[str] = None, policy_retirement: bool = False) -> Dict[str, Any]:
     if actor not in actor_ids():
         raise ValueError(f"invalid actor: {actor}")
     tdir = _task_dir(task_dir)
@@ -521,7 +526,14 @@ def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
             raise ValueError(f"invalid phase: {phase0}")
         from . import waiting
         resolution_paths = list(resolution_evidence or [])
-        resolution = waiting.validate_resolution(conn, task_id, tdir, actor=actor, resolution_evidence=resolution_paths)
+        def current_resolution(dbconn):
+            if policy_retirement:
+                if resolution_paths:
+                    raise ValueError('policy retirement does not mint human resolution evidence')
+                from .autonomy_records import retired_confirmation_resolution
+                return retired_confirmation_resolution(dbconn, task_id)
+            return waiting.validate_resolution(dbconn, task_id, tdir, actor=actor, resolution_evidence=resolution_paths)
+        resolution = current_resolution(conn)
         if (expected_block_event_id is not None
                 and resolution.get("block_event_id") != expected_block_event_id) or (
                     expected_wait_kind is not None
@@ -531,7 +543,7 @@ def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
         now = dbmod.now_iso(); flush_id = f"RESUME-{uuid.uuid4().hex}"
 
         def writer(dbconn, transaction_id=""):
-            rechecked = waiting.validate_resolution(dbconn, task_id, tdir, actor=actor, resolution_evidence=resolution_paths)
+            rechecked = current_resolution(dbconn)
             if rechecked != resolution:
                 raise ValueError("WAIT_PREREQUISITE_CHANGED: reread before resuming")
             if (expected_block_event_id is not None
@@ -559,6 +571,10 @@ def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
 
 def _latest_development_change_set(conn, task_id: str) -> Optional[Dict[str, Any]]:
     """返回最近一次可信 Development checkpoint 绑定的产品 Change Set。"""
+    from .orchestration_policy import resolve_task_mode
+    task = conn.execute('SELECT * FROM task WHERE task_id=?', (task_id,)).fetchone()
+    events = conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (task_id,)).fetchall()
+    quick = task is not None and resolve_task_mode(dict(task), events)['workflow_mode'] == 'quick'
     rows = conn.execute(
         "SELECT * FROM task_event "
         "WHERE task_id=? AND event_type IN ('FACT','WORK_INTEGRATION_RECORDED') ORDER BY id DESC",
@@ -568,7 +584,7 @@ def _latest_development_change_set(conn, task_id: str) -> Optional[Dict[str, Any
         if row["event_type"] == "WORK_INTEGRATION_RECORDED":
             from .work_units import candidate_binding
             return candidate_binding([dict(row)])
-        if str(row["actor_role"] or "") != "tp-development-engineer":
+        if not quick and str(row["actor_role"] or "") != "tp-development-engineer":
             continue
         try:
             detail = json.loads(row["detail_json"] or "{}")
@@ -598,12 +614,16 @@ def _latest_development_change_set(conn, task_id: str) -> Optional[Dict[str, Any
 
 
 def _latest_verification(conn, task_id: str, task_dir: Optional[Path] = None) -> Dict[str, str]:
+    from .orchestration_policy import resolve_task_mode
+    task = conn.execute('SELECT * FROM task WHERE task_id=?', (task_id,)).fetchone()
+    events = conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (task_id,)).fetchall()
+    quick = task is not None and resolve_task_mode(dict(task), events)['workflow_mode'] == 'quick'
     rows = conn.execute(
         "SELECT actor_role,summary,detail_json,created_at FROM task_event WHERE task_id=? AND event_type IN ('VERIFICATION_COMPLETED','REVIEW_COMPLETED') ORDER BY id DESC",
         (task_id,),
     ).fetchall()
     for row in rows:
-        if str(row["actor_role"] or "") != "tp-test-engineer":
+        if not quick and str(row["actor_role"] or "") != "tp-test-engineer":
             continue
         detail = {}
         try:
@@ -616,7 +636,7 @@ def _latest_verification(conn, task_id: str, task_dir: Optional[Path] = None) ->
             subject = str(detail.get("subject_digest") or "")
             if task_dir is not None and subject:
                 from .digest import compute_verification_subject_digest
-                if compute_verification_subject_digest(task_dir) != subject:
+                if compute_verification_subject_digest(task_dir, scope=detail.get('verification_scope', 'full')) != subject:
                     decision = f"{recorded}_STALE"
             return {
                 "decision": decision, "recorded_decision": recorded,
@@ -680,8 +700,8 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
            security_context: Optional[Dict[str, Any]] = None,
            db: Optional[str] = None) -> Dict[str, Any]:
     """Record an actual technical verification result without adding a workflow gate."""
-    if actor != "tp-test-engineer":
-        raise ValueError("technical verification must be recorded by tp-test-engineer")
+    if actor not in actor_ids():
+        raise ValueError(f'invalid actor: {actor}')
     if scope not in {"full", "technical"}:
         raise ValueError("verification scope must be full or technical")
     if isinstance(checks, str):
@@ -722,6 +742,13 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         replay = request.replay(conn)
         if replay is not None:
             return replay
+        from .orchestration_policy import resolve_task_mode, continuous_actor_ids
+        events = conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (task_id,)).fetchall()
+        mode = resolve_task_mode(dict(task), events)
+        if mode['issues']:
+            raise ValueError('; '.join(mode['issues']))
+        if actor != 'tp-test-engineer' and not (mode['workflow_mode'] == 'quick' and actor in continuous_actor_ids(dict(task), events)):
+            raise ValueError('technical verification requires the actual quick executor or tp-test-engineer')
         items = []
         for raw in evidence or []:
             checked = validate_evidence_path(tdir, raw, require_evidence_dir=True)
@@ -841,6 +868,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         delivery = _normalize_delivery_signals(delivery_signals)
 
         result = {"task_id": task_id, "state": "ACTIVE", "phase": "verification",
+                  "actor": actor,
                   "decision": decision0, "verification_scope": scope, "checks": checks,
                   "evidence_count": len(items), "flush_id": flush_id,
                   "summary": summary, "request_id": request.request_id, "replayed": False}

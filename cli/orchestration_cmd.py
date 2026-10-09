@@ -67,6 +67,7 @@ def cmd_preference(args) -> int:
             "base_default": default,
             "project_override_supported": False,
         }
+        data.update(workflow_controls.confirmation_policy_migration(path))
         _emit(data, args.json)
         return 0
     except Exception as exc:
@@ -81,12 +82,24 @@ def cmd_confirm(args) -> int:
             task_dir=args.task_dir,
             db=args.db,
             confirmation_policy=args.confirmation_policy,
+            user_source=args.user_source, user_source_ref=args.user_source_ref, request_id=args.request_id,
         )
     except Exception as exc:
         print(f"WORKFLOW_CONFIRM_ERROR: {exc}", file=sys.stderr)
         return 4
     _emit(route, args.json)
     return 0
+
+
+def cmd_retire_confirmation_wait(args) -> int:
+    from .autonomy_records import resume_retired_confirmation
+    try:
+        result = resume_retired_confirmation(task_id=args.task, task_dir=args.task_dir, db=args.db, actor=args.actor)
+        _emit(result, args.json)
+        return 0
+    except Exception as exc:
+        print(f'WORKFLOW_RETIRE_WAIT_ERROR: {exc}', file=sys.stderr)
+        return 4
 
 
 def add_workflow_subparsers(subparsers) -> None:
@@ -97,22 +110,33 @@ def add_workflow_subparsers(subparsers) -> None:
     pn.add_argument("--task", required=True)
     pn.add_argument("--db", default=None)
     pn.add_argument("--base-root", default=None)
-    pn.add_argument("--confirmation-policy", choices=["material", "each_stage"], default=None)
+    pn.add_argument("--confirmation-policy", type=workflow_controls.confirmation_policy_argument, default=None)
     pn.add_argument("--allowed-effect", action="append", choices=["repo_mutation"], default=None,
                     help="optional execution-envelope effect allowed by an external controller")
     pn.add_argument("--json", action="store_true")
     pn.set_defaults(func=cmd_next)
 
-    pc = sub.add_parser("confirm", help="human_owner: confirm the currently bound ordinary(each_stage) or material workflow boundary")
+    pc = sub.add_parser("confirm", help="human_owner: record the current material decision or explicit quick completion instruction")
     pc.add_argument("--task", required=True)
     pc.add_argument("--task-dir", required=True)
     pc.add_argument("--db", default=None)
-    pc.add_argument("--confirmation-policy", choices=["material", "each_stage"], default=None)
+    pc.add_argument("--confirmation-policy", type=workflow_controls.confirmation_policy_argument, default=None)
     pc.add_argument("--json", action="store_true")
+    pc.add_argument('--user-source', help='actual owner instruction; required for quick completion')
+    pc.add_argument('--user-source-ref', help='context/file reference for the actual owner instruction')
+    pc.add_argument('--request-id', help='reuse for the same instruction; quick completion requires a stable ID')
     pc.set_defaults(func=cmd_confirm)
 
+    pr = sub.add_parser('retire-confirmation-wait', help='Resume only a proven active retired each_stage policy wait')
+    pr.add_argument('--task', required=True)
+    pr.add_argument('--task-dir', required=True)
+    pr.add_argument('--db', required=True)
+    pr.add_argument('--actor', default='tp-software-lifecycle')
+    pr.add_argument('--json', action='store_true')
+    pr.set_defaults(func=cmd_retire_confirmation_wait)
+
     pp = sub.add_parser("preference", help="Show or set the user-level workflow confirmation preference")
-    pp.add_argument("--set", dest="set_policy", choices=["material", "each_stage"], default=None)
+    pp.add_argument("--set", dest="set_policy", type=workflow_controls.confirmation_policy_argument, default=None)
     pp.add_argument("--base-root", default=None)
     pp.add_argument("--json", action="store_true")
     pp.set_defaults(func=cmd_preference)

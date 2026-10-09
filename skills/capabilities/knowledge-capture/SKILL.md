@@ -1,14 +1,14 @@
 ---
 name: knowledge-capture
 display_name: 知识提炼
-version: 5.3.7
-description: 每个 Task 交付时覆盖有效需求及各步骤材料，按价值形成候选，由 tp-knowledge 定向判重与维护。
+version: 5.3.8
+description: standard Task 交付时覆盖有效需求及各步骤材料，按价值形成候选，由 tp-knowledge 定向判重与维护。
 ---
 
 # 知识提炼
 
 ## 责任与触发
-每个 Task（L0–L3）交付由集成交付工程师调用，即使没有 knowledge_signals；日常也可在自然出现高价值内容时使用。本能力提炼候选，不创建公共 Knowledge 阶段、不代签技术或人工验收。必做的是评估，不是强制新增 canonical/报告。
+standard Task（L0–L3）交付由集成交付工程师调用，即使没有 knowledge_signals；日常也可在自然出现高价值内容时使用。本能力提炼候选，不创建公共 Knowledge 阶段、不代签技术或人工验收。quick 不自动要求该评估；用户明确提出知识工作时仍可按需使用。标准模式中必做的是评估，不是强制新增 canonical/报告。
 
 ## 有效输入覆盖
 先只读 `knowledge task-inputs` 获取当前请求、输入 digest、逐项指纹/引用与增量，再从当前 Task 的 canonical 需求、计划/索引和正式事件定位有效材料，定向读取需求、决定、设计/实现、测试/审查、返修 Work、交付及各步骤记忆候选；不能只读最后摘要或检查 signals。记录已读来源/范围与缺失，未发生步骤不补造；已替代决定保留关联，不作为当前新规则。不为完整扫描全库或其他 Task 历史。

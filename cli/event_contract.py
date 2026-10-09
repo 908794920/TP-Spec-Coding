@@ -127,6 +127,14 @@ def validate_event_semantics(event_type: str, detail: Dict[str, Any] | None, *,
 
     family = (contract.get("event_families") or {}).get(_upper(event_type)) or {}
     required = list(family.get("required") or [])
+    if _upper(event_type) == 'WORKFLOW_CONFIRMATION':
+        if d.get('confirmation_kind') not in {'ordinary', 'material', 'completion'}:
+            errors.append('invalid confirmation_kind')
+        if d.get('confirmation_kind') == 'completion':
+            required.extend(['change_set_id', 'subject_digest', 'mode_source_digest', 'user_source'])
+            from .orchestration_policy import valid_user_source
+            if not valid_user_source(d.get('user_source')):
+                errors.append('completion requires an actual user instruction source')
     if _upper(event_type) == "FACT" and operation == "CHECKPOINT":
         required = list(family.get("checkpoint_required") or [])
     if _upper(event_type) == "REVIEW_COMPLETED":

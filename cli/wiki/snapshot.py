@@ -130,6 +130,8 @@ def prepare_source_config(
     result["_source_policy_digest"] = _digest({"config": public, "rules": source_rules})
     base = Path(__file__).resolve().parents[2]
     rule_paths = set((base / "cli/wiki").glob("*.py"))
+    # Wiki credential checks consume this rule implementation directly.
+    rule_paths.add(base / "cli/sensitive_scanner.py")
     for folder in ("wiki/rules", "agents/tp-wiki", "skills/wiki", "automation/wiki"):
         rule_paths.update((base / folder).rglob("*.md"))
     rule_paths.update((base / "wiki/schema").glob("*.yaml"))
@@ -440,6 +442,16 @@ def commit_baseline(wiki_repo_root: Path, *, repo_id: str | None = None, repo_ro
                 raise ValueError("baseline blocked: semantic audit does not bind the staged source and policy")
             if audit.get("subject_digest") != current_subject:
                 raise ValueError("baseline blocked: semantic audit does not bind the current Wiki subject")
+            audit_plan = _read_json(paths["audit_plan"])
+            if audit.get("audit_plan_digest") and audit["audit_plan_digest"] != _digest(audit_plan):
+                raise ValueError("baseline blocked: semantic audit plan changed after audit recording")
+            for claim in audit.get("claims") or []:
+                if not isinstance(claim, dict) or claim.get("source", audit.get("source")) != pending.get("source"):
+                    raise ValueError("baseline blocked: semantic claim does not bind the staged source")
+            if audit.get("claims"):
+                from .quality import _validate_audit_claims
+                _validate_audit_claims(wiki_repo_root, audit["claims"], audit.get("documents") or [],
+                    pending.get("source"), current_subject, repo_root=repo_root, source_cfg=source_cfg)
     # Build the next cite-anchor baseline *before* advancing the source snapshot.
     # The anchor file carries the candidate snapshot_id; if a crash occurs before
     # the baseline replace, the mismatch makes it unusable rather than silently
@@ -457,9 +469,18 @@ def commit_baseline(wiki_repo_root: Path, *, repo_id: str | None = None, repo_ro
         "committed_at": utc_now(), "change_set_id": changeset.get("change_set_id"),
         "subject_digest": current_subject,
         "verification": {k: verification.get(k) for k in ("result", "verified_at", "subject_digest", "semantic_audit_required")},
-        "audit": {k: audit.get(k) for k in ("result", "recorded_at", "subject_digest", "documents", "topology_reviewed")} if audit else None,
+        "audit": {k: audit.get(k) for k in (
+            "result", "recorded_at", "subject_digest", "documents", "topology_reviewed",
+            "source", "maintenance_digest", "change_set_id", "mode", "summary", "audit_scope",
+            "claims", "claim_evidence_status", "evidence_limitations", "audit_plan_digest", "audit_plan",
+        )} if audit else None,
         "affected_documents": [d.get("document") for d in plan.get("affected_documents", [])],
     }
+    if audit and not audit.get("claims"):
+        pending["completion"]["audit"]["claim_evidence_status"] = "NOT_RECORDED"
+        pending["completion"]["audit"]["evidence_limitations"] = audit.get("evidence_limitations") or [
+            "Representative claim evidence was not recorded; no historical sentence-level audit is inferred."
+        ]
     _write_json(paths["baseline"], pending)
     # The baseline is already committed. A failed receipt cleanup must not be
     # reported as an uncommitted run; maintain will revalidate remaining state.

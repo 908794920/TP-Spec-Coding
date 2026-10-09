@@ -28,7 +28,8 @@ optional_fields:
     change_set_id: verified run identity
     subject_digest: durable Wiki subject
     verification: retained verification result/time/subject/audit requirement
-    audit: retained audit result/time/subject/documents/topology, when required
+    audit: retained audit result/time/source/subject/documents/topology, summary, audit_scope, deterministic audit_plan and its digest, supplied representative claims, and evidence limitations
     affected_documents: Wiki pages selected by the final plan
 optional_git_file_fields: [git_blob, git_mode]
 identity_rule: "snapshot_id remains the content identity, not a commit SHA; legacy source identity must be explicitly initialized, never inferred from the worktree."
+audit_evidence_rule: "Claim associations are optional and do not prove every sentence was reviewed. Missing old claim evidence remains NOT_RECORDED with historical limitations; it is never reconstructed."

@@ -61,7 +61,37 @@ Role 是能力集合，不是固定流程包。工作流按任务复杂度、风
 
 `governance/orchestration.yaml` 是 Base 默认政策，现有 Runtime `config` 表只保存项目少量覆盖，不新增配置文件/数据库。`workflow next --json` 正常读取并校验有效配置；`policy_sources` 标明 Base 与项目来源，`included_stages` 也供进度投影复用。只读路由不启动角色进程、测试或浏览器，不新增 Task、业务事件，也不启动工作台。
 
-L1–L3 在没有范围事实及下游工作时仍先澄清；已有相关工作不要求倒补需求事件。需求明确后，架构/架构复审由实际风险、既有活动或显式信号选择，不因 L3 标签自动启用；规划由显式需求、既有活动或真实上游返修触发。没有新问题时不制造下一轮开发。新的可选备注不会仅凭事件编号使完成的开发重新开始；真实架构 REVISE、失败后上游重评、产品/证据主体变化仍重新评估。L1+ Verify、L2/L3 CODE Review 的必要要求保持，未修改 Q01 独立审查频度或身份边界。新记录的 L0/L1 也需轻量 Delivery 及知识/记忆评估；未采用新标记的旧事实不追补。显式计划的父步骤不倒退，修复和失效证据通过子工作/原步骤复验收敛，详见 [Work 结果契约](../WORK_UNITS.md)。
+Task 的 `workflow_mode`、`mode_source` 和 `applicable_obligations` 由 `orchestration_policy.resolve_task_mode/resolve_task_obligations` 唯一解释，消费者不自行重算。quick 只接受有真实用户来源的明确选择；历史没有模式字段仍是 standard。AI 可以建议 quick，但用户沉默或拒绝不切换模式。quick 不要求 risk/flow、L0–L3、固定 Work/Role 链、架构工件、独立 Review、完整人验或 Knowledge/Memory 收敛；直接使用本次需要的能力。必要验证需记录实际 checks 和未验项；同一实际执行者可记录自测与交付，但不得标称独立测试或 Review。quick 代码 Delivery 保持 Task ACTIVE 并等待用户明确结单，结单确认绑定当前 Delivery、ChangeSet、Subject 和模式来源；主体变化使旧确认不适用。未运行/未验边界仍保留，不能由交付或结单推断实际执行。
+
+创建时显式传入真实用户选择来源；quick 不需 `--risk` / `--flow`：
+
+```text
+tp-spec task create --id TASK-ID --project PROJECT-ID --workflow-mode quick --mode-source "用户明确选择 quick 的原话" --mode-source-ref "会话或文件位置" --scaffold --db RUNTIME-DB
+```
+
+已有 Task 改为 quick 时用正式模式选择事件，重复请求复用同一 `--request-id`：
+
+```text
+tp-spec task mode-select --task TASK-ID --task-dir TASK-DIR --workflow-mode quick --mode-source "用户明确选择 quick 的原话" --mode-source-ref "会话或文件位置" --request-id REQUEST-ID --db RUNTIME-DB
+```
+
+quick 确认结单须有用户当次明确结单指令。`workflow confirm` 按该来源、上下文引用和稳定 request ID 写入；重复同一请求幂等，产品主体变化后需按当前交付重新取得确认：
+
+```text
+tp-spec workflow confirm --task TASK-ID --task-dir TASK-DIR --user-source "用户明确允许本 Task 结单的原话" --user-source-ref "会话或文件位置" --request-id COMPLETION-REQUEST-ID --db RUNTIME-DB --json
+```
+
+模式字段保持来自唯一 reader：`task get --task TASK-ID --json` 在 JSON 顶层返回 `workflow_mode`、`mode_source`、`applicable_obligations`；`workflow next --task TASK-ID --json` 顶层也返回这三个字段，并在 quick 时提供 `quick_status`。工作台 `workflow` 对象返回同一组模式字段和 `route.quick_status`；结单预检返回顶层模式字段和 quick 状态，并保留当前 `route`。`quick_status` 提供 `delivery_status`、`delivery_current`、`awaiting_completion`、`verification_scope`、`verification_decision`、`verification_current`、`verification_event_id`、`delivery_event_id`、`checks[]`、`unverified_items[]`。这些字段说明当前记录与适用性，不会把未运行的项目变成通过。
+
+逐阶段 ordinary 确认策略 `each_stage` 已退役，新输入只接受 `material` 确认策略；重要方案的 material 确认、真实权限等待和用户结单继续有效。合法旧配置可按 material 兼容接续，损坏值不静默归一；只有可信的旧 `EACH_STAGE_POLICY` ordinary 策略等待可走专用恢复，不生成 Human 批准。该旧等待的窄恢复入口为：
+
+```text
+tp-spec workflow retire-confirmation-wait --task TASK-ID --task-dir TASK-DIR --db RUNTIME-DB [--actor ACTOR] [--json]
+```
+
+该命令只用于上述已核实的旧策略等待；不得用它解除 material 确认或真实权限等待。历史 CHANGELOG 仅说明旧版本事实，不表示策略仍可启用。
+
+standard 模式下，L1–L3 在没有范围事实及下游工作时仍先澄清；已有相关工作不要求倒补需求事件。需求明确后，架构/架构复审由实际风险、既有活动或显式信号选择，不因 L3 标签自动启用；规划由显式需求、既有活动或真实上游返修触发。没有新问题时不制造下一轮开发。新的可选备注不会仅凭事件编号使完成的开发重新开始；真实架构 REVISE、失败后上游重评、产品/证据主体变化仍重新评估。L1+ Verify、L2/L3 CODE Review 的必要要求保持，未修改 Q01 独立审查频度或身份边界。新记录的 standard L0/L1 也需轻量 Delivery 及知识/记忆评估；未采用新标记的旧事实不追补。quick 不从等级导出这些义务。显式计划的父步骤不倒退，修复和失效证据通过子工作/原步骤复验收敛，详见 [Work 结果契约](../WORK_UNITS.md)。
 
 开发、验证和审查建议携带 `context.validation`：已有 ChangeSet 标识、HEAD→工作区实际变更路径（最多64项）、acceptance.md 候选（最多12项）、风险信号及未确定的调用关系。列表同时返回总数，`coverage_complete: false`、`authorization_granted: false` 明确这不是覆盖证明/操作许可。历史已提交变化不在这个 Diff 内，不能据此缩小最终任务范围；实际调用方、当前部署、测试选择仍由执行者定向核对。不做 AST/依赖图，不根据路径、行数或单条测试自动授予全局 PASS。
 
@@ -82,7 +112,7 @@ tp-spec workflow next --db <DB> --task <TASK> --json
 
 优先级为 Base YAML → 精确 project/scope-id 覆盖；不接受 Task/global/user 层的 orchestration 覆盖，也不按工作目录猜目标项目。普通 `config get` 仍返回存储值；`--effective` 返回完整有效政策和每个覆盖的来源。相邻两次调用重新取当前配置；非法值、未知字段、未注册项目或不支持的作用域明确拒绝，不静默使用宽松值。相关旧坏行会阻止依赖其政策的路由；受支持 key 的坏值可通过同一 `config set` 改成合法值，不手改 DB。其他项目的覆盖不会影响当前项目；跨版本迁移仍使用既有正式入口并另行获准。
 
-Base 中已有的信号名、条件角色 phases 和受角色能力约束的 mode 在正常路径生效；项目不覆盖角色身份、mode/effects、公共状态、隔离、权限或信任规则。既有 canonical `workflow:*` 人类信号仍可读取，配置别名按同一语义归一；include/skip 冲突及跳过必需阶段会报错。Stage 是建议能力而非 PASS 门禁；最终 Verify/Review/Delivery/Complete 继续消费真实当前证据。
+Base 中已有的信号名、条件角色 phases 和受角色能力约束的 mode 在正常路径生效；项目不覆盖角色身份、mode/effects、公共状态、隔离、权限或信任规则。既有 canonical `workflow:*` 人类信号仍可读取，配置别名按同一语义归一；include/skip 冲突及跳过必需阶段会报错。Stage 是建议能力而非 PASS 门禁；standard 的 Verify/Review/Delivery/Complete 与 quick 的适用义务都消费真实当前证据。只读工作台只展示 Runtime/派生状态，没有模式、确认、Knowledge 消费等写入按钮或强制计数。
 
 ## 当前有效范围、决定与授权来源
 
@@ -345,8 +375,8 @@ ChangeSet 原内容 ID 保持原格式；正式新记录额外保留既有快照
 `checks` 逐项列出判定、适用性、真实依据、问题、`responsibility` 和 `depends_on`；
 `blockers` 保留扁平兼容字段，`unknowns` 明示未取得确定结果的必需项，`next_actions`
 列出尚未满足的依赖。有效等级和适用步骤来自统一 Runtime，不以裸 `flow_level` 推断。
-检查范围包括步骤与 Work、AC/Owner、数据库操作、Visual Manifest、候选/Subject、
-当前 Verification/Review/Delivery、临时工件以及知识/记忆处置。文件不可读或信息缺失
+检查范围按唯一模式 reader 返回的 `applicable_obligations` 确定，包括适用的步骤与 Work、AC/Owner、数据库操作、Visual Manifest、候选/Subject、
+当前 Verification/Review/Delivery、临时工件以及 standard 的知识/记忆处置。文件不可读或信息缺失
 不会当作通过，也不因为其中一项失败而隐藏独立的其他缺口。
 
 数据库事实来自同一只读事务，文件是实时读取，不承诺文件系统锁定或自动证明业务语义。
@@ -356,7 +386,7 @@ ChangeSet 原内容 ID 保持原格式；正式新记录额外保留既有快照
 已完成或取消的任务直接返回真实终态；重复命令不追加终态事件、不改终态文件和 manifest，
 `view_status=NOT_REFRESHED` 不表示生成视图已修复。非终态仍需非空 `--summary` 和合法 actor。
 
-L0/L1 也有轻量 Delivery，但只要求实际适用的 Verification/Review；不适用结果明确记录为
+standard 的 L0/L1 也有轻量 Delivery，但只要求实际适用的 Verification/Review；不适用结果明确记录为
 `NOT_REQUIRED`，对应 event ID 为 0，而不是伪造 PASS。L2/L3 沿用正式完整绑定。
 `task delivery-converge` 对相同有效输入复用最新 receipt，不重建 Delivery 或重复
 Knowledge Request。后来的 BLOCKED、候选/范围、验收处置或绑定证据变化不能复用旧 READY。
@@ -371,14 +401,14 @@ Delivery 另外绑定验收结果文件、实际 PASS 所引用的证据、已�
 混入数据库/视觉等业务键的块不再整块排除。旧任务使用混合块或缺省 `witness_evidence`
 时可能需要一次受影响结果重绑；不回写旧记录、不用旧 digest 兜底放行。
 
-**每 Task 知识/记忆：** 新 Delivery 带 `closeout_schema`，READY 为 L0–L3 创建或复用
+**standard Task 知识/记忆：** 新 Delivery 带 `closeout_schema`，READY 为适用 L0–L3 创建或复用
 带 `learning_schema=tp-spec.task-learning/v1` 的 Knowledge Request，即使没有 knowledge_signals。
 只读 `knowledge task-inputs --task <ID> --task-dir <DIR> --db <DB>` 获取当前输入和变化，
 按需实际阅读；tp-knowledge 使用 `knowledge task-converge --assessment FILE|-` 记录逐项
 覆盖、定向检索/目标与 Memory 评估。字段、来源绑定、部分复用和错误处理见
 [Task 收敛契约](../../agents/tp-knowledge/references/task-convergence.md)。
 
-相同有效输入复用原 Result，不重复查询或写事件；知识用非主体材料变化只重评相关结论。
+相同有效输入复用原 Result，不重复查询或写事件；知识用非主体材料变化只重评相关结论。quick Delivery 不自动创建学习 Request，也不强制 Knowledge/Memory 消费计数；只读工作台展示已有事实，不提供写入按钮。
 缺必要知识环境/来源/结果保持待处理；Memory 的已判断和已保存分别记录，
 可选保存失败披露责任和恢复条件，不无关阻塞完整研发。
 已采用 `tp-spec.closeout/v1`、但缺少当前 `tp-spec.task-learning/v1` 请求的在途任务，

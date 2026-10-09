@@ -28,7 +28,7 @@ CLI / Runtime
 
 ## 2. 生命周期与 Role
 
-`tp-software-lifecycle` 表示软件工程的**完整能力上限**。L0～L3、风险信号和工作流配置决定当前任务实际需要哪些阶段和 Role；不会因为 Role 存在就强制每个任务执行它。
+`tp-software-lifecycle` 表示软件工程的**完整能力上限**。standard Task 继续按 L0～L3、风险信号和工作流配置决定适用义务及需要的 Role；不会因为 Role 存在就强制每个任务执行它。quick 只能由用户明确选择，旧记录或无选择仍为 standard；AI 可以建议但不能以沉默或拒绝启用。quick 直接复用所需能力，不要求 L0～L3、固定 Work/Role 链、架构工件或 Knowledge/Memory 评估。实际风险、明确验收和权限仍按其真实事实处理。
 
 软件生命周期的当前 Formal Role、内置 Capability Skill 和执行路径统一从 [`agents/tp-software-lifecycle.md`](agents/tp-software-lifecycle.md) 的生成区块查看。
 

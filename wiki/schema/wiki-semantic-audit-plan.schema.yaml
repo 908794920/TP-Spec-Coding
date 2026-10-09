@@ -31,3 +31,9 @@ source_binding:
   source: fixed source_mode, stable_ref, commit, repo_prefix for this run
   maintenance_digest: maintenance configuration and rule identity
   invariant: source reads and audit receipts must use the same staged identity, not the worktree
+optional_receipt_claims:
+  document: an actually audited Wiki path; an optional line_start/line_end is checked against the current page
+  source: inherits the verified audit source; an explicit different source/version is rejected
+  evidence: when supplied, a nonempty list of fixed-source file locators; supplied line ranges are checked
+  interpretation: claim/judgment/reason may supplement the audit summary, without a compulsory per-page form
+  retention: summary, audit_scope, plan reasons/coverage and supplied claims survive baseline receipt cleanup

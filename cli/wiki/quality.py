@@ -29,6 +29,7 @@ from .manifest import (
 from .snapshot import snapshot_paths, utc_now, wiki_subject_digest, validate_staged_source
 from .source import decode_text, discover_source_files, fingerprint_file, read_source_bytes, source_is_file
 from .stable_source import relative_path, source_view
+from ..sensitive_scanner import scan_credentials
 
 REQUIRED_CONTENT_SECTIONS = ("概述", "模块结构", "核心逻辑", "数据流", "接口", "配置", "依赖")
 STRONG_FILLER_SIGNALS = ("该文件是本仓的核心实现", "承载主要业务逻辑", "其类与方法实现细节")
@@ -50,7 +51,8 @@ def _line_count(repo_root: Path, rel: str, source_cfg: Dict[str, Any]) -> int:
 def _repeated_paragraphs(text: str, threshold: int) -> List[str]:
     blocks = [re.sub(r"\s+", " ", b.strip()) for b in re.split(r"\n\s*\n", text) if len(b.strip()) >= 40]
     counts = Counter(blocks)
-    return [block[:120] for block, n in counts.items() if n >= threshold]
+    return ["[REDACTED CREDENTIAL PARAGRAPH]" if scan_credentials(block).get("hits") else block[:120]
+            for block, n in counts.items() if n >= threshold]
 
 
 def _canonical_cites(rows: Any) -> List[Dict[str, Any]]:
@@ -232,6 +234,12 @@ def verify_repo(
                 text = path.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 issues.append(_issue("L1", "ERROR", "WIKI_DOC_ENCODING_INVALID", f"Wiki Markdown must be UTF-8: {rel}", document=rel))
+            credentials = scan_credentials(text)
+            if credentials.get("scan_status") == "error":
+                issues.append(_issue("L1", "ERROR", "WIKI_CREDENTIAL_SCAN_ERROR", "credential scan unavailable", document=rel))
+            for hit in credentials.get("hits") or []:
+                issues.append(_issue("L1", "ERROR", "WIKI_CREDENTIAL_EXPOSED", "redact the credential value in the Wiki copy; preserve source references",
+                    document=rel, category=hit["category"], line=hit.get("line"), column=hit.get("column"), mask="[REDACTED]"))
             expected_doc_hash = str(doc.get("content_hash") or "")
             if not HEX64.match(expected_doc_hash):
                 issues.append(_issue("L1", "ERROR", "DOC_HASH_MISSING", f"document content_hash missing/invalid: {rel}", document=rel))
@@ -506,7 +514,69 @@ def verify_repo(
     return report
 
 
-def record_semantic_audit(wiki_repo_root: Path, *, result: str, summary: str, documents: List[str], topology_reviewed: bool = False) -> Dict[str, Any]:
+def _validate_audit_claims(wiki_repo_root: Path, claims: Any, documents: List[str], source: Any,
+                           subject: str, *, repo_root: Path | None = None,
+                           source_cfg: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+    """Validate only supplied representative associations, not a per-page form."""
+    if claims is None:
+        return []
+    if not isinstance(claims, list):
+        raise ValueError("semantic audit claims must be a list")
+    clean = []
+    for index, raw in enumerate(claims):
+        label = f"semantic audit claim {index + 1}"
+        if not isinstance(raw, dict):
+            raise ValueError(f"{label} must be an object")
+        item = dict(raw)
+        rel = str(item.get("document") or "").replace("\\", "/")
+        if rel not in documents:
+            raise ValueError(f"{label} document is outside the actual audited scope")
+        path = resolve_wiki_relative(wiki_repo_root, rel)
+        if not path.is_file():
+            raise ValueError(f"{label} document is unavailable")
+
+        def location(row, count, kind):
+            start, end = row.get("line_start"), row.get("line_end")
+            if start is None and end is None:
+                return  # File/document-level locator stays file/document-level.
+            end = start if end is None else end
+            if type(start) is not int or type(end) is not int or not 1 <= start <= end <= count:
+                raise ValueError(f"{label} {kind} line range is invalid")
+
+        location(item, len(path.read_text(encoding="utf-8-sig").splitlines()), "document")
+        if item.get("source", source) != source or item.get("subject_digest", subject) != subject:
+            raise ValueError(f"{label} source/version or Wiki subject does not match this audit")
+        item["document"], item["source"] = rel, source
+        if "evidence" in item:
+            if not isinstance(item["evidence"], list) or not item["evidence"]:
+                raise ValueError(f"{label} declared evidence must be a non-empty list")
+            if repo_root is None or source_cfg is None or source_view(repo_root, source_cfg).identity() != source:
+                raise ValueError(f"{label} source evidence requires the verified pinned source context")
+            evidence = []
+            for raw_evidence in item["evidence"]:
+                if not isinstance(raw_evidence, dict):
+                    raise ValueError(f"{label} evidence must be an object")
+                entry = dict(raw_evidence)
+                file = str(entry.get("file") or "").replace("\\", "/")
+                if not file or not source_is_file(repo_root, file, source_cfg):
+                    raise ValueError(f"{label} source evidence file is unavailable")
+                if entry.get("source", source) != source:
+                    raise ValueError(f"{label} evidence source/version does not match this audit")
+                location(entry, _line_count(repo_root, file, source_cfg), "source")
+                content_hash = hashlib.sha256(read_source_bytes(repo_root, file, source_cfg)).hexdigest()
+                if entry.get("content_hash", content_hash) != content_hash:
+                    raise ValueError(f"{label} evidence content identity does not match the pinned source")
+                entry["content_hash"] = content_hash
+                entry["file"] = file
+                evidence.append(entry)
+            item["evidence"] = evidence
+        clean.append(item)
+    return clean
+
+
+def record_semantic_audit(wiki_repo_root: Path, *, result: str, summary: str, documents: List[str], topology_reviewed: bool = False,
+                          claims: Any = None, repo_root: Path | None = None,
+                          source_cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
     """Record a semantic audit bound to the exact verified Wiki subject.
 
     Supports both staged change-set audits and standalone quality audits.  PASS always
@@ -524,6 +594,8 @@ def record_semantic_audit(wiki_repo_root: Path, *, result: str, summary: str, do
     verification = json.loads(paths["verification"].read_text(encoding="utf-8")) if paths["verification"].is_file() else {}
     current_subject = wiki_subject_digest(wiki_repo_root)
     audit_plan = json.loads(paths["audit_plan"].read_text(encoding="utf-8")) if paths["audit_plan"].is_file() else {}
+    if changeset and repo_root is not None and source_cfg is not None:
+        validate_staged_source(wiki_repo_root, repo_root, source_cfg)
 
     if result == "PASS":
         if audit_plan.get("source") != verification.get("source"):
@@ -561,6 +633,9 @@ def record_semantic_audit(wiki_repo_root: Path, *, result: str, summary: str, do
         if audit_plan.get("topology_review_required") and not topology_reviewed:
             raise ValueError("semantic audit PASS requires explicit topology review for this audit scope")
 
+    clean_claims = _validate_audit_claims(wiki_repo_root, claims, clean_documents, verification.get("source"),
+                                        current_subject, repo_root=repo_root, source_cfg=source_cfg)
+    from .snapshot import _digest
     receipt = {
         "schema": "tp-spec.wiki-semantic-audit/v1",
         "source": verification.get("source"),
@@ -574,6 +649,13 @@ def record_semantic_audit(wiki_repo_root: Path, *, result: str, summary: str, do
         "summary": summary.strip(),
         "documents": clean_documents,
         "topology_reviewed": bool(topology_reviewed),
+        "claims": clean_claims,
+        "claim_evidence_status": "RECORDED" if any(item.get("evidence") for item in clean_claims) else "NOT_RECORDED",
+        "evidence_limitations": [] if any(item.get("evidence") for item in clean_claims) else [
+            "Representative source evidence was not recorded; summary/scope do not prove sentence-level review."
+        ],
+        "audit_plan_digest": _digest(audit_plan),
+        "audit_plan": audit_plan,
     }
     paths["audit"].write_text(
         json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n",

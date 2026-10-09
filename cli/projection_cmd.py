@@ -190,8 +190,8 @@ def _format_status_yaml(
     lines.append(f"current_state: {fmt_str(current_state)}")
     lines.append(f"current_phase: {fmt_str(current_phase)}")
     lines.append(f"current_owner: {fmt_str(current_owner)}")
-    lines.append(f"risk_level: {fmt_str(risk_level)}")
-    lines.append(f"flow_level: {fmt_str(flow_level)}")
+    lines.append(f"risk_level: {json.dumps(risk_level, ensure_ascii=False)}")
+    lines.append(f"flow_level: {json.dumps(flow_level, ensure_ascii=False)}")
     lines.append(f"blockers: {fmt_list(blockers)}")
     lines.append(f"findings: {fmt_list(findings)}")
     lines.append(f"scope_changes: {fmt_list(scope_changes)}")
@@ -563,6 +563,34 @@ def _extract_quality_facts(conn, task_id: str) -> Dict[str, str]:
     ).fetchone()
     task_dir = Path(location[0]) / ".tp-spec" / "tasks" / task_id if location and location[0] else None
     dev_stale = development_status != "CURRENT"
+    from .orchestration_policy import resolve_task_mode
+    task_row = conn.execute('SELECT * FROM task WHERE task_id=?', (task_id,)).fetchone()
+    task_events = conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (task_id,)).fetchall()
+    if task_row is not None and resolve_task_mode(dict(task_row), task_events)['workflow_mode'] == 'quick':
+        from . import orchestration
+        # Consumers share the formal route's actual result applicability.
+        facts = orchestration._load_task_facts(task_id, connection=conn, task_dir=task_dir)
+        route = orchestration.resolve_route(task_id, _facts=facts, task_dir=task_dir)
+        quick = route.get('quick_status') or {}
+        verified = event_policies.load_current_verification(conn, task_id, task_dir) if task_dir else None
+        facts[0]['_current_verification'] = {**verified.detail, 'event_id': int(verified.row['id'])} if verified else {}
+        candidate = orchestration._development_change_set_binding(facts[1], task=facts[0])
+        facts[0]['_current_change_set'] = facts[0].get('_current_change_set') or (orchestration._current_bound_change_set(candidate) if candidate else {})
+        current_delivery = orchestration._delivery_completion_event(facts[1], task_dir, task=facts[0])
+        out['verification'] = quick.get('verification_decision', 'NOT_RECORDED')
+        from .change_set import same_bound_product_content
+        if out['verification'] == 'PASS_STALE' and verified is not None and same_bound_product_content(verified.detail, facts[0]['_current_change_set'] or {}):
+            out['verification'] = 'PASS'
+        if out['verification'] == 'PASS' and not facts[0].get('_current_verification'):
+            out['verification'] = 'PASS_STALE'
+        elif out['verification'] == 'PASS' and quick.get('verification_scope') == 'technical':
+            out['verification'] = 'PASS_TECHNICAL'
+        out['delivery'] = quick.get('delivery_status', 'NOT_RECORDED')
+        if out['delivery'] == 'READY_STALE' and current_delivery:
+            out['delivery'] = 'READY'
+        if out['delivery'] == 'READY' and not current_delivery:
+            out['delivery'] = 'READY_STALE'
+        return out
 
     verification = event_policies.load_trusted_governance_event(
         conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer", latest_only=True,
@@ -716,6 +744,9 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
         "SELECT * FROM task_event WHERE task_id = ? ORDER BY id",
         (task_id,),
     ).fetchall()
+    from .event_policies import is_task_retired
+    if is_task_retired(conn, task_id):
+        raise ValueError('TASK_RETIRED: frozen historical projections cannot be rebuilt')
     from . import waiting
     state = str(task["current_state"] or "")
     waiting_fact = waiting.active_wait(events, state)
@@ -728,6 +759,10 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
     from .execution import read_execution
     from .task_views import execution_brief, excerpt, TERMINAL
     execution = execution_brief(read_execution(conn, task, rows=events))
+    from .orchestration_policy import resolve_task_obligations
+    mode = resolve_task_obligations(dict(task), events)
+    if mode['issues']:
+        raise ValueError('; '.join(mode['issues']))
     latest = dict(events[-1]) if events else {}
     next_role = ""
     if state not in TERMINAL:
@@ -749,14 +784,15 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
         current_state=task["current_state"] or "NEW",
         current_phase=task["current_stage"] or "intake",
         current_owner=task["owner_role"] or DEFAULT_OWNER_ROLE,
-        risk_level=task["risk_level"] or "L1",
-        flow_level=task["flow_level"] or "L1",
+        risk_level=task['risk_level'] if mode['workflow_mode'] == 'quick' else (task["risk_level"] or "L1"),
+        flow_level=task['flow_level'] if mode['workflow_mode'] == 'quick' else (task["flow_level"] or "L1"),
         blockers=blockers,
         findings=_extract_findings(conn, task_id),
         scope_changes=_extract_scope_changes(conn, task_id),
         quality_facts=_extract_quality_facts(conn, task_id),
         next_responsibility=next_role,
-        presentation={"fact_revision": len(events), "execution": execution,
+        presentation={**{key: mode[key] for key in ('workflow_mode', 'mode_source', 'applicable_obligations')},
+                      "fact_revision": len(events), "execution": execution,
                       "last_activity": {"event_id": latest.get("id"), "actor": latest.get("actor_role"),
                                         "time": latest.get("created_at"), "summary": excerpt(latest.get("summary"))}},
     )
@@ -783,9 +819,11 @@ def cmd_projection_rebuild(args) -> int:
             print(f"ERROR: task not found: {task_id}", file=sys.stderr)
             return 4
         from .task_views import TERMINAL, inspect_task_views
-        if str(task["current_state"] or "") in TERMINAL:
+        from .event_policies import load_task_retirement
+        retirement = load_task_retirement(conn, task_id)
+        if str(task["current_state"] or "") in TERMINAL or retirement is not None:
             task_dir = _resolve_task_dir(args.task_dir, task_id, conn)
-            result = inspect_task_views(task_dir, task)
+            result = inspect_task_views(task_dir, task, retirement=retirement)
             print(json.dumps({"view_status": "SEALED", "documents": result}, ensure_ascii=False))
             return 0
         if getattr(args, "view_only", False):
@@ -806,9 +844,10 @@ def cmd_projection_rebuild(args) -> int:
         if task is None:
             print("ERROR: task not found", file=sys.stderr)
             return 4
-        if str(task["current_state"] or "") in TERMINAL:
+        retirement = load_task_retirement(conn, task_id)
+        if str(task["current_state"] or "") in TERMINAL or retirement is not None:
             task_dir = _resolve_task_dir(args.task_dir, task_id, conn)
-            print(json.dumps({"view_status": "SEALED", "documents": inspect_task_views(task_dir, task)}, ensure_ascii=False))
+            print(json.dumps({"view_status": "SEALED", "documents": inspect_task_views(task_dir, task, retirement=retirement)}, ensure_ascii=False))
             return 0
         try:
             status_yaml, events_jsonl, warnings = render_projection(conn, task)
@@ -864,7 +903,8 @@ def validate_projection_files(conn, task, task_dir: Path) -> List[str]:
         errors.append(f"task_id mismatch: status.yaml={status.get('task_id')}, db={task['task_id']}")
     if status.get("current_state") != task["current_state"]:
         errors.append(f"current_state mismatch: status.yaml={status.get('current_state')}, db={task['current_state']}")
-    if status.get("risk_level") != task["risk_level"]:
+    actual_risk = None if status.get('risk_level') == 'null' else status.get('risk_level')
+    if actual_risk != task["risk_level"]:
         errors.append(f"risk_level mismatch: status.yaml={status.get('risk_level')}, db={task['risk_level']}")
     with open(events_path, "r", encoding="utf-8") as f:
         event_lines = [line.strip() for line in f if line.strip()]
@@ -931,7 +971,10 @@ def cmd_projection_inspect(args) -> int:
                 print("ERROR: task not found", file=sys.stderr)
                 return 4
             events = conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (args.task,)).fetchall()
-            result = inspect_task_views(task_dir, task, events=events, execution=read_execution(conn, task, rows=events))
+            from .event_policies import load_task_retirement
+            project = conn.execute('SELECT root_path FROM project WHERE project_id=?', (task['project_id'],)).fetchone()
+            result = inspect_task_views(task_dir, task, events=events, execution=read_execution(conn, task, rows=events),
+                retirement=load_task_retirement(conn, args.task), project_root=project['root_path'] if project else None)
         finally:
             conn.close()
     print(json.dumps(result, ensure_ascii=False))

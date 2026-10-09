@@ -24,7 +24,7 @@ from typing import Any
 # =============================================================================
 # 扫描器版本与双锚点
 # =============================================================================
-_SCANNER_VERSION = "1.0.0"
+_SCANNER_VERSION = "1.1.0"
 
 # 规则源（用于计算 scanner_sha256 内容哈希锚点）
 _RULES_SOURCE = json.dumps(
@@ -61,6 +61,9 @@ _RULES_SOURCE = json.dumps(
             "jdbc_url": r"jdbc:\w+://[^:]+:[^@]+@",
             "mongodb_conn": r"mongodb://[^:]+:[^@]+@",
             "password_keyword": r"\b(?:password|passwd|pwd|secret|token|apikey|api_key)\s*[:=]\s*['\"]?\S{8,}",
+            "chinese_password_literal": r"密码[^`\"'“\r\n，,。、;；|→]{0,24}[`\"'“](?P<value>[^`\"'”\r\n]+)[`\"'”]",
+            "aes_key_literal": r"(?i:AES\s*(?:密钥|秘钥|key))[^`\"'“\r\n，,。、;；|→]{0,16}[`\"'“](?P<value>[^`\"'”\r\n]+)[`\"'”]",
+            "credential_constant": r"(?i:\b(?=[A-Z0-9_.]*(?:PASSWORD|PASSWD|PWD|SECRET|TOKEN|API_KEY|APIKEY|ENCRYPTKEY|DECRYPTKEY|AES_KEY|AESKEY))[A-Z_][A-Z0-9_.]*\s*=\s*)[`\"'](?P<value>[^`\"'\r\n]+)[`\"']",
             # F1：内网地址。作为 scan_content 规则统一生效；具体调用面由 receipt/review-preflight 等上层决定。
             # 私有网段四段 IP（10/8、172.16-31/12、192.168/16）+ 内网主机名（*.internal/*.local）
             "private_ipv4": r"\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b",
@@ -92,6 +95,138 @@ for name, pat in json.loads(_RULES_SOURCE)["content_patterns"].items():
 _SCAN_STATUS_CLEAN = "clean"
 _SCAN_STATUS_HIT = "hit"
 _SCAN_STATUS_ERROR = "error"
+
+# Content consumers choose the applicable categories; private network addresses
+# retain their original classification in scan_content/review-preflight.
+_CREDENTIAL_CATEGORIES = frozenset({
+    "bearer_token", "api_key_prefix", "aws_akid", "aws_secret_key", "private_key_block",
+    "db_conn_string", "jdbc_url", "mongodb_conn", "password_keyword",
+    "chinese_password_literal", "aes_key_literal", "credential_constant",
+})
+
+
+def _credential_value_present(match: re.Match, category: str, *, credentials_only: bool = False) -> bool:
+    value = match.groupdict().get("value")
+    if credentials_only and category in {"db_conn_string", "jdbc_url", "mongodb_conn"}:
+        authority = re.split(r"[/\s?#]", match.group().split("://", 1)[-1], maxsplit=1)[0]
+        # A host:port URL followed by a later @ annotation is not userinfo.
+        if not re.fullmatch(r"[^:@]+:[^@]+@", authority):
+            return False
+        value = authority.split(":", 1)[1][:-1]
+    if value is None and category in {"password_keyword", "bearer_token"}:
+        raw = (re.split(r"[:=]", match.group(), maxsplit=1)[-1] if category == "password_keyword"
+               else re.split(r"Bearer\s+", match.group(), maxsplit=1)[-1]).strip()
+        quoted = raw.startswith(("'", '"', "`"))
+        value = raw.strip("`\"',; ")
+        yaml_literal = False
+        if credentials_only and "\n" in match.group():
+            if category != "password_keyword":
+                return False
+            # Reuse the existing YAML dependency for this small key/value fragment.
+            # A scalar on the next line is still a literal; a nested key is not.
+            import yaml
+            try:
+                line_end = match.string.find("\n", match.end())
+                parsed = yaml.safe_load(match.string[match.start():line_end if line_end >= 0 else None])
+            except yaml.YAMLError:
+                return False
+            scalar = next(iter(parsed.values())) if isinstance(parsed, dict) and len(parsed) == 1 else None
+            if not isinstance(scalar, (str, int, float, bool)):
+                return False
+            value = str(scalar)
+            yaml_literal = True
+        if credentials_only and quoted:
+            separator = re.search(r"[:=]", match.group())
+            value_at = match.start() + separator.end() if separator else match.start()
+            value_at += len(match.string[value_at:match.end()]) - len(match.string[value_at:match.end()].lstrip())
+            line_start = match.string.rfind("\n", 0, value_at) + 1
+            if len(re.findall(r"(?<!\\)" + re.escape(raw[0]), match.string[line_start:value_at])) % 2:
+                return False
+            end = raw.find(raw[0], 1)
+            if end >= 0:
+                value = raw[1:end]
+        if credentials_only and not quoted and not yaml_literal:
+            if category == "bearer_token" and re.match(r"<[^>]+>(?:[`\"'，,。；;（）()]|$)", raw):
+                return False
+            before = match.string[match.string.rfind("\n", 0, match.start()) + 1:match.start()]
+            if category == "password_keyword":
+                placeholder = re.match(r"\[(?:redacted|masked)(?:[_ :\-][^\]]+)?\]", raw, re.IGNORECASE)
+                if placeholder:
+                    tail = raw[placeholder.end():]
+                    # The old token regex includes adjacent Markdown/call/URL
+                    # syntax. Only a structural closing boundary ends the value;
+                    # ordinary suffixes and quoted literal values remain hits.
+                    if ((tail.startswith("`") and len(re.findall(r"(?<!\\)`", before)) % 2)
+                            or (re.fullmatch(r"[)]+", tail) and before.count("(") > before.count(")"))
+                            or (re.match(r"&[A-Za-z_][\w.-]*=", tail)
+                                and re.search(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s`]+[?&]$", before))):
+                        return False
+            if raw.startswith("}") and max(before.rfind("${"), before.rfind("#{")) > before.rfind("}"):
+                return False  # An empty property default, not a password value.
+            if (re.match(r"\$\{|#\{|\{[\w.]+\}|ENC\(", raw)
+                    or re.match(r"(?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*\(", raw.lstrip("="))):
+                return False
+    if value is None:
+        return True
+    value = value.strip()
+    if (not value or re.fullmatch(r"(?i)(?:\*+|x{3,}|\.{3,}|\[(?:redacted|masked)(?:[_ :\-][^\]]+)?\]|\[?(?:redacted|masked|已脱敏|已隐藏|占位符)\]?|<[^>]+>|\$\{[^}]+\}|#\{[^}]+\}|\{\{[^}]+\}\}|your_[\w-]+)", value)):
+        return False
+    # Names and algorithm identifiers mentioned as fields/parameters are not
+    # literal credentials. Do not turn generic IP/name scanning into a Wiki gate.
+    if category in {"chinese_password_literal", "aes_key_literal", "credential_constant"}:
+        line_start = match.string.rfind("\n", 0, match.start()) + 1
+        opener_at = match.start("value") - 1
+        opener = match.string[opener_at]
+        if match.group()[-1] != {"“": "”"}.get(opener, opener):
+            return False
+        if opener in "`\"'" and len(re.findall(r"(?<!\\)" + re.escape(opener), match.string[line_start:opener_at])) % 2:
+            return False  # Do not treat an inline-code closing delimiter as an opener.
+        prefix = re.split(r"[。；;，,|→]", match.string[line_start:opener_at])[-1]
+        description = match.string[match.start():opener_at]
+        if re.search(r"<cite\b[^>]*$", prefix, re.IGNORECASE):
+            return False
+        if re.fullmatch(r"\[?[\w./$-]+\.(?:java|py|xml|properties|md):\d+(?:-\d+)?\]?", value):
+            return False
+        assignment = re.search(r"(?:默认|初始|超级|固定|特殊|伪)密码|重置密码(?:使用|用|为|是|设为)|密码(?:生成)?固定值|绕过值|(?:密码|密钥|秘钥|key)(?:字段|参数)?(?:默认)?值|(?:密码|密钥|秘钥|key)\s*默认(?:为|是|[:：=])|(?:密码|密钥|秘钥|key)\s*[:：=为是]", prefix, re.IGNORECASE)
+        if category != "credential_constant" and (not assignment or re.search(r"配置项|属性名|参数名|字段名", description)) and (
+                re.fullmatch(r"[\w./$-]+\.(?:java|py|xml|properties|md|yml|yaml)", value)
+                or re.fullmatch(r"[A-Z][\w$]*(?:\.[A-Za-z_$][\w$]*)+", value)):
+            return False
+        if category != "credential_constant" and not assignment and (re.search(r"算法|机制|方法|哈希|盐|长度|校验|验证|处理|判定|加密|解密|通过|调用|委托|生成|保存|存储|返回|注入|重置|修改|管理|工具|混合|重试|登录|请求头|密码学|密码错误|密码(?:用|经|从|来自|组)", description)
+                or re.fullmatch(r"(?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*\([^\r\n]*\)", value)):
+            return False
+        if category != "credential_constant" and not assignment and re.fullmatch(r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+", value):
+            nearby = match.string[max(line_start, match.start() - 10):match.end() + 16]
+            if re.search(r"加密|解密|校验|验证|配置|字段|参数|存储|对应", nearby) or re.search(r"(?i)\.(?:password|passwd|pwd|secret|token)$", value):
+                return False
+        if category != "credential_constant":
+            before = match.string[max(line_start, match.start() - 8):match.start()]
+            after = match.string[match.end():match.end() + 24]
+            if not assignment and re.search(r"(?:加密|解密|校验|验证|重置|修改|生成)$", before):
+                return False
+            if not assignment and re.fullmatch(r"[A-Z][a-z]+(?:[A-Z][A-Za-z0-9]+)+", value) and re.search(r"构造|注入|方法|类|对象|接口|客户端|缓存", description + after):
+                return False
+            if "加盐" in before and re.fullmatch(r"(?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*\([^\r\n]*\)", value):
+                return False
+        field_description = re.search(r"字段|参数|属性|标识|常量名", prefix)
+        # A relation word can introduce a field name. Only an explicit value
+        # description overrides that context; plain credential assignments stay hits.
+        literal = re.search(r"默认|重置|固定|绕过|值", prefix) or (
+            not field_description and re.search(r"为|是", prefix))
+        if category == "chinese_password_literal" and value.lower() in {"password", "passwd", "pwd", "md5", "sha256", "sha-256"} and not literal:
+            return False
+        if category != "credential_constant" and field_description and not literal:
+            return False
+    if category == "credential_constant":
+        name = match.group().split("=", 1)[0].strip()
+        if re.search(r"(?i)(?:FIELD|PARAM|LABEL|COLUMN|HEADER|PREFIX|NAME)(?:_|$)", name):
+            return False
+        statement = match.string[max(line_start, match.start() - 80):match.end() + 80]
+        if (re.search(r"(?i)TOKEN.*(?:KEY|ID)$", name) and not re.search(r"(?i)SECRET|PRIVATE|ENCRYPT|DECRYPT|PASSWORD", name)
+                and re.fullmatch(r"[A-Za-z_][\w]*", value) and re.search(r"字段|参数|请求头|缓存|Header|Prefix|TOKEN.*UNIQ", statement, re.IGNORECASE)
+                and not re.search(r"密钥|口令", statement)):
+            return False  # A documented protocol/cache key name, not a token value.
+    return True
 
 
 def scan_resource_ref(resource_ref: str | None) -> dict[str, Any]:
@@ -135,7 +270,7 @@ def scan_resource_ref(resource_ref: str | None) -> dict[str, Any]:
     return result
 
 
-def scan_content(content: str | None) -> dict[str, Any]:
+def scan_content(content: str | None, *, credentials_only: bool = False) -> dict[str, Any]:
     """对文件内容做敏感内容模式扫描。
 
     返回结构同 scan_resource_ref，但 hits 的 type 为 "content"。
@@ -152,12 +287,21 @@ def scan_content(content: str | None) -> dict[str, Any]:
 
     try:
         for category, pattern in _SENSITIVE_CONTENT_RE.items():
-            if pattern.search(content):
+            if credentials_only and category not in _CREDENTIAL_CATEGORIES:
+                continue
+            for match in pattern.finditer(content):
+                if (credentials_only or category in {"chinese_password_literal", "aes_key_literal", "credential_constant"}) and not _credential_value_present(match, category, credentials_only=credentials_only):
+                    continue
                 result["hits"].append({
                     "category": category,
                     "pattern": pattern.pattern,
                     "type": "content",
+                    "line": content.count("\n", 0, match.start()) + 1,
+                    "column": match.start() - content.rfind("\n", 0, match.start()),
+                    "mask": "[REDACTED]",
                 })
+                if not credentials_only:
+                    break  # Preserve one result per category for existing consumers.
         if result["hits"]:
             result["scan_status"] = _SCAN_STATUS_HIT
     except Exception as exc:
@@ -166,6 +310,11 @@ def scan_content(content: str | None) -> dict[str, Any]:
         print(f"WARNING: sensitive scanner error on content: {type(exc).__name__}: {exc}", file=sys.stderr)
 
     return result
+
+
+def scan_credentials(content: str | None) -> dict[str, Any]:
+    """Reuse content rule categories while excluding unrelated path/network risks."""
+    return scan_content(content, credentials_only=True)
 
 
 def has_sensitive_hits(scan_result: dict[str, Any]) -> bool:

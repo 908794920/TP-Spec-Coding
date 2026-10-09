@@ -41,7 +41,11 @@ export interface KnowledgeOverview {
     attention: { kind: string; title: string; document_key?: string; query_hash?: string; project_key?: string; count?: number }[];
     maintenance: { canonical_documents: KnowledgeNumber; source_documents: KnowledgeNumber; registered_sources: KnowledgeNumber;
         status: string; sources: { source_id: string; status: string; indexed_at?: string | null;
-            reports: { name: string; status: unknown; at: string | null; file_updated_at: string | null; note: string }[] }[] };
+            diagnostics?: { verification_binding?: { current: boolean; status: string; quality_contract_id?: string };
+                projection?: { fresh?: boolean; contract_current?: boolean; reachability?: unknown; issues?: unknown[] };
+                completion?: unknown; applicability_pending?: unknown[] } | null;
+            diagnostics_error?: string;
+            reports: { name: string; status: unknown; current_binding?: boolean | null; at: string | null; file_updated_at: string | null; note: string }[] }[] };
     unidentified_searches: number;
     history: { scope: string; count: KnowledgeNumber; count_kind: string; earliest_at: string | null; note: string };
     problems: Problem[];

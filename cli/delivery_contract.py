@@ -86,23 +86,24 @@ def validate_delivery_result(detail: Dict[str, Any]) -> List[str]:
         return ["delivery_status must be READY|BLOCKED"]
     if not _concrete_reason(detail.get("reason")):
         errors.append("concrete reason is required")
+    quick = detail.get('delivery_mode') == 'quick'
     if detail.get("closeout_schema") == "tp-spec.closeout/v1":
         import re
-        if not re.fullmatch(r"[0-9a-f]{64}", str(detail.get("acceptance_digest") or "")):
+        if not (quick and detail.get('acceptance_digest') == '') and not re.fullmatch(r"[0-9a-f]{64}", str(detail.get("acceptance_digest") or "")):
             errors.append("current delivery requires a readable acceptance_digest")
         if not isinstance(detail.get("acceptance_evidence_items"), list):
             errors.append("current delivery requires acceptance_evidence_items")
     mode = detail.get("delivery_mode", "full")
-    if mode not in {"full", "lightweight"}:
-        errors.append("delivery_mode must be full|lightweight")
+    if mode not in {"full", "lightweight", "quick"}:
+        errors.append("delivery_mode must be full|lightweight|quick")
     applicable = detail.get("applicability", {})
-    if mode == "lightweight" and (not isinstance(applicable, dict) or
+    if mode in {'lightweight', 'quick'} and (not isinstance(applicable, dict) or
             set(applicable) != {"verification", "review"} or
             any(v not in {"REQUIRED", "NOT_REQUIRED"} for v in applicable.values())):
         errors.append("lightweight delivery requires explicit verification/review applicability")
         applicable = {}
     for kind in ("verification", "review"):
-        required = mode != "lightweight" or applicable.get(kind) != "NOT_REQUIRED"
+        required = mode not in {'lightweight', 'quick'} or applicable.get(kind) != "NOT_REQUIRED"
         event_id = detail.get(kind + "_event_id")
         if type(event_id) is not int or (event_id <= 0 if required else event_id != 0):
             errors.append(f"{kind}_event_id must be positive when required, otherwise exactly 0")
@@ -115,6 +116,14 @@ def validate_delivery_result(detail: Dict[str, Any]) -> List[str]:
         errors.append("verification_subject_digest (delivery subject) is required")
     if not str(detail.get("change_set_id") or "").strip():
         errors.append("change_set_id is required")
+    if quick:
+        unverified = detail.get('unverified_items')
+        if not isinstance(unverified, list) or any(not isinstance(item, str) or not item.strip() for item in unverified):
+            errors.append('quick delivery requires actual unverified_items (an empty list is allowed after checks)')
+        if not detail.get('mode_source_digest'):
+            errors.append('quick delivery requires mode source binding')
+        if applicable.get('verification') == 'NOT_REQUIRED' and not unverified:
+            errors.append('quick delivery without executed verification requires explicit unverified_items')
     snap = detail.get("repo_snapshot")
     if snap is not None:
         if not isinstance(snap, dict):
@@ -163,7 +172,9 @@ def delivery_evidence_matches(detail: Dict[str, Any], task_dir) -> bool:
             return False
     if detail.get("delivery_status") == "READY" and "acceptance_evidence_items" in detail:
         try:
-            if acceptance_evidence_items(task_dir) != detail["acceptance_evidence_items"]:
+            actual = (acceptance_evidence_items(task_dir) if (task_dir / 'acceptance.md').is_file() else
+                      ([] if detail.get('delivery_mode') == 'quick' else None))
+            if actual != detail["acceptance_evidence_items"]:
                 return False
         except (OSError, UnicodeError, ValueError):
             return False
@@ -208,6 +219,41 @@ def find_delivery_completion_event(events: List[Dict[str, Any]], *, verification
             return None
         return event if str(detail.get("delivery_status") or "").upper() == "READY" else None
     return None
+
+
+def current_quick_delivery(event, task, task_dir):
+    if event is None or task is None or task_dir is None:
+        return None
+    from .workflow_controls import trusted_event_detail
+    from .orchestration_policy import continuous_actor_ids, resolve_task_mode
+    from .digest import compute_verification_subject_digest, compute_text_artifact_file_digest
+    detail = trusted_event_detail(event, event_type='DELIVERY_RESULT', producer='delivery_converge',
+                                  actor=str(event.get('actor_role') or ''))
+    mode = resolve_task_mode(task, task.get('_events') or [])
+    if (mode['issues'] or mode['workflow_mode'] != 'quick' or detail is None
+            or event.get('actor_role') not in continuous_actor_ids(task, task.get('_events') or [])
+            or validate_delivery_result(detail) or detail.get('delivery_mode') != 'quick'
+            or detail.get('delivery_status') != 'READY'
+            or detail.get('mode_source_digest') != (mode['mode_source'] or {}).get('digest')):
+        return None
+    current = task.get('_current_change_set') or {}
+    if detail.get('change_set_id') != current.get('content_digest'):
+        return None
+    if detail.get('verification_subject_digest') != compute_verification_subject_digest(task_dir):
+        return None
+    if detail.get('acceptance_digest') != compute_text_artifact_file_digest(task_dir / 'acceptance.md'):
+        return None
+    latest = next((row for row in reversed(task.get('_events') or []) if row.get('event_type') == 'VERIFICATION_COMPLETED'), None)
+    if latest:
+        verified = task.get('_current_verification') or {}
+        from .change_set import same_bound_product_content
+        if (verified.get('event_id') != detail.get('verification_event_id')
+                or int(latest['id']) != verified.get('event_id')
+                or not same_bound_product_content(verified, current)):
+            return None
+    elif detail.get('verification_event_id') != 0 or not detail.get('unverified_items'):
+        return None
+    return event if delivery_evidence_matches(detail, task_dir) else None
 
 
 def current_lightweight_delivery(event, task, task_dir):

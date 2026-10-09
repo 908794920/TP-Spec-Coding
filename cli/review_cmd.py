@@ -34,7 +34,7 @@ from . import event_policies
 from . import frontmatter
 from . import projection_cmd
 from . import transaction_journal
-from .digest import compute_architecture_subject_digest
+from .digest import compute_architecture_subject_digest, resolve_architecture_design_inputs
 from .transaction_commit import (
     _commit_with_recovery,
     _current_view_rel,
@@ -64,14 +64,12 @@ def _file_sha256(path: Path) -> str:
     return hashlib.sha256(_read(path).encode("utf-8")).hexdigest()
 
 
-def _design_digest(task_dir: Path) -> str:
+def _design_digest(task_dir: Path, design_inputs=None) -> str:
     """设计/受评审内容 digest。
 
-    Third Hardening（P0-2）：统一为 ``cli.digest.compute_architecture_subject_digest``
-    （含 task/knowledge/clarifications/decisions/test-guide/acceptance），
-    review record 与 transition gate 共用同一算法；排除 implementation.md。
+    复用单一摘要实现；显式集合来自本次实际受审输入，后续复核沿事件集合读取。
     """
-    return compute_architecture_subject_digest(task_dir)
+    return compute_architecture_subject_digest(task_dir, design_inputs=design_inputs)
 
 
 def _set_nested_frontmatter(text: str, parent: str, values: Dict[str, str]) -> str:
@@ -208,7 +206,8 @@ def _check_pass_content_gate(task_dir: Path, artifact_text: str, args, task) -> 
         design_context_id=getattr(args, "design_context_id", ""),
         review_context_id=getattr(args, "review_context_id", ""),
         context_policy=getattr(args, "context_policy", ""),
-        subject_digest=_design_digest(task_dir),
+        subject_digest=_design_digest(task_dir, resolve_architecture_design_inputs(
+            task_dir, getattr(args, "design_input", None), review_artifact=args.artifact or "architecture-review.md")),
     )
     if isolation_error:
         return isolation_error
@@ -220,7 +219,9 @@ def _check_pass_content_gate(task_dir: Path, artifact_text: str, args, task) -> 
     if "DRAFT / PASS / REVISE / BLOCKED" in body:
         return "architecture-review body is still template placeholder (decision block unfilled)"
     # 所有检查项有明确结论：'## 检查项结论' 段不得留有未填写项
-    section = re.search(r"## 检查项结论\n(.*?)(?=\n## |\Z)", body, re.DOTALL)
+    # Windows 模板可能保留 CRLF；仅检查时统一换行，原文与主体绑定保持原样。
+    section_body = body.replace("\r\n", "\n").replace("\r", "\n")
+    section = re.search(r"## 检查项结论\n(.*?)(?=\n## |\Z)", section_body, re.DOTALL)
     if not section:
         return "architecture-review lacks '检查项结论' section"
     unanswered = [
@@ -570,7 +571,9 @@ def cmd_review_record(args) -> int:
         )
         from .digest import compute_text_artifact_digest
         artifact_digest = compute_text_artifact_digest(final_artifact_text)
-        design_digest = _design_digest(task_dir)
+        design_inputs = resolve_architecture_design_inputs(
+            task_dir, getattr(args, "design_input", None), review_artifact=artifact_rel)
+        design_digest = _design_digest(task_dir, design_inputs)
         decisions_digest = ""
         dp = task_dir / "requirement-decisions.md"
         if dp.is_file():
@@ -611,6 +614,7 @@ def cmd_review_record(args) -> int:
             "artifact": artifact_rel,
             "artifact_digest": artifact_digest,  # normalized text digest; CRLF/BOM rewrites do not invalidate PASS
             "design_digest": design_digest,
+            "design_inputs": design_inputs,
             "subject_digest": design_digest,  # INV-03：subject/design digest 绑定受评审内容
             "review_subject_digest": design_digest,
             "context_policy": getattr(args, "context_policy", "isolated"),
@@ -635,6 +639,10 @@ def cmd_review_record(args) -> int:
         # ---- Task 3 Transaction 阶段：同一 durable transaction 处理
         # artifact + 事件 + 投影 + journal/backup（禁止 DB 提交后再改 artifact）----
         def db_and_render(conn, transaction_id=""):
+            if (resolve_architecture_design_inputs(task_dir, getattr(args, "design_input", None),
+                                                   review_artifact=artifact_rel) != design_inputs
+                    or _design_digest(task_dir, design_inputs) != design_digest):
+                raise ValueError("REVIEW_DESIGN_INPUTS_CHANGED: reread the actual reviewed inputs")
             current_findings = authority.validate_findings(conn, task_id, task_dir, getattr(args, "findings", None),
                 decision=str(args.decision).upper(), count=int(args.findings_count or 0))
             if current_findings != findings:
@@ -684,6 +692,7 @@ def add_review_subparsers(subparsers) -> None:
     pr.add_argument("--kind", required=True, choices=["ARCHITECTURE", "CODE", "IMPLEMENTATION", "ULTRA_REVIEW"], default="ARCHITECTURE", help="review kind")
     pr.add_argument("--decision", required=True, choices=sorted(_DECISIONS), help="PASS | REVISE | BLOCKED | NEEDS_FIX | FAIL")
     pr.add_argument("--artifact", required=False, default=None, help="architecture review artifact; CODE results use a Runtime-generated machine artifact")
+    pr.add_argument("--design-input", action="append", help="additional actual ARCHITECTURE review input, relative to Task; repeatable and bound with default canonical inputs")
     pr.add_argument("--round", type=int, required=False, default=1, help="review round number")
     pr.add_argument("--findings", help="task-relative evidence/*.json with tp-spec.scoped-findings/v1; required for Findings and NEEDS_FIX/FAIL/REVISE")
     from .security_authority import add_context_args

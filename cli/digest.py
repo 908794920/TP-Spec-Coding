@@ -5,18 +5,18 @@
 task/decisions/test-guide/acceptance，篡改 requirement-knowledge.md 或
 requirement-clarifications.md 不会使旧架构 PASS 失效。
 
-本函数为唯一权威实现（review record、transition gate、测试共同使用）：
-- 输入工件：task.md / requirement.md / requirement-knowledge.md / requirement-clarifications.md /
-  requirement-decisions.md / requirement-test-guide.md / acceptance.md
-- 排除：implementation.md（开发阶段工件，架构评审发生在 DEVELOPING 之前）、
-  architecture-review.md（评审产物，PASS 写入后 front matter 更新不应使刚记录
-  的 PASS 失效）。
+本函数为唯一权威实现（review record、transition gate、waiting 共同使用）：
+- 默认绑定实际存在的 canonical 需求工件及 architecture.md；其它受审设计由
+  review record 的 --design-input 声明，不扫描全部 Markdown。
+- 本次完整集合写入 Review detail.design_inputs；后续复核沿同一集合读取，
+  修改与删除都改变主体。Review 输出和 Runtime 投影不参与输入。
 """
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
-from typing import Union
+from typing import Iterable, Union
 
 # Subject digest 输入工件（按固定顺序拼接，保持确定性）
 SUBJECT_DIGEST_PARTS = (
@@ -133,19 +133,53 @@ def _normalize_subject_part(name: str, text: str) -> str:
         filtered.append(line)
     return "---\n" + "\n".join(filtered) + "\n---\n" + rest
 
-def compute_architecture_subject_digest(task_dir: Union[str, Path]) -> str:
-    """计算架构评审 subject digest（当前设计内容指纹）。
+def _architecture_input_names(task_dir: Path, inputs: Iterable[str], *, review_artifact: str = "architecture-review.md") -> list[str]:
+    if isinstance(inputs, (str, bytes)):
+        raise ValueError("design inputs must be a collection of Task-relative paths")
+    names = set()
+    for value in inputs:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("design input must be a nonempty Task-relative path")
+        name = value.strip().replace("\\", "/")
+        path = Path(name)
+        if (path.is_absolute() or ":" in name or ".." in path.parts
+                or not (task_dir / path).resolve().is_relative_to(task_dir.resolve())):
+            raise ValueError(f"design input is outside selected Task: {name}")
+        name = path.as_posix()
+        # 这些是评审输出或自管投影；纳入输入会让记录动作使自己的 PASS 失效。
+        if (name in {Path(review_artifact.replace("\\", "/")).as_posix(), "architecture-review.md", "codex-review.md",
+                     "status.yaml", "events.jsonl", "handoff.json"}
+                or name.startswith("generated/") or name == "."):
+            raise ValueError(f"design input is a review output or Runtime projection: {name}")
+        names.add(name)
+    return sorted(names)
 
-    仅包含``SUBJECT_DIGEST_PARTS``中实际存在的文件；任一设计工件缺失/内容变化
-    都会改变 digest（fail-closed 语义由调用方决定）。
-    """
+
+def resolve_architecture_design_inputs(task_dir: Union[str, Path], inputs: Iterable[str] | None = None,
+                                       *, review_artifact: str = "architecture-review.md") -> list[str]:
+    """收集本次实际受审输入；独立设计按显式参数纳入，不扫描全部 Markdown。"""
     base = Path(task_dir)
-    parts: list[str] = []
-    for name in SUBJECT_DIGEST_PARTS:
-        p = base / name
-        if p.is_file():
-            parts.append(name + "\n" + _normalize_subject_part(name, _read(p)))
-    return hashlib.sha256("".join(parts).encode("utf-8")).hexdigest()
+    defaults = [name for name in (*SUBJECT_DIGEST_PARTS, "architecture.md") if (base / name).is_file()]
+    names = _architecture_input_names(base, [*defaults, *(inputs or [])], review_artifact=review_artifact)
+    for name in names:
+        if not (base / name).is_file():
+            raise ValueError(f"review design input is not a readable file: {name}")
+    return names
+
+
+def compute_architecture_subject_digest(task_dir: Union[str, Path], *, design_inputs: Iterable[str] | None = None) -> str:
+    """同一摘要绑定排序去重的路径集合与内容身份；已绑定文件删除也改变主体。"""
+    base = Path(task_dir)
+    names = (resolve_architecture_design_inputs(base) if design_inputs is None
+             else _architecture_input_names(base, design_inputs))
+    parts = []
+    for name in names:
+        path = base / name
+        content = (_normalize_subject_part(name, _read(path)) if path.is_file() else None)
+        parts.append({"path": name, "content_digest": (
+            hashlib.sha256(content.encode("utf-8")).hexdigest() if content is not None else None)})
+    return hashlib.sha256(json.dumps(parts, ensure_ascii=False, sort_keys=True,
+                                    separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 # ---- Fourth Hardening（P0-4）：Verification subject digest ----

@@ -3,7 +3,7 @@ import type { DetailData } from '../types';
 import { CopyText, Disclosure, Fields, Section } from './Facts';
 const applicability: Record<string, string> = {
   current: '本次读取确认适用', stale: '历史结果已失效', not_confirmed: '当前适用性未确认',
-  not_recorded: '未记录', per_ac: '仅按下方 AC 逐项解释',
+  not_recorded: '未记录', per_ac: '仅按下方 AC 逐项解释', historical: '历史结果，未重验当前产品',
 };
 export function Outcome({ title, value }: { title: string; value: unknown }) {
   const channel = record(value), event = record(channel.recorded), detail = record(event.detail);
@@ -25,18 +25,22 @@ export function Outcome({ title, value }: { title: string; value: unknown }) {
 }
 export function VerificationDetail({ data }: { data: DetailData }) {
   const acceptance = record(data.acceptance), owner = record(data.owner_acceptance), effective = record(owner.effective);
+  const quick = data.workflow_mode === 'quick', obligations = record(data.applicable_obligations);
+  const showReview = !quick || obligations.review === true || !!record(data.review).recorded;
+  const showOwner = !quick || !!owner.recorded;
+  const showAcceptance = !quick || acceptance.status !== 'not_recorded';
   return <>
-    <Outcome title="自动化验证 · Verification" value={data.verification}/>
-    <Outcome title="代码审查 · Review" value={data.review}/>
-    <Section title="人工验收与处置">
+    <Outcome title={quick ? '实际验证 · Verification' : '自动化验证 · Verification'} value={data.verification}/>
+    {showReview && <Outcome title="代码审查 · Review" value={data.review}/>}
+    {showOwner && <Section title="人工验收与处置">
       <p className="muted">实际 accept、延期 defer、豁免 waive 分开记录；人验不证明机器测试已执行，也不代表用户已接收所有交付。</p>
       <Fields value={{ evaluation: owner.evaluation, source: owner.source, accepted_acs: effective.accepted_acs,
         visual_acs: effective.visual_acs, subject_digest: effective.subject_digest, change_set_id: effective.change_set_id, reasons: owner.reasons }}
         labels={{ evaluation: '本次判定', source: '来源', accepted_acs: '当前有效实际人验 AC', visual_acs: '当前有效视觉 AC', subject_digest: '受验主体', change_set_id: '受验产品', reasons: '未确认原因' }}/>
       {Object.entries(record(effective.by_ac)).map(([ac, value]) => <Disclosure key={ac} label={`${ac} · ${valueText(record(value).mode)}`}><Fields value={value}/></Disclosure>)}
       <Outcome title="Owner 原始决定与历史" value={owner}/>
-    </Section>
-    <Section title="验收矩阵（工件声明）">
+    </Section>}
+    {showAcceptance && <Section title="验收矩阵（工件声明）">
       <p className="muted">以下逐行展示 acceptance.md，不将文件中的 PASS 自动认定为可信验收。未取得与当前不适用分别保留；最终问题通过只读结单预检查看。</p>
       <CopyText value={acceptance.source} label="复制工件路径"/>
       <Fields value={{ read_status: acceptance.status, issues: acceptance.issues, pending: acceptance.pending }}/>
@@ -47,6 +51,6 @@ export function VerificationDetail({ data }: { data: DetailData }) {
       <Disclosure label="页面/视觉声明、延期/豁免、数据库操作"><Fields value={{ page_verification: acceptance.page_verification,
         deferred: acceptance.deferred, waived: acceptance.waived, database_operations: acceptance.database_operations,
         no_acceptance_required: acceptance.no_acceptance_required }}/></Disclosure>
-    </Section>
+    </Section>}
   </>;
 }

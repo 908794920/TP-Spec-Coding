@@ -26,11 +26,16 @@ PROFILE_SCHEMA = "tp-spec.autonomy-profile/v1"
 PROMPT_TEMPLATE_VERSION = "tp-spec.autonomy-prompt/v1"
 PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 LEVELS = {"L0", "L1", "L2", "L3"}
-CONFIRMATION_POLICIES = {"material", "each_stage"}
+CONFIRMATION_POLICIES = {"material"}
 
 
 class AutonomyProfileError(ValueError):
     pass
+
+
+def confirmation_policy_argument(value: str) -> str:
+    from .workflow_controls import confirmation_policy_argument as argument
+    return argument(value)
 
 
 def profiles_root() -> Path:
@@ -124,7 +129,8 @@ def build_profile(
     if level not in LEVELS:
         raise AutonomyProfileError(f"DIFFICULTY_CEILING_INVALID: {difficulty_ceiling}")
     if confirmation_policy not in CONFIRMATION_POLICIES:
-        raise AutonomyProfileError(f"CONFIRMATION_POLICY_INVALID: {confirmation_policy}")
+        from .workflow_controls import _policy
+        _policy(confirmation_policy, source='autonomy profile')
     try:
         ceiling = int(max_new_tasks)
     except (TypeError, ValueError) as exc:
@@ -195,6 +201,7 @@ def build_profile(
 
 
 def _atomic_dump(path: Path, data: Dict[str, Any]) -> None:
+    data = {key: value for key, value in data.items() if key != 'confirmation_policy_migration_required'}
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
     text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True, default_flow_style=False)
@@ -219,7 +226,7 @@ def save_profile(profile: Dict[str, Any], *, overwrite: bool = False) -> Path:
     return path
 
 
-def validate_profile(profile: Dict[str, Any], *, check_paths: bool = True) -> List[str]:
+def validate_profile(profile: Dict[str, Any], *, check_paths: bool = True, persisted: bool = False) -> List[str]:
     errors: List[str] = []
     if not isinstance(profile, dict):
         return ["PROFILE_INVALID: profile must be mapping"]
@@ -255,8 +262,10 @@ def validate_profile(profile: Dict[str, Any], *, check_paths: bool = True) -> Li
             errors.append("MAX_NEW_TASKS_INVALID")
     except Exception:
         errors.append("MAX_NEW_TASKS_INVALID")
-    workflow = profile.get("workflow") or {}
-    if workflow.get("confirmation_policy") not in CONFIRMATION_POLICIES:
+    workflow = profile.get("workflow")
+    if workflow is None:
+        workflow = {}
+    if not isinstance(workflow, dict) or workflow.get("confirmation_policy") not in (CONFIRMATION_POLICIES | ({"each_stage"} if persisted else set())):
         errors.append("CONFIRMATION_POLICY_INVALID")
     automation = profile.get("automation") or {}
     if not str(automation.get("prompt") or "").strip():
@@ -271,9 +280,14 @@ def load_profile(profile_id: str) -> Dict[str, Any]:
     data = yaml.safe_load(path.read_text(encoding="utf-8-sig"))
     if not isinstance(data, dict):
         raise AutonomyProfileError(f"PROFILE_INVALID: {profile_id}")
-    errors = validate_profile(data, check_paths=False)
+    errors = validate_profile(data, check_paths=False, persisted=True)
     if errors:
         raise AutonomyProfileError(errors[0])
+    data = dict(data)
+    data["workflow"] = dict(data["workflow"])
+    if data["workflow"].get("confirmation_policy") == "each_stage":
+        data["workflow"]["confirmation_policy"] = "material"
+        data["confirmation_policy_migration_required"] = True
     return data
 
 
@@ -287,9 +301,13 @@ def list_profiles(*, ignore_errors: bool = False) -> List[Dict[str, Any]]:
             data = yaml.safe_load(path.read_text(encoding="utf-8-sig"))
             if isinstance(data, dict):
                 if not ignore_errors:
-                    errors = validate_profile(data, check_paths=False)
+                    errors = validate_profile(data, check_paths=False, persisted=True)
                     if errors:
                         raise AutonomyProfileError(errors[0])
+                if isinstance(data.get('workflow'), dict) and data['workflow'].get('confirmation_policy') == 'each_stage':
+                    data = dict(data)
+                    data['workflow'] = {**data['workflow'], 'confirmation_policy': 'material'}
+                    data['confirmation_policy_migration_required'] = True
                 out.append(data)
         except Exception:
             if not ignore_errors:
@@ -303,6 +321,7 @@ def edit_profile(
     max_new_tasks: Optional[int] = None, confirmation_policy: Optional[str] = None,
 ) -> Dict[str, Any]:
     profile = load_profile(profile_id)
+    profile.pop("confirmation_policy_migration_required", None)
     if goals is not None:
         vals = [str(x).strip() for x in goals if str(x).strip()]
         if not vals:
@@ -322,7 +341,8 @@ def edit_profile(
         discovery["quota_semantics"] = "ceiling_not_target"
     if confirmation_policy is not None:
         if confirmation_policy not in CONFIRMATION_POLICIES:
-            raise AutonomyProfileError(f"CONFIRMATION_POLICY_INVALID: {confirmation_policy}")
+            from .workflow_controls import _policy
+            _policy(confirmation_policy, source='autonomy profile')
         profile.setdefault("workflow", {})["confirmation_policy"] = confirmation_policy
     validate_profile(profile)
     _atomic_dump(profile_path(profile_id), profile)

@@ -25,7 +25,7 @@ RECOVERY = (
 )
 
 
-def _region(text: str) -> str | None:
+def _region(text: str) -> tuple[str, int] | None:
     """Find one marker pair outside fenced examples; reject ambiguous markup."""
     lines = text.splitlines()
     markers: list[tuple[int, str]] = []
@@ -52,12 +52,18 @@ def _region(text: str) -> str | None:
         return None
     if len(markers) != 2 or [m[1] for m in markers] != [START, END]:
         raise ValueError("expected exactly one ordered current-region marker pair")
-    content = "\n".join(lines[markers[0][0] + 1:markers[1][0]]).strip()
+    region_lines = lines[markers[0][0] + 1:markers[1][0]]
+    leading_empty = 0
+    for line in region_lines:
+        if line.strip():
+            break
+        leading_empty += 1
+    content = "\n".join(region_lines).strip()
     # Empty scaffold headings/comments carry no decision and must not compete
     # with an adopted Requirement or require a new questionnaire.
     substantive = re.sub(r"<!--.*?-->", "", content, flags=re.S)
     substantive = re.sub(r"(?m)^\s*#{1,6}\s+.*$", "", substantive).strip()
-    return content if substantive else ""
+    return (content, markers[0][0] + 2 + leading_empty) if substantive else None
 
 
 def read_current(task_dir: Path | None, *, task_id: str = "") -> dict[str, Any]:
@@ -68,7 +74,7 @@ def read_current(task_dir: Path | None, *, task_id: str = "") -> dict[str, Any]:
     if task_dir is None:
         return result
     root = Path(task_dir)
-    candidates: list[tuple[str, str, str]] = []
+    candidates: list[tuple[str, str, str, int]] = []
     for name in SOURCE_NAMES:
         path = root / name
         try:
@@ -85,16 +91,17 @@ def read_current(task_dir: Path | None, *, task_id: str = "") -> dict[str, Any]:
             # Match the generated-view digest's BOM removal / EOL preservation.
             digest = "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
             result["sources"].append({"path": name, "digest": digest})
-            content = _region(text)
-            if not content:
+            region = _region(text)
+            if not region:
                 continue
+            content, source_line = region
             metadata = frontmatter.parse(text) or {}
             if task_id and metadata.get("task_id") not in (None, "", task_id):
                 raise ValueError("canonical source belongs to another Task")
             if len(content) > MAX_CONTEXT_CHARS:
                 result["issues"].append({"path": name, "reason": "current region exceeds context limit; do not truncate", "status": "TOO_LARGE"})
                 continue
-            candidates.append((name, content, digest))
+            candidates.append((name, content, digest, source_line))
         except (OSError, UnicodeError, ValueError) as exc:
             # Return an explicit diagnostic, not an old/partial alternative.
             result["issues"].append({"path": name, "reason": str(exc), "status": "INVALID"})
@@ -102,13 +109,66 @@ def read_current(task_dir: Path | None, *, task_id: str = "") -> dict[str, Any]:
         result["status"] = ("INVALID" if any(i["status"] == "INVALID" for i in result["issues"]) else "TOO_LARGE")
     elif len(candidates) > 1:
         result["status"] = "CONFLICT"
-        result["issues"] = [{"path": name, "reason": "multiple nonempty current regions"} for name, _, _ in candidates]
+        result["issues"] = [{"path": item[0], "reason": "multiple nonempty current regions"} for item in candidates]
     elif candidates:
-        name, content, digest = candidates[0]
-        result.update(status="AVAILABLE", source=name, content=content, source_digest=digest)
+        name, content, digest, source_line = candidates[0]
+        result.update(status="AVAILABLE", source=name, content=content, source_digest=digest, source_line=source_line)
     if result["status"] in UNUSABLE:
         result["recovery"] = RECOVERY
     return result
+
+
+def workflow_consistency_diagnostics(task_dir: Path, context: dict, *, state: str,
+                                     state_source: str) -> list[dict]:
+    """只提示明确的当前任务状态冲突；不从历史、部署边界或普通未完成措辞裁决。"""
+    if state == "UNKNOWN" or context["status"] in UNUSABLE:
+        return []
+    sources = []
+    if context["status"] == "AVAILABLE":
+        sources.append((context["source"], context["content"], context.get("source_line", 1), True))
+    else:
+        for name in ("task.md", "implementation.md"):
+            path = task_dir / name
+            try:
+                if path.is_file() and not path.is_symlink() and path.stat().st_size <= MAX_SOURCE_BYTES:
+                    sources.append((name, path.read_text(encoding="utf-8-sig"), 1, False))
+            except (OSError, UnicodeError):
+                continue  # 来源读取异常由已有工件诊断负责，不能猜文字内容。
+    issues = []
+    for name, text, first_line, in_current in sources:
+        fence_char, fence_len = "", 0
+        in_comment = False
+        for offset, line in enumerate(text.splitlines()):
+            fence = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+            if fence_char:
+                if fence and fence.group(1)[0] == fence_char and len(fence.group(1)) >= fence_len and not fence.group(2).strip():
+                    fence_char, fence_len = "", 0
+                continue
+            if in_comment or "<!--" in line:
+                in_comment = "-->" not in line
+                continue
+            if fence:
+                fence_char, fence_len = fence.group(1)[0], len(fence.group(1))
+                continue
+            if line.startswith(("    ", "\t")):
+                continue
+            statement = re.sub(r"^\s*[-*]\s+", "", line).strip()
+            prefix = r"(?:当前(?:任务|流程|workflow)?状态|当前任务状态)"
+            if in_current:
+                prefix = r"(?:" + prefix + r"|任务状态|workflow状态)"
+            match = re.fullmatch(prefix + r"\s*[:：]\s*`?(NEW|ACTIVE|BLOCKED|COMPLETED|CANCELLED|PENDING)`?[。.!！]?", statement, re.I)
+            declared = match.group(1).upper() if match else None
+            if in_current and re.fullmatch(r"当前任务(?:尚未|未)完成[。.!！]?", statement):
+                declared = "UNFINISHED"
+            if not declared or declared == state:
+                continue
+            if declared in {"UNFINISHED", "PENDING"} and state not in {"COMPLETED", "CANCELLED"}:
+                continue
+            issues.append({"code": "CURRENT_WORKFLOW_CONTRADICTION", "path": name,
+                           "line": first_line + offset, "statement": statement,
+                           "declared_state": declared, "formal_state": state, "state_source": state_source,
+                           "message": "当前状态文字与正式记录不一致；仅提示定位，保留历史与实际验收边界。"})
+    return issues
 
 
 def render_current(context: dict[str, Any]) -> str:

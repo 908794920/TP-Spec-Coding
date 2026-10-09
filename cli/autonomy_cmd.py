@@ -336,7 +336,7 @@ def add_autonomy_subparsers(subparsers) -> None:
     pc.add_argument("--goal", action="append", required=True)
     pc.add_argument("--difficulty-ceiling", choices=["L0", "L1", "L2", "L3"], required=True)
     pc.add_argument("--max-new-tasks", type=int, required=True)
-    pc.add_argument("--confirmation-policy", choices=["material", "each_stage"], default="material")
+    pc.add_argument("--confirmation-policy", type=autonomy_profile.confirmation_policy_argument, default="material")
     pc.add_argument("--json", action="store_true")
     pc.set_defaults(func=cmd_profile_create)
 
@@ -344,7 +344,7 @@ def add_autonomy_subparsers(subparsers) -> None:
     ps.add_argument("--id", required=True); ps.add_argument("--json", action="store_true")
     ps.set_defaults(func=cmd_profile_show)
     ped = psub.add_parser("edit")
-    ped.add_argument("--id",required=True); ped.add_argument("--goal",action="append"); ped.add_argument("--difficulty-ceiling",choices=["L0","L1","L2","L3"]); ped.add_argument("--max-new-tasks",type=int); ped.add_argument("--confirmation-policy",choices=["material","each_stage"]); ped.add_argument("--json",action="store_true"); ped.set_defaults(func=cmd_profile_edit)
+    ped.add_argument("--id",required=True); ped.add_argument("--goal",action="append"); ped.add_argument("--difficulty-ceiling",choices=["L0","L1","L2","L3"]); ped.add_argument("--max-new-tasks",type=int); ped.add_argument("--confirmation-policy",type=autonomy_profile.confirmation_policy_argument); ped.add_argument("--json",action="store_true"); ped.set_defaults(func=cmd_profile_edit)
 
     pref = psub.add_parser("refresh-prompt")
     pref.add_argument("--id",required=True); pref.add_argument("--json",action="store_true"); pref.set_defaults(func=cmd_profile_refresh_prompt)

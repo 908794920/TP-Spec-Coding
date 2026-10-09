@@ -12,7 +12,7 @@ import sqlite3
 import sys
 from typing import Any, Iterator
 
-from cli import db as dbmod, environment, record_first
+from cli import db as dbmod, environment, event_policies, record_first
 from cli.path_identity import canonical_path, path_identity_key, same_path
 from cli.skill_catalog import SkillCatalogError, read_skill_document
 from cli.version import active_version
@@ -159,6 +159,24 @@ class WorkbenchService:
         latest = conn.execute("SELECT MAX(id) FROM task_event WHERE task_id=?", (task["task_id"],)).fetchone()[0]
         payload = json.dumps([task, latest], sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _task_dir(context: Context, task_id: str) -> Path:
+        active = Path(context.project_root) / ".tp-spec" / "tasks" / task_id
+        if active.is_dir():
+            return active
+        history = Path(context.project_root) / ".tp-spec" / "tasksHistory"
+        if not history.is_dir():
+            return active
+        try:
+            # 已选定项目和精确 Task 身份；只查历史目录下一层，不用标题或时间猜归档。
+            matches = [folder / task_id for folder in history.iterdir()
+                       if folder.is_dir() and (folder / task_id).is_dir()]
+        except OSError as exc:
+            raise ReadError("TASK_ARTIFACTS_UNAVAILABLE", f"历史任务目录无法读取：{exc}", 409) from exc
+        if len(matches) > 1:
+            raise ReadError("TASK_ARTIFACTS_AMBIGUOUS", "同一 Task 存在多个历史工件目录；未自动选择", 409)
+        return matches[0] if matches else active
 
     @staticmethod
     def _response(data: dict[str, Any], context: Context | None, started: str, *, database: bool = False, task_revision: str = "") -> dict[str, Any]:
@@ -311,7 +329,10 @@ class WorkbenchService:
         with self._database(context) as conn:
             task = self._task(conn, context, task_id)
             revision = self._task_revision(conn, task)
-            data = snapshot.build_task_snapshot(task_id, db_path=context.db_path, base_root=BASE_ROOT, connection=conn)
+            task_dir = self._task_dir(context, task_id)
+            retirement = event_policies.load_task_retirement(conn, task_id)
+            data = snapshot.build_task_snapshot(task_id, db_path=context.db_path, base_root=BASE_ROOT,
+                                                connection=conn, task_dir=task_dir)
             if data.get("health") == "unavailable":
                 raise ReadError("TASK_READ_FAILED", "Task 快照读取失败")
             # Evidence View and this top-level summary are historical projections,
@@ -321,9 +342,9 @@ class WorkbenchService:
             from cli.task_views import inspect_task_views
             from cli.execution import read_execution
             rows = conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id,)).fetchall()
-            task_dir = Path(context.project_root) / ".tp-spec" / "tasks" / task_id
             data["documents"] = inspect_task_views(task_dir, task, events=rows,
-                                                   execution=read_execution(conn, task, rows=rows))
+                                                   execution=read_execution(conn, task, rows=rows),
+                                                   retirement=retirement, project_root=Path(context.project_root))
             data["problems"] = [*data.get("problems", []), *data["documents"]["problems"]]
             data["timeline_scope"] = {"limit": 50, "returned": len(data.get("timeline", [])),
                 "total": conn.execute("SELECT count(*) FROM task_event WHERE task_id=?", (task_id,)).fetchone()[0]}
@@ -334,8 +355,9 @@ class WorkbenchService:
         with self._database(context) as conn:
             task = self._task(conn, context, task_id)
             revision = self._task_revision(conn, task)
-            task_dir = Path(context.project_root) / ".tp-spec" / "tasks" / task_id
-            data = build_task_details(conn, task, task_dir)
+            task_dir = self._task_dir(context, task_id)
+            data = build_task_details(conn, task, task_dir, project_root=Path(context.project_root),
+                                      retirement=event_policies.load_task_retirement(conn, task_id))
         return self._response(data, context, started, database=True, task_revision=revision)
 
     def closeout_view(self, key: str, task_id: str) -> dict[str, Any]:
@@ -343,7 +365,17 @@ class WorkbenchService:
         with self._database(context) as conn:
             task = self._task(conn, context, task_id)
             revision = self._task_revision(conn, task)
-            task_dir = Path(context.project_root) / ".tp-spec" / "tasks" / task_id
+            task_dir = self._task_dir(context, task_id)
+            retirement = event_policies.load_task_retirement(conn, task_id)
+            if retirement is not None:
+                data = {"task_id": task_id, "state": task.get("current_state"), "ready": False,
+                        "retired": True, "already_terminal": True, "checks": [], "blockers": [],
+                        "acceptance_issues": [], "route": None,
+                        "retirement": {"event_id": retirement.row["id"], "reason": retirement.detail.get("reason"),
+                                       "source": "event_policies.load_task_retirement"},
+                        "source": "event_policies.load_task_retirement",
+                        "coverage_note": "可信退休任务只展示历史，不执行结单预检或追补新义务。"}
+                return self._response(data, context, started, database=True, task_revision=revision)
             if not task_dir.is_dir():
                 raise ReadError("TASK_ARTIFACTS_MISSING", "任务工件目录不存在，未取得结单预检；不会自动创建", 409)
             try:

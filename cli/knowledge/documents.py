@@ -16,7 +16,7 @@ import sqlite3
 from urllib.parse import unquote
 
 from cli.path_identity import path_identity_key
-from .common import CANONICAL_SUBDIRS, load_project_registry, resolve_knowledge_project, meta_paths, read_jsonl
+from .common import CANONICAL_SUBDIRS, load_project_registry, resolve_knowledge_project, meta_paths, read_jsonl, effective_project_identity
 from .telemetry import KnowledgeError, columns, connect_readonly
 
 
@@ -155,7 +155,7 @@ def _conversion_for_row(cfg, row: dict) -> Path:
         raise KnowledgeError("KNOWLEDGE_DOCUMENT_BOUNDARY")
     matches = [record for record in read_jsonl(meta_paths(cfg)["source_registry"])
                if all(str(record.get(name) or "") == str(registration.get(name) or "") for name in ("project", "batch", "origin_path"))]
-    if len(matches) != 1 or str(matches[0].get("project")) != str(row.get("project")):
+    if len(matches) != 1 or effective_project_identity(cfg, str(matches[0].get("project") or ""), scope="source")["project"] != str(row.get("project")):
         raise KnowledgeError("KNOWLEDGE_CONVERSION_REGISTRATION_CHANGED")
     if str(row.get("project")) not in {item["id"] for item in scopes(cfg)}:
         raise KnowledgeError("KNOWLEDGE_DOCUMENT_UNREGISTERED")

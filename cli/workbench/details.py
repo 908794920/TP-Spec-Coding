@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from cli import delivery_contract, event_policies, waiting, workflow_records, yaml_checks
+from cli import delivery_contract, event_policies, orchestration_policy, waiting, workflow_records, yaml_checks
 from cli.change_set import capture_change_set, same_bound_product_content
 from .evidence_view import build_evidence_view, inspect_evidence_view
 
@@ -75,8 +75,9 @@ def acceptance_view(task_dir: Path) -> dict[str, Any]:
     return result
 
 
-def _channel(events: list[dict[str, Any]], event_type: str, actor: str) -> dict[str, Any]:
-    rows = [row for row in reversed(events) if row.get("event_type") == event_type and row.get("actor_role") == actor]
+def _channel(events: list[dict[str, Any]], event_type: str, actor: str | set[str]) -> dict[str, Any]:
+    rows = [row for row in reversed(events) if row.get("event_type") == event_type
+            and (row.get("actor_role") in actor if isinstance(actor, set) else row.get("actor_role") == actor)]
     return {"recorded": event_record(rows[0]) if rows else None,
             "history": [event_record(row) for row in rows[:HISTORY_LIMIT]],
             "history_scope": {"total": len(rows), "returned": min(len(rows), HISTORY_LIMIT), "limit": HISTORY_LIMIT},
@@ -84,12 +85,12 @@ def _channel(events: list[dict[str, Any]], event_type: str, actor: str) -> dict[
             "reasons": [], "source": "task_event + existing Runtime readers"}
 
 
-def _check_verification(conn, task_id: str, task_dir: Path, channel: dict):
+def _check_verification(conn, task_id: str, task_dir: Path, channel: dict, *, quick: bool = False):
     recorded = channel["recorded"]
     if not recorded:
         return None
     trusted = event_policies.load_trusted_governance_event(
-        conn, task_id, event_type="VERIFICATION_COMPLETED", actor="tp-test-engineer", latest_only=True)
+        conn, task_id, event_type="VERIFICATION_COMPLETED", actor=str(recorded["actor"]) if quick else "tp-test-engineer", latest_only=True)
     channel["ledger_trusted"] = bool(trusted)
     if trusted is None:
         channel["reasons"].append("最新记录未通过既有可信事件读取，不能从摘要认定 PASS。")
@@ -116,7 +117,8 @@ def _check_verification(conn, task_id: str, task_dir: Path, channel: dict):
     return current
 
 
-def build_task_details(conn, task: dict[str, Any], task_dir: Path) -> dict[str, Any]:
+def build_task_details(conn, task: dict[str, Any], task_dir: Path, *, project_root: Path | None = None,
+                       retirement=None) -> dict[str, Any]:
     task_id = str(task["task_id"])
     events = [dict(row) for row in conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id,))]
     problems: list[dict[str, str]] = []
@@ -124,21 +126,35 @@ def build_task_details(conn, task: dict[str, Any], task_dir: Path) -> dict[str, 
     def problem(code: str, exc: object) -> None:
         problems.append({"code": code, "message": str(exc)})
 
+    mode = orchestration_policy.resolve_task_obligations(task, events)
+    quick = mode["workflow_mode"] == "quick"
+    continuous_actors = orchestration_policy.continuous_actor_ids(task, events) if quick else set()
+    terminal = retirement is not None or task.get("current_state") in {"COMPLETED", "CANCELLED"}
+    route = {}
+    for issue in mode["issues"]:
+        problem("TASK_MODE_INVALID", issue)
+    if quick and not terminal:
+        try:
+            from cli import orchestration
+            facts = orchestration._load_task_facts(task_id, connection=conn, task_dir=task_dir)
+            route = orchestration.resolve_route(task_id, _facts=facts, task_dir=task_dir)
+        except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
+            problem("WORKFLOW_APPLICABILITY_UNAVAILABLE", exc)
     acceptance = acceptance_view(task_dir)
-    if acceptance["status"] != "read" or acceptance["issues"]:
+    if (acceptance["status"] != "read" and not quick and not terminal) or acceptance["issues"]:
         problem("ACCEPTANCE_DECLARATION_UNCONFIRMED", "; ".join(acceptance["issues"]) or "未取得 acceptance.md；不等于没有验收义务。")
-    verification = _channel(events, "VERIFICATION_COMPLETED", "tp-test-engineer")
+    verification = _channel(events, "VERIFICATION_COMPLETED", continuous_actors if quick else "tp-test-engineer")
     review = _channel(events, "REVIEW_COMPLETED", "tp-code-reviewer")
-    delivery = _channel(events, "DELIVERY_RESULT", "tp-integration-engineer")
+    delivery = _channel(events, "DELIVERY_RESULT", continuous_actors if quick else "tp-integration-engineer")
     owner = _channel(events, "OWNER_ACCEPTANCE_DECISION", "human_owner")
     current = reviewed = None
     try:
-        current = _check_verification(conn, task_id, task_dir, verification)
+        current = None if terminal else _check_verification(conn, task_id, task_dir, verification, quick=quick)
     except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
         verification["reasons"].append(str(exc))
         problem("VERIFICATION_APPLICABILITY_UNAVAILABLE", exc)
 
-    if review["recorded"]:
+    if review["recorded"] and not terminal:
         try:
             review["ledger_trusted"] = bool(event_policies.load_trusted_governance_event(
                 conn, task_id, event_type="REVIEW_COMPLETED", actor="tp-code-reviewer", latest_only=True))
@@ -154,16 +170,21 @@ def build_task_details(conn, task: dict[str, Any], task_dir: Path) -> dict[str, 
             # The existing reader reports missing/invalid/stale together. Do not invent a more precise verdict.
             review["reasons"].append(str(exc))
 
-    if delivery["recorded"]:
+    if delivery["recorded"] and not terminal:
         try:
             delivery["ledger_trusted"] = bool(event_policies.load_trusted_governance_event(
-                conn, task_id, event_type="DELIVERY_RESULT", actor="tp-integration-engineer", latest_only=True))
+                conn, task_id, event_type="DELIVERY_RESULT", actor=str(delivery["recorded"]["actor"]) if quick else "tp-integration-engineer", latest_only=True))
             from cli import orchestration
-            facts = orchestration._load_task_facts(task_id, connection=conn, task_dir=task_dir)
-            orchestration.resolve_route(task_id, _facts=facts, task_dir=task_dir)
-            ready = orchestration._delivery_completion_event(facts[1], task_dir, task=facts[0])
-            if ready is not None:
-                delivery.update(applicability="current", source="orchestration._delivery_completion_event")
+            if quick:
+                status = route.get("quick_status") or {}
+                ready = (status.get("delivery_status") == "READY" and status.get("delivery_current") is True
+                         and status.get("delivery_event_id") == delivery["recorded"]["event_id"])
+            else:
+                facts = orchestration._load_task_facts(task_id, connection=conn, task_dir=task_dir)
+                orchestration.resolve_route(task_id, _facts=facts, task_dir=task_dir)
+                ready = orchestration._delivery_completion_event(facts[1], task_dir, task=facts[0])
+            if (bool(ready) if quick else ready is not None):
+                delivery.update(applicability="current", source="orchestration.resolve_route.quick_status" if quick else "orchestration._delivery_completion_event")
             else:
                 delivery["reasons"].append("没有与当前适用步骤、主体及证据匹配的 READY；历史记录不等于可正式结单。")
         except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
@@ -173,14 +194,14 @@ def build_task_details(conn, task: dict[str, Any], task_dir: Path) -> dict[str, 
     try:
         trusted_owner = event_policies.load_owner_acceptance_decisions(conn, task_id)
         trusted_ids = {row["_event_id"] for row in trusted_owner}
-        effective = event_policies.effective_owner_acceptance(conn, task_id, task_dir=task_dir)
-        owner.update(effective=effective, evaluation="evaluated", source="event_policies.effective_owner_acceptance")
+        effective = {} if terminal else event_policies.effective_owner_acceptance(conn, task_id, task_dir=task_dir)
+        owner.update(effective=effective, evaluation="historical" if terminal else "evaluated", source="event_policies.effective_owner_acceptance")
         for row in owner["history"]:
             row["ledger_trusted"] = row["event_id"] in trusted_ids
         if owner["recorded"]:
             owner["ledger_trusted"] = owner["recorded"]["event_id"] in trusted_ids
         # A disposition may apply only to some ACs. Never label the entire owner history current.
-        owner["applicability"] = "per_ac" if trusted_owner else owner["applicability"]
+        owner["applicability"] = "historical" if terminal else "per_ac" if trusted_owner else owner["applicability"]
     except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
         owner.update(evaluation="unavailable", effective={})
         owner["reasons"].append(str(exc))
@@ -188,15 +209,16 @@ def build_task_details(conn, task: dict[str, Any], task_dir: Path) -> dict[str, 
 
     wait = {}
     try:
-        wait = waiting.active_wait(events, str(task.get("current_state") or ""))
+        wait = {} if terminal else waiting.active_wait(events, str(task.get("current_state") or ""))
     except ValueError as exc:
         problem("WAITING_FACT_UNAVAILABLE", exc)
     blocked_event = next((row for row in reversed(events) if row.get("event_type") == "BLOCKER"), None)
     blockers = {"waiting": wait,
-                "legacy_blocker": event_record(blocked_event) if blocked_event and task.get("current_state") == "BLOCKED" else None,
+                "legacy_blocker": event_record(blocked_event) if blocked_event and task.get("current_state") == "BLOCKED" and not terminal else None,
                 "source": "waiting.active_wait + task_event", "note": "没有结构化责任方或恢复条件时保持未记录；结单预检另行按需读取。"}
 
-    evidence = inspect_evidence_view(build_evidence_view(events, task_id=task_id, project_root=str(task_dir.parents[2])), task_dir=task_dir)
+    root = str(project_root) if project_root is not None else str(task.get("project_root_path") or "")
+    evidence = inspect_evidence_view(build_evidence_view(events, task_id=task_id, project_root=root), task_dir=task_dir)
     if any(row.get("inspection_error") for row in evidence):
         problem("EVIDENCE_READ_PARTIAL", "部分证据不可读取，见各引用的 inspection_error；不将读取失败当作业务 FAIL。")
     # A vanished declaration is the same consistency failure as changed bytes.
@@ -220,8 +242,13 @@ def build_task_details(conn, task: dict[str, Any], task_dir: Path) -> dict[str, 
             blockers["security_changes"] = security
     except (ValueError, OSError, KeyError, TypeError) as exc:
         blockers["security_changes"] = {"status": "UNKNOWN", "reason": str(exc)}
+    if terminal:
+        for channel in (verification, review, delivery):
+            channel.update(applicability="historical", reasons=["终态或可信退休记录，仅展示原结果，未重验当前产品。"])
     return {"task": {"task_id": task_id, "state": task.get("current_state"), "phase": task.get("current_stage"),
                      "owner": task.get("owner_role"), "completed_at": task.get("completed_at")},
+            **{key: route.get(key, value) for key, value in mode.items() if key != "issues"},
+            "quick_status": route.get("quick_status"), "retired": retirement is not None, "terminal": terminal,
             "task_dir": str(task_dir), "acceptance": acceptance, "verification": verification,
             "review": review, "delivery": delivery, "owner_acceptance": owner,
             "blockers": blockers, "evidence": evidence, "problems": problems,

@@ -394,7 +394,8 @@ def _recover_interrupted_task_create(
     return "COMMITTED_MARKER_CLEANED"
 
 
-def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, flow: str, created_at: str) -> Path:
+def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, flow: str, created_at: str,
+                           workflow_mode: str = 'standard') -> Path:
     """Build a complete task scaffold in a temporary sibling directory.
 
     The caller may atomically rename the returned directory after the DB transaction
@@ -417,6 +418,8 @@ def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, fl
     # business artifacts are created when a role has real content, never because a
     # state machine requires an empty form. Base templates remain available.
     essential = {'task.md', 'acceptance.md', 'status.yaml'}
+    if workflow_mode == 'quick':
+        essential.remove('acceptance.md')
     for child in list(tmp.iterdir()):
         if child.is_file() and child.name not in essential:
             child.unlink()
@@ -452,10 +455,17 @@ def cmd_task_create(args) -> int:
             file=sys.stderr,
         )
         return 2
-    if args.risk not in _RISK_LEVELS:
+    from . import orchestration_policy
+    mode = getattr(args, 'workflow_mode', 'standard')
+    if mode not in {'standard', 'quick'}:
+        raise ValueError('TASK_MODE_INVALID: workflow-mode must be standard|quick')
+    mode_source = None
+    if mode == 'quick' or getattr(args, 'mode_source', None) or getattr(args, 'mode_source_ref', None):
+        mode_source = orchestration_policy.user_source(getattr(args, 'mode_source', None), getattr(args, 'mode_source_ref', None))
+    if (mode == 'standard' or args.risk is not None) and args.risk not in _RISK_LEVELS:
         print(f"ERROR: invalid risk level '{args.risk}'", file=sys.stderr)
         return 2
-    if args.flow not in _RISK_LEVELS:
+    if (mode == 'standard' or args.flow is not None) and args.flow not in _RISK_LEVELS:
         print(f"ERROR: invalid flow level '{args.flow}'", file=sys.stderr)
         return 2
     project_id = args.project
@@ -554,6 +564,7 @@ def cmd_task_create(args) -> int:
             task_id=task_id, actor_agent=getattr(args, "agent", "") or "",
             created_at=now, transaction_id=uuid.uuid4().hex,
             schema_version=active_version(), invocation_id=command_context.invocation_id(),
+            workflow_mode=mode, user_source=mode_source,
         )
         coordinator = coordinator_detail["coordinator"]
         scaffold_target = None
@@ -562,7 +573,7 @@ def cmd_task_create(args) -> int:
         if getattr(args, 'scaffold', False) or intake_arg:
             scaffold_target = requested_scaffold_target
             try:
-                scaffold_tmp = _prepare_task_scaffold(scaffold_target, task_id, args.title or '', args.risk, args.flow, now)
+                scaffold_tmp = _prepare_task_scaffold(scaffold_target, task_id, args.title or '', args.risk, args.flow, now, workflow_mode=mode)
                 if intake_arg:
                     adopted_intake = _adopt_intake_artifacts(scaffold_tmp, Path(intake_arg), task_id, now)
                 _write_task_create_marker(
@@ -664,6 +675,67 @@ def cmd_task_create(args) -> int:
         conn.close()
 
 
+def cmd_task_mode_select(args) -> int:
+    from . import orchestration_policy, record_first, recording, event_contract
+    from .role_registry import actor_ids
+    source = orchestration_policy.user_source(args.mode_source, args.mode_source_ref)
+    tdir = record_first._task_dir(args.task_dir)
+    db_path = dbmod.resolve_db_path(args.db, task_id=args.task)
+    request = recording.LogicalRequest(args.task, tdir, 'task_mode_select', {
+        'workflow_mode': args.workflow_mode, 'user_source': source, 'actor': args.actor,
+        'risk': args.risk, 'flow': args.flow,
+    }, args.request_id)
+    conn = dbmod.connect(db_path)
+    try:
+        replay = request.replay(conn)
+        if replay is not None:
+            print(json.dumps(replay, ensure_ascii=False))
+            return 0
+        task = record_first._load(conn, args.task)
+        if task['current_state'] in record_first.TERMINAL_STATES:
+            raise ValueError('TASK_TERMINAL: mode selection cannot rewrite terminal work')
+        events = conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (args.task,)).fetchall()
+        previous = orchestration_policy.resolve_task_mode(dict(task), events)
+        if previous['issues']:
+            raise ValueError('; '.join(previous['issues']))
+        from . import orchestration
+        prior_route = orchestration.resolve_route(args.task, db_path=db_path, task_dir=tdir,
+            _facts=orchestration._load_task_facts(args.task, db_path, connection=conn, task_dir=tdir))
+        retained_material = (prior_route.get('confirmation_binding') if prior_route.get('confirmation_reason') ==
+                             'MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION' else None)
+        actor = args.actor or task['owner_role']
+        if actor not in actor_ids():
+            raise ValueError('invalid actual mode-selection recorder')
+        risk, flow = args.risk or task['risk_level'], args.flow or task['flow_level']
+        if args.workflow_mode == 'standard' and (risk not in _RISK_LEVELS or flow not in _RISK_LEVELS):
+            raise ValueError('STANDARD_LEVELS_REQUIRED: provide actual risk/flow when choosing standard')
+        now, flush_id = dbmod.now_iso(), 'MODE-' + uuid.uuid4().hex
+        response = {'task_id': args.task, 'workflow_mode': args.workflow_mode, 'user_source': source,
+                    'request_id': request.request_id, 'flush_id': flush_id, 'replayed': False}
+        def writer(dbconn, transaction_id=''):
+            detail = event_contract.add_event_semantics({
+                'transaction_id': transaction_id, 'flush_id': flush_id, 'schema_version': active_version(),
+                'task_id': args.task, 'actor_role': actor, 'created_at': now,
+                'workflow_mode': args.workflow_mode, 'previous_mode': previous['workflow_mode'],
+                'user_source': source,
+            }, event_type='TASK_MODE_SELECTED', operation='TASK_MODE_SELECT', result_status='RECORDED', producer='task_mode_select')
+            if retained_material is not None:
+                detail['retained_material_binding'] = retained_material
+            cursor = dbconn.execute('INSERT INTO task_event(task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) VALUES(?,?,?,?,?,?,?)',
+                (args.task, 'TASK_MODE_SELECTED', actor, 'explicit user handling mode: ' + args.workflow_mode, json.dumps(detail, ensure_ascii=False), active_version(), now))
+            response['event_id'] = int(cursor.lastrowid)
+            detail['logical_request'] = request.detail(response)
+            dbconn.execute('UPDATE task_event SET detail_json=? WHERE id=?', (json.dumps(detail, ensure_ascii=False), cursor.lastrowid))
+            dbconn.execute('UPDATE task SET risk_level=?,flow_level=?,updated_at=? WHERE task_id=?', (risk, flow, now, args.task))
+        result = record_first._write_with_projection(conn, tdir, task, operation='task_mode_select',
+            target_state=task['current_state'], owner_after=task['owner_role'], flush_id=flush_id,
+            writer=writer, summary='explicit user mode selection', logical_request=request)
+        print(json.dumps(result if result.get('replayed') else {**response, **result}, ensure_ascii=False))
+        return 0
+    finally:
+        conn.close()
+
+
 def cmd_task_transition(args) -> int:
     """Hardening：禁用活动任务的独立状态推进（任务书 §4.2 方案 A）。
 
@@ -711,10 +783,13 @@ def cmd_task_get(args) -> int:
         from . import event_policies
         retirement = event_policies.load_task_retirement(conn, task_id)
         retirement_data = retirement.detail if retirement is not None else None
+        from .orchestration_policy import resolve_task_obligations
+        mode = resolve_task_obligations(dict(task), conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (task_id,)).fetchall())
         if args.json:
             data = {k: task[k] for k in task.keys()}
             data["retired"] = retirement is not None
             data["retirement"] = retirement_data
+            data.update(mode)
             print(json.dumps(data, ensure_ascii=False, indent=2))
         else:
             print(f"task_id:         {task['task_id']}")
@@ -722,6 +797,7 @@ def cmd_task_get(args) -> int:
             print(f"title:           {task['title']}")
             print(f"risk_level:      {task['risk_level']}")
             print(f"flow_level:      {task['flow_level']}")
+            print(f"workflow_mode:   {mode['workflow_mode']}")
             print(f"current_state:   {task['current_state']}")
             print(f"current_stage:   {task['current_stage']}")
             print(f"owner_role:      {task['owner_role']}")
@@ -776,14 +852,17 @@ def cmd_task_list(args) -> int:
         if not rows:
             print("(no tasks)")
             return 0
-        headers = ["task_id", "project_id", "title", "risk", "flow", "state", "owner"]
+        from .orchestration_policy import resolve_task_mode
+        modes = {r['task_id']: resolve_task_mode(dict(r), conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (r['task_id'],)).fetchall()) for r in rows}
+        headers = ["task_id", "project_id", "title", "mode", "risk", "flow", "state", "owner"]
         table_rows = [
             [
                 r["task_id"],
                 r["project_id"],
                 r["title"] or "",
-                r["risk_level"],
-                r["flow_level"],
+                modes[r['task_id']]['workflow_mode'] if not modes[r['task_id']]['issues'] else 'INVALID',
+                r["risk_level"] or '',
+                r["flow_level"] or '',
                 r["current_state"],
                 r["owner_role"],
             ]
@@ -1298,12 +1377,17 @@ def cmd_task_migrate(args) -> int:
             return 0
 
         operation_kind = "CONTRACT_MIGRATION" if old != target else "CURRENT_CONTRACT_REPAIR"
-        from . import risk_signals
+        from . import risk_signals, orchestration_policy
+        mode_events = conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (args.task,)).fetchall()
+        mode = orchestration_policy.resolve_task_mode(dict(task), mode_events)
+        if mode['issues']:
+            raise ValueError('; '.join(mode['issues']))
         risk_scan = risk_signals.scan_task_artifacts(task_dir)
         risk_order = {"L0": 0, "L1": 1, "L2": 2, "L3": 3}
-        old_risk = str(task["risk_level"] or "L1")
+        old_risk = task['risk_level'] if mode['workflow_mode'] == 'quick' else str(task["risk_level"] or "L1")
         floor = str(risk_scan.get("floor") or "")
-        migrated_risk = floor if risk_order.get(floor, -1) > risk_order.get(old_risk, -1) else old_risk
+        migrated_risk = old_risk if mode['workflow_mode'] == 'quick' else (
+            floor if risk_order.get(floor, -1) > risk_order.get(old_risk, -1) else old_risk)
         texts: Dict[str, str] = {}
         for name, text in migratable_artifacts.items():
             texts[name] = _upgrade_contract_artifact_text(name, text, old, target)
@@ -2376,6 +2460,7 @@ def cmd_task_delivery_converge(args) -> int:
         recovery_condition=args.recovery_condition, blocker_kind=args.blocker_kind,
         responsibility=args.responsibility, residual_risks=args.residual_risk,
         context_usage=_parse_context_usage_arg(args.context_usage_json), db=args.db,
+        actor=getattr(args, 'actor', None), unverified_items=getattr(args, 'unverified', None),
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -2508,8 +2593,11 @@ def add_task_subparsers(task_parser) -> None:
     p_create.add_argument("--id", required=True, help="task id (^TASK-[A-Za-z0-9][A-Za-z0-9._-]*$)")
     p_create.add_argument("--project", required=True, help="project id")
     p_create.add_argument("--title", required=False, default="")
-    p_create.add_argument("--risk", required=True, choices=["L0", "L1", "L2", "L3"])
-    p_create.add_argument("--flow", required=True, choices=["L0", "L1", "L2", "L3"])
+    p_create.add_argument("--risk", choices=["L0", "L1", "L2", "L3"], help="required for standard mode")
+    p_create.add_argument("--flow", choices=["L0", "L1", "L2", "L3"], help="required for standard mode")
+    p_create.add_argument("--workflow-mode", choices=['standard', 'quick'], default='standard')
+    p_create.add_argument("--mode-source", help="actual user choice statement; required for quick")
+    p_create.add_argument("--mode-source-ref", help="context/file reference for the actual user choice")
     p_create.add_argument("--summary", required=False, default="任务创建")
     p_create.add_argument("--agent", default="", help="actual calling agent identity; absent remains unrecorded, never synthesized")
     p_create.add_argument("--db", required=False, default=None)
@@ -2517,6 +2605,19 @@ def add_task_subparsers(task_parser) -> None:
     p_create.add_argument("--from-intake", required=False, default=None, help="Adopt pre-task requirement artifacts from an intake directory; implies --scaffold and preserves source")
     p_create.add_argument("--task-dir", required=False, default=None, help="Scaffold destination (default: <project.root_path>/.tp-spec/tasks/<TASK-ID>)")
     p_create.set_defaults(func=cmd_task_create)
+
+    p_mode = sub.add_parser('mode-select', help='Record an explicit user choice of handling mode on this Task')
+    p_mode.add_argument('--task', required=True)
+    p_mode.add_argument('--task-dir', required=True)
+    p_mode.add_argument('--workflow-mode', choices=['standard', 'quick'], required=True)
+    p_mode.add_argument('--mode-source', required=True)
+    p_mode.add_argument('--mode-source-ref', required=True)
+    p_mode.add_argument('--actor', default=None)
+    p_mode.add_argument('--risk', choices=list(_RISK_LEVELS))
+    p_mode.add_argument('--flow', choices=list(_RISK_LEVELS))
+    p_mode.add_argument('--request-id', required=True)
+    p_mode.add_argument('--db', default=None)
+    p_mode.set_defaults(func=cmd_task_mode_select)
 
     # Record-first daily API: business facts, not workflow bookkeeping.
     from . import record_first
@@ -2612,6 +2713,8 @@ def add_task_subparsers(task_parser) -> None:
     p_delivery.add_argument("--blocker-kind", choices=["INTEGRATION_CONFLICT", "VERIFICATION_STALE", "WORKSPACE_DIRTY", "GIT_STATE_INVALID", "HUMAN_DECISION", "OTHER"])
     p_delivery.add_argument("--responsibility")
     p_delivery.add_argument("--residual-risk", action="append")
+    p_delivery.add_argument('--actor', default=None, help='actual continuous executor in quick mode; Integration owner in standard')
+    p_delivery.add_argument('--unverified', action='append', help='actual untested boundary; required when quick delivery has no verification result')
     p_delivery.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks delivery")
     p_delivery.add_argument("--db", default=None)
     p_delivery.set_defaults(func=cmd_task_delivery_converge)

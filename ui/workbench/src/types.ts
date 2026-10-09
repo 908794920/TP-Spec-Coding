@@ -2,6 +2,32 @@ export type Fact = string | number | boolean | null | Fact[] | {
     [key: string]: Fact;
 };
 export type FactRecord = Record<string, unknown>;
+export type WorkflowMode = 'standard' | 'quick';
+export interface ModeSource {
+    kind: 'task_create' | 'task_mode_selected';
+    event_id: number;
+    user_source: { kind: 'user_instruction'; reference: string; statement: string } | null;
+    digest: string;
+}
+export interface QuickStatus {
+    delivery_status: 'READY' | 'BLOCKED' | 'NOT_RECORDED' | 'READY_STALE';
+    recorded_delivery_status: 'READY' | 'BLOCKED' | null;
+    delivery_current: boolean;
+    awaiting_completion: boolean;
+    verification_scope: 'full' | 'technical' | null;
+    verification_decision: 'PASS' | 'FAIL' | 'NEEDS_FIX' | 'NOT_RECORDED' | 'PASS_STALE' | 'INVALID';
+    verification_current: boolean;
+    verification_event_id: number | null;
+    delivery_event_id: number | null;
+    checks: string[];
+    unverified_items: string[];
+}
+export interface WorkflowData extends FactRecord {
+    workflow_mode?: WorkflowMode;
+    mode_source?: ModeSource | null;
+    applicable_obligations?: FactRecord;
+    quick_status?: QuickStatus | null;
+}
 export interface Problem {
     code: string;
     message: string;
@@ -52,6 +78,8 @@ export interface TaskIndexRow {
     updated_at?: string;
     owner?: string;
     retired?: boolean;
+    workflow_mode?: WorkflowMode;
+    mode_source?: ModeSource | null;
     summary?: string;
 }
 export interface ProjectData extends FactRecord {
@@ -68,7 +96,7 @@ export interface TaskData extends FactRecord {
     problems?: Problem[];
     work_items: WorkItems;
     work_sessions?: FactRecord;
-    workflow: FactRecord;
+    workflow: WorkflowData;
 }
 export interface ReadState<T> {
     data?: T;
@@ -76,7 +104,7 @@ export interface ReadState<T> {
     loading: boolean;
 }
 
-export interface DetailData extends FactRecord {
+export interface DetailData extends WorkflowData {
     task: FactRecord;
     acceptance: FactRecord;
     verification: FactRecord;
@@ -96,7 +124,7 @@ export interface CloseoutCheck extends FactRecord {
     issues: unknown[];
     facts: FactRecord;
 }
-export interface CloseoutData extends FactRecord {
+export interface CloseoutData extends WorkflowData {
     task_id: string;
     state: string;
     ready: boolean;

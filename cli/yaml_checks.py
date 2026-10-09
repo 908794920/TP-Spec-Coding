@@ -21,8 +21,10 @@ transaction_commit / migration transition compatibility / PowerShell validator �
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import frontmatter
@@ -435,4 +437,116 @@ def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_h
             "acceptance.md has no acceptance criteria (AC) rows and no valid "
             "no_acceptance_required declaration (machine-readable schema required)"
         )
+    return result
+
+
+def database_operation_diagnostics(task_dir: Path, *, task_id: str, events=None) -> Dict[str, Any]:
+    """沿已登记哈希引用核对声明差额；不执行 SQL，也不从计划或注记补造 EXECUTED。"""
+    from .evidence import validate_evidence_path
+    root = Path(task_dir)
+    result = {"read_only": True, "observations": [], "issues": [], "unavailable_references": [],
+              "declaration_source": "acceptance.md", "declaration_status": "ABSENT",
+              "note": "仅核对已登记 JSON 回执引用及原 receipt 目录；工具报告不是 SQL 类型或人工批准证明，不扫描任意 Markdown 证明全量无遗漏。"}
+    declarations = []
+    declaration_line = None
+    try:
+        text = (root / "acceptance.md").read_text(encoding="utf-8-sig")
+        checked = check_acceptance_yaml(text, enforce_completion=False)
+        declarations = checked.database_operations
+        for match in re.finditer(r"```yaml\s*\n(.*?)```", text, re.S):
+            try:
+                data = parse_yaml_fail_closed(match.group(1), "acceptance.md")
+            except YamlValidationError:
+                if re.search(r"(?m)^[ \t]*database_operations\s*:", match.group(1)):
+                    result["declaration_status"] = "INVALID"
+                continue
+            if "database_operations" in data:
+                result["declaration_status"] = "AVAILABLE"
+                locator = re.search(r"(?m)^[ \t]*database_operations\s*:", match.group(1))
+                pos = match.start(1) + (locator.start() if locator else 0)
+                declaration_line = text.count("\n", 0, pos) + 1
+        if any(issue.startswith("database_operations") for issue in checked.issues):
+            result["declaration_status"] = "INVALID"
+    except (OSError, UnicodeError) as exc:
+        result["declaration_status"] = "UNAVAILABLE"
+        result["unavailable_references"].append({"path": "acceptance.md", "reason": str(exc)})
+
+    references = []
+    for event in events or []:
+        row = dict(event)
+        try:
+            detail = json.loads(row.get("detail_json") or "{}") if "detail_json" in row else row.get("detail", {})
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(detail, dict):
+            continue
+        items = list(detail.get("evidence_items") or [])
+        work_result = (detail.get("work_payload") or {}).get("result") if isinstance(detail.get("work_payload"), dict) else None
+        if isinstance(work_result, dict):
+            items += list(work_result.get("evidence_items") or [])
+        for item in items:
+            if isinstance(item, dict) and str(item.get("path") or "").lower().endswith(".json") and item.get("sha256"):
+                references.append((item, row.get("id") if "detail_json" in row else row.get("runtime_event_id")))
+    for operation in declarations:
+        if not isinstance(operation, dict):
+            continue
+        ref = str(operation.get("execution_evidence") or "").strip()
+        if ref.lower().endswith(".json"):
+            references.append(({"type": "local_file", "path": ref}, None))
+    # receipt 命令的原收据本身有固定目录与 task identity；它仍只是 operator 记录。
+    receipts = root / "evidence" / "receipts"
+    if receipts.is_dir() and not receipts.is_symlink():
+        for path in sorted(receipts.glob("*.json")):
+            references.append(({"type": "local_file", "path": path.relative_to(root).as_posix()}, None))
+    seen = set()
+    for item, event_id in references:
+        ref = str(item.get("path") or "")
+        checked = validate_evidence_path(root, item, require_evidence_dir=True)
+        expected = str(item.get("sha256") or "").removeprefix("sha256:")
+        if not checked.ok or (expected and expected != checked.sha256):
+            result["unavailable_references"].append({"path": ref, "event_id": event_id,
+                "reason": checked.error if not checked.ok else "registered evidence hash mismatch"})
+            continue
+        identity = (ref, checked.sha256)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        try:
+            path = root / ref
+            if path.stat().st_size > 512_000:
+                result["unavailable_references"].append({"path": ref, "reason": "JSON receipt exceeds bounded diagnostic read"})
+                continue
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeError, ValueError) as exc:
+            result["unavailable_references"].append({"path": ref, "reason": str(exc)})
+            continue
+        if not isinstance(data, dict):
+            continue
+        observation = None
+        completed = data.get("statements_completed")
+        counts = data.get("affected_rows")
+        if (event_id is not None and expected and data.get("target") == "development"
+                and type(completed) is int and completed > 0 and isinstance(counts, list)
+                and len(counts) == completed and all(type(count) is int and count >= -1 for count in counts)
+                and type(data.get("elapsed_ms")) is int and data["elapsed_ms"] >= 0
+                and data.get("note") == "DDL and explicit commits are not rollback-safe; verify final state with read-only queries."
+                and str(data.get("status") or "").upper() not in {"PLANNED", "NOT_EXECUTED"}):
+            observation = {"kind": "RECORDED_EXECUTION_OUTPUT", "environment": "development",
+                           "statements_completed": completed, "operation_type": "UNKNOWN",
+                           "authorization": "NOT_PROVEN_BY_RECEIPT"}
+        elif (data.get("task_id") == task_id and str(data.get("receipt_id") or "").startswith("REC-")
+              and data.get("action_type") in {"DML", "DDL"}):
+            observation = {"kind": "OPERATOR_RECEIPT", "environment": data.get("environment"),
+                           "declared_action_type": data["action_type"], "execution": "NOT_PROVEN_BY_RECEIPT",
+                           "authorization": "NOT_PROVEN_BY_OPERATOR_NOTE"}
+        if observation is None:
+            continue
+        associated = [str(op.get("id") or "") for op in declarations if isinstance(op, dict)
+                      and str(op.get("execution_evidence") or "").strip() == ref]
+        observation.update(path=ref, sha256=checked.sha256, event_id=event_id, declaration_ids=associated)
+        result["observations"].append(observation)
+        if observation["kind"] == "RECORDED_EXECUTION_OUTPUT" and not associated:
+            result["issues"].append({"code": "DATABASE_EXECUTION_DECLARATION_GAP", "path": "acceptance.md",
+                "line": declaration_line, "receipt_path": ref, "event_id": event_id,
+                "message": "已登记工具输出报告完成数据库语句，但 database_operations 缺少关联；由 canonical 唯一写入者核对环境、实际操作、授权及结果，不自动补造 EXECUTED。"})
     return result
