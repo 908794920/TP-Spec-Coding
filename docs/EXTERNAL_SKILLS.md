@@ -141,7 +141,7 @@ tp-spec skill read --id external:local:legacy-tool --path "references/调用链.
 
 新增、更新、停用或移除外部 SKILL 不需要修改 Base 源码、内置 Catalog、Manifest、业务项目 `AGENTS.md` 或项目 binding。不复制能力到业务工程、不创建安装用软链接。Base 升级和源码回滚不清理用户的外部包及配置；不会自动撤销真实任务中已授权执行的业务修改。
 
-共享能力加载器和工作台查询不写 Registry、Binding、Runtime、外部原件、安装配置或使用统计。CLI 主进程仍按现有机制在用户级 `diagnostics/cli/` 写计时回执；不要把“能力只读”解释成整个 CLI 进程没有任何文件写入。查询不代表 `adopted`，不把外部方法自动归为项目 Memory、Knowledge 条目或 Wiki 事实。
+共享能力加载器和工作台查询不写 Registry、Binding、Runtime、外部原件、安装配置或使用统计。CLI 主进程默认在用户级 `diagnostics/cli/` 写计时回执；严格只读验证可设置 `TP_SPEC_DIAGNOSTICS=off` 关闭诊断持久化与旧回执裁剪，见 [CLI 诊断控制](agents/tp-software-lifecycle.md#cli-诊断控制)。不要把“能力只读”解释成整个 CLI 进程没有任何文件写入。查询不代表 `adopted`，不把外部方法自动归为项目 Memory、Knowledge 条目或 Wiki 事实。
 
 | 现象 | 定向核对 |
 |---|---|

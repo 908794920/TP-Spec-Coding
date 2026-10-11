@@ -223,7 +223,7 @@ def public_document(cfg, row: dict) -> dict:
     key = document_key(cfg, layer, row.get("canonical_id") or "", row["rel_path"])
     mtime = int(row.get("mtime_ns") or 0)
     refs = json.loads(row.get("source_refs") or "[]")
-    return {"key": key, "document_key": key,
+    return {"key": key, "document_key": key, "read_document_id": key,
             "id": row.get("canonical_id") if layer == "canonical" else row.get("source_id"),
             "canonical_id": row.get("canonical_id") or "", "source_id": row.get("source_id") or "",
             "title": row.get("title") or PurePosixPath(row["rel_path"]).name,

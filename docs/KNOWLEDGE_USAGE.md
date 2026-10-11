@@ -17,11 +17,15 @@ tp-spec knowledge search --workspace-root <workspace> --query "需要查询的�
 tp-spec knowledge read --workspace-root <workspace> --document-id <document_key>
 ```
 
-搜索默认返回 **5 篇去重候选**，每篇 `snippet` 最多 **200 个字符**；显式 `--limit` 为 1～20。一篇文档的多个命中片段不重复成为多篇候选。`total` 是范围内总匹配文档数，`count` 是本次返回文档数，`count_kind=documents`。结果带 `document_key`、原 canonical/source 标识、标题、相对路径、内容项目、层级、匹配章节与行号、相关度和版本。摘要不是正文读取。
+搜索默认返回 **5 篇去重候选**，每篇 `snippet` 最多 **200 个字符**；显式 `--limit` 为 1～20。一篇文档的多个命中片段不重复成为多篇候选。`total` 是范围内总匹配文档数，`count` 是本次返回文档数，`count_kind=documents`。结果带 `read_document_id`（与稳定 `document_key` 相同）、原 canonical/source 标识、标题、相对路径、内容项目、层级、匹配章节与行号、相关度和版本。摘要不是正文读取。
+
+`knowledge read --document-id` 使用结果中的 **`read_document_id` 或 `document_key`**，不要使用 `id` / `canonical_id` 等短业务编号。例如 `IDC-FEAT-027` 是业务标识，不能代替 `knowledge:…:…` 形式的稳定读取标识。误用时返回 `KNOWLEDGE_INVALID_DOCUMENT_ID` 及提示；在原项目范围搜索取得稳定标识，不猜 key、不扩大到全局。
 
 新 AI 入口默认 **当前项目 + 已注册且未归档的共享范围**；尊重明确的 `include_shared=false`。`--project <project_id>` 使用相同 shared 规则。只有显式 `--scope global` 才跨全部已注册项目，不继承配置中的默认 global 或自动 global fallback，也不为命中率追加查询。`--project` 与 `--scope global` 不同时使用。项目无法解析时返回明确错误，不自动跨项目。
 
 保留 canonical-first；在允许 source 补充且候选不足时返回 source。`--layer canonical|source` 可指定层级，`--kind` 可指定类型。显式 source 查询不产生“canonical 失败”的推断；只有实际发生补充时记录 `canonical_shortfall`。中文、英文类名、标识符、路径和多词仍使用原分词 / FTS 匹配语义，没有换搜索引擎。候选对应索引版本；文件已变化时以随后正文读取返回的版本状态为准。
+
+Markdown 正文读取的 `document.version` 是本次实际读取内容的哈希，`indexed_version` 保留索引哈希，`version_status=same|changed` 表明是否一致。`metadata_source=current_document` 表示标题、类型、状态、替代关系和来源引用等取自同一次读取的当前 frontmatter；稳定 key、注册项目/路径及转换来源身份仍按登记记录校验。`updated_at` 保留索引登记的文件时间，`updated_at_source=indexed_document` 明确其来源，不据此声称当前文件未变化。缺少或不支持的 frontmatter 返回 `metadata_available=false`，不把旧索引状态冒充当前状态，也不因此阻止正文读取。公开元数据字段存在不可表示的值时，保留其余有效字段并返回 `metadata_warning=KNOWLEDGE_CURRENT_METADATA_UNSUPPORTED`，该字段的当前事实保持未知。仅注册元数据的外部原件返回 `metadata_source=registered_source`，不声称读到了外部原件正文。
 
 正文默认返回目录最多 20 项、目录标题累计最多 1,000 字符；正文最多 80 个完整原文行、累计最多 4,000 字符。这是字符预算，不是 tokenizer 的 token 预算。返回 `read_mode`、`outline`、`outline_truncated`、`truncated`、`next_start_line`、`line_start`、`line_end`、`body_start_line`、`total_lines`、`body_returned` 和预算提示。
 
@@ -43,9 +47,11 @@ tp-spec knowledge read --workspace-root <workspace> --document-id <document_key>
 --no-telemetry
 ```
 
-Task / 角色只是调用方提供的可选上下文，不创建 Task，不产生 adopted。没有传入就保持缺失。普通 CLI 默认 `development` / `caller=ai_cli`。维护调用应显式声明 `maintenance`。`--no-telemetry` 关闭本次采集；Golden Query 的既有不计数路径继续有效。
+Task / 角色只是调用方提供的可选上下文，不创建 Task，不产生 adopted。没有传入就保持缺失。普通 CLI 默认 `development` / `caller=ai_cli`。维护调用应显式声明 `maintenance`。`--no-telemetry` 关闭本次检索/读取采集；Golden Query 的既有不计数路径继续有效。CLI 计时诊断是独立写入链；严格只读验证还须在该进程环境中设置 `TP_SPEC_DIAGNOSTICS=off`，见 [CLI 诊断控制](agents/tp-software-lifecycle.md#cli-诊断控制)。这两个选项不关闭命令本身已授权的业务写入。
 
 Task 需要使用已知 Knowledge 条目时直接用 `knowledge read`，不必先搜索；需要发现条目时再搜索。需形成读取记录时，不用普通文件工具代替 CLI，并在 Task / 角色已知时传入对应参数。每次搜索或读取后核对返回的 `status`、`collection_status`、`collection_warning` 和 `receipt`：内容操作成功但采集状态为旧契约、未就绪或带警告时，分别记录操作和采集结果，不能当作统计已采集；也不重复执行无关查询来补计数。
+
+回答时分清实际依据：搜索成功只说明读到返回的摘要；`read` 成功且 `body_returned=true` 才说明读到了返回行范围的正文。只有目录、frontmatter 或失败时，不写“已读全文”，不引用未返回的正文行号；可以明确使用已有搜索片段或回到当前源码。实际采用片段也可按原契约记录 adopted，但采用不把片段升级为正文证据。
 
 ### 2.1 旧调用兼容
 

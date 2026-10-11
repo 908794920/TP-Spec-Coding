@@ -24,7 +24,10 @@ CORE_DOCUMENTS = (
 )
 
 _LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)]+)\)")
-_ANGLE_RE = re.compile(r"<([^<>\s]+)>")
+# Angle-bracket targets only. HTML closing tags (</a>) and declarations (<!...>) are
+# markup rather than repository paths, so `<a id="…"></a>` anchors stay allowed in
+# scanned documents (their opening tag contains spaces and never matched anyway).
+_ANGLE_RE = re.compile(r"<(?![/!])([^<>\s]+)>")
 _FENCE_RE = re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)
 
 

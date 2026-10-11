@@ -15,7 +15,7 @@ description: 用于在已解析的项目和注册 shared 范围内检索、读�
 
 1. 默认范围是当前项目 + registered shared scopes。只有用户明确要求跨项目，才用 `--scope global`；全局 SQLite 投影不等于默认全局搜索。
 2. 范围内条目未知时，用 `tp-spec knowledge search -q ...` 做 **canonical-first FTS5 → source fallback**，再按实际命中定向核对 source/evidence；已知 `document_key` 时直接读取，无须先搜索。不要先扫全库 Markdown 猜重复项，也不为采集次数机械查询。Graph 是可选投影；历史 Embedding/vector 评测收益不足，兼容表存在不表示已启用。
-3. 需要把 Knowledge 正文作为当前 Task 的上下文时，用 `tp-spec knowledge read --document-id <document_key>`；不要用普通文件工具代替正式读取，因为它不产生 Knowledge 读取回执。Task 和角色已知时，搜索与读取都传 `--task <task_id> --role <role_id>`。
+3. 需要把 Knowledge 正文作为当前 Task 的上下文时，用 `tp-spec knowledge read --document-id <read_document_id>`，取搜索结果的 `read_document_id` 或等值 `document_key`；`id` / `canonical_id`（如 `IDC-FEAT-027`）是短业务编号，不能作读取参数。不要用普通文件工具代替正式读取，因为它不产生 Knowledge 读取回执。Task 和角色已知时，搜索与读取都传 `--task <task_id> --role <role_id>`。
 4. 每次逻辑搜索或读取后检查返回的 `status`、`collection_status`、`collection_warning` 和 `receipt`。检索/读取成功不代表使用记录已采集；出现旧契约、`KNOWLEDGE_USAGE_UPGRADE_REQUIRED` 或采集警告时，分别报告操作结果和采集状态，不计作成功采集。索引升级只走 [Knowledge 使用说明](../../../docs/KNOWLEDGE_USAGE.md) 的显式维护路径；未获维护授权时不得自动执行建表、迁移或 `index update`。
 5. 当本 Task 实际采用条目内容时，在已有 checkpoint/review/verify 中的 `context_usage` 记录 `source_type=knowledge`、稳定 `asset_id` 和 `stage=adopted`，可关联回执；只在 `task.md` 文本提到不构成 adopted。命中或读取本身也不自动采用，不另建专门事件。
 6. 兼容旧 `source_refs`；新或实质更新内容优先以结构化 `evidence_refs` 表达 `source/task/code/external`。对当前入口、必须、唯一、数值、配置项或责任层等强断言，读回真实 evidence。没有本地 Task evidence root 时，`TASK-*` 只能称为已登记或可外部解析，不称本地复验。
@@ -24,4 +24,4 @@ description: 用于在已解析的项目和注册 shared 范围内检索、读�
 
 ## 结果
 
-报告真实查询、scope、命中或 fallback、读回证据与限制；未读到的来源不写成已验证。纯检索不创建 canonical、不做 index/scan/maintain，也不把命中当成 Task 的正式 Knowledge Result。
+报告真实查询、scope、命中或 fallback、读回证据与限制。搜索片段、成功正文读取和失败分别说明：核对 `status`、`body_returned` 和实际返回行范围，只有目录/frontmatter或读取失败时，不引用未返回的正文行号、不声称已读全文。搜索片段可以按实际范围采用，但不能升级为正文证据。读取结果存在索引/当前版本差异时说明适用性，不据旧索引声明当前状态；未读到的来源不写成已验证。测试/诊断用 `--no-telemetry`；严格只读验证另设 `TP_SPEC_DIAGNOSTICS=off` 关闭 CLI 诊断写入，两者不授权或禁止业务动作。纯检索不创建 canonical、不做 index/scan/maintain，也不把命中当成 Task 的正式 Knowledge Result。

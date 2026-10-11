@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -54,13 +55,13 @@ def outline(body: str, body_start: int = 1) -> tuple[list[dict], bool]:
     return items, truncated
 
 
-def budget(text: str, *, start_line=None, end_line=None, full=False) -> dict:
+def budget(text: str, *, start_line=None, end_line=None, full=False, _parsed=None) -> dict:
     """Character (not token) budgets, preserving whole lines and source numbering."""
     if full and (start_line is not None or end_line is not None):
         raise telemetry.KnowledgeError("KNOWLEDGE_READ_MODES_CONFLICT")
     if any(value is not None and (not isinstance(value, int) or value < 1) for value in (start_line, end_line)):
         raise telemetry.KnowledgeError("KNOWLEDGE_INVALID_LINE_RANGE")
-    _, body, _, body_start = parse_frontmatter(text)
+    _, body, _, body_start = _parsed if _parsed is not None else parse_frontmatter(text)
     raw_lines = text.splitlines(keepends=True)
     total = len(raw_lines)
     headings, headings_truncated = outline(body, body_start)
@@ -144,15 +145,41 @@ def read_document(cfg, document_id: str, *, project=None, scope=None, start_line
         budget("", start_line=start_line, end_line=end_line, full=full)
         row = find_document(cfg, document_id, projects=request["projects"])
         document = public_document(cfg, row)
-        if metadata(row).get("metadata_only"):
+        indexed_meta = metadata(row)
+        if indexed_meta.get("metadata_only"):
+            document["metadata_source"] = "registered_source"
             result = {**budget(""), "read_mode": "metadata", "body_returned": False,
                       "note": "原件非受支持的知识 Markdown；仅展示注册元数据与已登记转换件，不自动转换或读取外部原件。"}
         else:
             text = _text(cfg, row)
+            parsed = parse_frontmatter(text)
             version = hashlib.sha256(text.encode("utf-8")).hexdigest()
-            document.update(indexed_version=document["version"], version=version,
+            fm = parsed[0] or {}
+            # 正文与当前生命周期事实来自同次读取；登记身份和转换来源仍沿用索引的受控记录。
+            current_meta = {name: fm[name] for name in
+                            ("status", "superseded", "replaced_by", "relations", "evidence_refs") if name in fm}
+            unsupported_metadata = False
+            for name, value in list(current_meta.items()):
+                try:
+                    json.dumps(value, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    del current_meta[name]
+                    unsupported_metadata = True
+            current_meta.update({name: indexed_meta[name] for name in ("origin", "conversion") if name in indexed_meta})
+            source_refs = fm.get("source_refs") if isinstance(fm.get("source_refs"), list) else []
+            current_row = {**row, "title": str(fm.get("title") or ""),
+                           "kind": str(fm.get("kind") or ("source" if row["scope"] == "source" else "")),
+                           "sha256": version,
+                           "source_refs": json.dumps([value for value in source_refs if isinstance(value, str)]),
+                           "metadata_json": json.dumps(current_meta, ensure_ascii=False)}
+            document = public_document(cfg, current_row)
+            document.update(indexed_version=row["sha256"],
+                            metadata_source="current_document", metadata_available=bool(fm),
+                            updated_at_source="indexed_document",
                             version_status="same" if version == row["sha256"] else "changed")
-            result = budget(text, start_line=start_line, end_line=end_line, full=full)
+            if unsupported_metadata:
+                document["metadata_warning"] = "KNOWLEDGE_CURRENT_METADATA_UNSUPPORTED"
+            result = budget(text, start_line=start_line, end_line=end_line, full=full, _parsed=parsed)
         receipt_result = {**document, "line_start": result["line_start"], "line_end": result["line_end"]}
         collected = telemetry.record(cfg, "read", request, digest, results=[receipt_result],
             elapsed_ms=(time.perf_counter()-t0)*1000, document_key=document_id,

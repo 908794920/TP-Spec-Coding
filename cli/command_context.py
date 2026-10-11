@@ -172,15 +172,16 @@ def command() -> Iterator[CommandContext]:
     finally:
         # Restore invocation isolation even if building the optional receipt fails.
         _CURRENT.reset(token)
-        try:
-            _persist(context.receipt())
-        except Exception as exc:
-            # The warning channel is optional too; never override the business
-            # return value or an in-flight exception with a diagnostic failure.
+        if os.environ.get("TP_SPEC_DIAGNOSTICS", "on").strip().lower() != "off":
             try:
-                print(f"DIAGNOSTIC_WRITE_WARNING: {type(exc).__name__}", file=sys.stderr)
-            except Exception:
-                pass
+                _persist(context.receipt())
+            except Exception as exc:
+                # The warning channel is optional too; never override the business
+                # return value or an in-flight exception with a diagnostic failure.
+                try:
+                    print(f"DIAGNOSTIC_WRITE_WARNING: {type(exc).__name__}", file=sys.stderr)
+                except Exception:
+                    pass
 
 
 def cmd_timings(args) -> int:

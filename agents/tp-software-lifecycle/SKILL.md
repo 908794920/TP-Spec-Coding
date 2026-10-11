@@ -64,6 +64,10 @@ Work 提交、精确接收、候选、步骤完成、专业 PASS、业务验收�
 ## 当前范围接续
 优先使用 `workflow next` 的 `context.current_effective`（存在时）或接续导航指向的 canonical 当前区；只在 canonical Task/Requirement 一处维护必要语义，历史/来源按需展开。接续时沿用已明确的目标、非目标、参考实现和允许改变的行为边界；模型生成的设计、计划、测试或检查清单不产生新需求或授权。`AVAILABLE` 只表示可读取，不证明决定正确或授予权限；缺当前区不增流程。冲突/损坏时先定向核对来源，不按最后文本选宽松授权；程序摘取与 `SUPERSEDED` 留存细节按需读 [生命周期操作参考](../../docs/agents/tp-software-lifecycle.md)。
 
+派发实际 Role／Work 或恢复工作时，沿用已确认的登记工作区、源码子仓、项目身份和已有 Task／当前范围及完成／验收口径；子仓 cwd 不替代 Wiki／Knowledge 命令的 `--workspace-root`。把本轮真正相关的已读资料结论、精确来源与读取范围、适用边界及尚需源码核对的缺口一起转交；已有结果仍有效时复用，不因换角色重新搜索。未知模块关系、历史约束或已有证据不足时，按 [实现过程控制](../../skills/capabilities/implementation-control/SKILL.md#think--事实先于简化) 定向补缺。
+
+交接用已有消息与 Work 的摘要／证据／限制字段，按需给必要片段；不预载全文，不新增上下文账本或固定填写表。读取、采用、版本观察与授权分别说明，详细例子见 [按需上下文与有效交接](../../docs/agents/tp-software-lifecycle.md#context-handoff)。
+
 ## 工作段与临时工件
 工作段用于有意义的执行/暂停边界，不逐工具 start/end。ACTIVE、未闭合 START 和角色名均不证明进程存活或独立 Agent；未知保持待诊断，不补造时间，不自动修历史或杀进程。只在已知中断、原 task/role/agent 与 ownership/授权成立时收口，不冒充执行者；终态/退休任务不得新开工作段。
 

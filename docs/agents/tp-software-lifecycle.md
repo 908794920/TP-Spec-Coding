@@ -140,6 +140,37 @@ Base 中已有的信号名、条件角色 phases 和受角色能力约束的 mod
 
 当前契约将 canonical `requirement.md` 纳入架构主体及生成视图源指纹，将 `task.md` 和 `requirement.md` 纳入 full/technical Verification 主体。需求或约束改变后旧 PASS 继续保留历史身份，但不能用于新交付；不会重绑旧记录或自动重跑测试。指纹保守保护完整正文，不做自然语言语义比较，历史/备注的实质文本改动也可能要求重新留证；仅 BOM/CRLF 传输差异仍归一。既有未覆盖这些输入的旧 Verification 不能无证据继承，应在所涉任务的正式验证中重新取得适用结果；应用源码不自动迁移或修写现场 DB。
 
+<a id="context-handoff"></a>
+## 按需上下文与有效交接
+
+本节用于跨模块定位、历史约束影响实现、实际执行者交接或中断恢复。复用已有派发消息、Task 当前区和 Work 材料；已有位置与证据充分时直接处理，不为资料消费创建 Task，也不要求每题检索、逐次 skip 或采用率达标。
+
+登记工作区负责项目／内容身份，源码子仓负责 Git 与实现。派发者转交本轮已确认的 Resolver 结果，接收者不按子仓 cwd 猜内容根；结果缺失、来源变化或身份冲突时才重新解析。无已有 Task 就不传虚构 Task／Role；角色名也不证明独立 Agent 或进程在线。
+
+```text
+tp-spec base resolve --workspace-root <登记工作区>
+tp-spec wiki search --workspace-root <登记工作区> --query "未知模块术语"
+tp-spec knowledge search --workspace-root <登记工作区> --query "尚缺的历史规则"
+tp-spec knowledge read --workspace-root <登记工作区> --document-id <返回read_document_id> --start-line <需要的起行> --end-line <需要的止行>
+```
+
+这些是按缺口选择的独立例子，不是必跑顺序。已知稳定标识直接 read；未知模块可先 Wiki 导航，历史约束沿已有 Memory／Skill 精确指针，仍有长期规则缺口再查询 Knowledge。Wiki 默认当前工作区，Knowledge 默认当前项目加登记 shared，沿用各自范围契约，不因零结果／失败全局回退或重建。真实调用可携带已有 Task／实际 Role；严格只读验证按 [CLI 诊断控制](#cli-诊断控制) 同时关闭诊断与检索采集。
+
+交接只传下一执行者需要的内容，可用如下短 Markdown 语义组织已有消息／摘要，不要求所有条目固定填写：
+
+```text
+目标与边界：当前问题与已知完成／验收口径、可改范围、已确认授权；登记工作区与源码子仓；已有Task及下一实际职责。
+可复用依据：已确认结论 + 精确来源/稳定文档标识 + 实际已读范围/必要片段；来源适用项目与页面/仓库。
+当前观察：实际核对过的源码/版本及其时点；搜索摘要、正文、读取失败/截断分别说明。
+接续缺口：尚未核实或已变化的部分、必要源码复核点、未验项与停止条件。
+```
+
+已有上下文有效时，接收者从已定位处继续；资料／相关源码变更、事实冲突、未知适用性或本职责必要检查才定向补验。交接保留影响完成判定的独立目标、例外及停止约束；来源未覆盖的验收口径明示待核，不用摘要中的概括性“达标”代替各项已知要求。版本／hash 只引用实际观察值，未采集不补造；复制结论不变成新的授权，旧任务许可不自动转给新工作。为了独立核验重读必要原件与无变化重做同一定位要分别说明，不能把全部源码跟进都计为浪费。
+
+正式 Work spec 使用现有 `scope/scope_refs`，结果使用 `summary/evidence_refs/limitations`；不要向严格载荷加 `context` 或 `context_usage` 字段。实际工作段交接仍按既有 `work end --reason handed_off --expected-next <实际下一责任>` 契约执行；本节不是新增 Work 或阶段的要求。
+
+实际采用导航／规则时，随本来要做的 checkpoint／review／verify 记录既有 `context_usage`：真实 `source_type/asset_id/stage/outcome/confidence/source_followup/evidence`，有现成回执时才用 `receipt_id/query_hash`。仅命中／读取不自动 adopted，搜索片段可按其实际范围采用；版本等信息留原读取结果／材料，不加规范化器不支持的字段。无回执、采集关闭、未记录和读取失败分别保留，普通文件读取不冒充正式检索采集。详细口径复用 [Wiki 使用说明](../WIKI_USAGE.md) 与 [Knowledge 使用说明](../KNOWLEDGE_USAGE.md)。
+
 ## 工作段、里程碑与运行状态
 
 已评估的具体执行计划、独立协调责任、步骤边界与角色参与，按需读 [执行事实契约](../EXECUTION_FACTS.md)。`work show`、报告、路由上下文与工作台共用正式事件，不另建手写角色日志。
@@ -294,7 +325,23 @@ tp-spec projection rebuild --task <TASK> --task-dir <TASK_DIR> --db <DB> --view-
 
 此命令不新增业务事件。`status.yaml`、`events.jsonl`、必要证据和结单封存仍受原有事务/恢复约束；数据库失败、账本损坏或必要投影失败不按派生物容错。重放原请求不会偷偷刷新视图。
 
-正常 CLI 自动将分段诊断写入用户级 `diagnostics/cli/`；通过以下只读入口查询，不需要打开工作台：
+### CLI 诊断控制
+
+正常 CLI 自动将分段诊断写入用户级 `diagnostics/cli/`。需要进程不持久化诊断时，设置环境变量 `TP_SPEC_DIAGNOSTICS=off`；关闭时不构造保存回执、不创建/替换文件，也不裁剪旧回执。未设置或其他值保持默认开启；值忽略首尾空白和大小写。调用上下文、命令返回码与异常语义保持原样。此控制独立于 Wiki/Knowledge 的 `--no-telemetry`，严格只读检索验证须同时使用两者；它不把写命令变成只读命令。
+
+PowerShell 单次验证可在 `try/finally` 中保存并恢复原进程变量，避免影响后续正常诊断：
+
+```powershell
+$previousDiagnostics = $env:TP_SPEC_DIAGNOSTICS
+try {
+    $env:TP_SPEC_DIAGNOSTICS = 'off'
+    tp-spec knowledge search --workspace-root <workspace> --query "需要查询的问题" --no-telemetry
+} finally {
+    $env:TP_SPEC_DIAGNOSTICS = $previousDiagnostics
+}
+```
+
+已保留的诊断仍可通过以下只读入口查询，不需要打开工作台；查询命令自身默认也生成诊断，严格只读时使用上述环境变量：
 
 ```text
 tp-spec report timings --task <TASK> --limit 20 --json

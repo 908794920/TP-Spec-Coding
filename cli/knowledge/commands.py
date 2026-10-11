@@ -126,7 +126,11 @@ def _call_context(args):
 
 def _usage_error(schema, exc):
     code = exc.code if isinstance(exc, KnowledgeError) else "KNOWLEDGE_OPERATION_FAILED"
-    _emit({"schema": schema, "status": "FAIL", "error": code, **getattr(exc, "collection", {})})
+    result = {"schema": schema, "status": "FAIL", "error": code, **getattr(exc, "collection", {})}
+    if code == "KNOWLEDGE_INVALID_DOCUMENT_ID":
+        result["hint"] = ("Use search results[].read_document_id (or document_key/key) as --document-id; "
+                          "id/canonical_id/source_id are business identifiers. Search within the same project/scope to obtain the stable key.")
+    _emit(result)
     return 1
 
 
@@ -539,7 +543,8 @@ def add_knowledge_subparsers(root_subparsers) -> None:
     p.set_defaults(func=cmd_search)
     p = sub.add_parser("read", help="Registered Knowledge body preview, explicit lines or full text")
     _common(p); usage_options(p)
-    p.add_argument("--document-id", required=True)
+    p.add_argument("--document-id", required=True,
+                   help="stable knowledge: key from search results[].read_document_id (document_key/key also supported); not id/canonical_id/source_id")
     p.add_argument("--start-line", type=int); p.add_argument("--end-line", type=int)
     p.add_argument("--full", action="store_true", help="mutually exclusive with line range arguments")
     p.set_defaults(func=cmd_read)
