@@ -12,6 +12,8 @@
 
 不新增表、物理migration、公共状态或用户必填角色账本。新Task没有显式计划时仍为 `plan=None / plan_version=0 / status=NOT_RECORDED`，但coordinator及 `coordinator_source={kind: task_create, event_id, schema}` 可查询；该status只表示计划未记录，不表示没有协调责任。轻量Work Session和未采用结果契约的WorkItem无需因此强制建计划。
 
+用户明确指定新 AI 续接时，可通过 [用户接管入口](WORK_UNITS.md#用户指定新-ai-续接) 同事务记录所选协调责任、Work 所有者与旧参与责任的撤换；无显式计划也可使用，不为接班强制创建计划。旧 creation、plan、START 和结果保留，当前身份由正式接管事件投影。普通 END 仍匹配原执行者；用户撤换责任走接管事实，无需旧会话批准或补 END。接管关闭责任不证明旧进程停止，也不推断其实际工作时长。
+
 新Task首次 `work plan` 可省coordinator并继承创建值；显式填写须保持已知角色/非空agent，原未知agent可按真实上下文补录。有效计划的来源为 `kind: execution_plan` 及该计划事件。已有计划通过原expected_version规则修订未来职责/接班，不回写创建事实或已开始步骤。旧无创建marker任务保持原owner解释，首次计划仍需显式coordinator；旧生命周期coordinator记录继续有效，不按5.3.8版本号追补采用或改历史actor。
 
 ## 评估后登记计划

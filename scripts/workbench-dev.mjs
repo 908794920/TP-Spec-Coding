@@ -9,10 +9,10 @@ import { fileURLToPath } from 'node:url';
 
 const root = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
 const args = process.argv.slice(2);
-const options = { port: 5173, apiPort: 0 };
+const options = { port: 15173, apiPort: 0 };
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--help' || args[i] === '-h') {
-    console.log('npm run dev -- [--port 5173] [--api-port 0]\nTP_SPEC_PYTHON: Python executable (a path, not a shell command). Ctrl+C stops both services.');
+    console.log('npm run dev -- [--port 15173] [--api-port 0]\n前端从指定端口开始递增寻找可用端口。\nTP_SPEC_PYTHON: Python executable (a path, not a shell command). Ctrl+C stops both services.');
     process.exit(0);
   }
   const name = args[i] === '--port' ? 'port' : args[i] === '--api-port' ? 'apiPort' : '';
@@ -134,14 +134,28 @@ async function start() {
   if (!response.ok || health.instance_id !== instance || realpathSync(health.source_root) !== root || !health.read_only)
     throw new Error('Python 健康检查未确认本次只读实例。');
   if (closing) return;
-  vite = await createServer({ configFile: join(root, 'ui', 'workbench', 'vite.config.ts'),
-    server: { host: '127.0.0.1', port: options.port, strictPort: true, proxy: { '/api': { target } } } });
+  let candidate = options.port;
+  while (!closing) {
+    vite = await createServer({ configFile: join(root, 'ui', 'workbench', 'vite.config.ts'),
+      server: { host: '127.0.0.1', port: candidate, strictPort: false, proxy: { '/api': { target } } } });
+    if (closing) { await vite.close(); return; }
+    try { await vite.listen(); break; }
+    catch (error) {
+      await vite.close();
+      vite = undefined;
+      if (closing) return;
+      // 占用端口由 Vite 递增；这里只补 Windows 保留端口等真实监听拒绝。
+      if (error.code !== 'EACCES' || error.syscall !== 'listen' || !Number.isInteger(error.port) || error.port < candidate) throw error;
+      if (error.port >= 65535) throw new Error(`从 ${options.port} 到 65535 没有可用的前端端口。`);
+      candidate = error.port + 1;
+      console.warn(`端口 ${error.port} 被系统拒绝监听，尝试 ${candidate}。`);
+    }
+  }
   if (closing) { await vite.close(); return; }
-  vite.httpServer?.once('error', error => { if (!closing) { console.error(`前端服务错误：${error.message}`); void shutdown(1); } });
-  await vite.listen();
-  if (closing) { await vite.close(); return; }
-  process.send?.({ event: 'ready', port: options.port, instance, root });
-  console.log(`TP-Spec 工作台：http://127.0.0.1:${options.port}\n源码：${root}\nPython API：${target}（PID ${child.pid}）\nCtrl+C 关闭本次两端服务。`);
+  const actualPort = vite.httpServer.address().port;
+  vite.httpServer.once('error', error => { if (!closing) { console.error(`前端服务错误：${error.message}`); void shutdown(1); } });
+  process.send?.({ event: 'ready', port: actualPort, instance, root });
+  console.log(`TP-Spec 工作台：http://127.0.0.1:${actualPort}\n源码：${root}\nPython API：${target}（PID ${child.pid}）\nCtrl+C 关闭本次两端服务。`);
 }
 start().catch(async error => {
   if (!closing) { console.error(`工作台启动失败：${error.message}`); await shutdown(1); }

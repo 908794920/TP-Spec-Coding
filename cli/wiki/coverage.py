@@ -233,6 +233,8 @@ def compute_wiki_coverage(
             if old is None or str(dep.get("role") or "") in {"primary", "context"}:
                 dep_by_file[rel] = dep
 
+        source_view(repo_root, source_cfg).preload_blobs(dep_by_file)
+
         for rel, dep in dep_by_file.items():
             trusted, state = _trusted_dependency(repo_root, rel, dep, source_cfg, fp_cache)
             if not trusted:

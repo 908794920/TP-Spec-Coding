@@ -999,6 +999,9 @@ def _delivery_fact_pack(task: Dict[str, Any], events: List[Dict[str, Any]], cont
     return {
         "mode": "FAST_PATH",
         "max_incremental_ai_overhead_percent": (contract or load_contract())["execution"]["delivery_fast_path"]["max_incremental_ai_overhead_percent"],
+        "overhead_budget_status": "NOT_MEASURED",
+        "overhead_budget_note": "Engineering target; CLI timings/output bytes do not measure incremental AI cost or establish a baseline.",
+        "preflight_command": "task complete --check --compact",
         "task": {
             "task_id": task.get("task_id"),
             "risk_level": task.get("risk_level"),

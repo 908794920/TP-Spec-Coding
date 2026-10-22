@@ -25,11 +25,11 @@ page_verification:
     routes: []
     reference_assets: []
     required_states: [] # normal / loading / empty / error / long-text
-    evidence_manifest: "" # required=true 时填写 evidence/visual/manifest.json
+    evidence_manifest: "" # 机器视觉验证填写 evidence/visual/manifest.json；可信 Owner 替代路径见下文
 ```
 
 `mode: human` 时，见证等级为 human 的验收项在 `human_witness: confirmed` 前不得 `PASS`；
-需要记录真实 Owner 人验时，human_owner 可通过官方 `task acceptance-override --mode accept --scope visual --ac AC-XX`（或不带 `--scope visual` 的人工范围）留证；`accept` 只覆盖选定且当前绑定的 AC。需要带风险结单时，human_owner 仍可通过 `task acceptance-override --mode defer|waive` 将人工项记为 `DEFERRED_ACCEPTED` 或 `OWNER_WAIVED`；不得由 AI 自行改写。
+需要记录真实 Owner 人验时，human_owner 可通过官方 `task acceptance-override --mode accept --scope visual --ac AC-XX`（或不带 `--scope visual` 的人工范围）留证；`accept` 只覆盖选定且当前绑定的 AC。视觉范围传入 `--ac` 时只登记显式选择的项；不传时选择该范围内所有待人验项。可以分次登记，但完整视觉门禁仍要求可信回执覆盖全部声明的视觉 AC。需要带风险结单时，human_owner 仍可通过 `task acceptance-override --mode defer|waive` 将人工项记为 `DEFERRED_ACCEPTED` 或 `OWNER_WAIVED`；不得由 AI 自行改写。
 
 `visual.acceptance_refs` 可选；填写时只能引用本表已有的 AC。要使用 Owner 视觉处置时必须填写非空的 `acceptance_refs`；缺少范围不扩大旧决定。`visual.required: true` 时，Verification PASS 通常必须提供绑定当前 `change_set_id` 的真实 Visual Manifest；若可信的 Owner `accept` 已覆盖声明的视觉 AC 范围，则不会生成或伪造 Visual Manifest，不解除其他 blocker。静态 DOM/CSS/源码结构契约不能单独满足视觉 AC。Visual Evidence 统一放在 `evidence/visual/`，可通过 `task artifact-path --kind visual-evidence --ensure` 获取规范目录。
 

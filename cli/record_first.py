@@ -645,11 +645,11 @@ def _latest_verification(conn, task_id: str, task_dir: Optional[Path] = None) ->
     return {"decision": "NOT_RECORDED", "recorded_decision": "NOT_RECORDED", "time": "", "summary": ""}
 
 
-def _prepare_ac_results(task_dir: Path, values: List[Dict[str, Any]], decision: str):
+def _prepare_ac_results(task_dir: Path, values: List[Dict[str, Any]], decision: str, *, conn=None, task_id: str = ""):
     """Update only explicitly selected technical result cells; retain all criteria."""
     import re
     from .task_cmd import _acceptance_table_rows
-    from .yaml_checks import check_acceptance_yaml
+    from .yaml_checks import check_acceptance_with_owner
     from .evidence import validate_evidence_path
     path = task_dir / "acceptance.md"
     if not path.is_file():
@@ -666,8 +666,8 @@ def _prepare_ac_results(task_dir: Path, values: List[Dict[str, Any]], decision: 
         if not isinstance(ac, str) or ac not in rows or declared.count(ac) != 1 or ac in seen:
             raise ValueError("AC_RESULT_INVALID: unknown or duplicate acceptance ID")
         row = rows[ac]
-        if row["witness"] != "technical" or row["verdict"] in {"DEFERRED_ACCEPTED", "OWNER_WAIVED"}:
-            raise ValueError("AC_RESULT_INVALID: only declared technical rows without owner dispositions may be updated")
+        if row["witness"] not in {"technical", "verification"} or row["verdict"] in {"DEFERRED_ACCEPTED", "OWNER_WAIVED"}:
+            raise ValueError("AC_RESULT_INVALID: only declared technical/verification rows without owner dispositions may be updated")
         if verdict not in ("PASS", "PENDING", "BLOCKED") or (decision == "PASS" and verdict != "PASS"):
             raise ValueError("AC_RESULT_INVALID: use PASS/PENDING/BLOCKED; verification PASS cannot declare pending or blocked results")
         checked = validate_evidence_path(task_dir, value["evidence"], require_evidence_dir=True)
@@ -683,7 +683,10 @@ def _prepare_ac_results(task_dir: Path, values: List[Dict[str, Any]], decision: 
         items.append(item)
         seen.add(ac)
     updated = "\n".join(lines) + ("\n" if text.endswith(("\n", "\r\n")) else "")
-    checked = check_acceptance_yaml(updated, enforce_completion=False, allow_human_pending=True)
+    checked = check_acceptance_with_owner(
+        updated, conn=conn, task_id=task_id, task_dir=task_dir,
+        enforce_completion=False, allow_human_pending=True,
+    )
     if not checked.ok:
         raise ValueError("AC_RESULT_INVALID: " + "; ".join(checked.issues))
     return updated, results, items
@@ -759,7 +762,9 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         acceptance_before = transaction_commit._sha256_file(acceptance_path)
         updated_acceptance, accepted_results = None, []
         if ac_results:
-            updated_acceptance, accepted_results, ac_items = _prepare_ac_results(tdir, ac_results, decision0)
+            updated_acceptance, accepted_results, ac_items = _prepare_ac_results(
+                tdir, ac_results, decision0, conn=conn, task_id=task_id,
+            )
             for item in ac_items:
                 if item not in items:
                     items.append(item)
@@ -802,8 +807,9 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
             acceptance_path = tdir / "acceptance.md"
             if scope == "full" and acceptance_path.is_file():
                 from . import yaml_checks, artifact_validation
-                acceptance = yaml_checks.check_acceptance_yaml(
+                acceptance = yaml_checks.check_acceptance_with_owner(
                     updated_acceptance if updated_acceptance is not None else acceptance_path.read_text(encoding="utf-8-sig"),
+                    conn=conn, task_id=task_id, task_dir=tdir,
                     enforce_completion=False,
                     allow_human_pending=True,
                     require_visual_evidence=True,
@@ -1078,8 +1084,9 @@ def validate_final_acceptance(conn, task_id: str, task_dir: Path) -> None:
         raise ValueError("INTEGRITY_ACCEPTANCE: acceptance.md is missing")
     if path.is_file():
         from . import yaml_checks
-        checked = yaml_checks.check_acceptance_yaml(
+        checked = yaml_checks.check_acceptance_with_owner(
             path.read_text(encoding="utf-8-sig"),
+            conn=conn, task_id=task_id, task_dir=task_dir,
             enforce_completion=True, allow_human_pending=False,
         )
         if not checked.ok:

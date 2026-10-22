@@ -16,6 +16,27 @@ from . import delivery_contract, event_policies, orchestration, record_first
 SCHEMA = "tp-spec.closeout/v1"
 
 
+def compact(result: dict[str, Any]) -> dict[str, Any]:
+    """Project a completed preflight; never omit a check, blocker or unknown."""
+    value = dict(result)
+    value["detail_mode"] = "COMPACT"
+    value["detail_note"] = "All checks executed; nested facts/route context are available without --compact."
+    value["checks"] = []
+    for row in result["checks"]:
+        facts = row.get("facts") or {}
+        omitted = [key for key, item in facts.items() if isinstance(item, (dict, list))]
+        value["checks"].append({**row,
+            "facts": {key: item for key, item in facts.items() if key not in omitted},
+            "detail_fields": omitted})
+    route = result.get("route")
+    if isinstance(route, dict):
+        value["route"] = {key: route[key] for key in (
+            "next_stage", "recommended_action", "reason_codes", "blocker", "role_id",
+            "next_responsibility", "workflow_mode", "effective_level", "included_stages",
+        ) if key in route}
+    return value
+
+
 def terminal_result(conn, task) -> dict[str, Any]:
     state = str(task["current_state"])
     row = conn.execute(
@@ -134,13 +155,16 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
     acceptance = None
     def acceptance_check():
         nonlocal acceptance
-        from .yaml_checks import check_acceptance_yaml
+        from .yaml_checks import check_acceptance_with_owner
         path = task_dir / "acceptance.md"
         if not path.is_file():
             if quick:
                 return na('quick未登记额外AC；保留真实验证及未实测说明')
             raise ValueError("ACCEPTANCE_MISSING: explicit AC or no_acceptance_required declaration is needed")
-        acceptance = check_acceptance_yaml(path.read_text(encoding="utf-8-sig"), enforce_completion=True, allow_human_pending=False)
+        acceptance = check_acceptance_with_owner(
+            path.read_text(encoding="utf-8-sig"), conn=conn, task_id=task_id, task_dir=task_dir,
+            enforce_completion=True, allow_human_pending=False,
+        )
         issues = list(acceptance.issues)
         issues.extend(record_first.acceptance_truth_issues(conn, task_id, task_dir))
         result["acceptance_issues"] = list(dict.fromkeys(issues))

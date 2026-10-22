@@ -6,6 +6,34 @@
 
 主协调者与执行者分开：专业执行者认领并提交实际结果；项目经理 `tp-project-manager` 承担已记录的 coordinator 责任时登记范围、精确接收，再 record-only 登记集成候选。集成工程师 `tp-integration-engineer` 负责获准的实际 apply、冲突处置和专业结果提交。角色字符串、agent 标识和工作区路径只校验记录一致性，不认证人工身份、不证明进程在线或宿主强隔离。真实执行仍遵守 Task 授权、宿主工具权限与 [Security Change Authority](security-change-authority.md)。这些命令不运行测试、启动 Agent、应用 Patch、commit、merge、push、删除工作区或关闭父 Task。
 
+## 用户指定新 AI 续接
+
+用户明确指定新的 AI／会话接续时，由接续者记录这次真实用户指令并执行 `work takeover`，不要求旧会话批准、在线、补 `end/release`，也不为此恢复或唤醒旧归档会话。已有 `ACTIVE` 和未结束参与只表示登记责任，不证明旧执行者仍在运行。
+
+先读 `work show`，用当前事件快照准备接管载荷。下例的事件 ID、Work ID、参与 ID 和新 agent 均须替换为现场事实；输入由 AI 根据已收到的用户指令整理，不增加一次人工批准。
+
+```json
+{
+  "expected_event_id": 123,
+  "expected_work_snapshot_digest": "从 work show 读取的当前 Work 责任快照 SHA256",
+  "coordinator": {"role": "tp-project-manager", "agent": "NEW-CHAT"},
+  "work_items": [
+    {"id": "TASK-ID-W01", "role": "tp-development-engineer", "agent": "NEW-CHAT"}
+  ],
+  "sessions": ["WORK-EXACT-OLD-SESSION-ID"]
+}
+```
+
+```text
+tp-spec work takeover --task TASK-ID --file takeover.json --actor human_owner --source "用户实际指定该会话续接的指令" --source-ref "该指令所在会话或消息引用" --request-id TAKEOVER-REQUEST-ID --db RUNTIME-DB
+```
+
+`coordinator`、`work_items`、`sessions` 按实际授权选择；未选择的责任保持。载荷只转移选定 ACTIVE Work 和关闭选定旧参与的责任，不重写旧 START、结果、attempt、接收或已完成步骤。接管事件由 `human_owner` 记录，原执行者作为被撤换的历史责任保留，不冒充旧 AI 的 END。新 AI 真正开始工作时按原入口记自己的参与。
+
+写锁内检查当前事件快照，并原子写接管事实及责任行；同 request-id、同载荷重试返回原回执，改变语义须新 request-id。现场记录已变化时重新读取后整理载荷，不向旧会话申请许可。
+
+这次来源只说明本次明确用户决定，本地字符串不认证人工身份，也不赋予 AI 以后自行接管任意 Task 的权力。普通 `claim/end/release` 保持原规则。其他未选 ACTIVE Work 的共享路径或串行占用、依赖、授权与结果证据继续按原契约检查。接管不停止旧进程；旧进程绕开 Runtime 直接写文件的冲突仍需实际工作区隔离或人工处置。
+
 ## 登记范围与依赖
 
 下例是输入结构，不是实际需求、授权或已发生事实。先有父 Task、有效执行计划和真实来源文件；路径均为项目相对路径，Task ID / Work ID / 步骤需替换为现场真实值。`ACTUAL-COORDINATOR-AGENT` 必须替换为已记录的真实协调者标识；创建时未记录agent则保持空字符串，不合成 main-agent。新Task默认项目经理；旧显式计划真实记录的生命周期等协调身份仍有效，命令必须按该记录传参，不因示例改名迁移历史。
@@ -102,6 +130,8 @@ tp-spec work step --task TASK-ID --step TEST --plan-version 1 --action resume --
 ```
 
 候选读取父 Task 全部已登记 Git 仓库，绑定当前代码 Change Set、当前需求/AC Subject、精确结果及接收事件、集成证据和冲突处置。create/receive/candidate仍要求匹配已记录coordinator的角色与已知agent；集成工程师不能仅凭专业角色冒用candidate权限。沿用既有 Task Change Set 契约；没有有效仓库基线时明确报告，不自动初始化 Git，也不把非 Git 原型快照冒充正式 Git 集成验收。Work 本身可以从实际目录给出文件 snapshot，最终交付应遵守该 Task 原本适用的主体契约。
+
+新候选明确记录 `subject_scope=technical`，复用既有标准主体摘要：所有需求、AC 标准/方法/见证与数据库声明仍受保护，仅技术结果格的后续写回不让产品候选重复过期。代码 Change Set、精确 Work 结果/接收、集成证据和协调身份仍独立核验。旧候选缺少标记时保持原 `full` 绑定，不自动转换；未知标记不可信。最终 full Verify/Review 仍绑定技术结果格和实际证据，不因候选保持有效就视为验收通过。
 
 不同 Work 提交同一目标文件但输出不同时，或目标文件与接收结果不一致时，要求明确 `resolutions` 条目：`path`、`owner`（贡献该输出的 Work ID）、`reason`、`evidence_refs`；多仓库另有 `repo_root`。记录真实冲突处置和最终文件，不自动挑“最后一次”结果，也不覆盖产品文件。未知目标仓库拒绝，不借候选扩大父仓库集合。
 

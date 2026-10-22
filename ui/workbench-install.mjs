@@ -169,7 +169,7 @@ async function main() {
     await run(`"${python}" -m pip install -r requirements.txt`, 'pip install');
   }
   console.log('');
-  console.log('下一步：ui\\start.cmd 启动工作台（默认 http://127.0.0.1:5173 ）。');
+  console.log('下一步：ui\\start.cmd 启动工作台（默认从 http://127.0.0.1:15173 开始，实际地址见启动输出）。');
   if (!options.python && existsSync(requirementsPath)) {
     console.log('Python 依赖未改动；如需一并准备：ui\\install.cmd --python');
   }

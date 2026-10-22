@@ -16,6 +16,8 @@ description: 唯一软件工程 Domain Agent；基于 L0~L3、风险、phase、�
 主 Agent 在统筹时承担 [项目经理](../../skills/roles/tp-project-manager/SKILL.md) 责任，不新建常驻委派层；本领域保留路由和生命周期契约，不代理专业角色产出或签发结论。
 
 ## 两段生命周期
+生命周期是能力上限，不要求每次修改建立 Task。目标和范围明确的普通局部修改直接定位、修改、做必要验证并说明结果；不为调用能力、检查、日志或收尾创建任务与固定角色链。已有 Task 范围内的返修继续原 Task。用户要求任务记录、项目明确要求 Task，或实际需要持续跟踪与协作交付时，再进入下面的正式任务路径；直接处理仍遵守实际授权、项目约束和必要验证。
+
 - Definition Lifecycle：Raw Request → Product/Requirement → Architecture/Planning（按需）→ Requirement Ready。
 - Task Delivery：Task → Architecture/Planning（按需）→ Development → Verification → Review（按风险/等级）→ Delivery/Integration → Complete。
 
@@ -39,7 +41,7 @@ quick 允许实际连续执行者如实记录适用的技术自测和交付，�
 外部 AI 已完成实现或用户明确说明代码已由其他开发者完成时，默认把现有工作区固定为 Development subject，随后调度 Test Engineer + Code Reviewer，二者 `effects=[]`。Codex/当前 Agent 不因为“还能优化”自动重新进入 Development；只有独立 Test/Review 产生确定 Finding 后，才在父 Task 下交开发处理相应 Fix Work；父步骤等待并在原处复验，修改只限 Finding 覆盖内容，不抹去原完成历史。
 
 ## Runtime
-Requirement Ready 后才创建正式 Task；存在 pre-task canonical requirement/intake artifact 时优先使用 `task create --from-intake <DIR>` 接入，不为了账本提前建 Task。
+已确定需要正式任务记录时，在 Requirement Ready 后创建 Task；存在 pre-task canonical requirement/intake artifact 时优先使用 `task create --from-intake <DIR>` 接入，不为了账本提前建 Task，也不把每个局部问题拆成新的标准 Task。
 
 只通过既有 `workflow next/confirm`、`task checkpoint/block/resume/verify/complete`、delivery/knowledge 原子 CLI 留下必要事实。phase 是事实，不是收费站；Role/Skill 不新增 public state。
 
@@ -53,7 +55,7 @@ Knowledge 不增加 lifecycle stage：standard 的新 READY Delivery 按适用�
 未运行/等待与真实 Finding 分开：用 `block --kind human_acceptance|permission|environment|dependency` 记录条件、下一责任和已声明依赖；恢复通过 `resume --resolution-evidence` 或真实依赖完成校验，前置未变不重复必失败操作。用户返修反馈不是验收 PASS，局部修复留在原 Task，不为补齐空阶段新建任务或默认全量业务回归。`view_status: PENDING` 只重建派生视图，不重跑已提交业务；必要事实/证据/权限门禁不得放宽。
 
 ## Task / Work 协调
-一个独立需求对应父 Task，Wxx/FIXxx 是其 Work。技术主管负责工程计划与 Work 拆解；主 Agent 作为项目经理综合专业安排、依赖/隔离、阻塞和精确结果接收，不重复两套计划。集成交付工程师在已获准范围实际 apply、处理冲突并提交专业结果；项目经理接收后由已记录 coordinator 登记 record-only candidate。候选权限不默认授予集成角色，接收也不冒充亲自集成。
+本节仅适用于已确定需要正式任务跟踪的工作：一个独立需求对应一个父 Task，同范围返修继续原 Task，Wxx/FIXxx 是按需拆分的 Work；普通局部修改不因这条对应关系创建 Task。standard 按适用义务由技术主管负责工程计划与 Work 拆解，主 Agent 作为项目经理综合专业安排、依赖/隔离、阻塞和精确结果接收，不重复两套计划；quick 不强制 Work 或固定角色链。确需正式集成时，集成交付工程师在已获准范围实际 apply、处理冲突并提交专业结果；项目经理接收后由已记录 coordinator 登记 record-only candidate。候选权限不默认授予集成角色，接收也不冒充亲自集成。
 
 协调责任、实际专业参与者与下一责任分别表达；历史 owner/actor 不因岗位增加重写，角色不是 Agent 进程。复杂拆分按 [任务拆解](../../skills/capabilities/task-decomposition/SKILL.md)，不造第二账本或消息总线；快照/Patch 是合法结果，commit/merge/push/删除仍依当次授权。
 
@@ -70,6 +72,8 @@ Work 提交、精确接收、候选、步骤完成、专业 PASS、业务验收�
 
 ## 工作段与临时工件
 工作段用于有意义的执行/暂停边界，不逐工具 start/end。ACTIVE、未闭合 START 和角色名均不证明进程存活或独立 Agent；未知保持待诊断，不补造时间，不自动修历史或杀进程。只在已知中断、原 task/role/agent 与 ownership/授权成立时收口，不冒充执行者；终态/退休任务不得新开工作段。
+
+用户明确指定新 AI／会话续接时，使用 [用户接管](../../docs/WORK_UNITS.md#用户指定新-ai-续接) 正式记录本次指令并撤换选定责任；不要求旧会话 end/release、批准或在线，不为补陈旧记录恢复或唤醒旧归档会话。普通结束规则不变，接管由 human_owner 事实保留历史、新责任与并发边界，不扩大为 AI 自行抢占权限。
 
 临时诊断使用登记的系统 Temp；业务项目已获准保留的回归、原始文件和 Evidence 不是清理对象。基座自身的临时用例按本仓验证策略结束后清理。残留检查只报告，不得自动删除未托管路径；`CLEANUP_PENDING` 不新增 public state，不逆改已提交事实，必要验收仍检查清理证据。
 
@@ -91,5 +95,7 @@ Work 提交、精确接收、候选、步骤完成、专业 PASS、业务验收�
 
 
 ### 紧凑接续与终态导航
+
+standard 收尾先使用 `task complete --check --compact` 一次核对全部已登记检查、阻塞、未知项及下一责任；需要具体 facts 时才去掉紧凑选项。先稳定获批范围、AC 口径与处置，再绑定和复用实际专业结论；预检不产生 PASS、验收或发布授权。Knowledge 从 `task-inputs --compact` 导航，完整来源只按需读取，沿既有 Request/Result 和依赖指纹复用。交付开销百分比没有 AI 基线时为 `NOT_MEASURED`，不能把 CLI 计时或紧凑输出当作已实现的提效比例；执行方法见 [交付收敛](../../skills/capabilities/delivery-convergence/SKILL.md)。
 
 生成接续/结项摘要只呈现 Runtime 事实与引用，不重复展开需求当前区。先读状态、步骤/角色与派生视图新鲜度，再按引用读有效范围；不要从旧 ACTIVE、最后 actor 或历史备注恢复待办。使用 `projection inspect --task TASK-ID --task-dir <目录>` 可只读核对归档，无需 Runtime DB；有 DB 时显式加 `--db`，仍不写入。终态不重建原材料，不强制补新义务；处理路径见 [任务视图契约](../../docs/TASK_VIEWS.md)。

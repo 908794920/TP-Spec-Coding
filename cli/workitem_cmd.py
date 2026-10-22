@@ -165,6 +165,8 @@ def cmd_workitem_complete(args) -> int:
         units.require_dependencies(conn, args.task, item)
         check_work(conn, args.task, args.id)
         event_id = None
+        if not unit and args.id in units.read(conn, args.task)["legacy_takeovers"]:
+            _owner(item, args)
         if unit:
             _owner(item, args)
             if not args.result:
@@ -193,6 +195,8 @@ def cmd_workitem_release(args) -> int:
         unit = units.read(conn, args.task)["units"].get(args.id)
         if item["status"] != "ACTIVE":
             raise ValueError("WORK_NOT_ACTIVE: only a claimed Work can be released")
+        if not unit and args.id in units.read(conn, args.task)["legacy_takeovers"]:
+            _owner(item, args)
         if unit:
             _owner(item, args)
             units.require_closed_sessions(conn, task, args.id)

@@ -16,6 +16,8 @@ tp-spec wiki read --workspace-root <工作区> --document-id "wiki:项目ID/仓�
 tp-spec wiki read --workspace-root <工作区> --document-id "wiki:项目ID/仓库ID/相对文档路径" --full
 ```
 
+已有索引可用 `tp-spec wiki index update --catalog-only --workspace-root <工作区>` 仅准备或刷新首次读取所用的清单解析缓存；不会重建文档/全文索引、推进索引基线或增加检索记录。缓存放在现有 SQLite 元信息内，绑定清单原始字节 SHA 和缓存元信息 SHA；页面只读使用它，清单变化、缓存缺失/损坏或特殊值均回到原有完整 YAML 解析。文档正文与文件状态仍实时读取，原索引过期判断保留；正常显式索引构建/更新也会同步这一可选缓存。
+
 搜索默认只在当前 Wiki 项目中进行；跨项目须显式选择全局范围。结果包含稳定文档 ID、匹配片段、版本及回执。已知文档直接读取不必先搜索。索引构建与更新是显式维护操作，页面不会创建索引；成功完成的 Wiki 维护接续更新索引。缺失、过期或无法读取时保留真实状态。
 
 CLI 搜索默认 5 条候选，每条摘要最多 200 个字符；确有需要时显式 `--limit` 扩大到最多 20 条。索引详细诊断使用 `wiki index status`，不自动扩大检索范围或翻页。

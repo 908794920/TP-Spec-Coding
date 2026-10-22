@@ -1,7 +1,7 @@
 // Local Windows entrypoint; source paths are resolved from this file, never machine constants.
 import { fork, spawn } from 'node:child_process';
 import { createServer, createConnection } from 'node:net';
-import { mkdir, readFile, writeFile, unlink, open } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, unlink, open } from 'node:fs/promises';
 import { realpathSync, openSync, closeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +13,7 @@ const statePath = join(directory, 'manager.json');
 const lockPath = join(directory, 'manager.lock');
 const pipe = `\\\\.\\pipe\\tp-spec-workbench-${createHash('sha256').update(root.toLowerCase()).digest('hex').slice(0, 24)}`;
 const action = process.argv[2];
-const port = Number(process.env.TP_SPEC_WORKBENCH_PORT || 5173);
+const port = Number(process.env.TP_SPEC_WORKBENCH_PORT || 15173);
 if (process.platform !== 'win32' || !['start', 'restart', 'stop', '--serve'].includes(action) || !Number.isInteger(port) || port < 1 || port > 65535) {
   console.error('Usage on Windows: node ui/workbench-manager.mjs start|restart|stop');
   process.exit(1);
@@ -54,9 +54,20 @@ async function current() {
   }
 }
 
+async function saveState(state) {
+  const pending = `${statePath}.tmp`;
+  try {
+    await writeFile(pending, JSON.stringify(state), { mode: 0o600 });
+    await rename(pending, statePath);
+  } finally {
+    try { await unlink(pending); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+}
+
 async function serve() {
   const token = randomUUID();
   let child, ready = false, stopping = false;
+  let stateWrite = Promise.resolve();
   const state = { root, token, port, pid: process.pid };
   const server = createServer(socket => {
     let buffer = '';
@@ -78,15 +89,25 @@ async function serve() {
     });
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(pipe, resolve); });
-  await writeFile(statePath, JSON.stringify(state), { mode: 0o600 });
+  await saveState(state);
   child = fork(join(root, 'scripts', 'workbench-dev.mjs'), ['--port', String(port)], {
     cwd: root, windowsHide: true, stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
   });
   child.on('message', message => {
-    if (message?.event === 'ready' && message.root === root && message.port === port) { state.instance = message.instance; ready = true; }
+    if (stopping || ready || message?.event !== 'ready' || message.root !== root ||
+        !Number.isInteger(message.port) || message.port < port || message.port > 65535 || typeof message.instance !== 'string') return;
+    state.port = message.port;
+    state.instance = message.instance;
+    // 先持久化实际端口，再报告就绪；退出时等待这次写入，避免复活旧记录。
+    stateWrite = saveState(state).then(() => { if (!stopping) ready = true; }).catch(error => {
+      console.error(`实例记录更新失败：${error.message}`);
+      stopping = true;
+      if (child.connected) child.send({ action: 'stop' });
+    });
   });
   child.on('error', error => console.error(error.message));
   child.on('exit', async code => {
+    await stateWrite;
     try { await unlink(statePath); } catch (error) { if (error.code !== 'ENOENT') console.error(error.message); }
     server.close(() => process.exit(code || 0));
   });

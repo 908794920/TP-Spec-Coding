@@ -21,6 +21,7 @@ optional_fields:
     repo_prefix: repository-relative subtree prefix; no machine absolute path
   source_policy_digest: source selection and fingerprint rules
   maintenance_digest: merged maintenance config and relevant implementation/rules
+  maintenance_components: "format=1; configs maps source/snapshot/quality/coverage to canonical JSON SHA256; rules maps every maintenance rule path to its byte SHA256"
   scan_mode: GIT_INVENTORY or COMMIT_DIFF or FILESYSTEM_HASH
   completion:
     status: SUCCESS or UNVERIFIED
@@ -29,6 +30,7 @@ optional_fields:
     subject_digest: durable Wiki subject
     verification: retained verification result/time/subject/audit requirement
     audit: retained audit result/time/source/subject/documents/topology, summary, audit_scope, deterministic audit_plan and its digest, supplied representative claims, and evidence limitations
+    semantic_reuse: "prior baseline identity/completion, original audit or null with LEGACY_L4_NOT_RECORDED limitations, exact policy-review proof and narrowly normalized content identity; never a new L4 PASS"
     affected_documents: Wiki pages selected by the final plan
 optional_git_file_fields: [git_blob, git_mode]
 identity_rule: "snapshot_id remains the content identity, not a commit SHA; legacy source identity must be explicitly initialized, never inferred from the worktree."

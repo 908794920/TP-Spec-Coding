@@ -1,6 +1,6 @@
 catalog_version: "5.3.8"
 base_version: "5.3.8"
-generated_utc: 20261009T055142Z
+generated_utc: 20261013T084249Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -14,7 +14,7 @@ roles:
   phases: [other]
   capabilities: [domain.routing, status.compact, explain.route]
   owns_states: []
-  content_sha256: D3E6BCFB245EAD4041F8E972B6DF37AF58940F893DE9A8EF0E68DDE847F4669A
+  content_sha256: E3EC626CEB09059C47805522AC9F378DBC91E98EE06D152096F07D2EEEB99587
 - workflow_role: tp-software-lifecycle
   display_name: tp-软件工程生命周期
   type: control-role
@@ -23,7 +23,7 @@ roles:
   phases: [intake, requirement, product, discovery, architecture, planning, development, verification, review, delivery]
   capabilities: [lifecycle.routing, role.resolution, workflow.coordination]
   owns_states: [NEW]
-  content_sha256: C57D60886AA78B98A6E31CADD1F59AA3B69AA4602EB0AA30D98DA235F90B8A48
+  content_sha256: 8DBF022E9DAB333F828F09BAA80190BA309C51510938C73F548D1DE4B2ECA6BE
 - workflow_role: tp-project-autonomy
   display_name: tp-项目自治维护
   type: control-role

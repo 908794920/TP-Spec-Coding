@@ -149,7 +149,7 @@ function Overview({ read, open, chooseProject, showRecords, showAdopted }: {
       <Card size="small" className="wiki-section-card" title="内容与维护摘要" extra={<Tag>{label(data.maintenance.status)}</Tag>}>
         <p>canonical 条目 {num(data.maintenance.canonical_documents)} · source 文档 {num(data.maintenance.source_documents)} · 已注册来源文件 {num(data.maintenance.registered_sources)}</p>
         {data.maintenance.sources.map(source => <details key={source.source_id}><summary>来源 {source.source_id} · {label(source.status)} · 索引更新 {date(source.indexed_at)}</summary>
-          <p>当前质量结果绑定：{source.diagnostics?.verification_binding?.current === true ? '适用' : source.diagnostics?.verification_binding ? `未确认适用 · ${source.diagnostics.verification_binding.status}` : '未读取'}
+          <p>当前质量结果绑定：{source.diagnostics?.verification_binding?.current === true ? '适用' : source.diagnostics?.verification_binding ? `未确认适用 · ${source.diagnostics.verification_binding.status}` : '本页未实时核验'}
             <br/>索引派生契约：{source.diagnostics?.projection?.contract_current === true ? '当前' : source.diagnostics?.projection?.contract_current === false ? '历史或过期' : '未取得契约结果'} · 索引内容：{source.diagnostics?.projection?.fresh === true ? '当前' : source.diagnostics?.projection ? '尚未确认新鲜' : '未读取'}</p>
           {source.diagnostics_error && <p className="warning">当前适用性读取失败：{source.diagnostics_error}</p>}
           {source.reports.length ? source.reports.map(report => <p key={report.name}>{report.name} · 原报告 {printable(report.status)} · {report.current_binding === true ? '本次绑定适用' : '历史报告'} · 报告时间 {date(report.at)} · 文件更新时间 {date(report.file_updated_at)}<br/><small>{report.note}</small></p>) : <p className="muted">没有已记录维护报告；打开页面不会执行验证或维护。</p>}
@@ -197,7 +197,7 @@ function DocumentReader({ keys, scope, revision, close, back, open, restore }: {
         const heading = Array.from(markdown.current?.querySelectorAll<HTMLElement>('[id]') || []).find(node => node.id === id);
         if (heading) { heading.scrollIntoView({ block: 'start' }); heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
     }
-    return <Drawer className="wiki-document-drawer knowledge-reader" title="知识阅读" open={!!key} width={1000} onClose={close}
+    return <Drawer className="wiki-document-drawer knowledge-reader" title="知识阅读" open={!!key} size={1000} onClose={close}
       afterOpenChange={isOpen => { if (!isOpen) restore(); }} keyboard destroyOnHidden
       extra={<Button icon={<ArrowLeftOutlined/>} disabled={keys.length < 2} onClick={back}>返回上篇</Button>}>
       <ReadStatus {...read}/>{data && <><Problems items={data.problems}/><div className="wiki-document-heading"><div><h2>{data.document.title || data.document.id || data.document.path}</h2>

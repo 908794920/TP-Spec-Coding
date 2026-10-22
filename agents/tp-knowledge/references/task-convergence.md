@@ -7,17 +7,18 @@
 
 ## 1. 顺序与真实输入
 
-先按 `task complete --check` 处理当前已知缺口，固定最终候选并复用有效技术结果。
+先按 `task complete --check --compact` 处理当前全部已知缺口与未知项，固定最终候选并复用有效技术结果；只对具体缺口展开详细 facts。
 `task delivery-converge ... --delivery-status READY` 为适用的 standard L0–L3 创建或复用既有
 `KNOWLEDGE_CONVERGENCE_REQUEST`，没有 knowledge_signals 也会创建。
 轻量任务只绑定实际适用的 Verification/Review；不适用的 event ID 为 0，不伪造 PASS。
 
 ```bash
-tp-spec knowledge task-inputs --task <TASK-ID> --task-dir <TASK-DIR> --db <DB>
-tp-spec knowledge task-inputs --task <TASK-ID> --task-dir <TASK-DIR> --db <DB> --item event:<ID>
+tp-spec knowledge task-inputs --task <TASK-ID> --task-dir <TASK-DIR> --db <DB> --compact
+tp-spec knowledge task-inputs --task <TASK-ID> --task-dir <TASK-DIR> --db <DB> --compact --item event:<ID>
 ```
 
 这是只读输入清单，不创建 Request，不查询 Knowledge，不生成“已阅读”声明。
+`--compact` 返回 `input_summary`（完整输入 digest、数量、分类计数与全部 issues）、`delta_counts`、请求状态及已有复用导航；`--item` 的选中内容保持完整。去掉 `--compact` 可读取完整当前来源索引及差异列表，不截断、不删除；Request 保留其登记时的完整输入索引，差异由本次读取实时计算。分组判断或补齐依赖前实际读取所需完整索引一次；紧凑导航不等于已阅读或语义覆盖，也不减少输入/文件变化检查。
 返回当前 request ID、`request_current`、输入 digest、逐项来源/指纹、缺口和相对 Request
 的 added/removed/changed/unchanged。`--request-event-id` 可选择历史请求作对比，不能让旧请求重新有效。
 `--item` 读取该 Task 的作用域、交付语义、事件或 Work 详情；文件按返回的相对 `ref` 定向读取。
@@ -63,6 +64,12 @@ tasksHistory 引用还须与所选归档月份完全一致。不搜索其他 Tas
 强制证据引用时仍严格校验，缺失、空文件、越界或不可读继续报缺口。错误生产者、损坏执行契约、
 嵌套同名字段和 typed `local_file` 不会变成可忽略来源。原有效文件后来无法消费会改变输入索引，
 旧 Request 变 stale；仅刷新并重新评估受影响输入，不能静默复用依赖旧正文的判断。
+
+强制证据中已有的 `.tp-spec/tasks/<同Task>/evidence/...` 或准确所选归档路径，复用上述同项目、同Task
+解析后按普通Task-relative文件严格索引；保留原事件引用并按真实字节摘要合并同一正文。不匹配或
+不可读时继续报 `SOURCE_UNAVAILABLE`，不退回嵌套同名副本、不降为导航警告。此兼容仅用于知识输入
+读取，不改变正式治理写入的Task-relative证据契约。
+
 受影响的旧 Request 保留历史，通过正常 `delivery-converge` 向前刷新输入索引后继续评估；
 事件正文指纹与去重规则不变，技术 Subject 未变时复用仍有效的 Verification/candidate。
 
@@ -87,11 +94,31 @@ tasksHistory 引用还须与所选归档月份完全一致。不搜索其他 Tas
 |---|---|
 | `schema` | `tp-spec.task-learning/v1` |
 | `input_digest` | 当前 Request 对应的完整输入 digest |
-| `coverage` | 每个输入恰好一项：`input_id`、`digest`、`classification`、实际阅读后的 `summary` |
+| `coverage` | 每个输入恰好覆盖一次；单项用 `input_id`、`digest`、`classification`、实际阅读后的 `summary`；同语义且已实际阅读的输入可用下述显式分组 |
 | `coverage[].classification` | `CURRENT / TEMPORARY / SUPERSEDED / NO_DURABLE_INSIGHT`；SUPERSEDED 必须用 `superseded_by` 指向不同的当前输入，历史仍保留 |
 | `knowledge` | 非空候选/处置列表；所有输入至少被一项处置覆盖。相关输入可归一组，不强迫每文件生成一条知识 |
 | `knowledge[]` | 唯一 `id`、相关 `input_ids`、`disposition`、具体 `reason`、实际需要的 `queries`；非无价值项还需精确 `knowledge_ref` |
 | `memory` | 实际评估的 `summary` 和 `items`；无可沉淀项时 `items=[]` 并填写具体 `no_items_reason`，不是空信号即跳过 |
+
+同语义输入可显式共用一份 coverage 判断，以 `input_ids` 和逐项 `input_digests` 代替
+`input_id` / `digest`；成员必须都已实际阅读，且同一 `classification`、`summary` 适用于每个成员。
+可混用单项与分组，但所有当前输入仍须恰好覆盖一次。每组 ID 须唯一且来自完整当前索引，
+`input_digests` 须准确包含每个成员的当前 SHA256，漏项、重复、未知输入或摘要变化均不通过。
+`SUPERSEDED` 分组仍须用 `superseded_by` 指向当前索引中不同于每个成员的输入，不能指向组内成员。
+
+```json
+{
+  "input_ids": ["event:42", "event:43"],
+  "input_digests": {"event:42": "<当前SHA256>", "event:43": "<当前SHA256>"},
+  "classification": "TEMPORARY",
+  "summary": "实际阅读后说明这两个输入共同的临时结论及其适用范围"
+}
+```
+
+CLI 先将显式分组展开为原有逐项正式覆盖，再沿用原 assessment、Result digest、可信回执
+及消费校验；来源索引和历史输入仍完整保留。分组只减少重复判断文字，不省略阅读，也不按
+扩展名自动判断无价值。summary 仍是专业实际判断，CLI 只能核对覆盖、指纹和回执，不能证明
+理解正确或代替 standard Task 的知识/记忆评估与其他验收义务。
 
 单项结构示例（占位符必须替换为实际输入；不是可直接提交的完整 assessment）：
 
@@ -182,6 +209,8 @@ AGENTS 薄入口的维护与可发现性核对统一按 [项目记忆捕获](../
 `{"id":"K1","reuse_result_event_id":123}` / `{"id":"M1","reuse_result_event_id":123}`。
 必须来自本 Task 的可信旧 Result，依赖的输入指纹全部相同；Knowledge 还需检索上下文与精确目标未变。
 不能按主题相似自动套用旧判断。整体摘要及没有条目的处置原因仍由角色实际确认。
+分组提交后在 Result 中展开为单项，后续仍按上述 `input_id` 协议显式复用；本次不增加分组
+reuse 协议，不用分组声明自动复用判断。
 
 最后再执行 `task complete --check`，检查知识/记忆的真实结果、当前输入及其他交付义务。
 只有全部适用事实齐备才正式 complete。终态摘要中的学习结果是已接受候选的历史回执，

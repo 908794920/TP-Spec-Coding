@@ -58,6 +58,9 @@ event_families:
   WORK_SESSION_ENDED:
     required: [operation, result_status]
     operation: END
+  WORK_TAKEOVER_RECORDED:
+    required: [operation, result_status, execution_schema, takeover_schema, takeover, takeover_digest, logical_request]
+    operation: RECORD
   BLOCKER:
     required: [operation, result_status]
     operation: BLOCK

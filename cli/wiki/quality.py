@@ -16,6 +16,7 @@ import re
 
 from .anchors import plan_cosmetic_citation_relocations
 from .coverage import compute_wiki_coverage
+from .policy import semantic_refresh_reasons, review_digest
 from .manifest import (
     DEPENDENCY_ROLES,
     DOCUMENT_TYPES,
@@ -480,8 +481,14 @@ def verify_repo(
     errors = [i for i in issues if i["severity"] == "ERROR"]
     warns = [i for i in issues if i["severity"] == "WARN"]
     changes = changeset.get("changes", []) if changeset else []
-    semantic_audit_required = bool(changeset.get("initial") or changeset.get("refresh_reasons") or
+    semantic_reasons = semantic_refresh_reasons(wiki_repo_root, changeset, source_cfg)
+    semantic_audit_required = bool(changeset.get("initial") or semantic_reasons or
                                   any(c.get("kind") in {"SEMANTIC", "STRUCTURAL", "DELETED"} for c in changes))
+    if semantic_reasons and paths["plan"].is_file():
+        plan = json.loads(paths["plan"].read_text(encoding="utf-8"))
+        if set(semantic_reasons) - set(plan.get("semantic_refresh_reasons", plan.get("refresh_reasons", []))):
+            issues.append(_issue("L1", "ERROR", "REBUILD_PLAN_STALE", "semantic refresh scope changed; run wiki plan again"))
+            errors = [i for i in issues if i["severity"] == "ERROR"]
     result = "PASS" if not errors else "FAIL"
     subject_digest = wiki_subject_digest(wiki_repo_root)
     report = {
@@ -493,6 +500,7 @@ def verify_repo(
         "result": result,
         "subject_digest": subject_digest,
         "semantic_audit_required": semantic_audit_required,
+        "policy_review_digest": review_digest(wiki_repo_root, source_cfg),
         "summary": {
             "errors": len(errors),
             "warnings": len(warns),

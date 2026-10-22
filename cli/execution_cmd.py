@@ -263,10 +263,10 @@ def cmd_work_plan(args) -> int:
         inherited = facts["coordinator"] if facts["plan"] is None else None
         if (facts["plan"] is not None and isinstance(raw, dict)
                 and raw.get("expected_version") == 0 and "coordinator" not in raw):
-            # Retry the initial normalized payload using its creation identity,
-            # never the coordinator of a later handoff.
-            from .task_coordinator import read_creation_coordinator
-            inherited = read_creation_coordinator(task, execution.read_events(conn, args.task))["coordinator"]
+            # 接班可早于首次计划；重试必须复用该计划当时的身份，而非创建或后来的身份。
+            first = facts["plan_history"][0]["event_id"]
+            first_row = conn.execute("SELECT * FROM task_event WHERE task_id=? AND id=?", (args.task, first)).fetchone()
+            inherited = execution.detail_of(first_row)["plan"]["coordinator"]
         body, expected = normalize_plan(conn, task, raw, coordinator=inherited)
         if facts["plan"] is None and inherited and (body["coordinator"]["role"] != inherited["role"]
                 or (inherited["agent"] and body["coordinator"]["agent"] != inherited["agent"])):
@@ -318,7 +318,17 @@ def cmd_work_show(args) -> int:
             raise ValueError(f"task not found: {args.task}")
         from .event_policies import is_task_retired
         facts = execution.read_execution(conn, task, retired=is_task_retired(conn, args.task))
-        print(json.dumps({"task_id": args.task, "task_state": task["current_state"], **facts}, ensure_ascii=False, indent=2))
+        expected_event_id = conn.execute("SELECT COALESCE(MAX(id),0) FROM task_event WHERE task_id=?", (args.task,)).fetchone()[0]
+        from .work_session_cmd import _open_sessions
+        from .workitem_cmd import summarize_work_items
+        from .work_takeover import work_snapshot
+        print(json.dumps({"task_id": args.task, "task_state": task["current_state"], **facts,
+            "expected_event_id": expected_event_id,
+            "expected_work_snapshot_digest": execution.digest(work_snapshot(conn, args.task)),
+            "open_sessions": [{"session_id": execution.detail_of(r).get("session_id"),
+                "start_event_id": r["id"], "role": r.get("actor_role"), "agent": r.get("actor_agent"),
+                "work_item_id": r.get("work_item_id")} for r in _open_sessions(conn, args.task)],
+            "work_items": summarize_work_items(conn, task)["items"]}, ensure_ascii=False, indent=2))
         return 0
     except (ValueError, OSError, sqlite3.Error) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

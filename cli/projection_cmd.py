@@ -298,13 +298,14 @@ def _build_events_jsonl(events: List[Dict[str, Any]], task_id: str) -> Tuple[str
         # The DB remains canonical; generic FACT imports cannot become governed events.
         if event_type in {"EXECUTION_PLAN_RECORDED", "EXECUTION_STEP_RECORDED",
                          "WORK_ITEM_RECORDED", "WORK_INTEGRATION_RECORDED",
+                         "WORK_TAKEOVER_RECORDED",
                           "WORK_SESSION_STARTED", "WORK_SESSION_UPDATED", "WORK_SESSION_ENDED"}:
             raw_detail = ev["detail_json"] or "{}"
             try:
                 execution_detail = json.loads(raw_detail)
             except (TypeError, ValueError):
                 execution_detail = None
-            explicit_kind = event_type in {"EXECUTION_PLAN_RECORDED", "EXECUTION_STEP_RECORDED", "WORK_SESSION_UPDATED", "WORK_ITEM_RECORDED", "WORK_INTEGRATION_RECORDED"}
+            explicit_kind = event_type in {"EXECUTION_PLAN_RECORDED", "EXECUTION_STEP_RECORDED", "WORK_SESSION_UPDATED", "WORK_ITEM_RECORDED", "WORK_INTEGRATION_RECORDED", "WORK_TAKEOVER_RECORDED"}
             if explicit_kind or (isinstance(execution_detail, dict) and "execution_schema" in execution_detail):
                 obj.update(event_type=event_type, runtime_event_id=ev["id"],
                            actor_role=ev["actor_role"], actor_agent=ev["actor_agent"],

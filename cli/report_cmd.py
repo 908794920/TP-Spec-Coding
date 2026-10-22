@@ -155,8 +155,8 @@ def cmd_report_stage_time(args) -> int:
         ).fetchall()
         # 查询所有 WORK_SESSION_STARTED/ENDED 对
         sessions = conn.execute(
-            "SELECT id, task_id, event_type, actor_role, actor_agent, model_used, work_item_id, detail_json, created_at FROM task_event "
-            "WHERE task_id = ? AND event_type IN ('WORK_SESSION_STARTED', 'WORK_SESSION_ENDED') "
+            "SELECT * FROM task_event "
+            "WHERE task_id = ? "
             "ORDER BY id",
             (task_id,),
         ).fetchall()

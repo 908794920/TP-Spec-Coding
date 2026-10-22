@@ -20,11 +20,15 @@ standard Task（L0–L3）最终交付时读取；L0/L1 可紧凑核对，不复
 发生实际集成时，由集成交付角色提交本角色/实际执行者归属的输出及冲突处置依据；项目经理按精确结果事件接收，由已记录 coordinator 登记 record-only candidate。候选权限仍校验原 coordinator，不因集成角色身份默认开放。Work 提交、接收、候选、步骤完成、专业 PASS、业务验收与 Task complete 不是同一事实；步骤完成保留适用参与者/coordinator 规则，不增项目经理独占门禁。
 
 ## 稳定收敛顺序
-1. 先调用现有只读 `task complete --check`，核对所有已知缺口和未知项，而非反复正式 complete 探路；Runtime 没返回的项目按上述范围核对，不能声称旧接口已完整汇总。已发生的人验/授权核验来源，未发生仍按适用流程完成。
+1. 先调用现有只读 `task complete --check --compact`，一次查看全部检查、阻塞、未知项及下一责任，而非反复正式 complete 探路。紧凑输出不跳检查；只在具体缺口需要详细 facts 时去掉 `--compact`，不反复展开完整路由/历史。已发生的人验/授权核验来源，未发生仍按适用流程完成。
 2. 先处理会影响绑定的有效 AC、数据库/迁移/操作声明、真实步骤记录和交付物；不补造过去阶段、时间或验收。UI 确认不能推断数据库已执行，部分 AC 确认不能外推全 PASS。
 3. 固定最终产品 subject；只复用仍适用的测试/审查，源码/交付物、AC 实质或证据变化只补受影响复验。普通摘要/checkpoint 不能假装是新产品，也不能把产品规则文件藏作 metadata。
 4. 完成集成交付检查、证据收集和清理后，先结束这段真实参与，再以稳定输入记录 Delivery 并执行下方知识/记忆收敛；不得提前假结束未完成工作。之后新增真实输入时，按现有 Request/Result 机制刷新并仅重评受影响项，复用仍适用的技术结果，不因记账重跑未变业务。必要沉淀文件若属于产品交付物仍纳入 subject 及适用验证。
 5. 再预检，事实齐备后由生命周期协调正式 complete，只读核对终态与接续。稳定输入复用请求/结果，不重复 Delivery/checkpoint/知识请求；CLI 不支持时报告缺口，不手改账本或伪造幂等。
+
+`max_incremental_ai_overhead_percent` 是工程目标；Runtime 的 `overhead_budget_status=NOT_MEASURED` 表示没有可比较的 AI 成本基线，不是已满足 5%。观测复用 `report timings` 的既有 CLI 诊断，并在需要比较时记录输出 UTF-8 字节数、输入项数及实际执行范围；CLI 耗时、工具等待和输出大小不能换算成推理耗时、token 或订阅费用。不为凑百分比新增计时账本、调度器或拒绝门槛。范围已冻结后，只处理本次预检列出的缺口；后续真实变更使相应证据失效时再补验。
+
+新 Owner 接受与 Work 候选通过 `subject_scope=technical` 绑定稳定标准主体，减少仅结果写回造成的重复登记；该标记不是验收权限或专业 PASS。旧无标记记录保持 full 绑定，full Verify/Review 仍核技术结果格与证据；实际 scope/标准/产品变化不能复用。规范化使在途旧摘要过期时，只由原获准执行者核对后重新登记，不补改历史或代签 Owner。
 
 ## 缺陷、等待与工件
 Integration 发现当前范围内真实产品 Finding 交父 Task 下的 Fix Work，父交付步骤等待结果并复验；缺权限、环境或证据则明确等待和恢复条件，不无条件派返工。实际 apply 与已获准冲突处置不等于自行改变业务语义；冲突需要新产品判断或额外修复时交相关专业角色，不能借 Delivery 修改代码、CSS、SQL 或测试扩大范围。产品源码、正式交付物、AC 实质或影响结论的证据变化会改变相关 subject；只补失效/缺失且适用的 Verification/Code Review，普通元数据不无条件触发全链重跑。
@@ -42,7 +46,7 @@ standard 交付同时调用唯一 [tp-memory-capture](../tp-memory-capture/SKILL
 
 ## Runtime 接入边界
 standard 新 READY 通过现有 delivery-converge 为适用 L0–L3 创建或复用 `KNOWLEDGE_CONVERGENCE_REQUEST`，
-带 `learning_schema=tp-spec.task-learning/v1` 与当前输入索引。先只读 `knowledge task-inputs`，
+带 `learning_schema=tp-spec.task-learning/v1` 与当前输入索引。先只读 `knowledge task-inputs --compact` 查看规模、完整缺口及请求状态；需要完整来源索引时去掉 `--compact` 读取一次，按 `--compact --item <ID>` 继续定向读取，不每次返回全部来源和 unchanged 列表。
 实际提炼后由 tp-knowledge 用 `task-converge --assessment FILE|-` 生成一个 Result，
 包含各候选检索/目标与共享 Memory 方法的处置。详细格式按需读
 [Task 收敛契约](../../../agents/tp-knowledge/references/task-convergence.md)。

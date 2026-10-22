@@ -53,6 +53,7 @@ _VOLATILE_META_NAMES = {
     "wiki-semantic-audit.json",
     "wiki-cite-anchors.json",
     "wiki-coverage.json",
+    "wiki-policy-review.json",
 }
 
 def wiki_subject_digest(wiki_repo_root: Path) -> str:
@@ -86,6 +87,7 @@ def snapshot_paths(wiki_repo_root: Path) -> Dict[str, Path]:
         "audit_plan": meta / "wiki-semantic-audit-plan.json",
         "audit": meta / "wiki-semantic-audit.json",
         "anchors": meta / "wiki-cite-anchors.json",
+        "policy_review": meta / "wiki-policy-review.json",
     }
 
 
@@ -129,15 +131,12 @@ def prepare_source_config(
                     for name in ("source.py", "stable_source.py")}
     result["_source_policy_digest"] = _digest({"config": public, "rules": source_rules})
     base = Path(__file__).resolve().parents[2]
-    rule_paths = set((base / "cli/wiki").glob("*.py"))
-    # Wiki credential checks consume this rule implementation directly.
-    rule_paths.add(base / "cli/sensitive_scanner.py")
-    for folder in ("wiki/rules", "agents/tp-wiki", "skills/wiki", "automation/wiki"):
-        rule_paths.update((base / folder).rglob("*.md"))
-    rule_paths.update((base / "wiki/schema").glob("*.yaml"))
-    rules = {path.relative_to(base).as_posix(): sha256_bytes(path.read_bytes()) for path in sorted(rule_paths)}
-    result["_maintenance_digest"] = _digest({"source": public, "snapshot": snapshot_cfg,
-        "quality": quality_cfg, "coverage": coverage_cfg, "rules": rules})
+    from .policy import components, current_rules
+    rules = current_rules(base)
+    result["_maintenance_config"] = {"source": public, "snapshot": snapshot_cfg,
+        "quality": quality_cfg, "coverage": coverage_cfg}
+    result["_maintenance_components"] = components(result["_maintenance_config"], rules)
+    result["_maintenance_digest"] = _digest({**result["_maintenance_config"], "rules": rules})
     if (staged and not committed and paths["pending"].is_file() and
             recorded.get("maintenance_digest") != result["_maintenance_digest"]):
         raise SourceError("MAINTENANCE_POLICY_CHANGED: run wiki scan/maintain again before consuming staged results")
@@ -198,6 +197,7 @@ def build_current_snapshot(repo_id: str, repo_root: Path, source_cfg: Dict[str, 
         "snapshot_id": _snapshot_id(repo_id, files), "files": files,
         "source": view.identity(), "source_policy_digest": source_policy,
         "maintenance_digest": source_cfg.get("_maintenance_digest", ""),
+        "maintenance_components": source_cfg.get("_maintenance_components"),
         "scan_mode": "COMMIT_DIFF" if incremental else ("GIT_INVENTORY" if view.mode == "GIT_REF" else "FILESYSTEM_HASH"),
     }
 
@@ -329,7 +329,7 @@ def stage_scan(
         reasons.append("PREVIOUS_SUCCESS_NOT_RECORDED")
     if repair:
         reasons.append("EXPLICIT_REPAIR")
-    if not paths["changeset"].is_file() and any(
+    if any(
             _read_json(paths[name]).get("result") == "FAIL" for name in ("verification", "audit")):
         reasons.append("PREVIOUS_VALIDATION_FAILED")
     request = {"baseline": baseline.get("snapshot_id"), "candidate": current["snapshot_id"],
@@ -384,6 +384,8 @@ def validate_staged_source(wiki_repo_root: Path, repo_root: Path, source_cfg: Di
         raise ValueError("source is not pinned to the staged snapshot")
     if pending.get("maintenance_digest") != source_cfg.get("_maintenance_digest", ""):
         raise ValueError("maintenance configuration/rules changed after scan; run wiki scan again")
+    if pending.get("maintenance_components") != source_cfg.get("_maintenance_components"):
+        raise ValueError("maintenance components changed after scan; run wiki scan again")
     return changeset, pending
 
 
@@ -433,7 +435,12 @@ def commit_baseline(wiki_repo_root: Path, *, repo_id: str | None = None, repo_ro
             raise ValueError("baseline blocked: verification does not bind the staged source and maintenance policy")
         if verification.get("subject_digest") != current_subject:
             raise ValueError("baseline blocked: Wiki/manifest changed after verification; run wiki verify again")
-        requires_audit = bool(verification.get("semantic_audit_required"))
+        from .policy import semantic_refresh_reasons, review_digest
+        if verification.get("policy_review_digest") != review_digest(wiki_repo_root, source_cfg):
+            raise ValueError("baseline blocked: policy review changed after verification; run wiki verify again")
+        requires_audit = bool(verification.get("semantic_audit_required") or changeset.get("initial") or
+            semantic_refresh_reasons(wiki_repo_root, changeset, source_cfg) or any(
+                c.get("kind") in {"SEMANTIC", "STRUCTURAL", "DELETED", "UNCERTAIN"} for c in changeset.get("changes", [])))
         if requires_audit:
             audit = _read_json(paths["audit"])
             if audit.get("change_set_id") != changeset.get("change_set_id") or audit.get("result") != "PASS":
@@ -468,7 +475,7 @@ def commit_baseline(wiki_repo_root: Path, *, repo_id: str | None = None, repo_ro
         "status": "SUCCESS" if require_verification else "UNVERIFIED",
         "committed_at": utc_now(), "change_set_id": changeset.get("change_set_id"),
         "subject_digest": current_subject,
-        "verification": {k: verification.get(k) for k in ("result", "verified_at", "subject_digest", "semantic_audit_required")},
+        "verification": {k: verification.get(k) for k in ("result", "verified_at", "subject_digest", "semantic_audit_required", "policy_review_digest")},
         "audit": {k: audit.get(k) for k in (
             "result", "recorded_at", "subject_digest", "documents", "topology_reviewed",
             "source", "maintenance_digest", "change_set_id", "mode", "summary", "audit_scope",
@@ -481,6 +488,18 @@ def commit_baseline(wiki_repo_root: Path, *, repo_id: str | None = None, repo_ro
         pending["completion"]["audit"]["evidence_limitations"] = audit.get("evidence_limitations") or [
             "Representative claim evidence was not recorded; no historical sentence-level audit is inferred."
         ]
+    if require_verification and not audit:
+        from .policy import applicable_review, baseline_identity, prior_audit, content_identity
+        review = applicable_review(wiki_repo_root, source_cfg)
+        previous = _read_json(paths["baseline"])
+        if review:
+            pending["completion"]["semantic_reuse"] = {"baseline": baseline_identity(previous),
+                "audit": prior_audit(previous) or None, "policy_review": review,
+                "evidence_status": "REUSED_EXISTING_L4" if prior_audit(previous) else "LEGACY_L4_NOT_RECORDED",
+                "limitations": prior_audit(previous).get("evidence_limitations") or ([] if prior_audit(previous) else
+                    ["Legacy successful deterministic completion retained no L4 receipt; no L4 PASS is inferred."]),
+                "prior_completion": previous.get("completion"),
+                "content_identity": content_identity(wiki_repo_root, changeset.get("change_set_id"))}
     _write_json(paths["baseline"], pending)
     # The baseline is already committed. A failed receipt cleanup must not be
     # reported as an uncommitted run; maintain will revalidate remaining state.

@@ -45,6 +45,26 @@ Resolve physical Base Root from user Installation (`~/.tp-spec/installation.yaml
 - `BLOCKED`：保留错误、来源与旧 baseline，不派发全库扫描来掩盖问题；其他 repo 继续。
 - `MASS_CHANGE_REVIEW_REQUIRED`：先检查是否为重新下载、编码/换行、formatter、include/exclude 漂移或真正大迁移。没有充分证据前禁止 `--allow-mass-change`。若确认是真实大规模语义/结构迁移，执行 `wiki plan --allow-mass-change --mass-change-reason "<实际核验理由>"` 后再进入 AI UPDATE。
 
+#### 规则变更与已有积压
+
+`MAINTENANCE_POLICY_CHANGED` 是刷新原因，不单独表示源码大规模变更或命令执行失败。多个仓同因刷新可以合并说明原因，但不能按命中数量/比例暂停所有仓；逐仓依据来源绑定、实际 change-set/plan 和证据充分性继续或标记 `NEEDS_REVIEW`。
+
+Base 改动合入且当前 Resolver 指向该实现后，由自动化侧重新逐仓执行 `maintain`，替换过时 staged 计划；保留旧成功 baseline 到正式提交。先区分真实源码变化、规则变化和 Wiki subject 变化，再按当前计划处理实际影响，正文无须为收口而改写。顺序为 `manifest-refresh → verify → coverage → 必要时 audit/实际审计/audit-record → snapshot-commit`；`NO_CHANGE` 仍立即结束。
+
+先审查真实规则差异。若差异仅影响确定性处理，且旧语义证据仍适用，可按 [维护规则指纹](../../wiki/rules/source-fingerprint.md) 正式记录一次政策影响判断：
+
+```text
+<BaseRoot>/scripts/tp-spec.ps1 wiki policy-review --workspace-root <workspace> --repo <repo> --old-base-ref <完整旧Base提交> --old-rule-scope <whole-all或maintenance> --summary "<实际等价性判断>" --evidence-file <真实审查证据>
+```
+
+没有对应 Git 提交时，可用 `--old-base-root <原字节归档>` 替代 `--old-base-ref`，但旧规则加当前配置必须精确重现旧摘要。review 在当前规则字节冻结后登记；再改规则、配置或证据文件将使其失效。CLI 只消除已审查的政策理由，不抹去源码、Wiki subject、repair、topology 或旧 FAIL 的义务，不把缺少历史字节当作已证明无影响。
+
+重新 `maintain` 后需要 L4 的，按 audit plan 覆盖全部 mandatory 文档和 topology；复用仍适用的实际阅读证据，不重复审阅未变材料。无需新 L4 的确定性收口保留原审计及其时间/范围/限制，报告为“复用”，不能当成本次语义 PASS；旧合法无 L4 记录保留 `LEGACY_L4_NOT_RECORDED`。无法取得必要证据时只保留该仓 baseline、说明缺口。最终逐仓报告实际审计范围、未验内容及 baseline 是否推进，不宣称全库重新验收。
+
+#### 活跃开发与固定来源
+
+`GIT_REF` 已锁定本地远程跟踪引用的 staged SHA；工作区 dirty、最近 mtime 或 stable_ref 后续前移本身不阻止处理该固定来源，不要求等待固定静默时长，也不自动 fetch/pull。来源对象不可读、身份不一致或必要证据不足时才停止受影响仓。`FILESYSTEM` 继续每次计算真实字节，提交前若来源改变则重新 maintain；不能用“静默够久”替代文件一致性校验。历史个案的等待时长不得推广成新的业务门槛。
+
 ### 3. AI UPDATE
 
 读取该 repo：

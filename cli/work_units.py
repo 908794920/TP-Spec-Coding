@@ -111,6 +111,8 @@ def trusted(row):
                 and isinstance(body.get("change_set_id"), str) and isinstance(body.get("subject_digest"), str)
                 and isinstance(body.get("evidence_items"), list) and isinstance(body.get("resolutions"), list)):
             return None
+        if body.get("subject_scope", "full") not in ("full", "technical"):
+            return None
     elif not isinstance(row.get("work_item_id"), str) or not row["work_item_id"]:
         return None
     if action == "create":
@@ -141,8 +143,40 @@ def trusted(row):
 def project_units(rows):
     """Replay only registered Work facts. Legacy rows never acquire invented metadata."""
     units, candidates, issues = {}, [], []
+    from . import work_takeover
+    prior = []
+    legacy_takeovers = {}
     for raw in rows:
         row = dict(raw)
+        if row.get("event_type") == work_takeover.EVENT:
+            body = work_takeover.trusted(row, prior)
+            prior.append(row)
+            if body is None:
+                issues.append(f"WORK_TAKEOVER_INVALID:{row['id']}")
+                continue
+            invalid = False
+            for work in body["work_items"]:
+                unit = units.get(work["id"])
+                if unit and (unit["recorded_state"] != "ACTIVE" or unit["attempt"] != work["attempt"]
+                        or (unit.get("owner_role"), unit.get("owner_agent")) !=
+                           (work["before"].get("role"), work["before"].get("agent"))
+                        or work["after"]["role"] not in unit["spec"]["roles"]):
+                    invalid = True
+                elif not unit and work["attempt"] is not None:
+                    invalid = True
+            if invalid:
+                issues.append(f"WORK_TAKEOVER_BINDING_INVALID:{row['id']}")
+                continue
+            for work in body["work_items"]:
+                unit = units.get(work["id"])
+                if unit:
+                    unit.update(owner_role=work["after"]["role"], owner_agent=work["after"]["agent"])
+                    unit["history"].append({"event_id": row["id"], "created_at": row["created_at"],
+                        "action": "takeover", "actor": "human_owner", **work})
+                else:
+                    legacy_takeovers[work["id"]] = {"event_id": row["id"], **work}
+            continue
+        prior.append(row)
         if row.get("event_type") not in {EVENT, CANDIDATE}:
             continue
         body = trusted(row)
@@ -188,7 +222,8 @@ def project_units(rows):
                 issues.append(f"WORK_RECEIPT_INVALID:{row['id']}")
                 continue
             unit["receipt"] = record
-    return {"schema": SCHEMA, "units": units, "candidates": candidates, "issues": issues}
+    return {"schema": SCHEMA, "units": units, "candidates": candidates, "issues": issues,
+            "legacy_takeovers": legacy_takeovers}
 
 
 def read(conn, task_id):
@@ -324,8 +359,8 @@ def create(conn, task, facts, *, item_id, title, spec, actor, agent):
     return {"item_id": item_id, "event_id": eid, "replayed": False}
 
 
-def claim_guard(conn, task, item, unit, actor, agent):
-    if task["current_state"] == "BLOCKED":
+def claim_guard(conn, task, item, unit, actor, agent, *, record_only=False):
+    if task["current_state"] == "BLOCKED" and not record_only:
         raise ValueError("TASK_BLOCKED: resolve the existing task wait before implementation")
     require_dependencies(conn, task["task_id"], item)
     authority.check_work(conn, task["task_id"], item["item_id"])
@@ -482,7 +517,8 @@ def integration_status(conn, task, *, check_content=True, required_items=None):
                 snapshot = capture_change_set(candidate["repo_roots"])
                 if not same_bound_product_content(candidate, snapshot):
                     issues.append("WORK_CANDIDATE_PRODUCT_CHANGED")
-                current_subject = compute_verification_subject_digest(task_dir(conn, task["task_id"]))
+                current_subject = compute_verification_subject_digest(
+                    task_dir(conn, task["task_id"]), scope=candidate.get("subject_scope", "full"))
                 if candidate["subject_digest"] != current_subject:
                     issues.append(
                         f"WORK_CANDIDATE_SUBJECT_CHANGED: candidate={candidate['subject_digest']}; current={current_subject}; "
@@ -562,7 +598,9 @@ def record_candidate(conn, task, facts, raw, *, actor, agent):
         "outstanding_work_items": outstanding,
         "integrated_outputs": integrated, "resolutions": list(resolved.values()), "evidence_items": evidence,
         "repo_roots": roots, "change_set_id": snapshot["content_digest"], "change_set": _compact_change_set(snapshot),
-        "subject_digest": compute_verification_subject_digest(task_dir(conn, task["task_id"])), "effect_scope": "record_only"}
+        "subject_scope": "technical",
+        "subject_digest": compute_verification_subject_digest(task_dir(conn, task["task_id"]), scope="technical"),
+        "effect_scope": "record_only"}
     previous = data["candidates"][-1] if data["candidates"] else {}
     if all(previous.get(k) == v for k, v in payload.items()):
         return {"event_id": previous["event_id"], "change_set_id": payload["change_set_id"], "replayed": True}

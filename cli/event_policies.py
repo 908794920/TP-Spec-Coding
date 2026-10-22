@@ -141,6 +141,8 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
         _EVENT_SCHEMA_FIELDS + ("execution_schema", "session_id", "start_event_id", "step_id", "action")),
     "WORK_SESSION_STARTED": _policy("governance", ("work_session",), False, _EVENT_SCHEMA_FIELDS),
     "WORK_SESSION_ENDED": _policy("governance", ("work_session",), False, _EVENT_SCHEMA_FIELDS),
+    "WORK_TAKEOVER_RECORDED": _policy("governance", ("work_takeover",), False,
+        _EVENT_SCHEMA_FIELDS + ("execution_schema", "takeover_schema", "takeover", "takeover_digest", "logical_request")),
     "WORK_ITEM_RECORDED": _policy("governance", ("workitem",), False,
         _EVENT_SCHEMA_FIELDS + ("execution_schema", "work_schema", "work_payload", "work_digest")),
     "WORK_INTEGRATION_RECORDED": _policy("governance", ("workitem",), False,
@@ -262,6 +264,7 @@ def effective_owner_acceptance(
 
     from .evidence import validate_evidence_path
 
+    subjects = {"full": current_subject}
     by_ac: Dict[str, Dict[str, Any]] = {}
     for item in load_owner_acceptance_decisions(conn, task_id):
         mode = str(item.get("mode") or "").lower()
@@ -270,11 +273,21 @@ def effective_owner_acceptance(
         for raw_ac in item.get("acs") or []:
             by_ac.pop(str(raw_ac).strip(), None)
         if mode == "accept":
-            if not base or not current_change_set or not current_subject:
+            scope = item.get("subject_scope", "full")
+            if scope not in ("full", "technical"):
+                continue
+            if scope == "technical" and scope not in subjects and base is not None:
+                from .digest import compute_verification_subject_digest
+                try:
+                    subjects[scope] = compute_verification_subject_digest(base, scope=scope)
+                except (OSError, UnicodeError):
+                    subjects[scope] = ""
+            bound_subject = subjects.get(scope, "")
+            if not base or not current_change_set or not bound_subject:
                 continue
             if str(item.get("change_set_id") or "") != current_change_set:
                 continue
-            if str(item.get("subject_digest") or "") != current_subject:
+            if str(item.get("subject_digest") or "") != bound_subject:
                 continue
             source_path = str(item.get("source_evidence") or "").strip()
             checked = validate_evidence_path(base, source_path, require_evidence_dir=True)

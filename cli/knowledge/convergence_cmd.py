@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from collections import Counter
 from dataclasses import replace
 import hashlib
 import json
@@ -146,6 +147,19 @@ def _canonical(cfg, candidate, receipts, task_id, source_refs):
     return note, receipt
 
 
+def _compact_inputs(response):
+    """Return navigation without repeating the complete index on every item read."""
+    index = response["input_index"]
+    value = {key: item for key, item in response.items() if key not in {"input_index", "delta"}}
+    value.update(detail_mode="COMPACT", input_summary={
+        "digest": index["digest"], "count": len(index["items"]),
+        "kind_counts": dict(Counter(item["kind"] for item in index["items"])),
+        "issues": index["issues"],
+    }, delta_counts={key: len(items) for key, items in response["delta"].items()},
+        detail_note="Full current source index/delta are available without --compact; the Request retains its registered input index. Navigation is not read coverage.")
+    return value
+
+
 def cmd_inputs(args):
     from cli import db as dbmod, workflow_controls
     from .commands import _emit
@@ -206,7 +220,7 @@ def cmd_inputs(args):
                 response["selected_input"] = {**item, "content": learning.delivery_content(delivery)}
             else:
                 response["selected_input"] = item  # Files/citations are read using the returned exact ref.
-        _emit(response)
+        _emit(_compact_inputs(response) if getattr(args, "compact", False) else response)
         return 0
     except Exception as exc:
         _emit({"schema": learning.SCHEMA, "status": "FAIL", "read_only": True, "error": str(exc)})

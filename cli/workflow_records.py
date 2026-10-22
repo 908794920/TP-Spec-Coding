@@ -418,7 +418,8 @@ def validate_quick_acceptance(conn, task_id: str, task_dir: Path, *, require_com
         return None
     from . import yaml_checks, record_first
     from .delivery_contract import database_disposition
-    acceptance = yaml_checks.check_acceptance_yaml(path.read_text(encoding='utf-8-sig'),
+    acceptance = yaml_checks.check_acceptance_with_owner(path.read_text(encoding='utf-8-sig'),
+        conn=conn, task_id=task_id, task_dir=task_dir,
         enforce_completion=require_completion, allow_human_pending=not require_completion)
     issues = list(acceptance.issues) + record_first.acceptance_truth_issues(conn, task_id, task_dir)
     database_issues, _ = database_disposition(task_dir, acceptance)

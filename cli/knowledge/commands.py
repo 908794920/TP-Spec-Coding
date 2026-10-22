@@ -563,6 +563,7 @@ def add_knowledge_subparsers(root_subparsers) -> None:
     p.add_argument("--task", required=True); p.add_argument("--task-dir", required=True)
     p.add_argument("--db", required=True); p.add_argument("--request-event-id", type=int)
     p.add_argument("--item", help="Read an indexed Task, delivery, event or Work; files retain their source reference")
+    p.add_argument("--compact", action="store_true", help="input counts/digest/issues and selected item; omit repeated full source index and delta lists")
     p.set_defaults(func=cmd_inputs)
     p = sub.add_parser("task-converge", help="Record assessed Task inputs, targeted Knowledge results and Memory readback")
     _common(p)

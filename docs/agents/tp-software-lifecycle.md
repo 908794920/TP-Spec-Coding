@@ -2,7 +2,7 @@
 
 ## 适用场景
 
-用于软件需求、架构、规划、开发、数据库、安全、测试、代码审查和交付。它提供完整软件生命周期能力，但实际任务只启用必要阶段与 Role。
+用于软件需求、架构、规划、开发、数据库、安全、测试、代码审查和交付。它提供完整软件生命周期能力，但普通局部修改直接使用所需能力，不因测试、日志或收尾建立 Task。用户要求任务记录、项目自有规则明确要求，或确需持续跟踪与协作交付时才进入正式 Task 路径；已有 Task 范围内的返修继续原任务。正式任务只启用适用阶段与 Role，详细创建边界见 [生命周期执行契约](../../agents/tp-software-lifecycle/SKILL.md)。
 
 ## 执行入口
 
@@ -100,7 +100,7 @@ standard 模式下，L1–L3 在没有范围事实及下游工作时仍先澄清
 | Key | 值与范围 |
 |---|---|
 | `orchestration.pipelines.<LEVEL>.<STAGE>.required` | LEVEL 为 L0–L3，STAGE 为该等级已有阶段；JSON boolean；必需 development、L1+ verification、L2/L3 review/delivery 不得置 false 或移除 |
-| `orchestration.execution.delivery_fast_path.max_incremental_ai_overhead_percent` | 整数1–5；实际进入交付紧凑上下文；这是已有开销预算，不是运行结果/已达成百分比 |
+| `orchestration.execution.delivery_fast_path.max_incremental_ai_overhead_percent` | 整数1–5；交付紧凑上下文返回工程目标及 `overhead_budget_status=NOT_MEASURED`。没有 AI 基线时不计算百分比或声称达标；观测复用现有 CLI timings 和实际输出大小 |
 
 例如项目确实要求实施规划时，在获准项目中设置一次；一般无需覆盖：
 
@@ -364,6 +364,8 @@ CLI 不再注册卡片命令，也不为新诊断生成 `card` 计时区段；�
 
 `delivery-converge --delivery-status READY` 与 `task complete` 共用必要 AC 处置及真实证据/owner 授权检查。技术和代码审查通过不授予人验 PASS；必需人验仍 PENDING/BLOCKED 时不得 READY。human_owner 可通过既有 `task acceptance-override --mode accept` 对当前绑定且实际核验的人工/视觉 AC 留证；在 `BLOCKED` 回执中这只消解所覆盖的人验阻塞，不清除权限、依赖、环境或账本等无关 blocker。合法 defer/waive 继续通过既有 `task acceptance-override` 留证，不手改账本或把未运行写为 PASS。
 
+新 Owner 接受记录的 `subject_scope=technical` 仅标识标准主体摘要的算法，不把人工验收改成技术验收：仍绑定当前产品 Change Set、明确选中 AC、实际 Owner 来源与证据 SHA。后续仅登记技术结果或 Owner 处置不让原人验重复失效；需求/标准/方法/见证、数据库声明和产品实质变化照常失效。旧记录无标记时仍按原 full 语义消费，不自动重绑或改写。混合验收 YAML 只规范化 Runtime 写回的 `deferred_acceptance` / `owner_waivers`，数据库及其他声明保留；此规范化可能使在途旧摘要过期，应由原获准执行者核对后显式登记，终态不追补。full Verify/Review 对技术结果及实际证据的保护保持。
+
 ### 技术限定结果与完整验收分开
 
 `task verify` 默认 `--scope full`，继续校验当前要求的视觉证据。这里的 full 是结果的验收范围，不是自动执行全量测试的授权。命令只接收已经发生的检查和真实产物，不执行测试、不代替人验。
@@ -374,7 +376,7 @@ CLI 不再注册卡片命令，也不为新诊断生成 `card` 计时区段；�
 tp-spec task verify --task <TASK> --task-dir <TASK_DIR> --db <DB> --decision PASS --summary "AC-01 的实际检查结果" --request-id <本次结果ID> --ac-result-json '{"ac":"AC-01","verdict":"PASS","evidence":"evidence/<已采集的真实结果>"}'
 ```
 
-`--ac-result-json` 可重复，每项必须恰好包含 `ac`、`verdict`、`evidence`，只更新唯一且已声明 `technical` 见证的那一行。Evidence 使用已存在的非空 `evidence/*` 文件（也接受现有 local_file 对象）；Runtime 校验并绑定实际字节摘要。未知/重复 AC、human 行、原 Owner 处置、waive/defer 均拒绝。AC 结论沿用 `PASS` / `PENDING` / `BLOCKED`；未通过项用后两者并记录非 PASS 的 Verify 决策，不将 Verify 的 FAIL/NEEDS_FIX 写成非法 AC 值。
+`--ac-result-json` 可重复，每项必须恰好包含 `ac`、`verdict`、`evidence`，只更新唯一且已声明 `technical` 或既有兼容值 `verification` 见证的那一行，保留原见证值。Evidence 使用已存在的非空 `evidence/*` 文件（也接受现有 local_file 对象）；Runtime 校验并绑定实际字节摘要。未知/重复 AC、其他见证值、human 行、原 Owner 处置、waive/defer 均拒绝。AC 结论沿用 `PASS` / `PENDING` / `BLOCKED`；未通过项用后两者并记录非 PASS 的 Verify 决策，不将 Verify 的 FAIL/NEEDS_FIX 写成非法 AC 值。
 
 映射、Verify 事件、更新后的 Subject 和验收文件进入同一可恢复事务；未选 AC、条件、见证策略和其他声明不改变，也不批量广播通过。需先收集现成报告时继续用 `checkpoint --collect` / `--result-report`；不得为了记账重新运行已经完成的检查。必需人验仍通过原 Owner 入口处理，`technical` 限定与最终交付检查保持不变。
 
@@ -466,6 +468,10 @@ Delivery 另外绑定验收结果文件、实际 PASS 所引用的证据、已�
 
 
 ## 紧凑任务入口与生成视图
+
+收尾预检使用 `task complete --task <TASK> --task-dir <DIR> --db <DB> --check --compact`。仍执行全部检查并保留所有检查状态、issues、blockers、unknowns、acceptance_issues 及 next_actions；只省略重复路由上下文与嵌套 facts，`detail_fields` 指出可展开字段，去掉 `--compact` 获取完整事实。该选项只改变只读预检的呈现，不改变 ready、结单、验收和证据门禁。
+
+Knowledge 的 `task-inputs ... --compact` 返回输入规模、digest、全部 issues、差异计数和复用导航，`--compact --item <ID>` 保留选中输入内容而不重复完整索引。需要组装 assessment 时去掉紧凑选项读取完整来源；索引/覆盖/逐项 SHA 规则和实际阅读责任不变。源码定位、scope/AC 修订与证据变更照常核验，不把“紧凑”当作允许跳过必需材料。
 
 接续和结项摘要不再重复展开 `task.md`/`requirement.md` 的 current 正文，只链接唯一业务来源。`workflow next` 的 `context.current_effective` 仍保留原读取能力；展示摘录不改变 Subject、AC 或证据绑定。任务进行中先确认正式状态、当前步骤/参与与下一责任，再按导航读取范围和历史。
 

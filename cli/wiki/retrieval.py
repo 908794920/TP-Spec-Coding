@@ -52,6 +52,8 @@ class _TelemetryConflict(RetrievalError):
 
 
 _CATALOG_CACHE: Dict[Tuple[str, str], Dict[str, Any]] = {}
+_MANIFEST_CACHE_FIELDS = ("path", "title", "type", "status", "updated_at", "content_hash")
+_MANIFEST_CACHE_PARSER = f"{yaml.__version__}:{getattr(yaml, 'CSafeLoader', yaml.SafeLoader).__name__}"
 
 
 def _now() -> datetime:
@@ -278,7 +280,39 @@ def _first_heading(text: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def _catalog_for_target(target: Dict[str, Any]) -> Dict[str, Any]:
+def _manifest_metadata(raw: Any) -> Optional[Dict[str, Any]]:
+    """Compact parse cache only; uncommon values keep the full YAML reader."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("documents"), list):
+        return None
+    metadata = {key: raw[key] for key in ("schema", "generated_at") if key in raw}
+    metadata["documents"] = []
+    for item in raw["documents"]:
+        if not isinstance(item, dict):
+            return None
+        metadata["documents"].append({key: item[key] for key in _MANIFEST_CACHE_FIELDS if key in item})
+    values = [value for key, value in metadata.items() if key != "documents"]
+    values.extend(value for item in metadata["documents"] for value in item.values())
+    if any(not isinstance(value, (str, int, float, bool, type(None))) for value in values):
+        return None
+    return metadata
+
+
+def _read_manifest_cache(cfg: Any, source_id: str) -> Dict[str, Any]:
+    conn = None
+    try:
+        conn = _open_ro(cfg, source_id=source_id)
+        if conn is None:
+            return {}
+        cache = json.loads(_get_meta(conn, "catalog_manifest_cache", "{}"))
+        return cache if isinstance(cache, dict) else {}
+    except (OSError, ValueError, RecursionError, sqlite3.Error):
+        return {}
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def _catalog_for_target(target: Dict[str, Any], *, manifest_cache: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     root = _canonical(target["wiki_repo_root"])
     manifest_path = _safe_metadata_file(root, MANIFEST_NAME)
     cache_key = (str(target["source_id"]), f"{target['project_id']}/{target['repo_id']}")
@@ -311,10 +345,20 @@ def _catalog_for_target(target: Dict[str, Any]) -> Dict[str, Any]:
             )
         }
         if current_docs == cached_docs and current_maintenance == cached_maintenance:
-            return copy.deepcopy(cached)
+            return copy.deepcopy({key: value for key, value in cached.items() if key != "_manifest_cache"})
     try:
-        loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
-        raw = yaml.load(manifest_path.read_text(encoding="utf-8-sig"), Loader=loader) or {}
+        manifest_bytes = manifest_path.read_bytes()
+        manifest_hash = _sha256_bytes(manifest_bytes)
+        entry = (manifest_cache or {}).get(str(manifest_path))
+        metadata = _manifest_metadata(entry.get("data")) if isinstance(entry, dict) else None
+        metadata_hash = _sha256_bytes(json.dumps(metadata, ensure_ascii=False, sort_keys=True).encode("utf-8")) if metadata is not None else ""
+        if (metadata is not None and entry.get("schema") == "tp-spec.wiki-catalog-cache/v1"
+                and entry.get("parser") == _MANIFEST_CACHE_PARSER and entry.get("fields") == list(_MANIFEST_CACHE_FIELDS)
+                and entry.get("sha256") == manifest_hash and entry.get("metadata_sha256") == metadata_hash):
+            raw = metadata
+        else:
+            loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+            raw = yaml.load(manifest_bytes.decode("utf-8-sig"), Loader=loader) or {}
     except Exception as exc:
         return {
             "documents": [],
@@ -429,6 +473,9 @@ def _catalog_for_target(target: Dict[str, Any]) -> Dict[str, Any]:
         "maintenance_signatures": maintenance_signatures,
     }
     _CATALOG_CACHE[cache_key] = copy.deepcopy(result)
+    metadata = _manifest_metadata(raw)
+    if metadata is not None:
+        _CATALOG_CACHE[cache_key]["_manifest_cache"] = {"path": str(manifest_path), "sha256": manifest_hash, "data": metadata}
     return result
 
 
@@ -441,10 +488,11 @@ def _catalog(cfg: Any) -> Tuple[str, List[Dict[str, Any]], List[Dict[str, str]],
         return "", [], [{"code": "WIKI_REGISTRY_MISSING", "message": f"Wiki registry has no registered workspaces: {cfg.paths.wiki_registry}"}], []
     source_id = _source_id(cfg, registry)
     targets, problems = _target_rows(cfg, registry, source_id)
+    manifest_cache = _read_manifest_cache(cfg, source_id)
     docs: List[Dict[str, Any]] = []
     repo_rows: List[Dict[str, Any]] = []
     for target in targets:
-        catalog = _catalog_for_target(target)
+        catalog = _catalog_for_target(target, manifest_cache=manifest_cache)
         problems.extend(catalog["problems"])
         docs.extend(catalog["documents"])
         maintenance = catalog["maintenance"]
@@ -868,6 +916,40 @@ def _record_best_effort(**kwargs: Any) -> Tuple[Optional[str], Optional[str]]:
         return None, f"TELEMETRY_UNAVAILABLE:{type(exc).__name__}"
 
 
+def _manifest_cache_entries(source_id: str, repos: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    active = None if repos is None else {f"{row['project_id']}/{row['repo_id']}" for row in repos}
+    return {entry["path"]: {"schema": "tp-spec.wiki-catalog-cache/v1", "sha256": entry["sha256"], "data": entry["data"],
+                           "parser": _MANIFEST_CACHE_PARSER, "fields": list(_MANIFEST_CACHE_FIELDS),
+                           "metadata_sha256": _sha256_bytes(json.dumps(entry["data"], ensure_ascii=False, sort_keys=True).encode("utf-8"))}
+            for (source, repo), cached in _CATALOG_CACHE.items() if source == source_id and (active is None or repo in active)
+            for entry in [cached.get("_manifest_cache")] if entry}
+
+
+def refresh_catalog_cache(cfg: Any) -> Dict[str, Any]:
+    """Refresh only the optional parse cache in an existing retrieval DB."""
+    started = time.perf_counter()
+    source_id, docs, problems, repos = _catalog(cfg)
+    path = retrieval_db_path(cfg, source_id=source_id)
+    if not path.is_file():
+        return {"status": "WARN", "operation": "catalog-cache", "updated": False,
+                "reason": "retrieval index missing; page keeps the live YAML reader", "source_id": source_id}
+    uri = "file:" + quote(str(path), safe="/:\\") + "?mode=rw"
+    conn = sqlite3.connect(uri, uri=True, timeout=3.0)
+    try:
+        entries = _manifest_cache_entries(source_id, repos)
+        _set_meta(conn, "catalog_manifest_cache", json.dumps(entries, ensure_ascii=False, separators=(",", ":")))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {"status": "PASS" if not problems else "WARN", "operation": "catalog-cache", "updated": True,
+            "source_id": source_id, "cached_manifests": len(entries), "document_count": len(docs),
+            "repository_count": len(repos), "problems": problems,
+            "elapsed_ms": round((time.perf_counter() - started) * 1000, 3)}
+
+
 def build_index(cfg: Any) -> Dict[str, Any]:
     """Build the user-root FTS5 projection from all enabled registered repos."""
     started = time.perf_counter()
@@ -905,6 +987,7 @@ def build_index(cfg: Any) -> Dict[str, Any]:
         _set_meta(conn, "repository_count", len(repos))
         _set_meta(conn, "problem_count", len(problems))
         _set_meta(conn, "catalog_fingerprint", catalog_fingerprint)
+        _set_meta(conn, "catalog_manifest_cache", json.dumps(_manifest_cache_entries(source_id, repos), ensure_ascii=False, separators=(",", ":")))
         _set_meta(conn, "schema", "tp-spec.wiki-retrieval/v1")
         conn.commit()
     except Exception as exc:
@@ -932,8 +1015,10 @@ def build_index(cfg: Any) -> Dict[str, Any]:
     }
 
 
-def update_index(cfg: Any) -> Dict[str, Any]:
+def update_index(cfg: Any, *, catalog_only: bool = False) -> Dict[str, Any]:
     """Refresh the rebuildable projection after a successful Wiki commit."""
+    if catalog_only:
+        return refresh_catalog_cache(cfg)
     result = build_index(cfg)
     result["operation"] = "update"
     return result

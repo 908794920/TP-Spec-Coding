@@ -9,5 +9,5 @@
 3. 从当前 Base 读取 `automation/wiki/daily-maintenance.md`，对每个解析得到的 workspace/repo 严格按该版本 canonical protocol 执行。Git 来源采用合并配置中明确指定、本地已有的远程跟踪引用；不得自动 fetch/pull、猜分支或为缺失对象联网，缺失配置/引用/对象只报告该范围，代码同步由用户控制。
 4. 使用正式 `<BaseRoot>/scripts/tp-spec.ps1`（或等价已安装 `tp-spec` 命令）；为每个范围传入解析得到的 `--workspace-root <workspace>` 与 `--repo <repo-id>`，不得依赖项目 `.tp-spec/scripts` / `.tp-spec/wiki` Junction，也不得调用旧 Wiki 数据仓中的 legacy tools。
 5. 对每个 workspace/repo **独立保持 project/repository scope**；当前 Wiki System Root 绝不能被当成 `--workspace-root`，也不得因此执行无边界中央 Wiki 全库源码扫描。一个范围没有唯一映射或没有可维护范围时，报告事实并跳过，不伪造范围。
-6. 这是无人值守对话模型任务：**不得 AskUserQuestion**。某个 workspace/repo 若 Registry/Resolver 不唯一、发生破坏性操作歧义、MASS_CHANGE 无充分证据或 L4 证据不足，则该范围 fail-closed、保留旧 baseline，并标记 `NEEDS_REVIEW`；其他范围仍可独立继续。
+6. 这是无人值守对话模型任务：**不得 AskUserQuestion**。某个 workspace/repo 若 Registry/Resolver 不唯一、发生破坏性操作歧义、MASS_CHANGE 无充分证据或 L4 证据不足，则该范围 fail-closed、保留旧 baseline，并标记 `NEEDS_REVIEW`；其他范围仍可独立继续。多个仓同时发生 `MAINTENANCE_POLICY_CHANGED` 只说明共同刷新原因，其数量/比例本身不构成全域暂停条件。不要把历史个案中的静默时长变成通用门槛；固定 Git 来源与 FILESYSTEM 的继续/暂停条件按 daily-maintenance 执行。
 7. 最后按 workspace/repository 输出变化、verify/coverage/L4/baseline 结果以及需要人工处理的问题；不得用一个“全库已完成”结论隐藏单仓失败。

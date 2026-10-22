@@ -148,11 +148,38 @@ def _project_execution(task, rows, *, retired: bool = False) -> dict:
     from .task_coordinator import read_creation_coordinator
     creation = read_creation_coordinator(task, rows)
     issues.extend(creation["issues"])
+    coordinator, coordinator_source = creation["coordinator"], creation["source"]
+    prior = []
     for raw in rows:
         row = dict(raw)
         if row.get("task_id") != task.get("task_id"):
             continue
         kind, detail = row.get("event_type"), detail_of(row)
+        from . import work_takeover
+        if kind == work_takeover.EVENT:
+            body = work_takeover.trusted(row, prior)
+            from .work_session_cmd import pair_work_sessions
+            opened = {r["id"] for r in pair_work_sessions(prior)["unmatched_starts"]}
+            prior.append(row)
+            if (body is None or any(s["start_event_id"] not in opened for s in body["sessions"])
+                    or (body["coordinator"] and body["coordinator"]["before"] != coordinator)):
+                issues.append(f"WORK_TAKEOVER_INVALID:{row['id']}")
+                continue
+            if body["coordinator"]:
+                coordinator = body["coordinator"]["after"]
+                coordinator_source = {"kind": "user_takeover", "event_id": row["id"], "schema": work_takeover.SCHEMA}
+            for session in body["sessions"]:
+                p = participations.get(session["session_id"])
+                if p:
+                    p.update(status="HANDED_OFF", ended_at=row.get("created_at"), duration_seconds=None,
+                             last_event_id=row["id"], last_recorded_at=row.get("created_at"),
+                             responsibility_end_kind="user_takeover", takeover_event_id=row["id"])
+                    p["history"].append({"event_id": row["id"], "event_type": kind,
+                        "action": "user_takeover", "actor": "human_owner", "created_at": row.get("created_at")})
+            activities.append({"event_id": row["id"], "event_type": kind, "action": "user_takeover",
+                               "actor": "human_owner", "created_at": row.get("created_at"), "summary": row.get("summary")})
+            continue
+        prior.append(row)
         if kind not in {PLAN, STEP} | SESSION_EVENTS:
             continue
         if kind in SESSION_EVENTS and "execution_schema" not in detail:
@@ -181,7 +208,7 @@ def _project_execution(task, rows, *, retired: bool = False) -> dict:
                     raise ValueError("invalid step identities")
                 if not isinstance(body.get("coordinator"), dict):
                     raise ValueError("invalid coordinator")
-                initial = creation["coordinator"]
+                initial = coordinator
                 if version == 0 and initial and (
                         body["coordinator"]["role"] != initial["role"]
                         or (initial["agent"] and body["coordinator"]["agent"] != initial["agent"])):
@@ -198,6 +225,8 @@ def _project_execution(task, rows, *, retired: bool = False) -> dict:
                 issues.append(f"EXECUTION_PLAN_INVALID:{row['id']}")
                 continue
             plan, version = body, detail["plan_version"]
+            coordinator = body["coordinator"]
+            coordinator_source = {"kind": "execution_plan", "event_id": row["id"], "schema": SCHEMA}
             history.append({"version": version, "event_id": row["id"], "created_at": row.get("created_at"),
                             "reason": body.get("reason"), "scope_refs": body.get("scope_refs"),
                             "assessment": body.get("assessment"), "plan_digest": detail["plan_digest"]})
@@ -212,7 +241,7 @@ def _project_execution(task, rows, *, retired: bool = False) -> dict:
             allowed = {"PLANNED": {"start"}, "ACTIVE": {"wait", "complete"}, "WAITING": {"resume"}}
             if (detail["plan_version"] != version or not isinstance(action, str)
                     or action not in allowed.get(step["status"], set())
-                    or row.get("actor_role") not in set(step["roles"]) | {plan["coordinator"]["role"]}
+                    or row.get("actor_role") not in set(step["roles"]) | {coordinator["role"]}
                     or (action == "wait" and not (detail.get("wait_reason") and detail.get("expected_next_actor")))
                     or (action == "complete" and any(p["step_id"] == step_id and p["ended_at"] is None for p in participations.values()))):
                 issues.append(f"EXECUTION_STEP_TRANSITION_INVALID:{row['id']}")
@@ -330,9 +359,7 @@ def _project_execution(task, rows, *, retired: bool = False) -> dict:
     latest_record = max([*activities, *history], key=lambda item: item.get("event_id", 0), default={})
     return {"schema": SCHEMA, "status": "INVALID" if issues else "RECORDED" if plan else "NOT_RECORDED",
             "source": "task_event", "plan_version": version, "plan": plan, "plan_history": history,
-            "coordinator": plan["coordinator"] if plan else creation["coordinator"],
-            "coordinator_source": {"kind": "execution_plan", "event_id": history[-1]["event_id"], "schema": SCHEMA}
-                                  if plan else creation["source"], "terminal": terminal,
+            "coordinator": coordinator, "coordinator_source": coordinator_source, "terminal": terminal,
             "current_step": current, "next_step": next_step, "steps": list(steps.values()),
             "participations": list(participations.values()), "timeline": activities,
             "current_roles": [] if terminal else list(dict.fromkeys(p["role"] for p in current_participations)),

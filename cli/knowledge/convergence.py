@@ -303,6 +303,17 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
         # A fragment navigates within a file; it is not part of its disk name.
         # Index the actual bytes without claiming to validate the named anchor.
         ref = ref.split("#", 1)[0]
+        # 强制证据的同Task历史别名只归一准确路径，不降为可忽略导航。
+        if raw in strict_refs and PurePosixPath(ref).parts[:2] in {
+                (".tp-spec", "tasks"), (".tp-spec", "tasksHistory")}:
+            try:
+                alias = resolve_locator_file(task, task_dir, ref)
+                if alias is None or alias.source_root != "task":
+                    raise ValueError("project evidence alias must identify this exact Task")
+                ref = alias.ref
+            except (ValueError, OSError, RuntimeError) as exc:
+                issues.append(f"SOURCE_UNAVAILABLE: {ref}: {exc}")
+                continue  # 不能退回Task-relative解释或读取同名嵌套副本。
         source = None
         if raw in locator_refs and raw not in strict_refs:
             try:
@@ -437,6 +448,22 @@ def validate_assessment(value: dict, index: dict) -> dict:
     coverage = result.get("coverage")
     if not isinstance(coverage, list):
         raise ValueError("coverage must be a list of actual per-input assessments")
+    expanded = []
+    for item in coverage:
+        # Only the optional plural form is new; keep existing per-input rows and
+        # their digest semantics intact, including historical Result validation.
+        if isinstance(item, dict) and "input_id" not in item and "input_ids" in item:
+            expected = dependencies(item, hashes)
+            if item.get("input_digests") != expected:
+                raise ValueError("coverage.input_digests must match every grouped current input")
+            for key in item["input_ids"]:
+                member = {name: value for name, value in item.items()
+                          if name not in {"input_ids", "input_digests"}}
+                member.update(input_id=key, digest=expected[key])
+                expanded.append(member)
+        else:
+            expanded.append(item)
+    result["coverage"] = coverage = expanded
     seen = set()
     for item in coverage:
         if not isinstance(item, dict):

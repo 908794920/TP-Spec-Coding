@@ -21,6 +21,8 @@ execution:
   concurrent_workflow_stages: false
   assignment_effects: true
   delivery_fast_path:
+    # Engineering target, not a measured AI ratio or an automatic completion gate.
+    # Reuse CLI invocation timings and compare output bytes; no AI baseline is inferred.
     max_incremental_ai_overhead_percent: 5
     context_source: runtime_compact_fact_pack
     allow_default_subagents: false

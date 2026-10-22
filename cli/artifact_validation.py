@@ -665,7 +665,10 @@ def _check_acceptance(task_dir: Path, issues: List[ValidationIssue], enforce_no_
     except OSError as e:
         issues.append(ValidationIssue(code=YAML_INVALID, message=f"cannot read acceptance.md: {e}", artifact="acceptance.md"))
         return
-    result = yaml_checks.check_acceptance_yaml(text, enforce_completion=enforce_no_pending, allow_human_pending=allow_human_pending)
+    result = yaml_checks.check_acceptance_with_owner(
+        text, conn=conn, task_id=task_id, task_dir=task_dir,
+        enforce_completion=enforce_no_pending, allow_human_pending=allow_human_pending,
+    )
     if not result.ok:
         for msg in result.issues:
             code = ACCEPTANCE_PENDING

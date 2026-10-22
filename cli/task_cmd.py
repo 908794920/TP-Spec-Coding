@@ -2075,8 +2075,15 @@ def cmd_task_acceptance_override(args) -> int:
         visual_scope = None
         if args.scope == "visual":
             from .yaml_checks import check_acceptance_yaml
+            visual_owner_acs = set(event_policies.effective_owner_acceptance(
+                conn, args.task, task_dir=task_dir,
+            ).get("visual_acs") or [])
+            # 旧人验可能已失效；显式重新验收先检查结构，后续仍逐项核实旧回执与新绑定。
+            if args.mode == "accept":
+                visual_owner_acs.update(explicit_acs)
             visual_check = check_acceptance_yaml(
-                text, enforce_completion=False, allow_human_pending=True,
+                text, owner_visual_acs=visual_owner_acs,
+                enforce_completion=False, allow_human_pending=True,
             )
             if not visual_check.ok:
                 print(
@@ -2106,7 +2113,7 @@ def cmd_task_acceptance_override(args) -> int:
                     file=sys.stderr,
                 )
                 return 6
-        if args.scope in {"human-pending", "visual"}:
+        if args.scope in {"human-pending", "visual"} and not (args.scope == "visual" and explicit_acs):
             selected.extend(
                 ac for ac, row in rows.items()
                 if row["witness"] == "human" and row["verdict"] == "PENDING"
@@ -2171,7 +2178,7 @@ def cmd_task_acceptance_override(args) -> int:
                 print("ERROR: DEVELOPMENT_CHANGE_SET_STALE: product changed before owner acceptance", file=sys.stderr)
                 return 7
             from .digest import compute_verification_subject_digest
-            subject_digest = compute_verification_subject_digest(task_dir)
+            subject_digest = compute_verification_subject_digest(task_dir, scope="technical")
             source_rel = _owner_acceptance_source_path(request.request_id)
             source_text = _owner_acceptance_source_document(source)
             source_path = task_dir / source_rel
@@ -2208,7 +2215,15 @@ def cmd_task_acceptance_override(args) -> int:
 
         # Validate the candidate artifact before any durable write.
         from .yaml_checks import check_acceptance_yaml
-        candidate = check_acceptance_yaml(updated, enforce_completion=False)
+        owner_visual_acs = set(event_policies.effective_owner_acceptance(
+            conn, args.task, task_dir=task_dir,
+        ).get("visual_acs") or [])
+        if args.mode == "accept" and args.scope == "visual":
+            # 本次人验已校验范围、来源及产品绑定；候选尚未提交，不冒充已有账本事实。
+            owner_visual_acs.update(selected)
+        candidate = check_acceptance_yaml(
+            updated, enforce_completion=False, owner_visual_acs=owner_visual_acs,
+        )
         if not candidate.ok:
             print("ERROR: acceptance override would create invalid acceptance.md: " + "; ".join(candidate.issues), file=sys.stderr)
             return 7
@@ -2263,7 +2278,7 @@ def cmd_task_acceptance_override(args) -> int:
                         or not latest.get("repo_roots")
                         or not same_bound_product_content(latest["detail"], capture_change_set(latest["repo_roots"]))
                         or latest.get("change_set_id") != development.get("change_set_id")
-                        or compute_verification_subject_digest(task_dir) != subject_digest):
+                        or compute_verification_subject_digest(task_dir, scope="technical") != subject_digest):
                     raise ValueError("OWNER_ACCEPTANCE_STALE: subject or product changed before commit")
             detail = {
                 "transaction_id": transaction_id,
@@ -2292,6 +2307,7 @@ def cmd_task_acceptance_override(args) -> int:
                     "change_set_id": str(current_change_set.get("content_digest") or ""),
                     "change_set_snapshot_digest": str(current_change_set.get("snapshot_digest") or ""),
                     "subject_digest": subject_digest,
+                    "subject_scope": "technical",
                     "repo_roots": list(development["repo_roots"]),
                     "source_evidence": source_rel,
                     "source_evidence_sha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
@@ -2472,6 +2488,9 @@ def cmd_task_complete(args) -> int:
         result = record_first.completion_check(
             task_id=args.task, task_dir=args.task_dir, db=args.db,
         )
+        if getattr(args, "compact", False):
+            from .closeout import compact
+            result = compact(result)
         print(json.dumps(result, ensure_ascii=False))
         return 0 if result.get("ready") or result.get("already_terminal") else 1
     result = record_first.complete(
@@ -2725,6 +2744,7 @@ def add_task_subparsers(task_parser) -> None:
     p_complete.add_argument("--actor", required=False, default=None, type=actor_argument(), help="optional; defaults to current task owner")
     p_complete.add_argument("--summary", required=False, default="")
     p_complete.add_argument("--check", action="store_true", help="read-only preflight; does not write task facts or projections")
+    p_complete.add_argument("--compact", action="store_true", help="compact --check output; preserve all checks, blockers and unknowns")
     p_complete.add_argument("--db", default=None)
     p_complete.set_defaults(func=cmd_task_complete)
 

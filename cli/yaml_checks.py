@@ -25,7 +25,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from . import frontmatter
 
@@ -142,8 +142,32 @@ class AcceptanceCheckResult:
         return ["ACCEPTANCE_PENDING" if self.pending_rows else "YAML_INVALID"]
 
 
+def check_acceptance_with_owner(text: str, *, conn, task_id: str, task_dir: Path,
+                                enforce_completion: bool = True, allow_human_pending: bool = False,
+                                require_visual_evidence: bool = False) -> AcceptanceCheckResult:
+    """正式消费验收时复用当前 Owner 回执；无账本上下文仍按原严格规则检查。"""
+    from . import event_policies
+
+    checked = check_acceptance_yaml(
+        text, enforce_completion=enforce_completion, allow_human_pending=allow_human_pending,
+        require_visual_evidence=require_visual_evidence,
+    )
+    visual = (checked.page_verification or {}).get("visual")
+    # 仅真正依赖 Owner 替代证据时查询产品绑定，普通验收不增加 Git 扫描。
+    if (conn is None or not task_id or not isinstance(visual, dict)
+            or visual.get("required") is not True or str(visual.get("evidence_manifest") or "").strip()
+            or not any(row["verdict"] == "PASS" for row in checked.human_rows)):
+        return checked
+    effective = event_policies.effective_owner_acceptance(conn, task_id, task_dir=task_dir)
+    return check_acceptance_yaml(
+        text, enforce_completion=enforce_completion, allow_human_pending=allow_human_pending,
+        require_visual_evidence=require_visual_evidence, owner_visual_acs=effective.get("visual_acs") or [],
+    )
+
+
 def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_human_pending: bool = False,
-                          require_visual_evidence: bool = False) -> AcceptanceCheckResult:
+                          require_visual_evidence: bool = False,
+                          owner_visual_acs: Optional[Iterable[str]] = None) -> AcceptanceCheckResult:
     """校验 acceptance.md 正文 YAML 块 + 验收表格结论列。
 
     Final Hardening（Task 4 §6.2 / P0-3 / P0-6）：
@@ -152,11 +176,13 @@ def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_h
     - 每个 AC 行的验收条件不得为空；
     - verdict=PASS 的 AC 行必须存在证据路径；
     - PENDING/BLOCKED 行在结单时拒绝。
-    - 准备阶段允许视觉证据待登记；视觉 PASS、正式验证和结单仍要求证据清单。
+    - 准备阶段允许视觉证据待登记；正式视觉门禁只接受机器清单或可信 Owner 完整范围。
+      owner_visual_acs 由 Runtime 核实后传入，不从文档的 PASS 或 confirmed 自行推断。
     """
     result = AcceptanceCheckResult()
     ac_row_count = 0
     ac_verdicts: Dict[str, str] = {}
+    owner_visual_acs = set(owner_visual_acs or ())
 
     # 1) 验收表格结论列：verdict 枚举 + PENDING/BLOCKED 拒绝 + PASS 证据
     for line in text.splitlines():
@@ -255,14 +281,21 @@ def check_acceptance_yaml(text: str, *, enforce_completion: bool = True, allow_h
                                 + ", ".join(unknown_refs)
                             )
                 if required is True and not str(visual.get("evidence_manifest") or "").strip():
-                    # A future obligation is not a malformed declaration. Positive claims
-                    # and formal gates remain strict, even when other ACs may be pending.
                     scoped_refs = [value.strip() for value in refs if isinstance(value, str)] if isinstance(refs, list) else []
-                    visual_pass = any(ac_verdicts.get(ac) == "PASS" for ac in (scoped_refs or ac_verdicts))
-                    if enforce_completion or require_visual_evidence or visual_pass:
+                    owner_pass = {
+                        row["ac"] for row in result.human_rows
+                        if row["verdict"] == "PASS" and row["ac"] in owner_visual_acs
+                    }
+                    owner_covers_scope = bool(scoped_refs) and set(scoped_refs).issubset(owner_pass)
+                    visual_pass = any(
+                        ac_verdicts.get(ac) == "PASS" and ac not in owner_pass
+                        for ac in (scoped_refs or ac_verdicts)
+                    )
+                    # 允许分次登记真实人验；正式通过仍须覆盖全部声明范围。
+                    if not owner_covers_scope and (enforce_completion or require_visual_evidence or visual_pass):
                         result.ok = False
                         result.issues.append("page_verification.visual required=true needs evidence_manifest")
-                    else:
+                    elif not owner_covers_scope:
                         result.visual_evidence_pending = True
             mode = pv.get("mode")
             if enforce_completion and mode == "human":

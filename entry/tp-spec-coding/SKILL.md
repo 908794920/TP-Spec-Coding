@@ -44,4 +44,6 @@ description: TP-Spec-Coding 唯一默认产品入口；以低上下文成本识�
 不得决定 L0~L3 pipeline、不得写业务代码、不得直接修改 Runtime、不得替代 Domain Agent 做专业判断。
 
 ## 软件任务模式
-软件任务按 Runtime 唯一模式解释确定适用义务。旧 Task 或没有真实用户模式选择的 Task 按 standard；只有用户明确选择 quick 时才使用 quick。AI 可以建议 quick，但用户沉默、拒绝或未作选择都不构成 quick 选择。模式选择只裁剪流程义务，不扩大 SQL、生产、发布、权限或结单授权。具体流程和最终字段见 [软件工程生命周期](../../agents/tp-software-lifecycle/SKILL.md)。
+先判断本次工作是否需要正式 Task。目标和范围明确的普通局部修改直接使用所需能力完成，不因接入 TP-Spec、调用 Skill、测试或留日志自动创建 Task；已有 Task 范围内的返修继续原任务。用户要求任务记录、项目明确要求 Task，或工作确实需要持续跟踪与协作交付时，再建立正式 Task。“全链路开发测试”“连续完成”本身不等于选择标准 Task。
+
+已建立的任务按 Runtime 唯一模式解释确定适用义务。旧 Task 或没有真实用户模式选择的 Task 按 standard；只有用户明确选择 quick 时才使用 quick。需要任务记录的小修改可一次简短建议 quick，不能把沉默、拒绝或未作选择当同意。直接处理不新增 Runtime 模式，也不绕过已有 Task 门禁、必要验证或 SQL、生产、发布授权。具体流程和最终字段见 [软件工程生命周期](../../agents/tp-software-lifecycle/SKILL.md)。

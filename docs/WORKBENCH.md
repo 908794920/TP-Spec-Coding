@@ -14,7 +14,7 @@
 
 管理器只停止通过这些入口启动的本目录实例，通过私有管道和实例令牌通知原启动器关闭两端，不按端口或进程名称杀服务。首次切换时，原 `npm run dev` 启动的前台实例需在原终端按 `Ctrl+C` 停止，再运行 `start.cmd`；端口冲突不会自动接管旧实例。并发管理操作会明确拒绝，异常中断留下的 `manager.lock` 需确认没有管理操作运行后再移除。
 
-默认前端端口为 5173；如确需另一端口，可在调用前设置 `TP_SPEC_WORKBENCH_PORT`。`start.cmd`/`restart.cmd`/`stop.cmd` 不安装依赖、不升级 Base、不运行测试；依赖准备只由 `install.cmd` 显式执行。启动失败查看 `workbench-logs/workbench.log`。
+默认前端从 15173 开始；端口被占用或被系统拒绝监听时，依次尝试 15174、15175……，直到找到可用端口，最多到 65535。可在调用前设置 `TP_SPEC_WORKBENCH_PORT` 改变起始端口。浏览器、健康检查和实例记录使用实际端口；重复启动复用已运行实例，重启重新从起始端口选择。`start.cmd`/`restart.cmd`/`stop.cmd` 不安装依赖、不升级 Base、不运行测试；依赖准备只由 `install.cmd` 显式执行。启动失败查看 `workbench-logs/workbench.log`。
 
 ## 环境与启动
 
@@ -30,11 +30,11 @@ npm run dev
 
 Windows 上可用 `ui\install.cmd` 代替 `npm ci`：按 `package-lock.json` 安装，锁文件未变化时跳过重复安装（安装记录写在 `workbench-logs\install-state.json`，只记锁文件指纹与 Node/npm 版本），检测到受管工作台仍在运行时会拒绝安装。`install.cmd --python` 会一并执行上面的 `pip install`，`install.cmd --build` 会额外执行 `npm run build`，`install.cmd --force` 强制重装。
 
-默认浏览器地址 `http://127.0.0.1:5173`；API 自动选择空闲的本机端口。实际地址、源码根和 API PID 会打印到终端。浏览器访问前端地址，由前端代理 `/api` 到本次 Python 实例。不要单独执行 Vite 后期待它自动找到任意已运行的 API。
+默认浏览器地址从 `http://127.0.0.1:15173` 开始选择；`--port` 指定另一前端起始端口，同样在占用或系统拒绝监听时递增。API 自动选择空闲的本机端口，显式 `--api-port` 的行为不变。实际地址、源码根和 API PID 会打印到终端。浏览器访问前端地址，由前端代理 `/api` 到本次 Python 实例。不要单独执行 Vite 后期待它自动找到任意已运行的 API。
 
 ```bash
-npm run dev -- --port 5180
-npm run dev -- --port 5180 --api-port 8765
+npm run dev -- --port 15180
+npm run dev -- --port 15180 --api-port 8765
 npm run dev -- --help
 ```
 
@@ -62,6 +62,8 @@ Task 的数据及路由共用一次 SQLite 只读事务，项目索引也使用�
 每个 HTTP 读取请求独占配置解析和执行投影缓存，配置按实际内容指纹失效，请求结束即释放，不缓存跨请求的任务状态或 PASS。产品内容检查在同次请求内共享现场快照，返回前重新读取真实文件字节并核对快照；变化或复核失败时拒绝返回旧适用性结果。批量文件读取使用最多四个线程，逐文件哈希仍完整。该复用仅用于网页读取，不改变正式 CLI 门禁；返回前复核也不构成跨介质原子性承诺。
 
 Wiki 页面在一次读取中共用同来源的目录及其指纹来计算文档概况和索引状态，避免重复遍历所有已登记文档；下一请求仍重新检查文件。Wiki Registry 的解析仅在同次网页请求中按内容指纹复用，正式 CLI 保持原有读取方式。索引读取失败仍单独报告，不隐藏已读取的目录。
+
+Wiki 首次目录读取可复用现有索引元信息中的清单解析缓存，使用前核对清单字节 SHA、缓存格式与元信息 SHA；文件状态、正文哈希及索引过期检测仍执行。缓存缺失、损坏或不适用时沿原 YAML reader 读取，页面不写缓存。准备方法与边界见 [Wiki 使用说明](WIKI_USAGE.md)。
 
 任务基础快照的历史验证摘要仍标记 `current_applicability=not_evaluated`，不能仅凭其 PASS 判定当前通过。只有用户打开非概况详情后，才另行读取证据/绑定与当前适用性；画布拖动、缩放和搜索不触发这些检查。WorkItem 来自 `work_item`；Work Session 来自既有事件。采用新结果契约时，Work 的范围、尝试、结果和接收来自已登记事件；旧记录缺失字段保持未知。`data_support.agent_thread_binding` 仍明确未提供，不按 Wxx 名字推断宿主 Agent Thread。
 

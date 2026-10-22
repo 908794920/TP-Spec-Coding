@@ -586,9 +586,10 @@ def cmd_review_record(args) -> int:
             return 8
         # Fourth Hardening（P0-2）：结构化 evidence（path + sha256）绑定事件，
         # 证据删除/替换使旧 PASS 失效（门禁侧按 detail.evidence_items 校验）。
-        # 若证据就是本次被改写的 artifact 自身，digest 必须绑定最终字节
-        # （与 artifact_digest 一致），否则事件↔文件 digest 会漂移。
+        # 若证据就是本次被改写的 artifact 自身，sha256 绑定最终 UTF-8 字节；
+        # artifact_digest 则是独立的归一文本摘要。原文件摘要保留用于事务前复核。
         evidence_items: List[Dict[str, str]] = []
+        evidence_before_write: List[Dict[str, str]] = []
         if args.decision == "PASS":
             from .evidence import validate_evidence_path
             for ev in evidence:
@@ -596,7 +597,11 @@ def cmd_review_record(args) -> int:
                 if not ev_check.ok:
                     print(f"ERROR: REVIEW_PASS_CONTENT_GATE: evidence invalid: {ev_check.error}", file=sys.stderr)
                     return 8
-                evidence_items.append(dict(ev_check.item))
+                item = dict(ev_check.item)
+                evidence_before_write.append(dict(item))
+                if (task_dir / ev_check.path).resolve() == artifact_path.resolve():
+                    item["sha256"] = hashlib.sha256(final_artifact_text.encode("utf-8")).hexdigest()
+                evidence_items.append(item)
         from . import security_authority as authority
         findings = authority.validate_findings(conn, task_id, task_dir, getattr(args, "findings", None),
             decision=str(args.decision).upper(), count=int(args.findings_count or 0))
@@ -648,6 +653,8 @@ def cmd_review_record(args) -> int:
             if current_findings != findings:
                 raise ValueError("REVIEW_FINDINGS_CHANGED")
             authority.check_formal_evidence(authority.read(conn, task_id, task_dir), task_dir, evidence)
+            from .recording import validate_bound_items
+            validate_bound_items(task_dir, evidence_before_write)
             detail["transaction_id"] = transaction_id
             conn.execute(
                 "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,evidence_path,created_at) VALUES (?,?,?,?,?,?,?)",

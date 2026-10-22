@@ -62,9 +62,25 @@ def pair_work_sessions(rows) -> dict:
     """Match recorded identities, never infer liveness or repair ambiguous history."""
     opened = {}
     pairs, unmatched_ends, invalid_events = [], [], []
+    from . import work_takeover
+    prior = []
     for raw in rows:
         row = dict(raw)
         kind = row.get("event_type")
+        if kind == work_takeover.EVENT:
+            body = work_takeover.trusted(row, prior)
+            prior.append(row)
+            if body is None or any(s["start_event_id"] not in opened for s in body["sessions"]):
+                invalid_events.append(row)
+                continue
+            for session in body["sessions"]:
+                start = opened.pop(session["start_event_id"])
+                pairs.append({"session_id": session["session_id"], "role": session["role"],
+                    "start": _session_time(start.get("created_at")), "end": _session_time(row.get("created_at")),
+                    "duration": None, "reason": "handed_off", "start_event_id": start["id"],
+                    "end_event_id": row["id"], "closure_kind": "user_takeover"})
+            continue
+        prior.append(row)
         if kind not in {"WORK_SESSION_STARTED", "WORK_SESSION_ENDED"}:
             continue
         detail = _event_detail(row)
@@ -116,13 +132,14 @@ def pair_work_sessions(rows) -> dict:
 
 def summarize_work_sessions(rows) -> dict:
     """Compact read-only observations; START/END do not observe an agent process."""
-    rows = [dict(row) for row in rows
-            if row["event_type"] in {"WORK_SESSION_STARTED", "WORK_SESSION_UPDATED", "WORK_SESSION_ENDED"}]
+    rows = [dict(row) for row in rows]
     paired = pair_work_sessions(rows)
     opened = [{key: row.get(key) or "" for key in
                ("id", "actor_role", "actor_agent", "model_used", "work_item_id", "created_at")}
               for row in paired["unmatched_starts"]]
-    latest = rows[-1] if rows else {}
+    session_rows = [r for r in rows if r["event_type"] in {
+        "WORK_SESSION_STARTED", "WORK_SESSION_UPDATED", "WORK_SESSION_ENDED", "WORK_TAKEOVER_RECORDED"}]
+    latest = session_rows[-1] if session_rows else {}
     detail = _event_detail(latest) or {}
     unknown_durations = sum(p["duration"] is None for p in paired["pairs"])
     summary = (f"运行状态未知；未闭合 START {len(opened)} 条；"
@@ -145,8 +162,7 @@ def summarize_work_sessions(rows) -> dict:
 
 
 def _open_sessions(conn, task_id: str):
-    rows = conn.execute("SELECT * FROM task_event WHERE task_id=? "
-                        "AND event_type IN ('WORK_SESSION_STARTED','WORK_SESSION_ENDED') ORDER BY id",
+    rows = conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id",
                         (task_id,)).fetchall()
     return pair_work_sessions(rows)["unmatched_starts"]
 
@@ -222,6 +238,16 @@ def cmd_work_start(args) -> int:
             row = conn.execute("SELECT status FROM work_item WHERE task_id=? AND item_id=?", (args.task, item)).fetchone()
             if row is None or row["status"] == "COMPLETED":
                 raise ValueError("WORK_ITEM_UNAVAILABLE: item must belong to this task and not be completed")
+            from .work_units import read as read_units, checked_item
+            scope = read_units(conn, args.task)
+            unit = scope["units"].get(item)
+            transferred = item in scope["legacy_takeovers"] or bool(
+                unit and any(h.get("action") == "takeover" for h in unit["history"])
+            )
+            if transferred:
+                current_owner = checked_item(conn, args.task, item)
+                if (current_owner["owner_role"], current_owner["owner_agent"]) != (actor, agent):
+                    raise ValueError("WORK_OWNER_MISMATCH: participation must use the current reassigned executor")
         from . import security_authority as authority
         if item:
             authority.check_work(conn, args.task, item)
@@ -393,6 +419,8 @@ def add_work_subparsers(work_parser) -> None:
     sub = work_parser.add_subparsers(dest="subcommand", required=True)
     from .execution_cmd import add_execution_subparsers
     add_execution_subparsers(sub)
+    from .work_takeover import add_subparser
+    add_subparser(sub)
     start = sub.add_parser("start", help="Start a distinct work participation (does not observe agent liveness)")
     start.add_argument("--item", default=None)
     start.add_argument("--step", default=None)

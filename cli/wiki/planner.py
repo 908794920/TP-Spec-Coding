@@ -10,6 +10,7 @@ from .manifest import load_manifest
 from .coverage import classify_wiki_eligible_sources
 from .snapshot import snapshot_paths, utc_now
 from .topology import analyze_topology
+from .policy import semantic_refresh_reasons
 
 PLAN_SCHEMA = "tp-spec.wiki-rebuild-plan/v1"
 
@@ -126,14 +127,15 @@ def build_plan(
 
     refresh_reasons = list(changeset.get("refresh_reasons") or [])
     repair_documents = set(changeset.get("repair_documents") or [])
-    if refresh_reasons:
-        repair_only = set(refresh_reasons) == {"EXPLICIT_REPAIR"}
+    semantic_reasons = semantic_refresh_reasons(wiki_repo_root, changeset, source_cfg)
+    if semantic_reasons:
+        repair_only = set(semantic_reasons) == {"EXPLICIT_REPAIR"}
         for doc in docs:
             rel = str(doc.get("path") or "")
             if not rel or (repair_only and repair_documents and rel not in repair_documents):
                 continue
             row = affected.setdefault(rel, {"document": rel, "reasons": [], "sections": set(), "roles": set()})
-            row["reasons"].extend({"kind": reason} for reason in refresh_reasons)
+            row["reasons"].extend({"kind": reason} for reason in semantic_reasons)
 
     affected_list = []
     for row in affected.values():
@@ -152,6 +154,7 @@ def build_plan(
         "baseline_source": changeset.get("baseline_source"),
         "maintenance_digest": changeset.get("maintenance_digest"),
         "refresh_reasons": refresh_reasons,
+        "semantic_refresh_reasons": semantic_reasons,
         "guard": changeset.get("guard"),
         "mass_change_approved": bool(guard != "MASS_CHANGE_REVIEW_REQUIRED" or allow_mass_change),
         "mass_change_review_reason": mass_change_reason.strip() if guard == "MASS_CHANGE_REVIEW_REQUIRED" and allow_mass_change else "",

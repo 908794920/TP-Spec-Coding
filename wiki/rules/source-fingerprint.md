@@ -11,6 +11,22 @@ Wiki 使用两类指纹：
 
 `GIT_REF` 首次或 source policy 变化时对固定 commit 做 inventory；日常使用 commit diff，仅对变动 blob 计算指纹，未变对象复用基线结果。成功 SHA 和维护策略不变的 `maintain` 快路径不进入 scan。raw hash 相同且归一化配置/规则也相同时才复用 normalized 结果，不能跨算法版本沿用旧判断。
 
+## 维护规则指纹
+
+`maintenance_digest` 绑定合并后的 source/snapshot/quality/coverage 配置，以及内容维护实现、机器产物 schema 和约束 AI 维护/审计的规则正文。`cli/wiki` 中的维护编排与共享实现、`cli/sensitive_scanner.py`、`wiki/rules`、`wiki/schema`、Wiki Agent、维护/构建/审计/恢复/调度 Skill 与 `automation/wiki` 继续按实际文件字节计算；不以 Skill 的 `id/version` 代替正文。
+
+检索实现 `cli/wiki/retrieval.py`、检索命令 `cli/wiki/retrieval_commands.py` 和 `skills/wiki/tp-wiki-retrieval/` 不属于内容维护规则，不进入该指纹。检索命令独立注册，避免只改检索参数就改变维护编排文件。共享的维护入口仍全文绑定，不能为消除误触发而排除其真实门禁。
+
+这只隔离检索投影与内容维护的失效范围：源码文件变化检测、运行中规则变化拒绝、Wiki subject 绑定，以及检索侧的文档/manifest/目录指纹和索引 `STALE` 检测继续独立生效。
+
+新 snapshot 同时保存 `maintenance_components`：四类有效配置和逐文件规则 SHA，聚合摘要仍严格绑定完整字节。规则变化须审查实际差异；不能仅因多个仓共同命中或源码零变化就认定语义不受影响。
+
+确认差异只影响确定性处理、旧语义结论仍适用时，使用正式 `wiki policy-review`，显式提供旧 Base Git ref 或原始字节归档、旧规则范围、实际审查说明与证据文件。CLI 必须以旧规则和当前有效配置精确重现旧 `maintenance_digest`；无法重现、配置变化、旧成功验证义务不明或存在 FAIL 时不接受。正常维护不遍历 Git 历史，也不自动推断政策等价。
+
+有效 review 只消除 `MAINTENANCE_POLICY_CHANGED` 引起的全仓语义复核理由；真实源码变化、正文/持久 metadata 变化、repair、旧 FAIL 和 topology 义务继续生效。manifest 仅两个机器时钟 scalar 和严格匹配本轮交易 ID 的字段可在内容身份中归一化，完整 subject 仍绑定 verify/commit。缺少旧 subject 原文、当前 fullsubject 已不匹配旧成功 baseline 的仓不因此豁免。
+
+重新 `maintain → manifest-refresh → verify → coverage → 必要 L4 → snapshot-commit` 正式收口，不手改摘要。verify 和 commit 重新核对政策、配置、证据 SHA 及 review 绑定。确定性收口保留原语义审计的来源、时间和限制，不生成新的 L4 PASS；旧合法成功记录若明确无需 L4 且未保存 L4，继续标记 `LEGACY_L4_NOT_RECORDED`，不能升级为已审计。证据不足时保留旧 baseline、报告缺口；此迁移不要求重写全部 Wiki 或执行全库构建。
+
 ## 编码层
 
 先把字节解码为 Unicode，再做 semantic normalization：

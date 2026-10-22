@@ -1,8 +1,8 @@
 """Knowledge-only read presentation over registered projections and trusted Runtime facts.
 
 No index build, migration, maintenance, cleanup or telemetry writer is called by
-this module. Current status is read once per selected source on a manual overview
-request. Content is paginated in SQLite; result receipts are loaded
+this module. Overview reads indexed metadata and existing maintenance reports;
+their current applicability is not revalidated. Content is paginated in SQLite; result receipts are loaded
 only when a record is expanded. Request project and content scope stay separate.
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ from urllib.parse import unquote, urlsplit
 from cli import context_effectiveness
 from cli.content_systems import load_content_systems
 from cli.path_identity import path_identity_key
-from cli.knowledge import documents, reading, state as knowledge_state, telemetry
+from cli.knowledge import documents, reading, telemetry
 from cli.knowledge.common import meta_paths, read_json, read_jsonl, resolve_knowledge_project
 
 
@@ -489,12 +489,9 @@ class KnowledgeView:
                 success += 1
             except (ValueError, sqlite3.Error, OSError):
                 self.problem("KNOWLEDGE_INDEX_UNAVAILABLE", source)
-            try:
-                detail["diagnostics"] = knowledge_state.status(cfg)
-            except (ValueError, OSError, RuntimeError, sqlite3.Error):
-                detail["diagnostics"] = None
-                detail["diagnostics_error"] = "当前质量或投影适用性无法读取；未将原报告当作当前结果。"
-                self.problem("KNOWLEDGE_STATUS_UNAVAILABLE", source)
+            # 概况只读取已有报告；完整 status 会重复扫描正文并校验整个索引。
+            # 未按需重新核验，就不能把历史 PASS 声称为当前绑定适用。
+            detail["diagnostics"] = None
             try:
                 registered = read_jsonl(meta_paths(cfg)["source_registry"])
                 summary["registered_sources"] = (summary["registered_sources"] or 0) + len({(row.get("batch"), row.get("origin_path"), row.get("source_id")) for row in registered if not selected or row.get("project") in selected})
@@ -502,16 +499,11 @@ class KnowledgeView:
                     path = meta_paths(cfg)[name]
                     if path.is_file():
                         report = read_json(path, {})
-                        binding = ((detail.get("diagnostics") or {}).get("verification_binding") or {})
-                        current_binding = binding.get("current") if name == "verification" else None
-                        note = ("本次正式 reader 确认质量结果绑定适用；来源级结果不代表当前单项目独立验收。"
-                                if current_binding is True else
-                                "历史质量报告；当前质量契约或主体绑定不适用。" if current_binding is False else
-                                "已有来源级历史报告，当前适用性未读取或不由该报告判定。")
+                        note = "已有来源级历史报告；当前适用性以按需完整核验为准。"
                         detail["reports"].append({"name": name, "status": report.get("status") or report.get("result"),
                             "at": _latest([report.get("created_at"), report.get("updated_at"), report.get("verified_at"), report.get("committed_at")]),
                             "file_updated_at": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(),
-                            "scope": "source", "current_binding": current_binding, "note": note})
+                            "scope": "source", "current_binding": None, "note": note})
             except (ValueError, OSError):
                 self.problem("KNOWLEDGE_MAINTENANCE_UNREADABLE", source)
                 registry_complete = False
