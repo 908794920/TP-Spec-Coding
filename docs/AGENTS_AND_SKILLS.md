@@ -9,7 +9,7 @@ entry/tp-spec-coding/SKILL.md
         ↓
 agents/<domain>/SKILL.md
         ↓
-skills/roles/ + skills/capabilities/ + skills/autonomy/ + skills/base/ + skills/knowledge/ + skills/wiki/
+skills/roles/ + skills/capabilities/ + skills/base/ + skills/knowledge/ + skills/wiki/
         ↓
 CLI / Runtime
 ```
@@ -18,7 +18,6 @@ CLI / Runtime
 - `agents/`：Domain Agent，负责在一个领域内选择能力。
 - `skills/roles/`：软件工程 Formal Role。Role 是能力集合，不是固定阶段包。
 - `skills/capabilities/`：可复用能力，按需 lazy-load。
-- `skills/autonomy/`：项目自治领域的专项能力。
 - `skills/base/`：基座维护领域的专项能力，由薄入口按需选择，包含用户级外部方法包管理。
 - `skills/knowledge/`：Knowledge 检索、任务收敛、内容维护、接入、标准化与定时维护能力。
 - `skills/wiki/`：Wiki 检索、增量维护、首次构建、质量审计、异常恢复与定时维护能力。
@@ -69,4 +68,4 @@ Role 只留职责、边界和准确触发指针，方法由 Capability/其按需
 
 角色默认/条件能力由 Catalog 及对应 Role 的触发指针维护；共享方法不在导航中复制正文。历史方法抽取、原使用者与引用处置见 [CHANGELOG](../CHANGELOG.md#history-capability-extraction)，该记录不作为当前安装或宿主缓存已同步的证明。
 
-软件工程共享 Capability 方法路径以 `skills/capabilities/` 为根，领域专项方法位于 `skills/autonomy/`、`skills/base/`、`skills/knowledge/` 或 `skills/wiki/`；具体可点击路径从生命周期导航或对应领域/Role 进入。Knowledge 与 Wiki 的领域入口只保留职责、意图路由、共享边界和结果汇总；具体方法按命中意图读取，不预载全部能力。共用的 Task 收敛契约保留原路径，拆分不改变 Runtime、CLI 或既有数据边界。Runtime 的[执行事实](EXECUTION_FACTS.md)、[Work/Fix 与集成候选](WORK_UNITS.md)、[来源审批](security-change-authority.md)和[结单/提炼](agents/tp-software-lifecycle.md)分别承载实际行为；本章与拓扑只负责导航，不能代替运行验证或真实验收。新旧事实按各自标记解释，不由角色关系推断过去已执行。
+软件工程共享 Capability 方法路径以 `skills/capabilities/` 为根，领域专项方法位于 `skills/base/`、`skills/knowledge/` 或 `skills/wiki/`；具体可点击路径从生命周期导航或对应领域/Role 进入。Knowledge 与 Wiki 的领域入口只保留职责、意图路由、共享边界和结果汇总；具体方法按命中意图读取，不预载全部能力。共用的 Task 收敛契约保留原路径，拆分不改变 Runtime、CLI 或既有数据边界。Runtime 的[执行事实](EXECUTION_FACTS.md)、[Work/Fix 与集成候选](WORK_UNITS.md)、[来源审批](security-change-authority.md)和[结单/提炼](agents/tp-software-lifecycle.md)分别承载实际行为；本章与拓扑只负责导航，不能代替运行验证或真实验收。新旧事实按各自标记解释，不由角色关系推断过去已执行。

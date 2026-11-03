@@ -72,7 +72,6 @@ _RULES_SOURCE = json.dumps(
     },
     sort_keys=True,
 )
-_SCANNER_SHA256 = "sha256:" + hashlib.sha256(_RULES_SOURCE.encode("utf-8")).hexdigest()
 
 
 # =============================================================================
@@ -103,6 +102,207 @@ _CREDENTIAL_CATEGORIES = frozenset({
     "db_conn_string", "jdbc_url", "mongodb_conn", "password_keyword",
     "chinese_password_literal", "aes_key_literal", "credential_constant",
 })
+
+# Wiki/source display rules are deliberately separate from review-preflight's
+# broader sensitivity classification, whose existing behavior stays unchanged.
+_AUTH_KEY = r"(?:(?:[A-Za-z_][\w.-]*[._-])?(?:password|passwd|pwd|secret|token|api[_-]?key|private[_-]?key|encrypt[_-]?key|decrypt[_-]?key|aes[_-]?key)|(?:[A-Za-z_][\w.-]*[._-])?(?:jdbc|db|datasource)[._-](?:user|username))"
+_ENC_TOKEN = r"ENC\([^\r\n)]*\)[^\s,;|\"'`&<>\])}]*"
+_AUTH_ASSIGNMENT_RE = re.compile(
+    rf"(?<![\w.-])(?P<quote>[`\"']?)(?P<key>{_AUTH_KEY})(?P=quote)[ \t]*(?P<operator>===|==|:=|:(?!=)|=(?!>))[ \t]*"
+    r"(?P<value>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*'|`[^`\r\n]*`|" + _ENC_TOKEN +
+    r"|\[[^\]\r\n]*\]|<[^>\r\n]+>|[^\s,;|\"'`&<>]+)", re.I)
+_AUTH_PROSE_RE = re.compile(
+    r"(?:密码|口令|(?:对称|解密|加密)(?:密钥|秘钥))[^\r\n，,。;；|]{0,32}?" +
+    rf"(?:(?P<enc>{_ENC_TOKEN})|[`\"'“](?P<value>[^`\"'”\r\n]+)[`\"'”])", re.I)
+_XML_ATTR_RE = re.compile(r"\b([\w:.-]+)\s*=\s*([\"'])(.*?)\2", re.S)
+_SCANNER_SHA256 = "sha256:" + hashlib.sha256((_RULES_SOURCE + json.dumps({
+    "credential_view_version": 1, "auth_key": _AUTH_KEY,
+    "assignment": _AUTH_ASSIGNMENT_RE.pattern, "prose": _AUTH_PROSE_RE.pattern,
+    "xml_attributes": _XML_ATTR_RE.pattern,
+}, sort_keys=True)).encode("utf-8")).hexdigest()
+
+
+def _literal_credential(value: str) -> bool:
+    value = value.strip()
+    if re.fullmatch(r"(?is)(?:\*+|x{3,}|\.{3,}|\[(?:redacted|masked)(?:[_ :\-][^\]]+)?\]|\[(?:认证|凭据|密码|口令|密钥)?值(?:已)?(?:省略|脱敏|隐藏)\]|\[?(?:redacted|masked|已脱敏|已隐藏|占位符)\]?|<[^>]+>|\$\{[^}]+\}|#\{[^}]+\}|\{[\w.]+\}|\{\{[^}]+\}\}|your_[\w-]+)", value):
+        return False
+    if not value.strip():
+        return False
+    if value.startswith("ENC(") and value.endswith(")"):
+        inner = value[4:-1].strip()
+        if re.fullmatch(r"(?:加密后的(?:密码|口令|密文)|已脱敏(?:的)?(?:密码|口令|密文))", inner):
+            return False
+        return _literal_credential(inner)
+    return True
+
+
+def _line_number(content: str, offset: int) -> int:
+    return len(re.findall(r"\r\n|\r|\n", content[:offset])) + 1
+
+
+def _credential_spans(content: str):
+    """Yield category/value offsets without copying credential values to results."""
+    for category, pattern in _SENSITIVE_CONTENT_RE.items():
+        if category not in _CREDENTIAL_CATEGORIES:
+            continue
+        for match in pattern.finditer(content):
+            if category == "password_keyword" and _AUTH_ASSIGNMENT_RE.match(content, match.start()):
+                continue  # The value-aware rule below preserves adjacent markup/URL syntax.
+            if not _credential_value_present(match, category, credentials_only=True):
+                continue
+            if "value" in match.groupdict():
+                start, end = match.span("value")
+            elif category in {"password_keyword", "aws_secret_key", "bearer_token"}:
+                separator = re.search(r"Bearer\s+" if category == "bearer_token" else r"[:=]\s*", match.group())
+                start, end = match.start() + separator.end(), match.end()
+                if start < end and content[start] in "`\"'":
+                    closer = content.find(content[start], start + 1, end)
+                    if closer >= 0:
+                        start, end = start + 1, closer
+            elif category in {"db_conn_string", "jdbc_url", "mongodb_conn"}:
+                start, end = match.start() + match.group().index("://") + 3, match.end() - 1
+            elif category == "private_key_block":
+                start = match.start()
+                closer = re.search(r"-----END\s+(?:RSA|EC|OPENSSH)\s+PRIVATE\s+KEY-----", content[match.end():])
+                end = match.end() + closer.end() if closer else len(content)
+            else:
+                start, end = match.span()
+            if category == "aws_secret_key" and not _literal_credential(content[start:end]):
+                continue
+            if category == "password_keyword" and re.match(r"\[(?:redacted|masked)[^\]\r\n]*\]", content[start:], re.I):
+                continue
+            if category == "password_keyword" and re.fullmatch(r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+", content[start:end]):
+                continue
+            yield category, start, end
+
+    for match in _AUTH_ASSIGNMENT_RE.finditer(content):
+        value = match.group("value")
+        start, end = match.span("value")
+        prefix = content[content.rfind("\n", 0, match.start()) + 1:start]
+        tail = content[end:]
+        if (match.start() and content[match.start()-1] in "?&" and
+                content[match.end("operator"):start]):
+            continue  # A URL parameter ends at whitespace; following prose is not its value.
+        quoted = value[0] in "`\"'"
+        if quoted:
+            if len(re.findall(r"(?<!\\)" + re.escape(value[0]), prefix)) % 2:
+                continue  # An existing string/inline-code closer is not a new value opener.
+            value, start, end = value[1:-1], start + 1, end - 1
+        else:
+            if value.startswith("}") and max(prefix.rfind("${"), prefix.rfind("#{")) > prefix.rfind("}"):
+                continue
+            if value.endswith("]") and not value.startswith("[") and prefix.count("[") > prefix.count("]"):
+                value, end = value[:-1], end - 1
+            if (value in {"?", ":" + match.group("key")} and re.search(r"\b(?:WHERE|SET|AND|VALUES)\b", prefix, re.I)):
+                continue
+            if value == "{}" or (value == "按" and re.match(r"\s*token\b", tail, re.I)):
+                continue
+            if match.group("quote") == "`" and match.group("operator") == ":" and re.match(r"\s*数据源", tail):
+                continue
+            if value == "null" and re.search(r"\b(?:String|PrivateKey|SecretKey|Object)\s+" + re.escape(match.group("key")) + r"\s*=\s*$", prefix):
+                continue  # Java null initialization is not a properties-file string value.
+        if not quoted and (re.match(r"\$\{|#\{|\{\{", value)
+              or re.fullmatch(r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+", value)
+              or (not value.startswith("ENC(") and re.search(r"[()]", value))
+              or value.lower() in {"string", "str", "int", "bool", "boolean"}
+              or value.lower() == match.group("key").lower()
+              or (match.group("operator") in {"==", "==="} and re.fullmatch(r"[A-Za-z_$][\w$]*", value))):
+            continue
+        if (match.group("operator") in {"==", "==="} and re.search(r"api[_-]?key$", match.group("key"), re.I)
+                and re.search(r"回填|业务类型|功能标识|选择接口", prefix)
+                and not re.search(r"认证|鉴权|密钥|口令|credential|secret|auth(?:entication|ori[sz]ation)?",
+                                  prefix + tail.split("\n", 1)[0], re.I)):
+            continue  # Documented business selectors are not authentication assignments.
+        if _literal_credential(value):
+            yield "credential_assignment", start, end
+
+    for match in _AUTH_PROSE_RE.finditer(content):
+        if match.group("value") is not None:
+            description = match.group()[:match.start("value") - match.start() - 1]
+            if (re.search(r"常量(?:配置)?\s*$", description) and
+                    re.fullmatch(r"[A-Z_][A-Z0-9_]*|[A-Z][a-z]+(?:[A-Z][A-Za-z0-9]+)+", match.group("value"))):
+                continue
+            if not _credential_value_present(match, "chinese_password_literal", credentials_only=True):
+                continue
+            start, end = match.span("value")
+        else:
+            description = match.group()[:match.start("enc") - match.start()]
+            if not re.search(r"(?:密码|口令|密钥|秘钥)(?:字段|参数)?(?:的)?(?:默认|初始|固定)?(?:值)?\s*(?:配置为|设置为|为|是|[:：=])\s*$", description):
+                continue
+            start, end = match.span("enc")
+        if _literal_credential(content[start:end]):
+            yield "credential_context_literal", start, end
+
+    def attributes(match):
+        return {item.group(1).lower(): (item.group(3), match.start() + item.start(3), match.start() + item.end(3))
+                for item in _XML_ATTR_RE.finditer(match.group())}
+
+    for match in re.finditer(r"<(?:[\w.-]+:)?(?:property|entry)\b[^>]*>", content, re.S | re.I):
+        attrs = attributes(match)
+        key = attrs.get("name", attrs.get("key", ("", 0, 0)))[0]
+        value = attrs.get("value")
+        if re.fullmatch(_AUTH_KEY, key, re.I) and value and _literal_credential(value[0]):
+            yield "credential_xml", value[1], value[2]
+    for match in re.finditer(r"<(?P<key>password|passwd|pwd|secret|token)>\s*(?P<value>[^<]+?)\s*</(?P=key)>", content, re.I):
+        if _literal_credential(match.group("value")):
+            yield "credential_xml", *match.span("value")
+    for match in re.finditer(r"<property\b(?P<attrs>[^>]*)>\s*<value>(?P<value>[^<]*)</value>\s*</property>", content, re.S | re.I):
+        key = attributes(match).get("name", ("", 0, 0))[0]
+        if re.fullmatch(_AUTH_KEY, key, re.I) and _literal_credential(match.group("value")):
+            yield "credential_xml", *match.span("value")
+    for bean in re.finditer(r"<bean\b(?P<attrs>[^>]*)>(?P<body>.*?)</bean\s*>", content, re.S | re.I):
+        bean_attrs = {attr.group(1).lower(): attr.group(3) for attr in _XML_ATTR_RE.finditer(bean.group("attrs"))}
+        properties = []
+        for prop in re.finditer(r"<property\b[^>]*>", bean.group("body"), re.S | re.I):
+            if re.search(r"<bean\b", bean.group("body")[:prop.start()], re.I):
+                continue  # A nested bean's business fields do not inherit this datasource context.
+            attrs = attributes(prop)
+            value = attrs.get("value")
+            if not value:
+                nested = re.match(r"\s*<value>(?P<value>[^<]*)</value>", bean.group("body")[prop.end():], re.S | re.I)
+                if nested:
+                    value = (nested.group("value"), prop.end() + nested.start("value"), prop.end() + nested.end("value"))
+            properties.append((attrs.get("name", ("", 0, 0))[0].lower(), value))
+        datasource = (re.search(r"(?:^|\.)[\w$]*DataSource$", bean_attrs.get("class", ""), re.I)
+                      or any(name in {"url", "jdbcurl"} and value and value[0].lower().startswith("jdbc:")
+                             for name, value in properties))
+        if datasource:
+            for name, value in properties:
+                if name in {"user", "username"} and value and _literal_credential(value[0]):
+                    yield "credential_datasource_user", bean.start("body") + value[1], bean.start("body") + value[2]
+        if not re.search(r"\b(?:id|name)\s*=\s*([\"'])stringEnc\1", bean.group("attrs"), re.I):
+            continue
+        constructor = re.search(r"<constructor-arg\b[^>]*>", bean.group("body"), re.S | re.I)
+        if constructor:
+            value = attributes(constructor).get("value")
+            if value and _literal_credential(value[0]):
+                yield "credential_decrypt_key", bean.start("body") + value[1], bean.start("body") + value[2]
+            elif not value:
+                nested = re.match(r"\s*<value>(?P<value>[^<]*)</value>", bean.group("body")[constructor.end():], re.S | re.I)
+                if nested and _literal_credential(nested.group("value")):
+                    offset = bean.start("body") + constructor.end()
+                    yield "credential_decrypt_key", offset + nested.start("value"), offset + nested.end("value")
+
+
+def redact_credential_values(content: str) -> dict[str, Any]:
+    """Present a safe view; source hashes must continue to describe original bytes."""
+    try:
+        spans = sorted(set(_credential_spans(content)), key=lambda item: (item[1], item[2]))
+        merged = []
+        redactions = []
+        for category, start, end in spans:
+            redactions.append({"category": category, "line_start": _line_number(content, start),
+                               "line_end": _line_number(content, end)})
+            if merged and start <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+            else:
+                merged.append((start, end))
+        text = content
+        for start, end in reversed(merged):
+            text = text[:start] + re.sub(r"[^\r\n]+", "[REDACTED]", content[start:end]) + text[end:]
+        return {"text": text, "redactions": redactions, "error": None}
+    except Exception:
+        return {"text": "", "redactions": [], "error": "credential redaction unavailable"}
 
 
 def _credential_value_present(match: re.Match, category: str, *, credentials_only: bool = False) -> bool:
@@ -286,6 +486,14 @@ def scan_content(content: str | None, *, credentials_only: bool = False) -> dict
         return result
 
     try:
+        if credentials_only:
+            for category, start, _ in _credential_spans(content):
+                result["hits"].append({"category": category, "type": "content",
+                    "line": _line_number(content, start),
+                    "column": start - max(content.rfind("\n", 0, start), content.rfind("\r", 0, start)), "mask": "[REDACTED]"})
+            if result["hits"]:
+                result["scan_status"] = _SCAN_STATUS_HIT
+            return result
         for category, pattern in _SENSITIVE_CONTENT_RE.items():
             if credentials_only and category not in _CREDENTIAL_CATEGORIES:
                 continue
@@ -307,7 +515,8 @@ def scan_content(content: str | None, *, credentials_only: bool = False) -> dict
     except Exception as exc:
         # fail-closed：扫描器异常按错误处理
         result["scan_status"] = _SCAN_STATUS_ERROR
-        print(f"WARNING: sensitive scanner error on content: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print("WARNING: credential scanner unavailable" if credentials_only else
+              f"WARNING: sensitive scanner error on content: {type(exc).__name__}: {exc}", file=sys.stderr)
 
     return result
 

@@ -24,6 +24,7 @@ description: 在需要统筹软件任务、跨角色依赖、阻塞、精确结�
 - 需组织已有工程 Work、依赖或返修接续 → [任务拆解边界](../../capabilities/task-decomposition/SKILL.md)；工程拆解交技术主管，不重复规划。
 - 需核对参与者、精确结果接收与候选 → [执行事实契约](../../../docs/EXECUTION_FACTS.md)、[Work 结果契约](../../../docs/WORK_UNITS.md)。
 - 最终交付组织及每 Task 学习跟踪 → [交付收敛](../../capabilities/delivery-convergence/SKILL.md)；专业核对交集成交付工程师，canonical 与正式收敛 Result 交知识领域。
+- 用户明确指示外部独立 AI 介入对抗审查 → [外部红队对抗审查](../../capabilities/external-redteam-review/SKILL.md)；负责转录外部意见与保全证据索引，不代签专业审查或红队结论。
 - 出现有来源的稳定规则或高价值经验 → [项目记忆捕获](../../capabilities/tp-memory-capture/SKILL.md)。
 
 先读目标仓库规则；修改 TP-Spec-Coding 自身时以 [本仓验证策略](../../../docs/TESTING.md) 为准。只加载本次需要的方法，角色和计划不产生额外执行授权。

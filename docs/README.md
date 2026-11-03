@@ -19,7 +19,6 @@
 | Domain Agent | ID | 导航 | 执行契约 |
 | --- | --- | --- | --- |
 | tp-软件工程生命周期 | `tp-software-lifecycle` | [打开](./agents/tp-software-lifecycle.md) | [`agents/tp-software-lifecycle/SKILL.md`](../agents/tp-software-lifecycle/SKILL.md) |
-| tp-项目自治维护 | `tp-project-autonomy` | [打开](./agents/tp-project-autonomy.md) | [`agents/tp-project-autonomy/SKILL.md`](../agents/tp-project-autonomy/SKILL.md) |
 | tp-基座维护 | `tp-base-maintenance` | [打开](./agents/tp-base-maintenance.md) | [`agents/tp-base-maintenance/SKILL.md`](../agents/tp-base-maintenance/SKILL.md) |
 | tp-knowledge | `tp-knowledge` | [打开](./agents/tp-knowledge.md) | [`agents/tp-knowledge/SKILL.md`](../agents/tp-knowledge/SKILL.md) |
 | tp-wiki | `tp-wiki` | [打开](./agents/tp-wiki.md) | [`agents/tp-wiki/SKILL.md`](../agents/tp-wiki/SKILL.md) |
@@ -34,11 +33,10 @@
 
 软件研发任务先进入 [`tp-software-lifecycle`](agents/tp-software-lifecycle.md)。生命周期定义完整能力上限，实际任务按风险、上下文和工作流策略选择需要的 Role，不要求每个任务机械走完整流程。
 
-## Wiki / Knowledge / Autonomy
+## Wiki / Knowledge
 
 - Wiki：[`tp-wiki`](agents/tp-wiki.md)、[`wiki/README.md`](../wiki/README.md) 与 [检索、读取和使用分析](WIKI_USAGE.md)
 - Knowledge：[`tp-knowledge`](agents/tp-knowledge.md)、[`knowledge/README.md`](../knowledge/README.md) 与 [知识库页面及使用口径](KNOWLEDGE_USAGE.md)
-- 项目自治：[`tp-project-autonomy`](agents/tp-project-autonomy.md) 与 [`automation/autonomy/README.md`](../automation/autonomy/README.md)
 
 ## 架构、Runtime 与治理
 

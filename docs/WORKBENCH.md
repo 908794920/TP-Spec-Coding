@@ -179,7 +179,7 @@ npm run build
 |---|---|
 | 全局 base/version/user_root、安装声明与实际源码 | 全局配置“当前读取身份”与“安装与基座”；health 给出本次解释器与实例 |
 | 全局 wiki/knowledge/workspace/resolver/registry | 全局配置对应字段组，保留 configured/source/缺失与错误原值 |
-| 全局 registered_projects/autonomy/skill_topology | 全局配置已注册项目、自主配置和能力来源；拓扑仅移除已退役展示角色 |
+| 全局 registered_projects/skill_topology | 全局配置已注册项目和能力来源；拓扑仅移除已退役展示角色 |
 | 项目 project、Binding、版本、registry | 项目总览身份与 Binding、注册表来源 |
 | 项目 wiki/knowledge、task_statistics、summary | 项目总览内容系统字段、统计和说明 |
 | 项目进行中/归档/完成任务集合 | 同一查询的完整 task_index＋状态筛选；不需要维护重复任务表 |

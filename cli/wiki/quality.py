@@ -52,8 +52,12 @@ def _line_count(repo_root: Path, rel: str, source_cfg: Dict[str, Any]) -> int:
 def _repeated_paragraphs(text: str, threshold: int) -> List[str]:
     blocks = [re.sub(r"\s+", " ", b.strip()) for b in re.split(r"\n\s*\n", text) if len(b.strip()) >= 40]
     counts = Counter(blocks)
-    return ["[REDACTED CREDENTIAL PARAGRAPH]" if scan_credentials(block).get("hits") else block[:120]
-            for block, n in counts.items() if n >= threshold]
+    repeated = []
+    for block, count in counts.items():
+        if count >= threshold:
+            scan = scan_credentials(block)
+            repeated.append("[REDACTED CREDENTIAL PARAGRAPH]" if scan.get("hits") or scan.get("scan_status") == "error" else block[:120])
+    return repeated
 
 
 def _canonical_cites(rows: Any) -> List[Dict[str, Any]]:

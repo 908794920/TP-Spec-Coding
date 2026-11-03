@@ -33,7 +33,7 @@ tp-spec wiki source-read --workspace-root <workspace> --repo <id> --path src/Ser
 tp-spec wiki source-read --workspace-root <workspace> --repo <id> --path src/Service.java --baseline
 ```
 
-默认选择完整的 pending run，否则读成功 baseline；`--baseline` 明确读取已提交来源。返回完整 source identity、原始字节 hash、编码、行范围和文本；不能用工作区行号替换。普通源码调研仍可读工作区，但不得把它作为这次正式 Wiki 的引用证据。
+默认选择隔离候选中的完整 pending run，否则读成功 baseline；`--baseline` 明确读取已发布来源。返回完整 source identity、原始整文件字节 hash、编码和原始行范围。`text_view=credential-redacted` 的文本先按整文件认证上下文脱敏，再截取请求行；`redactions` 只含类别与原始行号，不输出取值或单值 hash。扫描异常时不返回原文。脱敏不改 Git blob、FILESYSTEM 字节、source identity 或审计绑定的整文件 hash；不能用工作区行号替换。普通源码调研仍可读工作区，但不得把它作为这次正式 Wiki 的引用证据。模式识别有边界，未知认证格式仍需作者按凭据规则复核，不能把扫描零命中当成不存在秘密的证明。
 
 运行途中 ref 向前移动，不改变已经固定的 candidate；follow-up 命令继续处理该 SHA，下次 `maintain` 再处理新的稳定提交。若主动重新 `scan/maintain` 并取得了不同候选，旧 Verification/Audit 不再适用。维护配置/规则变化后必须重新 staging，不能旧计划新规则混用。
 

@@ -19,6 +19,10 @@ Wiki 使用两类指纹：
 
 这只隔离检索投影与内容维护的失效范围：源码文件变化检测、运行中规则变化拒绝、Wiki subject 绑定，以及检索侧的文档/manifest/目录指纹和索引 `STALE` 检测继续独立生效。
 
+修改涉及 maintenance 规则前，使用 `<BaseRoot>/scripts/tp-spec.ps1 wiki policy-archive --output-root <归档目录>` 保存当前完整规则原字节，包括未提交工作树内容；已保存且仍与修改前字节一致的快照可复用。默认 `--rule-scope maintenance`，仅为需要匹配的历史全规则范围显式使用 `--rule-scope whole-all`。命令返回 `archive_root`、`rules_digest` 和 `file_count`；同字节既有归档可幂等复用，异内容拒绝覆盖。交付须明确归档及审查证据路径，不能只交 hash 或版本。归档成功不等于语义审查或 PASS，也不自动写正式 Wiki 或回执。
+
+历史 before 若只含变更文件，须以实际旧 hash 校验各文件，再补入经核实未变的其他规则原字节组成完整归档；无法证明字节时不得猜测，报告具体缺口。
+
 新 snapshot 同时保存 `maintenance_components`：四类有效配置和逐文件规则 SHA，聚合摘要仍严格绑定完整字节。规则变化须审查实际差异；不能仅因多个仓共同命中或源码零变化就认定语义不受影响。
 
 确认差异只影响确定性处理、旧语义结论仍适用时，使用正式 `wiki policy-review`，显式提供旧 Base Git ref 或原始字节归档、旧规则范围、实际审查说明与证据文件。CLI 必须以旧规则和当前有效配置精确重现旧 `maintenance_digest`；无法重现、配置变化、旧成功验证义务不明或存在 FAIL 时不接受。正常维护不遍历 Git 历史，也不自动推断政策等价。

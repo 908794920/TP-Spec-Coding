@@ -425,13 +425,15 @@ def plan_cosmetic_citation_relocations(
     wiki_repo_root: Path,
     repo_root: Path,
     source_cfg: Dict[str, Any],
+    changeset: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Return deterministic line-tag replacements required by current COSMETIC changes.
 
     This is read-only. ``manifest-refresh`` applies the returned replacements; L1
     verification calls the same planner to ensure the refresh cannot be skipped.
     """
-    changeset = _read_json(_meta(wiki_repo_root, "wiki-change-set.json"))
+    if changeset is None:
+        changeset = _read_json(_meta(wiki_repo_root, "wiki-change-set.json"))
     if not changeset:
         return {"status": "NO_STAGED_CHANGESET", "replacements": [], "cosmetic_sources": []}
     cosmetic = {str(c.get("file") or "").replace("\\", "/") for c in changeset.get("changes", []) if c.get("kind") == "COSMETIC"}

@@ -1,6 +1,7 @@
 """Exact policy-impact reviews; historical material is read only at explicit review."""
 from pathlib import Path, PurePosixPath
 import hashlib
+import stat
 import subprocess
 import yaml
 
@@ -20,11 +21,85 @@ def selected_rule(name, scope="maintenance"):
         name.startswith("skills/wiki/tp-wiki-retrieval/")))
 
 
-def current_rules(base):
+def current_rules(base, scope="maintenance"):
     return {p.relative_to(base).as_posix(): sha256_bytes(p.read_bytes())
             for folder in ("cli/wiki", "cli/sensitive_scanner.py", "wiki/rules", "agents/tp-wiki", "skills/wiki", "automation/wiki", "wiki/schema")
             for root in [base / folder] for p in ([root] if root.is_file() else root.rglob("*"))
-            if p.is_file() and selected_rule(p.relative_to(base).as_posix())}
+            if p.is_file() and selected_rule(p.relative_to(base).as_posix(), scope)}
+
+
+def archive_rules(base, output_root, *, scope="maintenance"):
+    """Preserve rule bytes before editing; no policy judgment or Wiki write."""
+    if scope not in {"maintenance", "whole-all"}:
+        raise ValueError("unknown historical rule scope")
+    base, root = Path(base).resolve(strict=True), Path(output_root).resolve()
+    watched = ("cli/wiki", "wiki/rules", "agents/tp-wiki", "skills/wiki", "automation/wiki", "wiki/schema")
+    if base.is_relative_to(root) or any(root.is_relative_to(base / name) for name in watched):
+        raise ValueError("rule archive must be outside the Base rule directories and their ancestors")
+    rules = current_rules(base, scope)
+    if "cli/wiki/snapshot.py" not in rules:
+        raise ValueError("Base snapshot implementation is missing")
+
+    def stored_rules():
+        for name in rules:
+            path = root / name
+            for entry in (path, *path.parents):
+                if not entry.is_relative_to(root):
+                    break
+                info = entry.lstat()
+                if (stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400 or
+                        (stat.S_ISREG(info.st_mode) and info.st_nlink > 1)):
+                    raise ValueError("rule archive must contain independent bytes, not links or junctions")
+        return historical_rules(base, old_root=root, scope=scope)[0]
+
+    if root.exists():
+        existing = stored_rules()
+        if existing != rules:
+            raise ValueError("existing rule archive differs; preserve it and choose another output root")
+        status = "REUSED"
+    else:
+        # Read once and check against the inventory; never mix edits into an archive.
+        contents = {name: (base / name).read_bytes() for name in rules}
+        if {name: sha256_bytes(data) for name, data in contents.items()} != rules:
+            raise ValueError("Base rules changed while preparing archive; retry after edits finish")
+        root.mkdir(parents=True, exist_ok=False)
+        for name, data in contents.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("xb") as stream:
+                stream.write(data)
+        stored = stored_rules()
+        if stored != rules:
+            raise ValueError("rule archive verification failed; preserve the incomplete archive for diagnosis")
+        status = "ARCHIVED"
+    return {"status": status, "archive_root": str(root), "scope": scope,
+            "file_count": len(rules), "rules_digest": _digest(rules), "rules": rules,
+            "semantic_review_recorded": False}
+
+
+def policy_review_hint(wiki_root, source_cfg):
+    """Explain exact differences without treating them as semantic equivalence."""
+    baseline = _read_json(snapshot_paths(wiki_root)["baseline"])
+    if not baseline or baseline.get("maintenance_digest") == source_cfg.get("_maintenance_digest"):
+        return None
+    before, after = baseline.get("maintenance_components"), source_cfg["_maintenance_components"]
+    known = (isinstance(before, dict) and before.get("format") == 1 and
+             all(isinstance(before.get(k), dict) for k in ("configs", "rules")) and
+             "cli/wiki/snapshot.py" in before["rules"])
+    review = applicable_review(wiki_root, source_cfg)
+    return {"status": "APPLICABLE" if review else "REVIEW_REQUIRED", "baseline_components_available": known,
+            "changes": differences(before, after) if known else None,
+            "baseline_digest": baseline.get("maintenance_digest"),
+            "current_digest": source_cfg["_maintenance_digest"],
+            "archive_lookup": "Read the matching Base delivery report for archive/evidence paths first; "
+                              "check related report directories before declaring historical bytes missing.",
+            "next_action": ("Existing policy review applies. Continue current source/subject/topology obligations and deterministic finalize."
+                            if review else "Review actual differences, reproduce the baseline digest from complete old rule bytes "
+                            "and effective config, then use wiki policy-review --old-base-root <archive> "
+                            "--old-rule-scope <matching-scope> --summary <actual-review> --evidence-file <evidence>. "
+                            "A partial before directory must be completed only with hash-matching unchanged bytes."),
+            "evidence_limitations": [] if known else ["Baseline has no complete component inventory; do not infer old bytes."],
+            "automatic_equivalence": False, "baseline_advanced": False}
 
 
 def components(config, rules):
@@ -145,7 +220,10 @@ def record_policy_review(wiki_root, source_cfg, *, old_root=None, old_ref=None, 
     config = source_cfg["_maintenance_config"]
     old_digest = _digest({**config, "rules": rules})
     if old_digest != baseline.get("maintenance_digest"):
-        raise ValueError("historical rules plus effective configuration do not reproduce baseline maintenance_digest")
+        raise ValueError("historical rules plus effective configuration do not reproduce baseline maintenance_digest; "
+                         "check the historical Base bytes, --old-rule-scope and effective configuration. "
+                         "Current daily maintenance uses maintenance scope; whole-all is valid only for a matching historical baseline. "
+                         "The scope is never switched automatically")
     before, after = components(config, rules), source_cfg["_maintenance_components"]
     if baseline.get("maintenance_components") and baseline["maintenance_components"] != before:
         raise ValueError("historical components disagree with recorded baseline components")
@@ -188,6 +266,10 @@ def applicable_review(wiki_root, source_cfg=None):
 
 def semantic_refresh_reasons(wiki_root, changeset, source_cfg=None):
     reasons = list(changeset.get("refresh_reasons") or [])
+    if "WIKI_SUBJECT_CHANGED" in reasons:
+        from .subject import subject_scope
+        if subject_scope(wiki_root, changeset)["status"] in {"EXACT", "MACHINE_ONLY"}:
+            reasons.remove("WIKI_SUBJECT_CHANGED")
     review = applicable_review(wiki_root, source_cfg) if "MAINTENANCE_POLICY_CHANGED" in reasons else None
     if review:
         reasons.remove("MAINTENANCE_POLICY_CHANGED")

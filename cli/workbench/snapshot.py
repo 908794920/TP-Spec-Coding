@@ -12,9 +12,6 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import json
 import sqlite3
 
-import yaml
-
-from cli import autonomy_profile
 from cli import db as dbmod
 from cli import event_presentation
 from cli import event_contract
@@ -120,43 +117,6 @@ def _workspace_view(entry: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _autonomy_profile_view(profile: Dict[str, Any]) -> Dict[str, Any]:
-    canonical = profile.get("canonical") or {}
-    autonomous = profile.get("autonomous") or {}
-    policy = profile.get("policy") or {}
-    discovery = policy.get("discovery") or {}
-    workflow = profile.get("workflow") or {}
-    return {
-        "profile_id": str(profile.get("profile_id") or ""),
-        "enabled": bool(profile.get("enabled")) if "enabled" in profile else None,
-        "enabled_declared": "enabled" in profile,
-        "canonical_root": str(canonical.get("workspace_root") or ""),
-        "autonomous_root": str(autonomous.get("workspace_root") or ""),
-        "confirmation_policy": str(workflow.get("confirmation_policy") or ""),
-        "difficulty_ceiling": str(policy.get("difficulty_ceiling") or ""),
-        "max_new_tasks_per_cycle": int(discovery.get("max_new_tasks_per_cycle")) if discovery.get("max_new_tasks_per_cycle") is not None else None,
-    }
-
-
-def _read_autonomy_profiles(user_root: Path) -> Tuple[List[Dict[str, Any]], Path, Optional[str]]:
-    profiles_root = user_root / "autonomy" / "profiles"
-    if not profiles_root.is_dir():
-        return [], profiles_root, None
-    profiles: List[Dict[str, Any]] = []
-    try:
-        for path in sorted(profiles_root.glob("*.yaml")):
-            raw = yaml.safe_load(path.read_text(encoding="utf-8-sig"))
-            if not isinstance(raw, dict):
-                raise ValueError(f"{path}: profile must be a mapping")
-            errors = autonomy_profile.validate_profile(raw, check_paths=False)
-            if errors:
-                raise ValueError(f"{path}: {errors[0]}")
-            profiles.append(raw)
-    except Exception as exc:
-        return [], profiles_root, str(exc)
-    return sorted(profiles, key=lambda profile: str(profile.get("profile_id") or "")), profiles_root, None
-
-
 def _read_skill_topology(base_root: Path, *, user_root: Optional[Path] = None) -> Tuple[Dict[str, Any], Optional[str]]:
     try:
         topology = skill_catalog.load_skill_catalog(base_root=base_root, user_root=user_root)
@@ -251,10 +211,6 @@ def build_global_snapshot(
         if row["runtime_status"] not in {"available", "unconfigured"}:
             problems.append(_problem("PROJECT_RUNTIME_UNAVAILABLE", f"工程 {row['project_id']} Runtime 状态：{row['runtime_status']}"))
 
-    autonomy_profiles, autonomy_root, autonomy_error = _read_autonomy_profiles(user_root)
-    if autonomy_error:
-        problems.append(_problem("AUTONOMY_PROFILE_INVALID", f"自治维护配置不可读：{autonomy_error}"))
-
     topology_root = Path(active_base_root) if active_base_root else base_root
     skill_topology, topology_error = _read_skill_topology(topology_root, user_root=user_root)
     skill_topology["source_root"] = str(topology_root)
@@ -311,16 +267,6 @@ def build_global_snapshot(
             "error": reg_error or "",
         },
         "registered_projects": projects,
-        "autonomy": {
-            "configured": bool(autonomy_profiles),
-            "status": "invalid" if autonomy_error else ("available" if autonomy_profiles else "unconfigured"),
-            "profiles_path": str(autonomy_root),
-            "profile_count": len(autonomy_profiles),
-            "profiles": [_autonomy_profile_view(profile) for profile in autonomy_profiles],
-            "execution_mode": "",
-            "execution_mode_declared": False,
-            "error": autonomy_error or "",
-        },
         "skill_topology": skill_topology,
         "problems": problems,
     }

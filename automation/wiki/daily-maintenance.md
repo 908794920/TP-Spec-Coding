@@ -4,13 +4,13 @@
 
 ## 不变量
 
-1. 只修改 resolved Wiki physical root 内的 Wiki/metadata；绝不修改 source repo。
+1. AI 只修改本轮返回的 `candidate_wiki_repo_root` 内 Wiki/metadata；正式 Wiki 的提升由 `snapshot-commit` 完成，绝不修改 source repo。
 2. 不手填 hash、snapshot、citation manifest 字段；机器字段由 `wiki manifest-refresh` 生成。
 3. `COSMETIC` 不改正文。
 4. `MASS_CHANGE_REVIEW_REQUIRED` 不得直接全量重写。
 5. `UNCERTAIN` 不得推进 baseline。
 6. 只有当前 change-set 的 L1-L3 `verify=PASS`，且需要 L4 时 `audit=PASS`，才执行 `snapshot-commit`。
-7. baseline 替换前失败/中断：停止当前 repo 并保留旧 baseline；提交成功后的 cleanup_pending 单独报告，不谎称未推进。其他 repo 独立处理。
+7. 提升前失败/中断：停止当前 repo，失败草稿保留在隔离 candidate，正式正文与 baseline 保持原状；提交成功后的 cleanup_pending 单独报告，不谎称未推进。其他 repo 独立处理。
 8. Git 只从用户指定、本地已有的 `refs/remotes/<remote>/<branch>` 固定来源；所有 source/cite/coverage/audit 均使用同一 staged SHA。用户控制同步时间，Wiki 不 fetch/pull，不选择默认分支；未知 ref、不可用对象和非祖先历史停止该仓库，不能退回工作区或本地未推送提交。本地引用落后于服务器可正常维护，不宣称远端最新。具体规则见 `wiki/rules/stable-source.md`。
 
 ## 标准步骤
@@ -39,17 +39,21 @@ Resolve physical Base Root from user Installation (`~/.tp-spec/installation.yaml
 
 逐 repo 读取结构化结果：
 
-- `NO_CHANGE`：该 repo 立即结束；不执行下方 Manifest/Verify/Audit，不派发模型，不重建收据。Git 的 `fast_path=true` 还保证未进入源码扫描；非 Git 必须先完成 raw hash。
+- `NO_CHANGE`：该 repo 立即结束；不创建 candidate，不执行下方 Manifest/Verify/Audit，不派发模型，不重建收据。Git 的 `fast_path=true` 还保证未进入源码扫描；非 Git 必须先完成 raw hash。
 - `DETERMINISTIC_FINALIZE`：cosmetic/touch、源范围外的新 commit 或残留收据恢复等；不派发作者模型，执行步骤 4–8 的适用确定性处理。必要 L4 仍以 verify 结果为准，不因状态名代签审计。
 - `WAITING_FOR_AI`：仅为该 repo 派发必要模型工作，进入步骤 3。
 - `BLOCKED`：保留错误、来源与旧 baseline，不派发全库扫描来掩盖问题；其他 repo 继续。
 - `MASS_CHANGE_REVIEW_REQUIRED`：先检查是否为重新下载、编码/换行、formatter、include/exclude 漂移或真正大迁移。没有充分证据前禁止 `--allow-mass-change`。若确认是真实大规模语义/结构迁移，执行 `wiki plan --allow-mass-change --mass-change-reason "<实际核验理由>"` 后再进入 AI UPDATE。
+
+`maintain/build/scan` 需要处理时自动建立隔离 candidate，读取结果中的 `candidate_wiki_repo_root` 作为本轮 AI 唯一写入根，不从中央 Wiki 路径猜测。后续同一 workspace/repo 的 `plan/manifest-refresh/verify/coverage/audit/audit-record/source-read` 自动路由该 candidate，普通 `source-read` 仍读其 staged 固定来源，`--baseline` 保持成功来源语义。下轮 `maintain` 会隔离旧 draft，从正式 Wiki 重新开始，不能把失败草稿当作上轮成功输入。
 
 #### 规则变更与已有积压
 
 `MAINTENANCE_POLICY_CHANGED` 是刷新原因，不单独表示源码大规模变更或命令执行失败。多个仓同因刷新可以合并说明原因，但不能按命中数量/比例暂停所有仓；逐仓依据来源绑定、实际 change-set/plan 和证据充分性继续或标记 `NEEDS_REVIEW`。
 
 Base 改动合入且当前 Resolver 指向该实现后，由自动化侧重新逐仓执行 `maintain`，替换过时 staged 计划；保留旧成功 baseline 到正式提交。先区分真实源码变化、规则变化和 Wiki subject 变化，再按当前计划处理实际影响，正文无须为收口而改写。顺序为 `manifest-refresh → verify → coverage → 必要时 audit/实际审计/audit-record → snapshot-commit`；`NO_CHANGE` 仍立即结束。
+
+先读取对应 Base 交付或报告中的旧规则归档和审查证据路径；缺少线索时，仅有界定位相关报告目录，未查明前不宣称归档丢失，也不先穷举 Git 历史或 pyc。读取 `maintain` 返回的 `policy_review_hint` 了解精确差异、缺证据和处理引导；它不是等价结论，也不自动消除刷新理由。若旧 before 只有变更文件，按 [维护规则指纹](../../wiki/rules/source-fingerprint.md) 以实际旧 hash 校验并补齐经核实未变的原字节，不能猜测。
 
 先审查真实规则差异。若差异仅影响确定性处理，且旧语义证据仍适用，可按 [维护规则指纹](../../wiki/rules/source-fingerprint.md) 正式记录一次政策影响判断：
 
@@ -58,6 +62,10 @@ Base 改动合入且当前 Resolver 指向该实现后，由自动化侧重新�
 ```
 
 没有对应 Git 提交时，可用 `--old-base-root <原字节归档>` 替代 `--old-base-ref`，但旧规则加当前配置必须精确重现旧摘要。review 在当前规则字节冻结后登记；再改规则、配置或证据文件将使其失效。CLI 只消除已审查的政策理由，不抹去源码、Wiki subject、repair、topology 或旧 FAIL 的义务，不把缺少历史字节当作已证明无影响。
+
+`policy-review` 始终核对正式 Wiki 的成功 baseline；登记后重新 `maintain` 建立本轮 candidate。`--old-rule-scope` 必须对应旧 baseline 实际规则范围；当前日常维护使用 `maintenance`，`whole-all` 只用于确实匹配的历史全规则范围。摘要不能重现时是正确拒绝，应核对旧字节、scope 和有效配置，不自动切 scope。
+
+`WIKI_SUBJECT_CHANGED` 只在成功 baseline 的 durable 分项可重现旧完整 subject，且差集可证明时按文档收窄，并合并真实 source dependency/topology 影响。精确恢复成功字节或只有已证明的机器字段变化可确定性处理；遗留缺分项、全局/未知 durable 变动、删除等无法证明范围时，`WIKI_SUBJECT_SCOPE_UNPROVEN` 停止该仓自动维护，说明缺口并确认实际复核范围或恢复确切原字节，不据此全库重写。initial、repair、旧 FAIL 和必要 L4 仍按各自门禁处理。
 
 重新 `maintain` 后需要 L4 的，按 audit plan 覆盖全部 mandatory 文档和 topology；复用仍适用的实际阅读证据，不重复审阅未变材料。无需新 L4 的确定性收口保留原审计及其时间/范围/限制，报告为“复用”，不能当成本次语义 PASS；旧合法无 L4 记录保留 `LEGACY_L4_NOT_RECORDED`。无法取得必要证据时只保留该仓 baseline、说明缺口。最终逐仓报告实际审计范围、未验内容及 baseline 是否推进，不宣称全库重新验收。
 
@@ -70,7 +78,7 @@ Base 改动合入且当前 Resolver 指向该实现后，由自动化侧重新�
 读取该 repo：
 
 ```text
-meta/wiki-rebuild-plan.json
+<candidate_wiki_repo_root>/meta/wiki-rebuild-plan.json
 ```
 
 只处理：
@@ -166,6 +174,8 @@ WARN 必须阅读。明显灌水、topology 漏项、引用覆盖不足不能以
 ```
 
 FILESYSTEM 字节在 scan 后变化，必须阻止提交并重新 maintain。Git ref 向前移动不会替换 staged SHA；本次提交其已核验来源，下次处理新 SHA。若配置/规则、Wiki subject 或证据已变则重建适用结果。`COMMITTED` 伴随 cleanup_pending 表示提交已成功但清理待重试，不得当作基线未变。
+
+`snapshot-commit` 先在 candidate 通过上述来源、完整最终 subject、verify 和必要 L4 门禁，再比较正式 Wiki 是否仍匹配 candidate 建立时的起点身份（CAS）；不匹配则拒绝提升。正式提升完成后才更新适用的检索投影。失败/中断时按 candidate 状态恢复，不手工把草稿正文或半套 metadata 复制到正式 Wiki；下一轮重新 `maintain`。
 
 ## 汇报
 

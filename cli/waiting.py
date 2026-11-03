@@ -128,6 +128,15 @@ def validate_resolution(conn, task_id: str, task_dir: Path, *, actor: str,
                         resolution_evidence: Iterable[str] | None) -> dict[str, Any]:
     wait = load_wait(conn, task_id)
     if not wait:
+        legacy = pending_legacy_confirmation(conn, task_id)
+        if legacy:
+            from .workflow_controls import find_matching_confirmation
+            events = conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id,)).fetchall()
+            confirmation = find_matching_confirmation([dict(row) for row in events], legacy["confirmation_binding"])
+            if confirmation is None:
+                raise ValueError("WORKFLOW_CONFIRMATION_REQUIRED: confirm the active historical boundary before resume")
+            return {"kind": "legacy_confirmation", "block_event_id": legacy["block_event_id"],
+                    "confirmation_event_id": int(confirmation["id"])}
         if resolution_evidence:
             raise ValueError("untyped legacy wait does not accept a typed resolution")
         return {}
@@ -327,3 +336,82 @@ def result_wait(conn, task_id: str, events: Iterable, *, task_dir: Path | None =
             "reason_code": "DELIVERY_BLOCKED" if lane == "delivery" else "REVIEW_BLOCKED",
         }
     return {}
+
+
+def _legacy_detail(event: dict[str, Any]) -> dict[str, Any]:
+    try:
+        value = json.loads(event.get("detail_json") or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def pending_legacy_confirmation(conn, task_id: str) -> dict[str, Any] | None:
+    """Read a paired historical confirmation wait; never starts an executor."""
+    task = conn.execute('SELECT current_state FROM task WHERE task_id=?', (task_id,)).fetchone()
+    if task is None or task['current_state'] != 'BLOCKED':
+        return None
+    latest_state = conn.execute("SELECT * FROM task_event WHERE task_id=? AND event_type='STATE' ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+    if latest_state is None or latest_state['to_state'] != 'BLOCKED':
+        return None
+    state_detail = _legacy_detail(dict(latest_state))
+    rows = conn.execute("SELECT * FROM task_event WHERE task_id=? AND event_type='BLOCKER' ORDER BY id DESC LIMIT 1", (task_id,)).fetchall()
+    for row in rows:
+        event = dict(row); detail = _legacy_detail(event)
+        if (detail == state_detail and detail.get('producer') == 'autonomy'
+                and detail.get('transaction_id') and detail.get('flush_id')
+                and detail.get('task_id') == task_id and detail.get('schema_version') == event['workflow_version']
+                and detail.get("operation") == "AUTONOMY_BOUNDARY" and detail.get("waiting_reason") == "awaiting_human_confirmation"):
+            binding = detail.get("confirmation_binding")
+            if isinstance(binding, dict) and binding:
+                return {"event": event, "block_event_id": int(latest_state["id"]), **detail}
+    return None
+
+
+def retired_confirmation_resolution(conn, task_id: str) -> dict[str, Any]:
+    """Only the active, paired legacy ordinary policy blocker can be retired."""
+    from . import workflow_controls
+    task = conn.execute('SELECT current_state FROM task WHERE task_id=?', (task_id,)).fetchone()
+    if task is None or task['current_state'] != 'BLOCKED':
+        raise ValueError('RETIRED_CONFIRMATION_NOT_ACTIVE')
+    state = conn.execute("SELECT * FROM task_event WHERE task_id=? AND event_type='STATE' ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+    blocker = conn.execute("SELECT * FROM task_event WHERE task_id=? AND event_type='BLOCKER' ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+    if state is None or blocker is None:
+        raise ValueError('RETIRED_CONFIRMATION_SOURCE_UNPROVEN')
+    detail = _legacy_detail(dict(blocker))
+    binding = detail.get('confirmation_binding')
+    if (state['to_state'] != 'BLOCKED' or int(state['id']) <= int(blocker['id'])
+            or _legacy_detail(dict(state)) != detail or state['actor_role'] != 'human_owner' or blocker['actor_role'] != 'human_owner'
+            or detail.get('operation') != 'AUTONOMY_BOUNDARY' or detail.get('producer') != 'autonomy'
+            or not detail.get('transaction_id') or not detail.get('flush_id') or not detail.get('profile_id')
+            or detail.get('task_id') != task_id or detail.get('schema_version') != state['workflow_version']
+            or detail.get('schema_version') != blocker['workflow_version']
+            or detail.get('waiting_reason') != 'awaiting_human_confirmation'
+            or detail.get('confirmation_reason') != 'EACH_STAGE_POLICY'
+            or not isinstance(binding, dict) or binding.get('confirmation_kind') != 'ordinary'):
+        raise ValueError('RETIRED_CONFIRMATION_SOURCE_UNPROVEN: current wait is not retired ordinary policy')
+    try:
+        rebuilt = workflow_controls.build_boundary_binding(task_id=task_id, **{key: binding[key] for key in (
+            'source_stage','source_role','source_event_id','source_event_digest','target_stage','target_role','execution_mode','confirmation_kind')})
+        source = conn.execute('SELECT * FROM task_event WHERE task_id=? AND id=?', (task_id, binding['source_event_id'])).fetchone()
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError('RETIRED_CONFIRMATION_SOURCE_UNPROVEN') from exc
+    if (rebuilt != binding or source is None or int(source['id']) >= int(blocker['id'])
+            or source['actor_role'] != binding['source_role']
+            or workflow_controls.event_digest(dict(source)) != binding['source_event_digest']):
+        raise ValueError('RETIRED_CONFIRMATION_SOURCE_UNPROVEN: boundary source changed')
+    source_detail = _legacy_detail(dict(source))
+    if source['event_type'] == 'FACT':
+        trusted_source = (source_detail.get('producer') == 'record-first' and source_detail.get('transaction_id')
+            and source_detail.get('operation') == 'CHECKPOINT' and source['from_stage']
+            and source['to_stage'] == binding['source_stage'] and source_detail.get('phase') == binding['source_stage'])
+    else:
+        trusted_source = workflow_controls.trusted_event_detail(dict(source), event_type=source['event_type'],
+            producer=str(source_detail.get('producer') or ''), actor=binding['source_role']) is not None
+        from .event_policies import event_allowed_for_producer
+        trusted_source = trusted_source and event_allowed_for_producer(source['event_type'], source_detail.get('producer'))
+    if not trusted_source:
+        raise ValueError('RETIRED_CONFIRMATION_SOURCE_UNPROVEN: source is not a formal completion fact')
+    return {'kind': 'policy_retirement', 'block_event_id': int(state['id']),
+            'blocker_event_id': int(blocker['id']), 'retired_policy': 'each_stage',
+            'reason_code': 'EACH_STAGE_POLICY_RETIRED', 'human_approval': False}

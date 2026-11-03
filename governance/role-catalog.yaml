@@ -1,6 +1,6 @@
 catalog_version: "5.3.8"
 base_version: "5.3.8"
-generated_utc: 20261013T084249Z
+generated_utc: 20261102T132922Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -14,7 +14,7 @@ roles:
   phases: [other]
   capabilities: [domain.routing, status.compact, explain.route]
   owns_states: []
-  content_sha256: E3EC626CEB09059C47805522AC9F378DBC91E98EE06D152096F07D2EEEB99587
+  content_sha256: ED4D18A5C790AA2BCE1AA25791D4D59A5E2E3F6FE923A26A77945A66D2899A62
 - workflow_role: tp-software-lifecycle
   display_name: tp-软件工程生命周期
   type: control-role
@@ -23,21 +23,7 @@ roles:
   phases: [intake, requirement, product, discovery, architecture, planning, development, verification, review, delivery]
   capabilities: [lifecycle.routing, role.resolution, workflow.coordination]
   owns_states: [NEW]
-  content_sha256: 8DBF022E9DAB333F828F09BAA80190BA309C51510938C73F548D1DE4B2ECA6BE
-- workflow_role: tp-project-autonomy
-  display_name: tp-项目自治维护
-  type: control-role
-  skill_path: agents/tp-project-autonomy/SKILL.md
-  domain: autonomy
-  phases: [other]
-  capabilities: [autonomy.discovery, autonomy.cycle, autonomy.review, autonomy.integration]
-  domain_skills:
-    - {id: tp-autonomy-setup, path: skills/autonomy/tp-autonomy-setup/SKILL.md, mode: conditional}
-    - {id: tp-autonomy-cycle, path: skills/autonomy/tp-autonomy-cycle/SKILL.md, mode: conditional}
-    - {id: tp-autonomy-review, path: skills/autonomy/tp-autonomy-review/SKILL.md, mode: conditional}
-    - {id: tp-autonomy-integrate, path: skills/autonomy/tp-autonomy-integrate/SKILL.md, mode: conditional}
-  owns_states: []
-  content_sha256: 28267B5DEC06228015F7606987B768BD5FEE020545A29EA7CC9DB8761FA7CA8B
+  content_sha256: BCD47CA81548FA5E50A79E788786FF286BA6561E9632155D58C335D09BC9C53E
 - workflow_role: tp-base-maintenance
   display_name: tp-基座维护
   type: human-owner-skill
@@ -96,8 +82,9 @@ roles:
     - {id: task-decomposition, path: skills/capabilities/task-decomposition/SKILL.md, mode: conditional}
     - {id: delivery-convergence, path: skills/capabilities/delivery-convergence/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
+    - {id: external-redteam-review, path: skills/capabilities/external-redteam-review/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: C6983090BFB029321388F2F859209C26D670E74556323DF07611AE0BDA47621B
+  content_sha256: B732BD7C7CA80B735EF65E034D402EBD012D402FE6FA0320AF32EE1101B0874D
 - workflow_role: tp-product-manager
   display_name: tp-产品经理
   type: workflow-role
@@ -257,12 +244,6 @@ topology:
       kind: domain-agent
       path: agents/tp-software-lifecycle/SKILL.md
       domain: software
-    tp-project-autonomy:
-      id: tp-project-autonomy
-      name: tp-项目自治维护
-      kind: domain-agent
-      path: agents/tp-project-autonomy/SKILL.md
-      domain: autonomy
     tp-base-maintenance:
       id: tp-base-maintenance
       name: tp-基座维护
@@ -353,26 +334,6 @@ topology:
       kind: formal-role
       path: skills/roles/tp-integration-engineer/SKILL.md
       domain: software
-    tp-autonomy-setup:
-      id: tp-autonomy-setup
-      name: 自治配置
-      kind: capability-skill
-      path: skills/autonomy/tp-autonomy-setup/SKILL.md
-    tp-autonomy-cycle:
-      id: tp-autonomy-cycle
-      name: 自治周期
-      kind: capability-skill
-      path: skills/autonomy/tp-autonomy-cycle/SKILL.md
-    tp-autonomy-review:
-      id: tp-autonomy-review
-      name: 自治审查
-      kind: capability-skill
-      path: skills/autonomy/tp-autonomy-review/SKILL.md
-    tp-autonomy-integrate:
-      id: tp-autonomy-integrate
-      name: 自治集成
-      kind: capability-skill
-      path: skills/autonomy/tp-autonomy-integrate/SKILL.md
     tp-base-installation:
       id: tp-base-installation
       name: 安装与健康检查
@@ -473,6 +434,11 @@ topology:
       name: 项目记忆捕获
       kind: capability-skill
       path: skills/capabilities/tp-memory-capture/SKILL.md
+    external-redteam-review:
+      id: external-redteam-review
+      name: 外部红队对抗审查
+      kind: capability-skill
+      path: skills/capabilities/external-redteam-review/SKILL.md
     requirement-clarification:
       id: requirement-clarification
       name: 需求澄清
@@ -538,9 +504,6 @@ topology:
     to: tp-software-lifecycle
     relation: routes-to
   - from: tp-spec-coding
-    to: tp-project-autonomy
-    relation: routes-to
-  - from: tp-spec-coding
     to: tp-base-maintenance
     relation: routes-to
   - from: tp-spec-coding
@@ -585,22 +548,6 @@ topology:
   - from: tp-software-lifecycle
     to: tp-integration-engineer
     relation: owns-role
-  - from: tp-project-autonomy
-    to: tp-autonomy-setup
-    relation: uses-skill
-    mode: conditional
-  - from: tp-project-autonomy
-    to: tp-autonomy-cycle
-    relation: uses-skill
-    mode: conditional
-  - from: tp-project-autonomy
-    to: tp-autonomy-review
-    relation: uses-skill
-    mode: conditional
-  - from: tp-project-autonomy
-    to: tp-autonomy-integrate
-    relation: uses-skill
-    mode: conditional
   - from: tp-base-maintenance
     to: tp-base-installation
     relation: uses-skill
@@ -679,6 +626,10 @@ topology:
     mode: conditional
   - from: tp-project-manager
     to: tp-memory-capture
+    relation: uses-skill
+    mode: conditional
+  - from: tp-project-manager
+    to: external-redteam-review
     relation: uses-skill
     mode: conditional
   - from: tp-product-manager

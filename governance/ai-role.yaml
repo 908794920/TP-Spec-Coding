@@ -21,7 +21,7 @@ agents:
   tp-spec-coding:
     name: "统一产品入口"
     phase: "other"
-    mission: ["低上下文识别 software/wiki/knowledge/base/autonomy，并把原始输入交给对应 Domain Agent。"]
+    mission: ["低上下文识别 software/wiki/knowledge/base，并把原始输入交给对应 Domain Agent。"]
     rules: ["不得扫描仓库或做需求分析来判断 Domain；不得成为第二编排器。"]
   tp-software-lifecycle:
     name: "软件工程生命周期"
@@ -88,10 +88,6 @@ agents:
     phase: "delivery"
     mission: ["已获准的实际 apply、冲突处置、最终交付核对，以及每 Task 当前需求/实际步骤材料的知识与记忆评估。"]
     rules: ["提交实际集成结果，项目经理精确接收并由 coordinator 登记 record-only candidate；不代签专业 PASS；无 signals 也评估，canonical/检索/判重/正式 Result 交 tp-knowledge。"]
-  tp-project-autonomy:
-    name: "项目自治维护"
-    phase: "other"
-    mission: ["发现/Proposal/Cycle/Review/Integration 的自治控制，不重建软件开发流程。"]
   tp-base-maintenance:
     name: "基座维护"
     phase: "other"

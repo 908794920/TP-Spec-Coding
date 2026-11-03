@@ -34,11 +34,16 @@ quick 允许实际连续执行者如实记录适用的技术自测和交付，�
 
 修改 TP-Spec-Coding 自身源码时，将 [本仓验证策略](../../docs/TESTING.md) 传给各执行/审查角色；本地与云端均不因批次、提交或最终汇合自动全量测试，临时用例结束后清理。其他业务仓库仍按自身规则。
 
+修改 Base 中影响 Wiki maintenance 指纹的规则前，按 [维护规则指纹](../../wiki/rules/source-fingerprint.md) 归档修改前完整原字节并在交付中给出归档和审查证据路径；已读且仍有效的快照可复用。普通局部修改仍直接处理，不因此创建 Task；后续维护只按实际差异与证据复核受影响范围。
+
 ## 已选外部 SKILL
 承接入口选中的外部方法时，保留精确 ID、来源根、路径、状态、内容指纹及必要正文，并传给实际执行 Role／Work，不因只查内置 Catalog 而丢失。直接调用本领域且尚无本轮发现结果时，先按 [外部能力选择与转交](../../docs/EXTERNAL_SKILLS.md#entry-handoff) 发现并按需读取；专业适用性仍由本领域判断，不新增角色或 Runtime 义务。外部 SKILL 方法与下节“外部已完成实现”是不同输入，不能混用。
 
 ## 外部实现接入
 外部 AI 已完成实现或用户明确说明代码已由其他开发者完成时，默认把现有工作区固定为 Development subject，随后调度 Test Engineer + Code Reviewer，二者 `effects=[]`。Codex/当前 Agent 不因为“还能优化”自动重新进入 Development；只有独立 Test/Review 产生确定 Finding 后，才在父 Task 下交开发处理相应 Fix Work；父步骤等待并在原处复验，修改只限 Finding 覆盖内容，不抹去原完成历史。
+
+## 外部红队对抗审查
+当用户发现当前 Agent 存在无依据防御、过度开发或方向错误，且明确指示外部独立 AI 介入对抗审查时，按 [外部红队对抗审查](../../skills/capabilities/external-redteam-review/SKILL.md) 协议执行。该能力仅能由 `human_owner` 显式触发，不得自主启动，其他 SKILL、任务创建/等级/阶段/失败及普通纠错均不构成触发；当前 Agent 及其子 Agent 严禁冒充外部红队。红队仅产出意见，双方原文与回应沿 Task 留痕并严格区分专业审查与人工豁免。
 
 ## Runtime
 已确定需要正式任务记录时，在 Requirement Ready 后创建 Task；存在 pre-task canonical requirement/intake artifact 时优先使用 `task create --from-intake <DIR>` 接入，不为了账本提前建 Task，也不把每个局部问题拆成新的标准 Task。

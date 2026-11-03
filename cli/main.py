@@ -45,8 +45,6 @@ from cli import structured_refs
 from cli import reconcile_cmd
 from cli import review_cmd
 from cli import orchestration_cmd
-from cli import autonomy_cmd
-from cli import autonomy_context
 from cli.wiki import commands as wiki_commands
 from cli.knowledge import commands as knowledge_commands
 from cli.version import active_version
@@ -154,9 +152,6 @@ def build_parser() -> argparse.ArgumentParser:
     # Workflow Orchestrator：只读 L0-L3 路由与契约诊断。
     orchestration_cmd.add_workflow_subparsers(subparsers)
 
-    # Autonomous Maintenance：用户级 Profile 与隔离自治控制面。
-    autonomy_cmd.add_autonomy_subparsers(subparsers)
-
     # Wiki 标准化：代码理解层的确定性扫描/规划/质量门/基线提交。
     wiki_commands.add_wiki_subparsers(subparsers)
 
@@ -179,7 +174,6 @@ def main(argv: Optional[List[str]] = None) -> int:
                 parser.print_help()
                 context.exit_code = 2
                 return 2
-            autonomy_context.guard_content_cli(args)
             context.exit_code = int(func(args) or 0)
             return context.exit_code
         except SystemExit as exc:

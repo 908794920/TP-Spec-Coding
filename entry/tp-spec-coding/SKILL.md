@@ -11,12 +11,12 @@ description: TP-Spec-Coding 唯一默认产品入口；以低上下文成本识�
 # tp-统一入口
 
 ## 目标
-让用户只需要一个入口表达“规划需求 / 开发 / Review / 更新 Wiki / 维护 Knowledge / 基座维护 / 项目自治”。入口只做低成本领域识别、必要能力发现与上下文恢复，不把产品壳变成第二套编排器。
+让用户只需要一个入口表达“规划需求 / 开发 / Review / 更新 Wiki / 维护 Knowledge / 基座维护”。入口只做低成本领域识别、必要能力发现与上下文恢复，不把产品壳变成第二套编排器。
 
 ## 路由原则
 1. 只使用当前用户输入、显式命令、当前 Project identity 和 active Task 的紧凑摘要信号。
 2. 默认不得扫描仓库、读取完整 Task、查询 Wiki/Knowledge、启动子 Agent 或做需求分析来判断 Domain。
-3. software → `tp-software-lifecycle`；wiki → `tp-wiki`；knowledge → `tp-knowledge`；base → `tp-base-maintenance`；autonomy → `tp-project-autonomy`。
+3. software → `tp-software-lifecycle`；wiki → `tp-wiki`；knowledge → `tp-knowledge`；base → `tp-base-maintenance`。
 4. 在明确 TP-Spec 软件项目上下文且没有冲突信号时，默认进入 software；真正歧义才做一次最小澄清。
 5. 原始用户输入尽量原样交给目标 Domain Agent，避免入口二次总结造成信息损失。
 6. 用户级外部 SKILL 的导入、更新、启停、移除、关联等管理请求交 `base → tp-base-maintenance → tp-external-skill-management`；使用外部方法完成业务工作仍按该工作的领域路由。管理对象与被采用的方法不混为一项执行授权。
@@ -26,17 +26,18 @@ description: TP-Spec-Coding 唯一默认产品入口；以低上下文成本识�
 
 显式 ID 优先，否则只根据可用项的名称、非空用途与声明范围选择候选；无描述不猜用途，同名有歧义才澄清。选中后用 `tp-spec skill read --id <精确ID> --json` 读取，把原始请求、ID、来源根、文档路径、状态、内容指纹及必要方法传给目标 Domain，再由其判断适用性并保留到执行 Role。没有匹配继续内置路径；停用/缺失/无效不以旧正文或同名能力冒充。
 
-命令定位、字段与转交规则见 [外部 SKILL](../../docs/EXTERNAL_SKILLS.md#entry-handoff)。目录发现不修改项目入口、不注册宿主原生命令、不自动执行脚本，也不改变 `route` 的领域职责或现有授权。
+命令定位、字段与转交规则见 `tp-spec skill read --id tp-spec-coding --path docs/EXTERNAL_SKILLS.md --json` 的“入口选择与领域转交”段。目录发现不修改项目入口、不注册宿主原生命令、不自动执行脚本，也不改变 `route` 的领域职责或现有授权。
 
 ## 用户体验
 默认只暴露：开始/继续、状态、Explain、需要用户决策。Role ID、Skill path、event id、contract digest、fencing generation 等仅在 Explain/Doctor 场景按需展开。
 
 ## 按需读取与反馈
+内置正文通过 `tp-spec skill read --id <精确ID> --json` 读取；其余内置 Markdown 用 `tp-spec skill read --id tp-spec-coding --path <Base内路径> --json`。命令复用当前 Installation/Resolver，返回实际 `source_root/path`；宿主技能目录只保存入口副本，不作为 Base 根，也不拼接相对路径。
 领域正文只加载已选 Domain，其他领域保留发现信息；外部方法按上述选中结果读取；已在当前上下文可靠加载的规则不重复读取。命中长文档时只读命中段，不沿链接预加载全部角色/能力。
 
-- 修改 TP-Spec-Coding 自身源码：将 [本仓验证策略](../../docs/TESTING.md) 作为项目约束交给执行 Agent；不将基座临时测试清理规则套用到其他业务项目。
-- 软件工作：读取 [tp-software-lifecycle](../../agents/tp-software-lifecycle/SKILL.md)；已有 Task 复用当前摘要与真实授权，不为入口路由重读全历史。
-- 查看项目、任务或配置的可视化：在 TP-Spec-Coding 自身源码根运行 `npm run dev`，浏览器访问终端地址；准备和排错见 [本地工作台](../../docs/WORKBENCH.md)。这是本地页面入口，不创建专属 Agent，不在业务仓库复制前端。
+- 修改 TP-Spec-Coding 自身源码：将 `tp-spec skill read --id tp-spec-coding --path docs/TESTING.md --json` 返回的本仓验证策略 作为项目约束交给执行 Agent；不将基座临时测试清理规则套用到其他业务项目。
+- 软件工作：读取 `tp-spec skill read --id tp-software-lifecycle --json`；已有 Task 复用当前摘要与真实授权，不为入口路由重读全历史。
+- 查看项目、任务或配置的可视化：在 TP-Spec-Coding 自身源码根运行 `npm run dev`，浏览器访问终端地址；准备和排错见 `tp-spec skill read --id tp-spec-coding --path docs/WORKBENCH.md --json` 返回的本地工作台说明。这是本地页面入口，不创建专属 Agent，不在业务仓库复制前端。
 
 普通代码搜索、文件读取、测试、Shell 及所有正式 Runtime 命令均不启动工作台或服务，不触发页面刷新或生成 HTML。正常流转直接复用本轮可信结果给出简短 Markdown，机器输出保持原格式。工作台仅响应用户进入页面和手动读取，不后台轮询，也不依赖会话宿主展示。
 
@@ -46,4 +47,4 @@ description: TP-Spec-Coding 唯一默认产品入口；以低上下文成本识�
 ## 软件任务模式
 先判断本次工作是否需要正式 Task。目标和范围明确的普通局部修改直接使用所需能力完成，不因接入 TP-Spec、调用 Skill、测试或留日志自动创建 Task；已有 Task 范围内的返修继续原任务。用户要求任务记录、项目明确要求 Task，或工作确实需要持续跟踪与协作交付时，再建立正式 Task。“全链路开发测试”“连续完成”本身不等于选择标准 Task。
 
-已建立的任务按 Runtime 唯一模式解释确定适用义务。旧 Task 或没有真实用户模式选择的 Task 按 standard；只有用户明确选择 quick 时才使用 quick。需要任务记录的小修改可一次简短建议 quick，不能把沉默、拒绝或未作选择当同意。直接处理不新增 Runtime 模式，也不绕过已有 Task 门禁、必要验证或 SQL、生产、发布授权。具体流程和最终字段见 [软件工程生命周期](../../agents/tp-software-lifecycle/SKILL.md)。
+已建立的任务按 Runtime 唯一模式解释确定适用义务。旧 Task 或没有真实用户模式选择的 Task 按 standard；只有用户明确选择 quick 时才使用 quick。需要任务记录的小修改可一次简短建议 quick，不能把沉默、拒绝或未作选择当同意。直接处理不新增 Runtime 模式，也不绕过已有 Task 门禁、必要验证或 SQL、生产、发布授权。具体流程和最终字段见 `tp-spec skill read --id tp-software-lifecycle --json` 返回的软件工程生命周期。

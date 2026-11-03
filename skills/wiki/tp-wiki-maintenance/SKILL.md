@@ -13,6 +13,8 @@ description: 用于已选稳定源码的 Wiki 日常增量维护、变更分类�
 
 来源选择和快路径按 [Stable Source](../../../wiki/rules/stable-source.md)。Git 只固定用户明确指定、本地已有的 `refs/remotes/<remote>/<branch>` commit，排除工作区和本地未推送提交；不自行 fetch/pull 或猜默认分支。非 Git 保留实际文件 hash/stability 来源。来源不足时停止受影响动作。
 
+`maintain/build/scan` 自动为需处理的仓建立隔离 candidate，返回 `candidate_wiki_repo_root`；这是本轮 AI 唯一写入位置。后续同一 workspace/repo 的 `plan/manifest-refresh/verify/coverage/audit/audit-record/source-read` 自动路由 candidate，普通源码读取仍绑定 staged 来源，`--baseline` 保持成功来源语义。`NO_CHANGE` 不创建 candidate。
+
 ## 按变化处理
 
 先固定来源并执行成功基线快路径；`NO_CHANGE` 直接结束，不启动模型维护。需要处理时沿当前工具的真实结果接续：
@@ -23,6 +25,8 @@ SCAN → CLASSIFY → TOPOLOGY → PLAN → AI UPDATE
 ```
 
 路径、枚举、raw/normalized fingerprint、encoding、分类、Source Topology Diff、rebuild plan、manifest machine fields、L1–L3 和 snapshot baseline 由确定性工具负责。AI 只判断语义/结构影响并更新确实受影响的章节、模块和索引。
+
+Wiki subject 差异仅凭成功时捕获、可重现旧完整 subject 的 durable 分项收窄文档范围，并合并真实 source dependency/topology 影响。精确成功字节恢复或已证明的机器字段变化可确定性处理；`WIKI_SUBJECT_SCOPE_UNPROVEN` 表示旧分项缺失或范围无法证明，停止自动维护并说明需确认的实际复核范围/确切原字节，不据此全库重写。initial、repair、旧 FAIL 与必要 L4 门禁保持。
 
 | 真实变化 | 方法 |
 |---|---|
@@ -42,4 +46,10 @@ SCAN → CLASSIFY → TOPOLOGY → PLAN → AI UPDATE
 
 必要语义更新未完成、质量 FAIL、UNCERTAIN 未解、必要 L4 未做/失败、来源/策略不一致或提交前 FILESYSTEM 字节改变，都禁止推进 baseline。Git follow-up 始终用 staged SHA，stable_ref 后续推进留给下次，不能换成工作区。不得手填 hash、snapshot、机器 citations 或无证据扩大删除。
 
-只写 resolved Wiki physical root 内的 Wiki/metadata，不改 source repo 或 canonical Knowledge。分别报告 NO_CHANGE、实际更新、验证/审计和 baseline 是否提交；临时收据清理失败与基线提交结果分开说明。
+`snapshot-commit` 在 candidate 门禁通过后，以正式 Wiki 仍匹配本轮起点身份为条件进行 CAS 提升；正式正文有并发变化则拒绝。失败/中断草稿留在隔离 candidate，下轮 `maintain` 隔离旧 draft 并从正式 Wiki 重新开始。`policy-review` 仍针对正式成功 baseline，准确重现旧规则范围后登记，再重新 `maintain`；scope 不匹配是拒绝原因，不自动切换。
+
+候选目录由最近的 Wiki Git 仓根 `.gitignore` 中 `.*.tp-wiki-candidate/` 隔离，包含嵌套 Repo；不隐藏正式 Wiki 或 metadata，也不自动提交 Git。丢弃时在既有 candidate state 记录退役目录和树摘要：未成功发布时保留最近一份失败草稿，成功发布后清理摘要仍匹配的已退役草稿。修改过、无退役身份、活动候选、待恢复副本均保留；删除失败单独报告，不改写正式成功结果。
+
+已有积压先用 `wiki candidate-cleanup` 只读查看，获准后加 `--apply`。旧草稿缺少树摘要时，只能用 `--retirement-receipt <已有maintain回执>` 证明准确的 discard 路径及 canonical，且正式发布身份仍匹配、草稿没有独有的 durable Wiki 字节时才接纳清理；不按目录名或时间猜测归属。该操作不 scan/build、刷新基线或执行语义审计。
+
+AI 只写返回的 candidate 内 Wiki/metadata，不改 source repo 或 canonical Knowledge；正式提升交 CLI。分别报告 NO_CHANGE、candidate 更新、验证/审计和正式 baseline 是否提交；临时收据清理失败与提交结果分开说明。

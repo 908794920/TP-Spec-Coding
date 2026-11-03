@@ -49,6 +49,7 @@
 ## 相关文档
 
 - [Agent / Role / Skill 总体模型](../AGENTS_AND_SKILLS.md)
+- [外部红队对抗审查方法](../../skills/capabilities/external-redteam-review/SKILL.md)（仅用户显式指定时触发）
 - [安装与项目接入](../GETTING_STARTED.md)
 - [Role Catalog](../../governance/role-catalog.yaml)
 

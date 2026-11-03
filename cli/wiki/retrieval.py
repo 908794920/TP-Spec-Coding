@@ -25,6 +25,7 @@ import yaml
 
 from cli import environment
 from cli.knowledge.projection import tokenize as _knowledge_tokenize
+from .candidate import published_generation
 from .registry import load_registry
 
 
@@ -312,7 +313,30 @@ def _read_manifest_cache(cfg: Any, source_id: str) -> Dict[str, Any]:
             conn.close()
 
 
+def _check_published(rows: Iterable[Dict[str, Any]]) -> None:
+    for row in rows:
+        root = row.get("wiki_repo_root") or row["_wiki_repo_root"]
+        if published_generation(Path(root)) != row["_published_generation"]:
+            raise RetrievalError("Wiki publication changed during retrieval; retry with the published view")
+
+
 def _catalog_for_target(target: Dict[str, Any], *, manifest_cache: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    root = Path(target["wiki_repo_root"])
+    generation = published_generation(root)
+    cache_key = (str(target["source_id"]), f"{target['project_id']}/{target['repo_id']}")
+    if (_CATALOG_CACHE.get(cache_key) or {}).get("_published_generation") != generation:
+        _CATALOG_CACHE.pop(cache_key, None)
+    result = _catalog_for_target_unchecked(target, manifest_cache=manifest_cache)
+    if published_generation(root) != generation:
+        _CATALOG_CACHE.pop(cache_key, None)
+        raise RetrievalError("Wiki publication changed while reading its catalog; retry")
+    result["_published_generation"] = generation
+    if cache_key in _CATALOG_CACHE:
+        _CATALOG_CACHE[cache_key]["_published_generation"] = generation
+    return result
+
+
+def _catalog_for_target_unchecked(target: Dict[str, Any], *, manifest_cache: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     root = _canonical(target["wiki_repo_root"])
     manifest_path = _safe_metadata_file(root, MANIFEST_NAME)
     cache_key = (str(target["source_id"]), f"{target['project_id']}/{target['repo_id']}")
@@ -494,6 +518,8 @@ def _catalog(cfg: Any) -> Tuple[str, List[Dict[str, Any]], List[Dict[str, str]],
     for target in targets:
         catalog = _catalog_for_target(target, manifest_cache=manifest_cache)
         problems.extend(catalog["problems"])
+        for doc in catalog["documents"]:
+            doc["_published_generation"] = catalog["_published_generation"]
         docs.extend(catalog["documents"])
         maintenance = catalog["maintenance"]
         repo_rows.append({
@@ -508,7 +534,9 @@ def _catalog(cfg: Any) -> Tuple[str, List[Dict[str, Any]], List[Dict[str, str]],
             "status": maintenance.get("status") or "unknown",
             "maintenance": maintenance,
             "_registry_repo": target.get("registry_repo") or {},
+            "_published_generation": catalog["_published_generation"],
         })
+    _check_published(repo_rows)
     return source_id, docs, problems, repo_rows
 
 
@@ -936,8 +964,10 @@ def refresh_catalog_cache(cfg: Any) -> Dict[str, Any]:
     uri = "file:" + quote(str(path), safe="/:\\") + "?mode=rw"
     conn = sqlite3.connect(uri, uri=True, timeout=3.0)
     try:
+        _check_published(repos)
         entries = _manifest_cache_entries(source_id, repos)
         _set_meta(conn, "catalog_manifest_cache", json.dumps(entries, ensure_ascii=False, separators=(",", ":")))
+        _check_published(repos)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -953,7 +983,10 @@ def refresh_catalog_cache(cfg: Any) -> Dict[str, Any]:
 def build_index(cfg: Any) -> Dict[str, Any]:
     """Build the user-root FTS5 projection from all enabled registered repos."""
     started = time.perf_counter()
-    source_id, docs, problems, repos = _catalog(cfg)
+    try:
+        source_id, docs, problems, repos = _catalog(cfg)
+    except (OSError, ValueError) as exc:
+        return {"status": "FAIL", "error": f"{type(exc).__name__}: {exc}", "document_count": 0}
     catalog_fingerprint = _catalog_fingerprint(source_id, docs, repos, problems)
     try:
         conn = _open_rw(cfg, source_id=source_id)
@@ -961,6 +994,7 @@ def build_index(cfg: Any) -> Dict[str, Any]:
         return {"status": "FAIL", "error": f"{type(exc).__name__}: {exc}", "source_id": source_id, "document_count": 0}
     try:
         conn.execute("BEGIN")
+        _check_published(repos)
         conn.execute("DELETE FROM wiki_documents_fts")
         conn.execute("DELETE FROM wiki_documents")
         for doc in docs:
@@ -989,6 +1023,7 @@ def build_index(cfg: Any) -> Dict[str, Any]:
         _set_meta(conn, "catalog_fingerprint", catalog_fingerprint)
         _set_meta(conn, "catalog_manifest_cache", json.dumps(_manifest_cache_entries(source_id, repos), ensure_ascii=False, separators=(",", ":")))
         _set_meta(conn, "schema", "tp-spec.wiki-retrieval/v1")
+        _check_published(repos)
         conn.commit()
     except Exception as exc:
         conn.rollback()
@@ -1027,11 +1062,20 @@ def update_index(cfg: Any, *, catalog_only: bool = False) -> Dict[str, Any]:
 def index_status(cfg: Any, *, catalog: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Read projection metadata without creating or changing the database."""
     if catalog is None:
-        source_id, current_docs, current_problems, current_repos = _catalog(cfg)
+        try:
+            source_id, current_docs, current_problems, current_repos = _catalog(cfg)
+        except (OSError, ValueError) as exc:
+            return {"status": "WARN", "indexed_at": "", "source_id": "", "document_count": 0, "error": str(exc)}
     else:
         # 工作台传入本次、同来源的目录指纹，避免为索引状态再次检查全部文件。
         source_id = catalog["source_id"]
         current_problems = catalog["problems"]
+        try:
+            current_repos = [{"wiki_repo_root": row["wiki_repo_root"],
+                              "_published_generation": published_generation(Path(row["wiki_repo_root"]))}
+                             for row in catalog.get("repositories", [])]
+        except (OSError, ValueError) as exc:
+            return {"status": "WARN", "indexed_at": "", "source_id": source_id, "document_count": 0, "error": str(exc)}
     path = retrieval_db_path(cfg, source_id=source_id)
     conn = _open_ro(cfg, source_id=source_id)
     if conn is None:
@@ -1049,6 +1093,7 @@ def index_status(cfg: Any, *, catalog: Optional[Dict[str, Any]] = None) -> Dict[
                 current_fingerprint = catalog["catalog_fingerprint"]
             indexed_fingerprint = _get_meta(conn, "catalog_fingerprint")
             indexed_source = _get_meta(conn, "source_id")
+            _check_published(current_repos)
             stale = bool(indexed_source != source_id or not indexed_fingerprint or indexed_fingerprint != current_fingerprint)
             return {
                 "status": "STALE" if stale else ("WARN" if current_problems else "PASS"),
@@ -1062,7 +1107,7 @@ def index_status(cfg: Any, *, catalog: Optional[Dict[str, Any]] = None) -> Dict[
                 "catalog_fingerprint": indexed_fingerprint,
                 "current_catalog_fingerprint": current_fingerprint,
             }
-        except sqlite3.Error as exc:
+        except (OSError, ValueError, sqlite3.Error) as exc:
             return {"status": "WARN", "database": str(path), "indexed_at": "", "source_id": "", "document_count": 0, "error": str(exc)}
     finally:
         conn.close()
@@ -1148,7 +1193,10 @@ def search(
     # Validate scopes and explicit filters against the registered catalog
     # before touching the index.  Invalid filters are execution failures, not
     # successful zero-hit searches and must be visible as such in telemetry.
-    source_id, catalog_docs, catalog_problems, catalog_repos = _catalog(cfg)
+    try:
+        source_id, catalog_docs, catalog_problems, catalog_repos = _catalog(cfg)
+    except (OSError, ValueError) as exc:
+        return failed("SEARCH_FAILED", str(exc), project_id=explicit_project)
     project_filter = explicit_project
     if not project_filter and normalized_scope == "current":
         try:
@@ -1242,6 +1290,7 @@ def search(
                 "score": round(float(-row["rank"]), 8) if row["rank"] is not None else 0.0,
             })
         receipt: Optional[str] = None
+        _check_published(catalog_repos)
         if record_telemetry:
             receipt, telemetry_error = _record_best_effort(
                 cfg=cfg, operation="search", status="completed", payload=payload, project_id=project_filter,
@@ -1259,7 +1308,7 @@ def search(
         if telemetry_error:
             result["telemetry_error"] = telemetry_error
         return result
-    except sqlite3.Error as exc:
+    except (OSError, ValueError, sqlite3.Error) as exc:
         return failed("SEARCH_FAILED", str(exc), project_id=project_filter)
     finally:
         conn.close()
@@ -1309,6 +1358,7 @@ def read_document(
         if path is None:
             raise RetrievalError(f"registered document is no longer safely readable: {identifier}")
         text, data = _safe_read_text(path)
+        _check_published([doc])
         current_hash = _sha256_bytes(data)
         original_lines = text.splitlines(keepends=True)
         lines = text.splitlines()
@@ -1357,6 +1407,7 @@ def read_document(
         # frontmatter-only document and an overlong first preview line return
         # metadata/outline without writing a success event.
         readable_content = bool(selected.strip()) and selected_body_nonempty
+        _check_published([doc])
         if record_telemetry and readable_content:
             receipt, telemetry_error = _record_best_effort(
                 cfg=cfg, operation="read", status="completed", payload=payload, project_id=doc["project_id"],

@@ -23,7 +23,6 @@ class DomainDecision:
 
 
 _SIGNAL_GROUPS = (
-    ("autonomy", ("autonomy", "自治", "cycle", "proposal", "batch")),
     ("wiki", (" wiki", "wiki ", "wiki", "维基", "项目事实", "代码理解")),
     ("knowledge", ("knowledge", "知识库", "知识", "memory", "经验沉淀")),
     ("base", ("基座", "base maintenance", "upgrade base", "安装配置", "tp-spec 配置")),
@@ -41,6 +40,6 @@ def route_domain(text: str, *, active_task_domain: str | None = None) -> DomainD
         if any(needle.lower() in lowered for needle in needles):
             return DomainDecision(domain, "high", f"{domain}_signal", False)
     active = str(active_task_domain or "").strip().lower()
-    if active in {"software", "wiki", "knowledge", "base", "autonomy"}:
+    if active in {"software", "wiki", "knowledge", "base"}:
         return DomainDecision(active, "medium", "active_task_domain", False)
     return DomainDecision("unknown", "low", "ambiguous_signal", True)

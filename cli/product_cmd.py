@@ -19,6 +19,6 @@ def cmd_route(args) -> int:
 def add_product_subparsers(subparsers) -> None:
     p = subparsers.add_parser("route", help="Low-context tp-spec-coding Domain routing")
     p.add_argument("--text", required=True, help="current user intent; no repository or task deep-read is performed")
-    p.add_argument("--active-task-domain", default=None, choices=["software", "wiki", "knowledge", "base", "autonomy"])
+    p.add_argument("--active-task-domain", default=None, choices=["software", "wiki", "knowledge", "base"])
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_route)

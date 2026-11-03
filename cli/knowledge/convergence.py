@@ -175,6 +175,65 @@ def _historical_learning_result(ref: str, events: dict) -> dict | None:
     return detail
 
 
+def _historical_control_event(ref: str, events: dict) -> dict | None:
+    """Resolve a recorded control boundary as provenance, never current authority."""
+    from cli import event_contract, event_policies, workflow_controls
+
+    if not re.fullmatch(r"event:[1-9][0-9]*", ref):
+        return None
+    row = events.get(int(ref[6:]))
+    if row is None or row.get("event_type") not in {"STATE", "WORKFLOW_CONFIRMATION"}:
+        return None
+    kind, detail = row["event_type"], detail_of(row)
+    producer = "record-first" if kind == "STATE" else "workflow_confirm"
+    policy = event_policies.EVENT_POLICIES[kind]
+    if (not event_policies.event_allowed_for_producer(kind, producer)
+            or detail.get("producer") != producer
+            or any(not (detail.get(key) or row.get(key)) for key in policy["required_fields"])):
+        return None
+    if kind == "STATE":
+        from cli.role_registry import actor_ids
+        # ACTIVATE's original writer keeps identity in the row, without a semantic envelope.
+        if (any(key in detail for key in ("schema", "result_status"))
+                or detail.get("operation") != "ACTIVATE"
+                or row.get("from_state") != "NEW" or row.get("to_state") != "ACTIVE"
+                or not detail.get("cli_invocation_id")
+                or not detail.get("phase") or detail["phase"] != row.get("to_stage")
+                or detail.get("schema_version") != row.get("workflow_version")
+                or row.get("actor_role") not in actor_ids()
+                or any(key in detail and detail[key] != row.get(key)
+                       for key in ("task_id", "actor_role", "created_at"))):
+            return None
+    else:
+        detail = workflow_controls.trusted_event_detail(row,
+            event_type=kind, producer=producer, actor="human_owner")
+        if (detail is None or detail.get("result_status") != "COMPLETED"
+                or event_contract.validate_event_semantics(kind, detail)):
+            return None
+        source_id = detail.get("source_event_id")
+        source = events.get(source_id) if type(source_id) is int and source_id > 0 else None
+        if source is None or detail.get("source_event_digest") != workflow_controls.event_digest(source):
+            return None
+        try:
+            binding = workflow_controls.build_boundary_binding(
+                task_id=row["task_id"], **{key: detail[key] for key in (
+                    "confirmation_kind", "source_stage", "source_role", "source_event_id",
+                    "source_event_digest", "target_stage", "target_role", "execution_mode")},
+                **({key: detail[key] for key in ("change_set_id", "subject_digest", "mode_source_digest")}
+                   if detail["confirmation_kind"] == "completion" else {}))
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not workflow_controls.workflow_confirmation_matches(row, binding):
+            return None
+    # Bind source facts, not optional telemetry columns omitted by orchestration.
+    source = {key: row.get(key) for key in (
+        "id", "task_id", "event_type", "from_state", "to_state", "from_stage", "to_stage",
+        "actor_role", "actor_agent", "model_used", "work_item_id", "reason_code", "summary",
+        "detail_json", "evidence_path", "workflow_version", "created_at")}
+    return {"event_id": row["id"], "event_type": kind, "sha256": digest(source),
+            "reason": "trusted historical control event checked; not a learning input, current PASS or authorization"}
+
+
 def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dict:
     """Read only this Task's known artifacts and explicitly referenced evidence.
 
@@ -282,17 +341,21 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
         ref = str(raw).replace("\\", "/").strip()
         if ref.startswith("event:"):
             if ref not in contents:
-                historical = (_historical_learning_result(ref, events_by_id)
-                              if raw in locator_refs and ref not in strict_event_refs else None)
+                historical = None
+                if raw in locator_refs and ref not in strict_event_refs:
+                    historical = _historical_control_event(ref, events_by_id)
+                    result = _historical_learning_result(ref, events_by_id) if historical is None else None
+                    if result is not None:
+                        historical = {"event_type": "KNOWLEDGE_CONVERGENCE_RESULT",
+                            "request_event_id": result["request_event_id"],
+                            "reason": "trusted historical result binding checked; not a learning input or current PASS"}
                 if historical is None:
                     issues.append(f"UNRESOLVED_EVENT_SOURCE: {ref}")
                 else:
                     for fingerprint, field in locator_refs[raw]:
                         navigation = event_items[fingerprint].setdefault("source_locators", [])
                         locator = {"ref": raw, "field": ".".join(field), "status": "EXCLUDED_FROM_LEARNING",
-                            "event_type": "KNOWLEDGE_CONVERGENCE_RESULT",
-                            "request_event_id": historical["request_event_id"],
-                            "reason": "trusted historical result binding checked; not a learning input or current PASS"}
+                                   **historical}
                         if locator not in navigation:
                             navigation.append(locator)
             continue

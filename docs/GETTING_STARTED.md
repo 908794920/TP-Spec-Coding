@@ -118,11 +118,10 @@ Runtime 负责自动维护核心事实：
 
 AI 应调用专用业务 CLI，让 Runtime 自动记账。`summary` 只用于人类阅读，不能作为 PASS/FAIL、阶段完成或路由依据。缺少非关键 Governance enrichment 时应优先保留真实工作结果，而不是要求 AI 手工补大量文档。
 
-## 7. Wiki / Knowledge / Autonomy
+## 7. Wiki / Knowledge
 
 - Wiki：见 [`agents/tp-wiki.md`](agents/tp-wiki.md) 与 [`../wiki/README.md`](../wiki/README.md)
 - Knowledge：见 [`agents/tp-knowledge.md`](agents/tp-knowledge.md) 与 [`../knowledge/README.md`](../knowledge/README.md)
-- Autonomy：见 [`agents/tp-project-autonomy.md`](agents/tp-project-autonomy.md) 与 [`../automation/autonomy/README.md`](../automation/autonomy/README.md)
 
 它们都是按需能力，不要求每个软件任务全部启用。
 

@@ -3,7 +3,7 @@ import { record } from '../facts';
 import { Fields, Problems, ReadStatus } from '../components/Facts';
 import { SkillTopology } from '../components/SkillTopology';
 import type { Envelope, GlobalData, Health, ReadState } from '../types';
-const groups = [['base', '安装与基座'], ['wiki', 'Wiki'], ['knowledge', 'Knowledge'], ['autonomy', '自主配置'], ['skill_topology', '能力定义与来源']] as const;
+const groups = [['base', '安装与基座'], ['wiki', 'Wiki'], ['knowledge', 'Knowledge'], ['skill_topology', '能力定义与来源']] as const;
 /* Labels for the keys that would be ambiguous once merged into one table (`path`, `status`) or are
    absent from the field-name vocabulary entirely (`python_executable`). */
 const carriedLabels = { path: '注册表路径', status: '解析器状态', user_root: '用户根目录', python_executable: '本机 Python 解释器' };

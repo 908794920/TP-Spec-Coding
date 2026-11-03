@@ -79,6 +79,8 @@ L4 使用**对抗式语义检查**，不是把生成结果顺读一遍。首次 
 
 ## Baseline Rule
 
+`build/scan/maintain` 返回隔离的 `candidate_wiki_repo_root`；AI 只在该根更新正文，后续机器门禁自动使用该候选。`snapshot-commit` 先完成来源、质量与必要 L4 绑定，再核对正式目录未被改动并提升候选。失败或未提升的候选不覆盖正式正文和 baseline；重新维护从正式版本建立新候选。
+
 ```text
 SCAN → PLAN → AI UPDATE(if needed)
 → MANIFEST REFRESH
@@ -115,3 +117,5 @@ Effective Wiki Coverage
 ### Standalone full semantic audit
 
 When a human or scheduled quality audit explicitly needs a full semantic re-check without a pending source change set, run `wiki audit --full`. The deterministic plan uses `audit_scope=standalone-full-repo`; `audit-record PASS` must cover every durable manifest document. This is distinct from daily incremental `all-affected` review.
+
+Without an active candidate, `verify`, `coverage`, `audit` and `audit-record` retain this standalone path: they write machine receipts for the published subject and do not rewrite prose or advance its baseline. `plan` and `manifest-refresh` require a maintenance candidate. A standalone failure remains visible to the next maintenance run.

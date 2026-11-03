@@ -5,25 +5,30 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from .audit import build_audit_plan
-from .anchors import anchor_health_report, repair_anchor_baseline
+from .anchors import anchor_health_report, repair_anchor_baseline, plan_cosmetic_citation_relocations
+from .candidate import (active_candidate, begin_candidate, discard_candidate,
+                        recover_publication, publish_candidate, cleanup_candidate)
 from .config import junction_relation, load_content_systems
 from .coverage import compute_wiki_coverage, evaluate_first_build_readiness, write_coverage_report
-from .manifest import refresh_manifest, write_manifest
+from .manifest import refresh_manifest, write_manifest, load_manifest
 from .planner import build_plan
 from .quality import record_semantic_audit, verify_repo
 from .registry import RepoTarget, resolve_targets, write_local_registry
 from cli.knowledge.common import resolve_knowledge_project
 from .snapshot import (commit_baseline, snapshot_paths, stage_scan, prepare_source_config,
-                       no_change_fast_path, validate_staged_source, discard_staged)
+                       no_change_fast_path, validate_staged_source, build_current_snapshot,
+                       classify_changes, wiki_subject_digest)
+from cli.sensitive_scanner import redact_credential_values
 from .source import read_source_bytes, decode_text, sha256_bytes
 from .stable_source import source_view, relative_path
 from .retrieval import update_index as update_retrieval_index
 from .retrieval_commands import add_retrieval_subparsers
-from .policy import record_policy_review
+from .policy import record_policy_review, archive_rules, policy_review_hint
 
 
 def _emit(payload: Any) -> None:
@@ -38,7 +43,88 @@ def _resolve(args) -> tuple[Any, List[RepoTarget]]:
         repo_root=getattr(args, "repo_root", None),
         include_disabled=getattr(args, "include_disabled", False),
     )
+    command = getattr(args, "wiki_cmd", "")
+    candidate_commands = {"plan", "manifest-refresh", "verify", "coverage", "audit", "audit-record"}
+    if command in candidate_commands or (command == "source-read" and not getattr(args, "baseline", False)):
+        routed = []
+        for target in targets:
+            candidate = active_candidate(target.wiki_repo_root)
+            if candidate is None and command in {"plan", "manifest-refresh"}:
+                raise ValueError("WIKI_CANDIDATE_MISSING: run wiki maintain/build/scan first; published prose/manifest cannot be rewritten by maintenance")
+            routed.append(replace(target, wiki_repo_root=candidate) if candidate else target)
+        targets = routed
     return cfg, targets
+
+
+def _candidate_target(target: RepoTarget) -> tuple[RepoTarget, Dict[str, Any]]:
+    recovery = recover_publication(target.wiki_repo_root)
+    discarded = discard_candidate(target.wiki_repo_root)
+    candidate = begin_candidate(target.wiki_repo_root)
+    return replace(target, wiki_repo_root=candidate), {
+        "published_wiki_repo_root": str(target.wiki_repo_root), "candidate_wiki_repo_root": str(candidate),
+        "publication_recovery": recovery, "previous_candidate": discarded,
+    }
+
+
+def _filesystem_no_change(cfg, target: RepoTarget, source_cfg: Dict[str, Any], args) -> Dict[str, Any] | None:
+    if (getattr(args, "repair", False) or getattr(args, "initialize_source", False) or
+            source_view(target.repo_root, source_cfg).mode != "FILESYSTEM"):
+        return None
+    paths = snapshot_paths(target.wiki_repo_root)
+    if not paths["baseline"].is_file() or any(paths[n].exists() for n in
+            ("pending", "changeset", "plan", "verification", "audit_plan", "audit")):
+        return None
+    baseline = json.loads(paths["baseline"].read_text(encoding="utf-8"))
+    completion = baseline.get("completion") or {}
+    if (completion.get("status") != "SUCCESS" or
+            baseline.get("maintenance_digest") != source_cfg.get("_maintenance_digest") or
+            completion.get("subject_digest") != wiki_subject_digest(target.wiki_repo_root)):
+        return None
+    current = build_current_snapshot(target.repo_id, target.repo_root, source_cfg, old=baseline)
+    changes = classify_changes(baseline, current, cfg.snapshot)
+    if changes["changes"] or baseline.get("source") != current.get("source"):
+        return None
+    return {"state": "NO_CHANGE", "fast_path": False, "source_scanned": True,
+            "requires_ai_update": False, "llm_dispatch": False, "plan": None}
+
+
+def _assert_candidate_scope(canonical: Path, candidate: Path, repo_root: Path, source_cfg: Dict[str, Any]) -> None:
+    from .subject import MANIFEST, subject_files
+    paths = snapshot_paths(candidate)
+    changeset = json.loads(paths["changeset"].read_text(encoding="utf-8"))
+    if changeset.get("initial"):
+        return
+    before, after = subject_files(canonical), subject_files(candidate)
+    durable_changes = {rel for rel in before.keys() | after.keys() if before.get(rel) != after.get(rel)}
+    unknown = {rel for rel in durable_changes if rel != MANIFEST and not rel.endswith(".md")}
+    if unknown:
+        raise ValueError("WIKI_CANDIDATE_SCOPE_CHANGED: unreviewed durable files changed: " + ", ".join(sorted(unknown)))
+    plan = json.loads(paths["plan"].read_text(encoding="utf-8"))
+    allowed = {row["document"] for row in plan.get("affected_documents", [])}
+    audit = json.loads(paths["audit"].read_text(encoding="utf-8")) if paths["audit"].is_file() else {}
+    if plan.get("topology_review") and audit.get("topology_reviewed"):
+        allowed.update(audit.get("documents") or [])
+        deleted_sources = {row["file"] for row in plan["topology_review"] if row.get("change_kind") == "DELETED"}
+        for document in load_manifest(canonical).get("documents") or []:
+            if any(dep.get("file") in deleted_sources for dep in document.get("dependencies") or []):
+                allowed.add(document["path"])
+    old = {p.relative_to(canonical).as_posix(): p.read_bytes() for p in canonical.rglob("*.md")}
+    new = {p.relative_to(candidate).as_posix(): p.read_bytes() for p in candidate.rglob("*.md")}
+    unexpected = {rel for rel in old.keys() | new.keys() if old.get(rel) != new.get(rel)} - allowed
+    if unexpected and plan.get("cosmetic_files"):
+        relocations = plan_cosmetic_citation_relocations(wiki_repo_root=canonical, repo_root=repo_root,
+                                                       source_cfg=source_cfg, changeset=changeset)
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for row in relocations.get("replacements", []):
+            grouped.setdefault(row["document"], []).append(row)
+        for rel in unexpected & grouped.keys():
+            text = (canonical / rel).read_text(encoding="utf-8")
+            for row in sorted(grouped[rel], key=lambda row: row["start"], reverse=True):
+                text = text[:row["start"]] + row["new_tag"] + text[row["end"]:]
+            if new[rel] == text.encode("utf-8"):
+                unexpected.remove(rel)
+    if unexpected:
+        raise ValueError("WIKI_CANDIDATE_SCOPE_CHANGED: changed prose outside current affected/reviewed topology scope: " + ", ".join(sorted(unexpected)))
 
 
 def _coverage_cfg(cfg, target: RepoTarget) -> Dict[str, Any]:
@@ -156,9 +242,10 @@ def _stage_targets(args, *, build: bool) -> int:
             try:
                 if build and snapshot_paths(t.wiki_repo_root)["baseline"].is_file():
                     raise ValueError("Wiki baseline already exists; use wiki maintain")
+                t, candidate_info = _candidate_target(t)
                 source_cfg = _source_cfg(cfg, t, staged=False)
                 changeset = _scan(cfg, t, source_cfg, args)
-                row = {"repo_id": t.repo_id, "target": t.as_dict(), "changeset": changeset, "state": "STAGED"}
+                row = {"repo_id": t.repo_id, "target": t.as_dict(), "changeset": changeset, "state": "STAGED", **candidate_info}
                 if build:
                     plan = build_plan(t.wiki_repo_root, repo_root=t.repo_root, source_cfg=source_cfg, coverage_cfg=_coverage_cfg(cfg, t))
                     row.update(plan=plan, state="WAITING_FOR_AI" if plan["requires_ai_update"] else "DETERMINISTIC_FINALIZE")
@@ -213,7 +300,8 @@ def cmd_manifest_refresh(args) -> int:
                 except ValueError as exc:
                     if "mass change guard" not in str(exc):
                         raise
-            results.append({"repo_id": t.repo_id, "documents": len(manifest.get("documents") or []), "manifest": str(t.wiki_repo_root / "meta" / "wiki-manifest.yaml"), "plan_refreshed": plan is not None})
+            results.append({"repo_id": t.repo_id, "documents": len(manifest.get("documents") or []), "manifest": str(t.wiki_repo_root / "meta" / "wiki-manifest.yaml"), "plan_refreshed": plan is not None,
+                            "cite_relocations_last_refresh": int((manifest.get("stats") or {}).get("cite_relocations_last_refresh") or 0)})
         _emit({"schema": "tp-spec.wiki-manifest-refresh/v1", "status": "PASS", "results": results})
         return 0
     except Exception as exc:
@@ -402,6 +490,11 @@ def cmd_snapshot_commit(args) -> int:
         cfg, targets = _resolve(args)
         for t in targets:
             try:
+                canonical = t.wiki_repo_root
+                candidate = active_candidate(canonical)
+                if candidate is None:
+                    raise ValueError("WIKI_CANDIDATE_MISSING: run wiki maintain/build/scan first")
+                t = replace(t, wiki_repo_root=candidate)
                 source_cfg = _source_cfg(cfg, t)
                 validate_staged_source(t.wiki_repo_root, t.repo_root, source_cfg)
                 coverage_report = compute_wiki_coverage(
@@ -411,9 +504,13 @@ def cmd_snapshot_commit(args) -> int:
                     minimum_effective_coverage=float(cfg.quality.get("initial_build_effective_coverage_min", 0.95)))
                 if readiness.get("status") == "BUILD_INCOMPLETE":
                     raise ValueError("baseline blocked: initial Wiki build coverage incomplete")
+                _assert_candidate_scope(canonical, candidate, t.repo_root, source_cfg)
                 result = commit_baseline(t.wiki_repo_root, repo_id=t.repo_id, repo_root=t.repo_root,
                                          source_cfg=source_cfg, require_verification=True)
-                results.append({"repo_id": t.repo_id, "first_build_readiness": readiness, **result})
+                publication = publish_candidate(canonical, expected_candidate=candidate)
+                results.append({"repo_id": t.repo_id, "first_build_readiness": readiness, **result,
+                                "publication": publication,
+                                "cleanup_pending": result.get("cleanup_pending", []) + publication.get("cleanup_pending", [])})
             except (ValueError, OSError) as exc:
                 results.append({"repo_id": t.repo_id, "result": "BLOCKED", "error": str(exc), "baseline_advanced": False})
         # A fully successful Wiki baseline batch is the maintenance success
@@ -446,6 +543,27 @@ def cmd_snapshot_commit(args) -> int:
         return 1
 
 
+def cmd_candidate_cleanup(args) -> int:
+    results = []
+    try:
+        _, targets = _resolve(args)
+        for target in targets:
+            try:
+                result = cleanup_candidate(target.wiki_repo_root, apply=args.apply,
+                    retirement_receipts=[Path(path) for path in args.retirement_receipt])
+                results.append({"repo_id": target.repo_id, **result})
+            except (ValueError, OSError) as exc:
+                results.append({"repo_id": target.repo_id, "status": "BLOCKED", "error": str(exc)})
+        blocked = any(row["status"] == "BLOCKED" for row in results)
+        pending = any(row["status"] == "WARN" for row in results)
+        _emit({"schema": "tp-spec.wiki-candidate-cleanup/v1", "apply": args.apply,
+               "status": "BLOCKED" if blocked else ("WARN" if pending else ("APPLIED" if args.apply else "PLAN")), "results": results})
+        return 1 if blocked else 0
+    except Exception as exc:
+        _emit({"schema": "tp-spec.wiki-candidate-cleanup/v1", "status": "BLOCKED", "error": str(exc), "results": results})
+        return 1
+
+
 def cmd_status(args) -> int:
     try:
         _, targets = _resolve(args)
@@ -453,6 +571,8 @@ def cmd_status(args) -> int:
         for t in targets:
             paths = snapshot_paths(t.wiki_repo_root)
             row = {"repo_id": t.repo_id, "repo_root": str(t.repo_root), "wiki_repo_root": str(t.wiki_repo_root)}
+            candidate = active_candidate(t.wiki_repo_root)
+            row["candidate_wiki_repo_root"] = str(candidate) if candidate else None
             for name, path in paths.items():
                 row[name] = {"path": str(path), "exists": path.is_file()}
                 if path.is_file() and path.suffix == ".json":
@@ -471,6 +591,16 @@ def cmd_status(args) -> int:
         return 0
     except Exception as exc:
         _emit({"schema": "tp-spec.wiki-status/v1", "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
+        return 1
+
+
+def cmd_policy_archive(args) -> int:
+    try:
+        result = archive_rules(Path(__file__).resolve().parents[2], args.output_root, scope=args.rule_scope)
+        _emit(result)
+        return 0
+    except (ValueError, OSError) as exc:
+        _emit({"status": "BLOCKED", "error": str(exc), "semantic_review_recorded": False})
         return 1
 
 
@@ -499,24 +629,27 @@ def cmd_maintain(args) -> int:
             raise ValueError("--document requires --repair")
         for t in targets:
             try:
+                recovery = recover_publication(t.wiki_repo_root)
+                discarded = discard_candidate(t.wiki_repo_root)
                 source_cfg = _source_cfg(cfg, t, staged=False)
                 fast = no_change_fast_path(t.wiki_repo_root, t.repo_root, source_cfg,
                     repair=bool(getattr(args, "repair", False) or getattr(args, "initialize_source", False)))
+                if fast is None:
+                    fast = _filesystem_no_change(cfg, t, source_cfg, args)
                 if fast is not None:
-                    results.append({"repo_id": t.repo_id, **fast})
+                    results.append({"repo_id": t.repo_id, **fast, "publication_recovery": recovery,
+                                    "previous_candidate": discarded})
                     continue
+                canonical = t.wiki_repo_root
+                candidate = begin_candidate(canonical)
+                t = replace(t, wiki_repo_root=candidate)
+                candidate_info = {"published_wiki_repo_root": str(canonical), "candidate_wiki_repo_root": str(candidate),
+                                  "publication_recovery": recovery, "previous_candidate": discarded}
+                hint = policy_review_hint(canonical, source_cfg)
+                if hint is not None:
+                    candidate_info["policy_review_hint"] = hint
                 paths = snapshot_paths(t.wiki_repo_root)
-                had_run = any(paths[name].exists() for name in ("pending", "changeset", "plan", "verification", "audit_plan", "audit"))
                 changeset = _scan(cfg, t, source_cfg, args)
-                if (source_view(t.repo_root, source_cfg).mode == "FILESYSTEM" and not had_run and
-                        not changeset.get("changes") and not changeset.get("initial") and
-                        not changeset.get("refresh_reasons")):
-                    # Filesystem identity requires the scan above; it is not the Git fast path.
-                    discard_staged(t.wiki_repo_root)
-                    results.append({"repo_id": t.repo_id, "state": "NO_CHANGE", "fast_path": False,
-                                    "source_scanned": True, "requires_ai_update": False, "llm_dispatch": False,
-                                    "changeset": changeset, "plan": None})
-                    continue
                 approved, reason = False, ""
                 if (changeset.get("guard") or {}).get("status") == "MASS_CHANGE_REVIEW_REQUIRED":
                     prior_plan = json.loads(paths["plan"].read_text(encoding="utf-8")) if paths["plan"].is_file() else {}
@@ -524,13 +657,13 @@ def cmd_maintain(args) -> int:
                     approved = (prior_plan.get("change_set_id") == changeset.get("change_set_id")
                                 and prior_plan.get("mass_change_approved") is True and bool(reason))
                     if not approved:
-                        results.append({"repo_id": t.repo_id, "state": "MASS_CHANGE_REVIEW_REQUIRED", "changeset": changeset})
+                        results.append({"repo_id": t.repo_id, "state": "MASS_CHANGE_REVIEW_REQUIRED", "changeset": changeset, **candidate_info})
                         continue
                 plan = build_plan(t.wiki_repo_root, allow_mass_change=approved, mass_change_reason=reason,
                                   repo_root=t.repo_root, source_cfg=source_cfg, coverage_cfg=_coverage_cfg(cfg, t))
                 state = "WAITING_FOR_AI" if plan.get("requires_ai_update") else "DETERMINISTIC_FINALIZE"
                 results.append({"repo_id": t.repo_id, "state": state, "fast_path": False,
-                                "changeset": changeset, "plan": plan, "requires_ai_update": plan["requires_ai_update"]})
+                                "changeset": changeset, "plan": plan, "requires_ai_update": plan["requires_ai_update"], **candidate_info})
             except (ValueError, OSError) as exc:
                 results.append({"repo_id": t.repo_id, "state": "BLOCKED", "error": str(exc), "baseline_advanced": False})
         states = {row["state"] for row in results}
@@ -573,13 +706,20 @@ def cmd_source_read(args) -> int:
         text, encoding, status = decode_text(data)
         if text is None or status == "uncertain":
             raise ValueError("source text encoding is uncertain; cannot present reliable source lines")
-        lines = text.splitlines()
+        safe = redact_credential_values(text)
+        if safe.get("error"):
+            raise ValueError(safe["error"])
+        lines = safe["text"].splitlines()
+        if len(lines) != len(text.splitlines()):
+            raise ValueError("credential redaction could not preserve source line layout")
         end = args.end_line if args.end_line is not None else len(lines)
         if args.start_line > max(1, len(lines)) or end > len(lines):
             raise ValueError("requested lines exceed pinned source line count")
         _emit({"schema": "tp-spec.wiki-source-read/v1", "status": "PASS", "repo_id": target.repo_id,
                "source": source_view(target.repo_root, source_cfg).identity(), "path": rel,
                "content_hash": sha256_bytes(data), "encoding": encoding, "line_count": len(lines),
+               "text_view": "credential-redacted", "redactions": [row for row in safe["redactions"]
+                   if row["line_start"] <= end and row["line_end"] >= args.start_line],
                "line_start": args.start_line if lines else None, "line_end": end if lines else None, "text": "\n".join(lines[args.start_line-1:end])})
         return 0
     except Exception as exc:
@@ -629,12 +769,18 @@ def add_wiki_subparsers(root_subparsers) -> None:
     p.add_argument("--document", action="append", default=[], help="limit explicit repair to a declared Wiki document; requires --repair")
     p.set_defaults(func=cmd_maintain)
 
+    p = subs.add_parser("policy-archive", help="Preserve complete current rule bytes before Base edits; never records a policy review")
+    p.add_argument("--output-root", required=True, help="stable archive directory outside Base rule directories; differing existing bytes are never overwritten")
+    p.add_argument("--rule-scope", choices=["maintenance", "whole-all"], default="maintenance")
+    p.set_defaults(func=cmd_policy_archive)
+
     p = subs.add_parser("policy-review", help="Record an evidenced review of exact maintenance-policy differences; never records L4 PASS")
     _add_common(p)
     old = p.add_mutually_exclusive_group(required=True)
     old.add_argument("--old-base-root", help="read-only archived Base containing original rule bytes")
     old.add_argument("--old-base-ref", help="explicit historical Base Git revision; read objects without executing old code")
-    p.add_argument("--old-rule-scope", required=True, choices=["whole-all", "maintenance"])
+    p.add_argument("--old-rule-scope", required=True, choices=["whole-all", "maintenance"],
+                   help="use maintenance for a maintenance_digest baseline; whole-all only for a matching legacy whole-All baseline; scope is never switched automatically")
     p.add_argument("--summary", required=True, help="actual semantic-equivalence review judgment")
     p.add_argument("--evidence-file", required=True, help="existing actual review evidence, retained by path and SHA256")
     p.set_defaults(func=cmd_policy_review)
@@ -685,5 +831,11 @@ def add_wiki_subparsers(root_subparsers) -> None:
 
     p = subs.add_parser("status", help="Show baseline/pending/plan/verification/audit state")
     _add_common(p); p.set_defaults(func=cmd_status)
+
+    p = subs.add_parser("candidate-cleanup", help="Plan/apply owned retired-draft cleanup without changing published Wiki")
+    _add_common(p)
+    p.add_argument("--apply", action="store_true")
+    p.add_argument("--retirement-receipt", action="append", default=[], help="existing maintain receipt proving a legacy discard; unique durable bytes remain protected")
+    p.set_defaults(func=cmd_candidate_cleanup)
 
     add_retrieval_subparsers(subs, _add_common)

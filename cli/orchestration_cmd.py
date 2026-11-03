@@ -92,9 +92,11 @@ def cmd_confirm(args) -> int:
 
 
 def cmd_retire_confirmation_wait(args) -> int:
-    from .autonomy_records import resume_retired_confirmation
+    from . import record_first, orchestration
     try:
-        result = resume_retired_confirmation(task_id=args.task, task_dir=args.task_dir, db=args.db, actor=args.actor)
+        result = record_first.resume(task_id=args.task, task_dir=args.task_dir, db=args.db, actor=args.actor,
+            summary="策略退役导致恢复：each_stage ordinary confirmation removed", policy_retirement=True)
+        result["route"] = orchestration.resolve_route(args.task, db_path=args.db)
         _emit(result, args.json)
         return 0
     except Exception as exc:

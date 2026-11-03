@@ -128,6 +128,19 @@ def build_plan(
     refresh_reasons = list(changeset.get("refresh_reasons") or [])
     repair_documents = set(changeset.get("repair_documents") or [])
     semantic_reasons = semantic_refresh_reasons(wiki_repo_root, changeset, source_cfg)
+    plan_semantic_reasons = list(semantic_reasons)
+    subject_change = None
+    if "WIKI_SUBJECT_CHANGED" in semantic_reasons and not changeset.get("initial"):
+        from .subject import subject_scope
+        subject_change = subject_scope(wiki_repo_root, changeset)
+        if subject_change["status"] == "UNPROVEN":
+            raise ValueError("WIKI_SUBJECT_SCOPE_UNPROVEN: " + subject_change["reason"] +
+                             "; preserve the baseline and confirm the actual review scope or restore exact successful bytes; "
+                             "missing evidence does not authorize rewriting all Wiki documents")
+        for rel in subject_change["documents"]:
+            row = affected.setdefault(rel, {"document": rel, "reasons": [], "sections": set(), "roles": set()})
+            row["reasons"].append({"kind": "WIKI_SUBJECT_CHANGED"})
+        semantic_reasons = [reason for reason in semantic_reasons if reason != "WIKI_SUBJECT_CHANGED"]
     if semantic_reasons:
         repair_only = set(semantic_reasons) == {"EXPLICIT_REPAIR"}
         for doc in docs:
@@ -154,7 +167,8 @@ def build_plan(
         "baseline_source": changeset.get("baseline_source"),
         "maintenance_digest": changeset.get("maintenance_digest"),
         "refresh_reasons": refresh_reasons,
-        "semantic_refresh_reasons": semantic_reasons,
+        "semantic_refresh_reasons": plan_semantic_reasons,
+        "subject_change_scope": subject_change,
         "guard": changeset.get("guard"),
         "mass_change_approved": bool(guard != "MASS_CHANGE_REVIEW_REQUIRED" or allow_mass_change),
         "mass_change_review_reason": mass_change_reason.strip() if guard == "MASS_CHANGE_REVIEW_REQUIRED" and allow_mass_change else "",

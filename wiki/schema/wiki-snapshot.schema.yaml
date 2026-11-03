@@ -28,6 +28,7 @@ optional_fields:
     committed_at: successful baseline replacement time
     change_set_id: verified run identity
     subject_digest: durable Wiki subject
+    subject_inventory: "Success-captured format=1; files maps every durable path to its raw SHA256 and reproduces subject_digest; manifest retains global/document declaration identities and exact machine source/transaction/snapshot values. Missing historical inventories never infer old evidence."
     verification: retained verification result/time/subject/audit requirement
     audit: retained audit result/time/source/subject/documents/topology, summary, audit_scope, deterministic audit_plan and its digest, supplied representative claims, and evidence limitations
     semantic_reuse: "prior baseline identity/completion, original audit or null with LEGACY_L4_NOT_RECORDED limitations, exact policy-review proof and narrowly normalized content identity; never a new L4 PASS"

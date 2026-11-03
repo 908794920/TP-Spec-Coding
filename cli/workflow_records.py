@@ -213,11 +213,11 @@ def confirm_boundary(*, task_id: str, task_dir: str, db: Optional[str] = None,
         if task['current_state'] in record_first.TERMINAL_STATES:
             raise ValueError('terminal task cannot accept a new workflow confirmation')
         route = orchestration.resolve_route(task_id, db_path=db_path, confirmation_policy=confirmation_policy, task_dir=tdir)
-        autonomy_pending = None
+        legacy_pending = None
         if route.get('recommended_action') != 'await_confirmation':
-            from .autonomy_records import pending_workflow_confirmation_any
-            autonomy_pending = pending_workflow_confirmation_any(task_id, db_path)
-        pending = autonomy_pending or route
+            from .waiting import pending_legacy_confirmation
+            legacy_pending = pending_legacy_confirmation(conn, task_id)
+        pending = legacy_pending or route
         reason = str(pending.get('confirmation_reason') or '')
         binding = pending.get('confirmation_binding')
         if reason not in {'MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION', 'QUICK_COMPLETION_REQUIRED'}:
@@ -227,16 +227,16 @@ def confirm_boundary(*, task_id: str, task_dir: str, db: Optional[str] = None,
         if binding.get('confirmation_kind') == 'completion' and (source is None or not request_id):
             raise ValueError('QUICK_COMPLETION_USER_SOURCE_REQUIRED: explicit owner statement, reference and request-id required')
         current, owner = str(task['current_state']), str(task['owner_role'])
-        if current == 'BLOCKED' and not autonomy_pending:
+        if current == 'BLOCKED' and not legacy_pending:
             raise ValueError('task is BLOCKED; resolve its real blocker before confirmation')
         now, flush_id = dbmod.now_iso(), 'WF-CONFIRM-' + uuid.uuid4().hex
         response = {'task_id': task_id, 'state': current, 'request_id': request.request_id, 'flush_id': flush_id,
                     'user_source': source, 'confirmation_binding': binding, 'confirmation_reason': reason,
-                    'replayed': False, 'recommended_action': 'next_cycle_resume' if autonomy_pending else 'workflow_next'}
+                    'replayed': False, 'recommended_action': 'task_resume' if legacy_pending else 'workflow_next'}
         def recheck(dbconn):
-            if autonomy_pending:
-                from .autonomy_records import pending_workflow_confirmation_any
-                updated = pending_workflow_confirmation_any(task_id, db_path)
+            if legacy_pending:
+                from .waiting import pending_legacy_confirmation
+                updated = pending_legacy_confirmation(dbconn, task_id)
                 if not updated or updated.get('confirmation_binding') != binding:
                     raise ValueError('WORKFLOW_CONFIRMATION_STALE: current active wait changed')
             else:
@@ -249,9 +249,6 @@ def confirm_boundary(*, task_id: str, task_dir: str, db: Optional[str] = None,
             detail = build_confirmation_detail(task_id=task_id, binding=binding, transaction_id=transaction_id,
                 flush_id=flush_id, created_at=now, schema_version=active_version())
             detail['user_source'] = source
-            if autonomy_pending:
-                detail['autonomy_next_cycle_effective'] = True
-                detail['autonomy_blocked_generation'] = autonomy_pending.get('generation')
             errors = event_contract.validate_event_semantics('WORKFLOW_CONFIRMATION', detail)
             if errors:
                 raise ValueError('; '.join(errors))
@@ -271,7 +268,7 @@ def confirm_boundary(*, task_id: str, task_dir: str, db: Optional[str] = None,
         conn.close()
     resolved = orchestration.resolve_route(task_id,db_path=db_path,confirmation_policy=confirmation_policy,task_dir=tdir)
     return {**resolved, **response, **projection, 'route': resolved,
-            'recommended_action': 'next_cycle_resume' if autonomy_pending else resolved['recommended_action']}
+            'recommended_action': 'task_resume' if legacy_pending else resolved['recommended_action']}
 
 
 def _normalize_knowledge_reason_code(value: object) -> str:

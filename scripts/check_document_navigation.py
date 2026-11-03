@@ -246,7 +246,7 @@ def validate_agent_guides(base: Path) -> list[str]:
 def _public_markdown_files(base: Path) -> list[Path]:
     result = [base / rel for rel in CORE_DOCUMENTS]
     result.extend((base / "docs" / "agents").glob("*.md") if (base / "docs" / "agents").exists() else [])
-    for rel in ("wiki/README.md", "knowledge/README.md", "automation/README.md", "automation/autonomy/README.md"):
+    for rel in ("wiki/README.md", "knowledge/README.md", "automation/README.md"):
         path = base / rel
         if path.is_file():
             result.append(path)

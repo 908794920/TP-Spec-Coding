@@ -58,23 +58,8 @@ _VOLATILE_META_NAMES = {
 
 def wiki_subject_digest(wiki_repo_root: Path) -> str:
     """Bind verification/audit to the exact durable Wiki subject, excluding run receipts."""
-    digest = hashlib.sha256()
-    if not wiki_repo_root.exists():
-        return digest.hexdigest()
-    files = []
-    for path in wiki_repo_root.rglob("*"):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(wiki_repo_root).as_posix()
-        if rel.startswith("meta/") and path.name in _VOLATILE_META_NAMES:
-            continue
-        files.append((rel, path))
-    for rel, path in sorted(files):
-        digest.update(rel.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(hashlib.sha256(path.read_bytes()).digest())
-        digest.update(b"\n")
-    return digest.hexdigest()
+    from .subject import files_digest, subject_files
+    return files_digest(subject_files(wiki_repo_root))
 
 def snapshot_paths(wiki_repo_root: Path) -> Dict[str, Path]:
     meta = wiki_repo_root / "meta"
@@ -483,6 +468,12 @@ def commit_baseline(wiki_repo_root: Path, *, repo_id: str | None = None, repo_ro
         )} if audit else None,
         "affected_documents": [d.get("document") for d in plan.get("affected_documents", [])],
     }
+    if require_verification:
+        from .subject import capture_subject, files_digest
+        inventory = capture_subject(wiki_repo_root)
+        if files_digest(inventory["files"]) != current_subject:
+            raise ValueError("baseline blocked: Wiki subject changed while capturing successful inventory")
+        pending["completion"]["subject_inventory"] = inventory
     if audit and not audit.get("claims"):
         pending["completion"]["audit"]["claim_evidence_status"] = "NOT_RECORDED"
         pending["completion"]["audit"]["evidence_limitations"] = audit.get("evidence_limitations") or [

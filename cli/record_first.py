@@ -196,33 +196,7 @@ def _change_set_roots(conn, task, explicit: Optional[Iterable[str]]) -> List[str
     root = str(row["root_path"] or "").strip() if row is not None else ""
     if not root:
         raise ValueError("Development checkpoint requires an explicit --repo-root or project root binding")
-    # 自主维护的 workspace 根目录本身不是 Git 仓库，而是承载多个独立仓库。
-    # 这里必须通过已有 project binding/profile 解析声明过的仓库，不能扫描相邻目录猜测范围。
-    from .environment import load_project_binding
-    binding = load_project_binding(root)
-    autonomy = (binding.data.get("autonomy") or {}) if binding.exists else {}
-    profile_id = str(autonomy.get("profile_id") or "").strip()
-    if not profile_id:
-        return [root]
-
-    from . import autonomy_profile
-    from .path_identity import canonical_path, same_path
-    profile = autonomy_profile.load_profile(profile_id)
-    workspace_root = canonical_path((profile.get("autonomous") or {}).get("workspace_root") or "")
-    if not same_path(root, workspace_root):
-        raise ValueError(
-            f"Autonomy project binding root mismatch: project={root} profile={workspace_root}"
-        )
-    repo_groups = ((profile.get("canonical") or {}).get("repositories") or {})
-    resolved: List[str] = []
-    for scope in ("mutable", "support"):
-        for item in repo_groups.get(scope) or []:
-            rel = str((item or {}).get("path") or "").strip()
-            if rel:
-                resolved.append(str(canonical_path(workspace_root / rel)))
-    if not resolved:
-        raise ValueError(f"Autonomy profile {profile_id} has no bound repositories")
-    return resolved
+    return [root]
 
 
 def _compact_change_set(change_set: Dict[str, Any]) -> Dict[str, Any]:
@@ -530,8 +504,7 @@ def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
             if policy_retirement:
                 if resolution_paths:
                     raise ValueError('policy retirement does not mint human resolution evidence')
-                from .autonomy_records import retired_confirmation_resolution
-                return retired_confirmation_resolution(dbconn, task_id)
+                return waiting.retired_confirmation_resolution(dbconn, task_id)
             return waiting.validate_resolution(dbconn, task_id, tdir, actor=actor, resolution_evidence=resolution_paths)
         resolution = current_resolution(conn)
         if (expected_block_event_id is not None
