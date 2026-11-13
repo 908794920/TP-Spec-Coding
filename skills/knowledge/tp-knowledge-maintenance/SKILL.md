@@ -1,7 +1,7 @@
 ---
 name: tp-knowledge-maintenance
 display_name: Knowledge 内容维护
-version: 5.3.8
+version: 5.4.0
 description: 用于已登记 source/canonical 的增量变化、定向正文维护、真相扫描、索引、验证与 baseline 推进；不把 Task 收敛扩成全库维护。
 ---
 
@@ -9,9 +9,13 @@ description: 用于已登记 source/canonical 的增量变化、定向正文维�
 
 ## 对象与准备
 
-只处理本次获准范围内已有 source/canonical 的真实变化。用共享 Content Systems Resolver 解析 `knowledge_physical_root`、registry、projection DB 和 meta root，不硬编码 Vault 路径或依赖 `.tp-spec/knowledge` Junction。读取当前 Base 的 `knowledge/README.md` 与适用的 `knowledge/rules/*`；先运行 `tp-spec knowledge doctor --workspace-root <workspace>`，需要内容变更时再运行 `knowledge maintain`。检索先定向找已有 canonical，更新已有条目优先于新增，不为覆盖率制造低价值正文。
+用共享 Content Systems Resolver 定位 `knowledge_physical_root`、registry、projection DB 和 meta root，复用仍适用的解析与诊断证据。首次接入或需核对健康缺口时使用 `tp-spec knowledge doctor --workspace-root <workspace>`，按本次动作读取相应规则。
+
+项目正文处置仅覆盖获准的 source/canonical；先定向定位已有 canonical，优先更新可用条目。物理 Vault 的 `maintain` / `scan` 写共享 Change Set，索引更新、`verify`、`audit` / `audit-record` 和基线提交也有库级写入。执行这些写入须确认本次授权覆盖相应物理库和操作，项目正文授权本身不涵盖库级写入。仅处理项目内容时，继续获准的定向阅读、证据核对或正文修改，如实交代尚未更新的投影、验证和基线。
 
 ## 增量处理
+
+库级维护按 [既有维护状态分支](../../../automation/knowledge/daily-maintenance.md#3-act-on-maintain-result) 接续，以实际 `maintain` 返回为准。其 Change Set 即使在 `NO_CHANGE` 时也已写入；此分支直接收口。`VALIDATE` 表示知识真相未变、投影当前但验证绑定需刷新，执行 `verify` 核对实际结果。下列顺序用于影响知识真相的维护。
 
 ```text
 maintain → deterministic diff/classify → 必要时 AI targeted read/update
@@ -27,4 +31,4 @@ maintain → deterministic diff/classify → 必要时 AI targeted read/update
 
 ## 范围与结果
 
-默认围绕当前项目与注册 shared 的明确变化；其他 Task 仅凭显式 candidate/evidence 或获准维护范围进入，不扫描全部 Task 历史自动灌库。与最终 Task 的局部 Request 收敛分开，不能因 task-converge 自动运行本链。报告变更分类、实际正文处置、final scan/索引/各级验证、audit 与 baseline 状态；未完成的步骤和阻塞分别说明。
+内容判断围绕当前项目与注册 shared 的明确变化；其他 Task 仅凭显式 candidate/evidence 或获准维护范围进入，不扫描全部 Task 历史自动灌库。与最终 Task 的局部 Request 收敛分开，不能因 task-converge 自动运行本链。同一库有未解决的 staged 变化时保留旧 baseline。报告实际正文处置与库级结果，列出未完成步骤及原因。

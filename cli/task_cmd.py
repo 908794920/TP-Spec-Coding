@@ -32,7 +32,6 @@ from .path_identity import same_path
 from .version import active_version
 from .workflow_loader import WorkflowLoadError
 
-INITIAL_TASK_OWNER = "tp-software-lifecycle"
 
 # task_id 格式：TASK-开头，后跟字母数字._-
 _TASK_ID_RE = re.compile(r"^TASK-[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -395,7 +394,7 @@ def _recover_interrupted_task_create(
 
 
 def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, flow: str, created_at: str,
-                           workflow_mode: str = 'standard') -> Path:
+                           workflow_mode: str = 'standard', domain: str = "software") -> Path:
     """Build a complete task scaffold in a temporary sibling directory.
 
     The caller may atomically rename the returned directory after the DB transaction
@@ -424,7 +423,9 @@ def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, fl
         if child.is_file() and child.name not in essential:
             child.unlink()
     (tmp / 'generated').mkdir(exist_ok=True)
-    (tmp / 'evidence' / 'sql').mkdir(parents=True, exist_ok=True)
+    (tmp / 'evidence').mkdir(exist_ok=True)
+    if domain == "software":
+        (tmp / 'evidence' / 'sql').mkdir(exist_ok=True)
 
     replacements = {
         'TASK-YYYYMMDD-XXX': task_id,
@@ -439,6 +440,11 @@ def _prepare_task_scaffold(target: Path, task_id: str, title: str, risk: str, fl
             continue
         for old, new in replacements.items():
             text = text.replace(old, new)
+        if domain == "video" and fp.name == "acceptance.md":
+            text = text.split("\n结论列取值", 1)[0].replace("风险等级", "影响").replace(
+                "`task.md` / `requirement-test-guide.md`", "`task.md` / 制作简报")
+            text += ("\n按有效简报填写实际验收项和见证人。人工接受通过 task acceptance-override 绑定实际审看的导出版本。\n"
+                     "\n```yaml\npage_verification:\n  mode: NOT_REQUIRED\n  human_witness: pending\n  witness_evidence: \"\"\n```\n")
         if fp.name == 'status.yaml':
             text = re.sub(r'(?m)^task_name:\s*.*$', f'task_name: {json.dumps(title or "", ensure_ascii=False)}', text)
             text = re.sub(r'(?m)^created:\s*.*$', f'created: "{created_at[:10]}"', text)
@@ -456,8 +462,17 @@ def cmd_task_create(args) -> int:
         )
         return 2
     from . import orchestration_policy
-    mode = getattr(args, 'workflow_mode', 'standard')
-    if mode not in {'standard', 'quick'}:
+    domain = getattr(args, "domain", "software")
+    if domain not in {"software", "video"}:
+        raise ValueError("TASK_DOMAIN_INVALID: expected software or video")
+    mode = getattr(args, "workflow_mode", None)
+    if domain == "video":
+        if any(value is not None for value in (mode, args.risk, args.flow, getattr(args, "mode_source", None),
+                                               getattr(args, "mode_source_ref", None))):
+            raise ValueError("TASK_MODE_NOT_APPLICABLE: video has no software mode or levels")
+    else:
+        mode = mode or "standard"
+    if mode is not None and mode not in {'standard', 'quick'}:
         raise ValueError('TASK_MODE_INVALID: workflow-mode must be standard|quick')
     mode_source = None
     if mode == 'quick' or getattr(args, 'mode_source', None) or getattr(args, 'mode_source_ref', None):
@@ -564,7 +579,7 @@ def cmd_task_create(args) -> int:
             task_id=task_id, actor_agent=getattr(args, "agent", "") or "",
             created_at=now, transaction_id=uuid.uuid4().hex,
             schema_version=active_version(), invocation_id=command_context.invocation_id(),
-            workflow_mode=mode, user_source=mode_source,
+            workflow_mode=mode, user_source=mode_source, domain=domain,
         )
         coordinator = coordinator_detail["coordinator"]
         scaffold_target = None
@@ -573,7 +588,8 @@ def cmd_task_create(args) -> int:
         if getattr(args, 'scaffold', False) or intake_arg:
             scaffold_target = requested_scaffold_target
             try:
-                scaffold_tmp = _prepare_task_scaffold(scaffold_target, task_id, args.title or '', args.risk, args.flow, now, workflow_mode=mode)
+                scaffold_tmp = _prepare_task_scaffold(scaffold_target, task_id, args.title or '', args.risk, args.flow,
+                                                     now, workflow_mode=mode, domain=domain)
                 if intake_arg:
                     adopted_intake = _adopt_intake_artifacts(scaffold_tmp, Path(intake_arg), task_id, now)
                 _write_task_create_marker(
@@ -612,7 +628,7 @@ def cmd_task_create(args) -> int:
                    actor_role, actor_agent, summary, detail_json, workflow_version, created_at)
                 VALUES (?, 'STATE', NULL, 'NEW', NULL, 'intake', ?, ?, ?, ?, ?, ?)
                 """,
-                (task_id, INITIAL_TASK_OWNER, coordinator["agent"], args.summary or '任务创建',
+                (task_id, coordinator_detail["actor_role"], coordinator["agent"], args.summary or '任务创建',
                  json.dumps(coordinator_detail, ensure_ascii=False), wf.version, now),
             )
             event_id = cur.lastrowid
@@ -696,6 +712,8 @@ def cmd_task_mode_select(args) -> int:
             raise ValueError('TASK_TERMINAL: mode selection cannot rewrite terminal work')
         events = conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (args.task,)).fetchall()
         previous = orchestration_policy.resolve_task_mode(dict(task), events)
+        if previous["domain"] == "video":
+            raise ValueError("TASK_MODE_NOT_APPLICABLE: video has no software mode")
         if previous['issues']:
             raise ValueError('; '.join(previous['issues']))
         from . import orchestration
@@ -797,7 +815,8 @@ def cmd_task_get(args) -> int:
             print(f"title:           {task['title']}")
             print(f"risk_level:      {task['risk_level']}")
             print(f"flow_level:      {task['flow_level']}")
-            print(f"workflow_mode:   {mode['workflow_mode']}")
+            print(f"domain:          {mode['domain'] or 'INVALID'}")
+            print(f"workflow_mode:   {mode['workflow_mode'] or 'N/A'}")
             print(f"current_state:   {task['current_state']}")
             print(f"current_stage:   {task['current_stage']}")
             print(f"owner_role:      {task['owner_role']}")
@@ -854,13 +873,14 @@ def cmd_task_list(args) -> int:
             return 0
         from .orchestration_policy import resolve_task_mode
         modes = {r['task_id']: resolve_task_mode(dict(r), conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (r['task_id'],)).fetchall()) for r in rows}
-        headers = ["task_id", "project_id", "title", "mode", "risk", "flow", "state", "owner"]
+        headers = ["task_id", "project_id", "title", "domain", "mode", "risk", "flow", "state", "owner"]
         table_rows = [
             [
                 r["task_id"],
                 r["project_id"],
                 r["title"] or "",
-                modes[r['task_id']]['workflow_mode'] if not modes[r['task_id']]['issues'] else 'INVALID',
+                modes[r['task_id']]['domain'] or 'INVALID',
+                (modes[r['task_id']]['workflow_mode'] or 'N/A') if not modes[r['task_id']]['issues'] else 'INVALID',
                 r["risk_level"] or '',
                 r["flow_level"] or '',
                 r["current_state"],
@@ -1985,6 +2005,10 @@ def _owner_acceptance_replay(conn, task_id: str, request) -> Optional[Dict[str, 
             raise ValueError("REQUEST_ID_CONFLICT: the ID belongs to different semantics; use a new ID for new work")
         if found is not None:
             raise ValueError("REQUEST_RECORD_INVALID: duplicate owner acceptance receipt; reconcile before retrying")
+        if detail.get("subject_scope") == "media":
+            from .event_policies import load_owner_acceptance_decisions
+            if not any(item["_event_id"] == row["id"] for item in load_owner_acceptance_decisions(conn, task_id)):
+                raise ValueError("REQUEST_RECORD_INVALID: untrusted media Owner receipt")
         found = dict(logical["response"])
     if found is not None:
         if (found.get("task_id") != task_id
@@ -2046,6 +2070,9 @@ def cmd_task_acceptance_override(args) -> int:
             "reverify_owner": args.reverify_owner or "",
             "trigger": args.trigger or "",
         }
+        media_export_event = getattr(args, "media_export_event", None)
+        if media_export_event is not None:
+            request_payload["media_export_event_id"] = media_export_event
         request = recording.LogicalRequest(
             args.task, task_dir, "acceptance-override", request_payload,
             getattr(args, "request_id", None),
@@ -2059,6 +2086,12 @@ def cmd_task_acceptance_override(args) -> int:
         if task is None:
             print(f"ERROR: task not found: {args.task}", file=sys.stderr)
             return 4
+        from .task_coordinator import task_domain
+        video = task_domain(conn, task) == "video"
+        if args.mode == "accept" and video and (type(media_export_event) is not int or media_export_event < 1):
+            raise ValueError("VIDEO_OWNER_EXPORT_REQUIRED: specify the export actually reviewed with --media-export-event")
+        if media_export_event is not None and (not video or args.mode != "accept"):
+            raise ValueError("VIDEO_OWNER_EXPORT_NOT_APPLICABLE")
         if event_policies.is_task_retired(conn, args.task):
             print("ERROR: retired historical tasks are immutable archives", file=sys.stderr)
             return 5
@@ -2165,20 +2198,26 @@ def cmd_task_acceptance_override(args) -> int:
         subject_digest = ""
         source_rel = ""
         source_text = ""
+        media = {}
         if args.mode == "accept":
-            from . import record_first
-            from .change_set import capture_change_set, same_bound_product_content
-            development = record_first._latest_development_change_set(conn, args.task)
-            if (not development or not development.get("change_set_id")
-                    or not development.get("repo_roots")):
-                print("ERROR: accept requires a bound current Development ChangeSet", file=sys.stderr)
-                return 7
-            current_change_set = capture_change_set(development["repo_roots"])
-            if not same_bound_product_content(development["detail"], current_change_set):
-                print("ERROR: DEVELOPMENT_CHANGE_SET_STALE: product changed before owner acceptance", file=sys.stderr)
-                return 7
-            from .digest import compute_verification_subject_digest
-            subject_digest = compute_verification_subject_digest(task_dir, scope="technical")
+            if video:
+                from .video_records import media_binding
+                media = media_binding(conn, task, task_dir, expected_event=media_export_event)
+                subject_digest = media["subject_digest"]
+            else:
+                from . import record_first
+                from .change_set import capture_bound_product, is_ops_subject, same_bound_product_content
+                development = record_first._latest_development_change_set(conn, args.task)
+                if (not development or not development.get("change_set_id")
+                        or (not development.get("repo_roots") and not is_ops_subject(development["detail"]))):
+                    print("ERROR: accept requires a bound current Development ChangeSet", file=sys.stderr)
+                    return 7
+                current_change_set = capture_bound_product(development["detail"], task_dir, repo_roots=development["repo_roots"])
+                if not same_bound_product_content(development["detail"], current_change_set):
+                    print("ERROR: DEVELOPMENT_CHANGE_SET_STALE: product changed before owner acceptance", file=sys.stderr)
+                    return 7
+                from .digest import compute_verification_subject_digest
+                subject_digest = compute_verification_subject_digest(task_dir, scope="technical")
             source_rel = _owner_acceptance_source_path(request.request_id)
             source_text = _owner_acceptance_source_document(source)
             source_path = task_dir / source_rel
@@ -2261,6 +2300,7 @@ def cmd_task_acceptance_override(args) -> int:
             "visual_scope": args.scope == "visual",
             "facts_committed": True,
             "replayed": False,
+            **media,
         }
 
         def db_and_render(tx_conn, transaction_id=""):
@@ -2269,14 +2309,17 @@ def cmd_task_acceptance_override(args) -> int:
                 raise ValueError("TASK_FACTS_CHANGED: task state changed before owner decision")
             if hashlib.sha256(acceptance_path.read_bytes()).hexdigest() != acceptance_before:
                 raise ValueError("ACCEPTANCE_CHANGED_BEFORE_COMMIT: reread the current acceptance declaration")
-            if args.mode == "accept":
+            if args.mode == "accept" and video:
+                if media_binding(tx_conn, fresh_task, task_dir, expected_event=media_export_event) != media:
+                    raise ValueError("OWNER_ACCEPTANCE_STALE: media or acceptance scope changed before commit")
+            elif args.mode == "accept":
                 from . import record_first
-                from .change_set import capture_change_set, same_bound_product_content
+                from .change_set import capture_bound_product, is_ops_subject, same_bound_product_content
                 from .digest import compute_verification_subject_digest
                 latest = record_first._latest_development_change_set(tx_conn, args.task)
                 if (not latest or latest.get("event_id") != development.get("event_id")
-                        or not latest.get("repo_roots")
-                        or not same_bound_product_content(latest["detail"], capture_change_set(latest["repo_roots"]))
+                        or (not latest.get("repo_roots") and not is_ops_subject(latest["detail"]))
+                        or not same_bound_product_content(latest["detail"], capture_bound_product(latest["detail"], task_dir, repo_roots=latest["repo_roots"]))
                         or latest.get("change_set_id") != development.get("change_set_id")
                         or compute_verification_subject_digest(task_dir, scope="technical") != subject_digest):
                     raise ValueError("OWNER_ACCEPTANCE_STALE: subject or product changed before commit")
@@ -2304,11 +2347,12 @@ def cmd_task_acceptance_override(args) -> int:
                         "reference": source,
                         "invocation_id": command_context.invocation_id(),
                     },
-                    "change_set_id": str(current_change_set.get("content_digest") or ""),
-                    "change_set_snapshot_digest": str(current_change_set.get("snapshot_digest") or ""),
-                    "subject_digest": subject_digest,
-                    "subject_scope": "technical",
-                    "repo_roots": list(development["repo_roots"]),
+                    **(media if video else {
+                        "change_set_id": str(current_change_set.get("content_digest") or ""),
+                        "change_set_snapshot_digest": str(current_change_set.get("snapshot_digest") or ""),
+                        "subject_digest": subject_digest, "subject_scope": "technical",
+                        "repo_roots": list(development["repo_roots"]),
+                    }),
                     "source_evidence": source_rel,
                     "source_evidence_sha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
                     "visual_scope": {"kind": "selected_acceptance", "acs": selected} if args.scope == "visual" else None,
@@ -2419,10 +2463,11 @@ def cmd_task_checkpoint(args) -> int:
         delivery_signals=args.delivery_signal,
         context_usage=_parse_context_usage_arg(args.context_usage_json),
         repo_roots=args.repo_root, request_id=args.request_id, collect=args.collect,
-        change_impact=getattr(args, "change_impact", None),
+        change_impact=getattr(args, "change_impact", None), ops_subject=getattr(args, "ops_subject", None),
         result_reports=getattr(args, "result_report", None),
         report_artifact_root=getattr(args, "report_artifact_root", None),
         recorded_result_ids=getattr(args, "recorded_result", None),
+        media_manifest=getattr(args, "media_manifest", None), media_agent=getattr(args, "media_agent", ""),
         security_context=authority.explicit_context(args, effect="implementation" if args.phase == "development" else "record_only"), db=args.db,
     )
     print(json.dumps(result, ensure_ascii=False))
@@ -2453,11 +2498,15 @@ def cmd_task_resume(args) -> int:
 
 def cmd_task_verify(args) -> int:
     from . import record_first, security_authority as authority
+    if not getattr(args, "media_qc", None) and getattr(args, "media_export_event", None) is None and args.actor != "tp-test-engineer":
+        raise ValueError("software task verify requires --actor tp-test-engineer")
     result = record_first.verify(
         task_id=args.task, task_dir=args.task_dir, actor=args.actor,
         decision=args.decision, summary=args.summary, evidence=args.evidence,
         scope=getattr(args, "scope", "full"), checks=getattr(args, "check", None),
         ac_results=[json.loads(value) for value in (getattr(args, "ac_result_json", None) or [])],
+        media_qc=getattr(args, "media_qc", None), media_export_event=getattr(args, "media_export_event", None),
+        media_agent=getattr(args, "media_agent", ""),
         security_context=authority.explicit_context(args, effect="regression"),
         knowledge_signals=_parse_knowledge_signal_args(args.knowledge_signal_json),
         delivery_signals=args.delivery_signal,
@@ -2477,6 +2526,7 @@ def cmd_task_delivery_converge(args) -> int:
         responsibility=args.responsibility, residual_risks=args.residual_risk,
         context_usage=_parse_context_usage_arg(args.context_usage_json), db=args.db,
         actor=getattr(args, 'actor', None), unverified_items=getattr(args, 'unverified', None),
+        request_id=getattr(args, 'request_id', None),
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -2528,6 +2578,9 @@ def cmd_task_scope_change(args) -> int:
             raise ValueError("scope change requires non-empty --scope-id and --summary")
         repo_roots = getattr(args, "repo_root", None)
         if repo_roots is not None:
+            from .task_coordinator import task_domain
+            if task_domain(conn, task) == "video":
+                raise ValueError("VIDEO_REPOSITORY_SCOPE_NOT_APPLICABLE")
             from .change_set import _git_root
             repo_roots = sorted({str(_git_root(value)) for value in repo_roots})
             if not repo_roots:
@@ -2612,9 +2665,10 @@ def add_task_subparsers(task_parser) -> None:
     p_create.add_argument("--id", required=True, help="task id (^TASK-[A-Za-z0-9][A-Za-z0-9._-]*$)")
     p_create.add_argument("--project", required=True, help="project id")
     p_create.add_argument("--title", required=False, default="")
+    p_create.add_argument("--domain", choices=["software", "video"], default="software")
     p_create.add_argument("--risk", choices=["L0", "L1", "L2", "L3"], help="required for standard mode")
     p_create.add_argument("--flow", choices=["L0", "L1", "L2", "L3"], help="required for standard mode")
-    p_create.add_argument("--workflow-mode", choices=['standard', 'quick'], default='standard')
+    p_create.add_argument("--workflow-mode", choices=['standard', 'quick'], help="software handling mode (default: standard)")
     p_create.add_argument("--mode-source", help="actual user choice statement; required for quick")
     p_create.add_argument("--mode-source-ref", help="context/file reference for the actual user choice")
     p_create.add_argument("--summary", required=False, default="任务创建")
@@ -2645,10 +2699,13 @@ def add_task_subparsers(task_parser) -> None:
     p_cp.add_argument("--task", required=True)
     p_cp.add_argument("--task-dir", required=True)
     p_cp.add_argument("--actor", required=True, type=actor_argument())
-    p_cp.add_argument("--phase", required=True, choices=record_first.PHASES)
+    p_cp.add_argument("--phase", required=True, choices=record_first.TASK_PHASES)
     p_cp.add_argument("--summary", required=True)
     p_cp.add_argument("--evidence", action="append")
     p_cp.add_argument("--request-id", help="reuse for retrying one logical request; new work needs a new ID")
+    p_cp.add_argument("--ops-subject", help="software operations: Task-relative JSON manifest for an actual non-Git delivery")
+    p_cp.add_argument("--media-manifest", help="video: Task-relative evidence JSON for an actual export")
+    p_cp.add_argument("--media-agent", default="", help="actual participant identity for the video export")
     p_cp.add_argument("--collect", action="append", help="copy a completed local output into bound task evidence; repeatable")
     p_cp.add_argument("--recorded-result", type=int, action="append", help="reference a trusted existing development/verification/CODE event without re-signing it")
     p_cp.add_argument("--result-report", action="append", help="accept an existing JUnit/Base/review/Playwright JSON report as an observation; never executes a tool or grants PASS")
@@ -2681,7 +2738,7 @@ def add_task_subparsers(task_parser) -> None:
     p_block.add_argument("--task-dir", required=True)
     p_block.add_argument("--actor", required=True, type=actor_argument())
     p_block.add_argument("--reason", required=True)
-    p_block.add_argument("--phase", choices=record_first.PHASES)
+    p_block.add_argument("--phase", choices=record_first.TASK_PHASES)
     p_block.add_argument("--db", default=None)
     from .waiting import KINDS
     p_block.add_argument("--kind", choices=KINDS, default="unspecified")
@@ -2696,7 +2753,7 @@ def add_task_subparsers(task_parser) -> None:
     p_resume.add_argument("--task-dir", required=True)
     p_resume.add_argument("--actor", required=True, type=actor_argument())
     p_resume.add_argument("--summary", required=True)
-    p_resume.add_argument("--phase", choices=record_first.PHASES)
+    p_resume.add_argument("--phase", choices=record_first.TASK_PHASES)
     p_resume.add_argument("--db", default=None)
     p_resume.add_argument("--resolution-evidence", action="append", help="new evidence/* for typed wait resolution")
     p_resume.set_defaults(func=cmd_task_resume)
@@ -2704,7 +2761,7 @@ def add_task_subparsers(task_parser) -> None:
     p_verify = sub.add_parser("verify", help="Record actual technical verification; PASS requires real evidence/* and never acts as a phase gate")
     p_verify.add_argument("--task", required=True)
     p_verify.add_argument("--task-dir", required=True)
-    p_verify.add_argument("--actor", default="tp-test-engineer", choices=["tp-test-engineer"])
+    p_verify.add_argument("--actor", default="tp-test-engineer", type=actor_argument())
     p_verify.add_argument("--decision", required=True, choices=["PASS", "FAIL", "NEEDS_FIX"])
     p_verify.add_argument("--summary", required=True)
     p_verify.add_argument("--evidence", action="append")
@@ -2712,6 +2769,9 @@ def add_task_subparsers(task_parser) -> None:
     p_verify.add_argument("--scope", choices=["full", "technical"], default="full", help="full keeps all existing checks; technical is explicitly limited and cannot satisfy delivery/completion")
     p_verify.add_argument("--check", action="append", help="actual check performed; required for technical scope, repeat for multiple checks")
     p_verify.add_argument("--request-id", help="reuse only for retrying the same actual verification record")
+    p_verify.add_argument("--media-qc", help="video: Task-relative evidence JSON for actual media inspection")
+    p_verify.add_argument("--media-export-event", type=int, help="video: export event inspected")
+    p_verify.add_argument("--media-agent", default="", help="actual participant identity for the video QC")
     p_verify.add_argument("--knowledge-signal-json", action="append", help="structured JSON object with type/summary and optional evidence/source_refs")
     p_verify.add_argument("--delivery-signal", action="append")
     p_verify.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks verification")
@@ -2734,6 +2794,7 @@ def add_task_subparsers(task_parser) -> None:
     p_delivery.add_argument("--residual-risk", action="append")
     p_delivery.add_argument('--actor', default=None, help='actual continuous executor in quick mode; Integration owner in standard')
     p_delivery.add_argument('--unverified', action='append', help='actual untested boundary; required when quick delivery has no verification result')
+    p_delivery.add_argument('--request-id', help='video: reuse only for retrying the same delivery record')
     p_delivery.add_argument("--context-usage-json", default=None, help="best-effort JSON array of Context Usage receipts; telemetry never blocks delivery")
     p_delivery.add_argument("--db", default=None)
     p_delivery.set_defaults(func=cmd_task_delivery_converge)
@@ -2832,6 +2893,7 @@ def add_task_subparsers(task_parser) -> None:
     p_accept.add_argument("--scope", choices=["human-pending", "visual"], default=None)
     p_accept.add_argument("--ac", action="append", help="acceptance criterion id; repeatable")
     p_accept.add_argument("--source", default=None, help="owner-provided acceptance statement; required for --mode accept")
+    p_accept.add_argument("--media-export-event", type=int, help="video: event ID of the export actually reviewed by the Owner")
     p_accept.add_argument("--request-id", default=None, help="stable logical request id for safe replay")
     p_accept.add_argument("--reason", default=None)
     p_accept.add_argument("--residual-risk", default=None)

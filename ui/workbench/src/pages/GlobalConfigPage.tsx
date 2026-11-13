@@ -1,12 +1,26 @@
 import { Card, Tabs } from 'antd';
 import { record } from '../facts';
-import { Fields, Problems, ReadStatus } from '../components/Facts';
+import { Disclosure, Fields, Problems, ReadStatus } from '../components/Facts';
 import { SkillTopology } from '../components/SkillTopology';
 import type { Envelope, GlobalData, Health, ReadState } from '../types';
 const groups = [['base', '安装与基座'], ['wiki', 'Wiki'], ['knowledge', 'Knowledge'], ['skill_topology', '能力定义与来源']] as const;
 /* Labels for the keys that would be ambiguous once merged into one table (`path`, `status`) or are
    absent from the field-name vocabulary entirely (`python_executable`). */
 const carriedLabels = { path: '注册表路径', status: '解析器状态', user_root: '用户根目录', python_executable: '本机 Python 解释器' };
+const baseSections: Record<string, string[]> = {
+    health: ['configured', 'exists', 'valid', 'status'],
+    version: ['contract_version', 'base_version', 'version_match'],
+    errors: ['configuration_error', 'error'],
+};
+function splitBaseFacts(facts: Record<string, unknown>) {
+    const sections: Record<string, Record<string, unknown>> = { health: {}, version: {}, errors: {}, details: {} };
+    for (const [key, value] of Object.entries(facts)) {
+        const field = key.replace(/_declared$/, '');
+        const section = Object.keys(baseSections).find(name => baseSections[name].includes(field)) || 'details';
+        sections[section][key] = value;
+    }
+    return sections;
+}
 export function GlobalConfigPage({ read, health }: {
     read: ReadState<Envelope<GlobalData>>;
     health: ReadState<Health>;
@@ -23,13 +37,7 @@ export function GlobalConfigPage({ read, health }: {
     const { workspaces: _records, count: _count, configured: _configured, ...workspaceFacts } = record(data?.workspace);
     const { base_root: _baseRoot, ...resolverFacts } = record(data?.resolver);
     const registryFacts = { path: record(data?.registry).path };
-    /* The merged table is ordered by what each fact answers. Merging four payloads has no order of
-       its own — that is what put 基座版本 and 版本是否匹配 on opposite sides of three unrelated rows,
-       so the version mismatch read as two unrelated values. The order below runs: which install this
-       is and where it came from → where the base sits and whether that location is usable → which
-       versions it holds and whether they agree → the inventory that declares the default workspace →
-       the resolver and registry it reads through → the runtime reading it → the one failure string.
-       `_declared` companions stay adjacent automatically: they are ranked by their own key, not here. */
+    /* Preserve field order within each group; unknown fields keep their payload order. */
     const baseOrder = ['configured', 'source',
         'root', 'exists', 'valid',
         'contract_version', 'base_version', 'version_match', 'configuration_error',
@@ -41,10 +49,10 @@ export function GlobalConfigPage({ read, health }: {
            later therefore still shows up at the end instead of vanishing behind a fixed field list. */
         return index < 0 ? baseOrder.length : index;
     };
-    /* One object, so the install facts, every carried-over fact and the two read-identity facts
-       render as a single table. */
+    /* Keep the merged facts intact before separating their presentation. */
     const baseFacts = Object.fromEntries(Object.entries({ ...record(data?.base), ...workspaceFacts, ...resolverFacts, ...registryFacts,
         user_root: data?.user_root, python_executable: health.data?.python_executable }).sort(([a], [b]) => rank(a) - rank(b)));
+    const baseSectionsData = splitBaseFacts(baseFacts);
     return <div className="page config-page"><div className="page-heading"><div><span className="eyebrow">全局配置</span><h2>配置值与来源</h2><p>只读查看。未声明不等于开启；这里不修改安装、项目或执行策略。</p></div></div><ReadStatus {...read}/>
     {data && <><Problems items={data.problems}/>
       {/* One group at a time, picked from a tab bar at the top: the groups used to be stacked as
@@ -53,7 +61,20 @@ export function GlobalConfigPage({ read, health }: {
       <Tabs className="config-tabs" defaultActiveKey={groups[0][0]} items={groups.map(([key, label]) => ({ key, label,
           children: <Card size="small">{key === 'skill_topology'
               ? <SkillTopology value={data.skill_topology} loading={read.loading} readError={read.error}/>
-              : <Fields value={key === 'base' ? baseFacts : data[key]} labels={key === 'base' ? carriedLabels : undefined}/>}</Card> }))}/>
+              : key === 'base' ? <div className="config-base">
+                  <div className="config-base-primary">
+                    {([['health', '健康状态'], ['version', '版本']] as const).map(([section, title]) =>
+                      Object.keys(baseSectionsData[section]).length > 0 && <section key={section} className="config-base-group">
+                        <h3>{title}</h3><Fields value={baseSectionsData[section]} labels={carriedLabels}/>
+                      </section>)}
+                  </div>
+                  {Object.keys(baseSectionsData.errors).length > 0 && <section className="config-base-group config-base-errors">
+                    <h3>异常信息</h3><Fields value={baseSectionsData.errors} labels={carriedLabels}/>
+                  </section>}
+                  {Object.keys(baseSectionsData.details).length > 0 && <Disclosure label="路径与来源等详细信息" className="config-base-details">
+                    <Fields value={baseSectionsData.details} labels={carriedLabels}/>
+                  </Disclosure>}
+                </div> : <Fields value={data[key]}/>}</Card> }))}/>
     </>}
   </div>;
 }

@@ -1,7 +1,7 @@
 ---
 id: tp-database-engineer
 name: tp-数据库工程师
-version: 5.3.8
+version: 5.4.0
 status: active
 type: workflow-role
 role: tp-database-engineer
@@ -17,6 +17,7 @@ description: tp-数据库工程师：TP-Spec-Coding 正式软件工程角色，�
 
 ## 何时读取
 - 模型/SQL/执行计划、迁移/回滚、数据修复或一致性 → [数据库设计与变更](../../capabilities/database-engineering/SKILL.md)。
+- 自然语言查数、业务语义/数据词典（ontology）、字段含义、统计口径或数量重复 → [业务语义与查询核对](../../capabilities/database-engineering/SKILL.md#业务语义与查询核对)。
 - 日常出现稳定 Rule 或高价值经验 → [项目记忆捕获](../../capabilities/tp-memory-capture/SKILL.md)；临时决定留 Task，不主动扫描历史。
 
 先读目标仓库规则；修改 TP-Spec-Coding 自身时以 [本仓验证策略](../../../docs/TESTING.md) 为准。只加载本次触发的方法，不预读全部子 Skill；角色不等于独立 Agent 或固定阶段，不产生额外执行授权。

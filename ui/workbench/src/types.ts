@@ -23,7 +23,8 @@ export interface QuickStatus {
     unverified_items: string[];
 }
 export interface WorkflowData extends FactRecord {
-    workflow_mode?: WorkflowMode;
+    domain?: 'software' | 'video' | null;
+    workflow_mode?: WorkflowMode | null;
     mode_source?: ModeSource | null;
     applicable_obligations?: FactRecord;
     quick_status?: QuickStatus | null;
@@ -64,13 +65,22 @@ export interface Health {
     version: string;
     registry_path: string;
     python_executable: string;
-    read_only: boolean;
+    read_only?: boolean;
+    runtime_read_only?: boolean;
+    task_notes_writable?: boolean;
+}
+export interface TaskNote {
+    context_key: string;
+    task_id: string;
+    note: string;
+    revision: string;
 }
 export interface GlobalData extends FactRecord {
     contexts: Context[];
     problems: Problem[];
 }
 export interface TaskIndexRow {
+    note?: string | null;
     task_id: string;
     title: string;
     state: string;
@@ -78,7 +88,8 @@ export interface TaskIndexRow {
     updated_at?: string;
     owner?: string;
     retired?: boolean;
-    workflow_mode?: WorkflowMode;
+    domain?: 'software' | 'video' | null;
+    workflow_mode?: WorkflowMode | null;
     mode_source?: ModeSource | null;
     summary?: string;
 }

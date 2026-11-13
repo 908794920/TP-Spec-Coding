@@ -2,7 +2,7 @@
 """Current five-state artifact validation helpers for TP-Spec-Coding v5.2.6.
 
 This module contains only artifact/evidence validation and trusted current-role
-checks. Frozen long-state transition rules live under cli.migrations.v5_2_3.
+checks. Retired pre-Record-first transition helpers are not imported here.
 """
 from __future__ import annotations
 

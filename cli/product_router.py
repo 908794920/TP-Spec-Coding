@@ -24,6 +24,8 @@ class DomainDecision:
 
 _SIGNAL_GROUPS = (
     ("wiki", (" wiki", "wiki ", "wiki", "维基", "项目事实", "代码理解")),
+    ("video", ("视频制作", "制作视频", "拍摄视频", "剪辑视频", "视频剪辑", "短片", "漫剧",
+               "视频成片", "video production", "video editing", "tp-video-production")),
     ("knowledge", ("knowledge", "知识库", "知识", "memory", "经验沉淀")),
     ("base", ("基座", "base maintenance", "upgrade base", "安装配置", "tp-spec 配置")),
     ("software", (
@@ -33,13 +35,26 @@ _SIGNAL_GROUPS = (
 )
 
 
-def route_domain(text: str, *, active_task_domain: str | None = None) -> DomainDecision:
+DOMAINS = tuple(domain for domain, _ in _SIGNAL_GROUPS)
+
+
+def route_domain(text: str, *, active_task_domain: str | None = None,
+                 explicit_domain: str | None = None) -> DomainDecision:
     raw = str(text or "").strip()
     lowered = f" {raw.lower()} "
-    for domain, needles in _SIGNAL_GROUPS:
-        if any(needle.lower() in lowered for needle in needles):
-            return DomainDecision(domain, "high", f"{domain}_signal", False)
+    if explicit_domain in DOMAINS:
+        return DomainDecision(explicit_domain, "high", "explicit_domain")
     active = str(active_task_domain or "").strip().lower()
-    if active in {"software", "wiki", "knowledge", "base"}:
+    video_intent = ("视频" in raw and any(word in raw for word in ("制作", "剪辑", "讲解", "拍摄", "分镜", "成片")))
+    software_intent = any(word in raw for word in ("软件开发", "代码开发", "开发功能", "产品功能", "开发系统"))
+    for domain, needles in _SIGNAL_GROUPS:
+        matched = any(needle.lower() in lowered for needle in needles)
+        if domain == "video":
+            matched = (matched or video_intent) and not software_intent
+        if matched:
+            if active == "video" and domain in {"software", "knowledge"} and not software_intent:
+                continue
+            return DomainDecision(domain, "high", f"{domain}_signal", False)
+    if active in DOMAINS:
         return DomainDecision(active, "medium", "active_task_domain", False)
     return DomainDecision("unknown", "low", "ambiguous_signal", True)

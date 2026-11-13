@@ -1,7 +1,7 @@
 ---
 name: delivery-convergence
 display_name: 交付收敛
-version: 5.3.8
+version: 5.4.0
 description: standard Task 最终交付时核对范围、候选、验收与知识记忆；复用有效结果，不代签或补造事实。
 ---
 
@@ -36,7 +36,7 @@ Integration 发现当前范围内真实产品 Finding 交父 Task 下的 Fix Wor
 交付前检查并报告由本 Task 制造的临时 Mock、登录绕过、调试日志、一次性脚本、临时依赖和受控 Temp 状态；业务项目已获准保留的正式回归测试，以及对应项目 `.tp-spec/memory/` 中的可复用交互脚本（含基座自身）不是清理对象；其他基座临时用例按本仓策略清理。Delivery READY 遇到已登记的 `TEMP_ARTIFACT_ACTIVE` / `TEMP_ARTIFACT_CLEANUP_PENDING` 必须停止收敛；只处理 TP-Spec ownership manifest 管理的 Temp，不按文件名删除未托管内容。视觉任务若使用临时登录绕过，其清理 Evidence 必须仍然有效。
 
 ## standard Task 知识与项目记忆
-standard 交付由集成交付工程师通过 [knowledge-capture](../knowledge-capture/SKILL.md) 实际阅读本任务当前有效需求与实际步骤材料，整理候选并核对输入覆盖；knowledge_signals 是线索，无 signals 也不能跳过评估。经可信 Request 把候选交 [tp-knowledge](../../../agents/tp-knowledge/SKILL.md) 定向检索、判重/维护 canonical 及正式 Result；Integration 不检索全库、不签 DUPLICATE/NO_DURABLE_INSIGHT，不维护第二份 canonical。quick 不自动启动知识收敛；用户明确提出知识工作时按对应能力处理。项目经理跟踪实际结果，不以接收回执冒充专业评估。
+standard 交付由集成交付工程师通过 [knowledge-capture](../knowledge-capture/SKILL.md) 实际阅读本任务当前有效需求与实际步骤材料，整理候选并核对输入覆盖；knowledge_signals 是线索，无 signals 也不能跳过评估。经可信 Request 把候选、已读来源与逐项覆盖、Memory 实际处置交 [tp-knowledge](../../../agents/tp-knowledge/SKILL.md)，由其核对当前指纹并复用有效交接，仅按专业处置、变化或缺口定向补读，完成真实检索、判重/维护 canonical 及正式 Result；接收摘要不冒充亲读或专业判断。Integration 不检索全库、不签 DUPLICATE/NO_DURABLE_INSIGHT，不维护第二份 canonical。quick 不自动启动知识收敛；用户明确提出知识工作时按对应能力处理。项目经理跟踪实际结果，不以接收回执冒充专业评估。
 
 standard 交付同时调用唯一 [tp-memory-capture](../tp-memory-capture/SKILL.md) 判断各步骤稳定 Rule/Fact/Procedure、临时与已替代内容的归位，并核对值得沉淀的问题是否需要新增/更新 AGENTS 触发入口及其可发现性。正文保存、入口保存/已覆盖/无需新增及失败分别记录，不能用 Memory 已保存代替入口核对。必做的是阅读、判断和处置，不是强制新建条目或修改所有 Memory 文件。quick 不自动要求项目 Memory 评估。Work 只提供紧凑结果供父 Task 汇总，不每个 Work 再跑全套收敛。
 
@@ -57,4 +57,7 @@ standard 新 READY 通过现有 delivery-converge 为适用 L0–L3 创建或复
 在途新契约通过正式 delivery-converge 接续，不写假信号或直接改事件。
 
 ## 验证与效果
-修改/交付基座按 [本仓验证策略](../../../docs/TESTING.md) 核对必要局部结果和 Patch，不因提交/批次追加全量测试；业务仓库按自身留存规则。Readiness/inspection 的 effects=[]，实际 Git 写仍需 repo_mutation 与 human/Autonomy Execution Envelope。
+修改/交付基座按 [本仓验证策略](../../../docs/TESTING.md) 核对必要局部结果和 Patch，不因提交/批次追加全量测试；业务仓库按自身留存规则。Readiness/inspection 的 effects=[]，实际 Git 写仍需 repo_mutation，并受人类批准与现役 allowed_effects 边界约束。
+
+## 交付汇报表达
+用户要求金字塔原理，或交付材料难以看出结论和待决事项时，按[汇报大纲](../../roles/tp-product-manager/SKILL.md#汇报大纲)组织已有事实，区分交付、验收与发布状态。

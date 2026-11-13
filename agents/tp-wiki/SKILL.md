@@ -1,7 +1,7 @@
 ---
 id: tp-wiki
 name: tp-wiki
-version: 5.3.8
+version: 5.4.0
 status: active
 type: human-owner-skill
 tool_agnostic: Wiki 来源和写入根由 Content Systems Resolver 定位；能力按需读取，不依赖特定 IDE、模型或机器路径。
@@ -39,3 +39,6 @@ Wiki 是已选择稳定源码快照的结构化理解与导航层。入口只识
 ## 结果
 
 分别报告实际来源、动作、确定性验证、语义审计、基线状态及未解决条件。不可读、未执行与 FAIL 保持真实区别；禁止手填 hash、snapshot 或 citations 过门，不以抽样冒充全量或以确定性 PASS 代替语义审计。
+
+## 维护窗口估算
+用户要求蒙特卡罗，或想知道多仓维护在固定窗口内完成的把握时，按需读取[交付计划的概率估算](../../skills/capabilities/delivery-planning/SKILL.md#概率估算)。估算沿已获准范围只读分析，现行维护门禁与调度依既有规则。

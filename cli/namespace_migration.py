@@ -200,8 +200,6 @@ def _rewrite_namespace_text(text: str) -> str:
         ("aiwork.db", "tp-spec.db"),
         ("ai-work-base:managed", "tp-spec:managed"),
         ("Invoke-AiWorkCli.ps1", "tp-spec.ps1"),
-        ("Invoke-AiWorkHandoffFlush.ps1", "Invoke-TpSpecHandoffFlush.ps1"),
-        ("Invoke-AiWorkHandoff.ps1", "Invoke-TpSpecHandoff.ps1"),
         ("Test-AiWorkTask.ps1", "Test-TpSpecTask.ps1"),
         ("ai-work.ps1", "tp-spec.ps1"),
     ):

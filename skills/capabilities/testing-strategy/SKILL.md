@@ -1,7 +1,7 @@
 ---
 name: testing-strategy
 display_name: 分层测试
-version: 5.3.8
+version: 5.4.0
 description: Use to choose and execute risk-proportionate tests for code changes, mapping acceptance criteria to reproducible evidence without equating test count with confidence.
 ---
 
@@ -16,13 +16,15 @@ description: Use to choose and execute risk-proportionate tests for code changes
 
 ## 方法
 1. 先核对待验证行为及成功/失败预期是否来自已确认需求、适用契约、真实缺陷或有证据的风险；模型自行生成的方案、计划或测试不是独立依据。再将关键 AC/风险映射到合适验证方式与 evidence；没有必要时不追求测试数量。
-2. 新逻辑优先单元/组件测试；遗留逻辑优先行为保护、集成或回归验证；跨系统行为按真实边界补接口/端到端检查。
+2. 新逻辑优先单元/组件测试；遗留逻辑优先行为保护、集成或回归验证；跨系统行为按真实边界补接口/端到端检查。预期难穷举且有已确认的不变量或输入变换关系时，按需读 [属性与变形测试](references/test-value.md#属性与变形测试)。
 3. 当前变更实际触及数据、权限、接口、消息、定时任务、缓存、配置、兼容或部署边界，且有对应契约或风险时，补必要的专项验证；不因方案提到某领域就机械覆盖全部场景。
 4. 开发自测与独立验收分开：验收角色不直接继承开发者“已通过”的结论，而是独立执行适用检查或核验可复现证据。
 5. 记录命令、关键环境、结果与失败原因；无法执行的验证明确标记 NOT_RECORDED/PENDING/边界，不伪造 PASS。
 
 ## 数据与页面
 production read 必须用户明确确认并最小权限；DML/DDL/生产写必须动作级授权、实际执行、结果核验和回滚/清理证据。页面模式为 human 时，未由 human 实测不能写 PASS；自动页面验证只在部署/刷新就绪且模式授权时执行。
+
+统计、报表或查询结果的核验按需读 [业务语义与查询核对](../database-engineering/SKILL.md#业务语义与查询核对)，沿已确认口径分别核对 SQL、结果行和回答；执行成功或页面有数字不等于口径正确。
 
 存在 UI/页面 AC 时采用 **Diff-aware** 验证：先由当前 Change Set/Diff 推导受影响 route/page，再用真实浏览器检查声明视口、关键交互、页面状态、Console/Network 和横向滚动。源码 grep、DOM/CSS 字符串断言只能作为静态结构契约，不能单独构成视觉 PASS。稳定路径优先复用 Playwright Test TS，必要视觉才采用获准 Midscene 官方集成；报告采集不等于视觉/人验，动效必须看真实过程。测试时主动完成已有脚本复用、稳定场景提炼、带断言的真实回放和项目 Memory 保存评估；不等用户逐次提醒，不为每次点击留一份脚本。具体闭环与 Evidence 规则按需读取 [Visual QA](references/visual-qa.md)。
 
@@ -33,13 +35,13 @@ PASS 的每个关键结论都能回到真实 evidence；测试通过只证明被
 ## 独立核验与缺陷
 不要只相信开发摘要；按当前 AC 核对真实代码、调用/配置和可复验证据，包含适用的错误/资源释放/恢复、事务并发幂等、数据迁移/批量一致性、消息/定时/缓存及运行兼容。安全专项由安全工程师主持，测试仍覆盖已声明的安全 AC；不自行增加需求外强制回归。
 
-NEEDS_FIX 表示范围内可最小修复，FAIL 表示较大实现问题或未满足既定要求；在父 Task 内创建/复用对应 Fix Work，父步骤等待后原位复验。LOCAL_REWORK 不新增需求、架构、权限或数据语义；这些变化交正式责任角色与 human_owner。保留原完成历史，subject 实质变化使受影响 PASS_STALE，不能复用旧结果。
+NEEDS_FIX 表示范围内可最小修复，FAIL 表示较大实现问题或未满足既定要求。适用正式 Task 时，在父 Task 内创建/复用对应 Fix Work，父步骤等待后原位复验；普通局部修改直接修复并复验，不为此建 Task。LOCAL_REWORK 不新增需求、架构、权限或数据语义；这些变化交正式责任角色与 human_owner。保留原完成历史，subject 实质变化使受影响 PASS_STALE，不能复用旧结果。
 
 ## 执行、临时工件与正式记账
 临时诊断用登记的系统 Temp，不在项目工作区造 .tmp。用户原件可只读复制，不修改、移动、覆盖或删除；intake、正式 Task 工件、Evidence 和业务仓库获准的持久回归均不是临时清理对象。按 ownership 和授权清理自己的资产，残留只报告；CLEANUP_PENDING 不是 Task 状态，不逆改已提交事实。
 
 需要临时根登记、工作段收口或已知中断恢复时，定向读 [生命周期操作参考](../../../docs/agents/tp-software-lifecycle.md)；匹配 task/role/agent 的正常、失败或暂停边界记录 work end，强制中断未知时不补造 END。不因加载测试角色就逐条执行清理。
 
-结束一次真实测试通过 `task verify --decision PASS|FAIL|NEEDS_FIX` 留证，PASS 至少绑定真实 evidence；未执行的人验保持待验，只有 human_owner 能按官方 acceptance-override 对已核验范围确认。仅在获准指定 pytest 用例时使用 task run-pytest；已有输出用 checkpoint --result-report，不为记账重跑。采集不等于签 PASS，协调者汇合用 --recorded-result，不代签独立角色。测试角色不自行 task complete，继续交生命周期解析 Review/Delivery。
+普通局部修改记录实际验证结果及未验边界，不为留证建立 Task。已适用正式 Task 时，结束一次真实测试通过 `task verify --decision PASS|FAIL|NEEDS_FIX` 留证，PASS 至少绑定真实 evidence；未执行的人验保持待验，只有 human_owner 能按官方 acceptance-override 对已核验范围确认。仅在获准指定 pytest 用例时使用 task run-pytest；已有输出用 checkpoint --result-report，不为记账重跑。采集不等于签 PASS，协调者汇合用 --recorded-result，不代签独立角色。测试角色不自行 task complete，继续交生命周期解析 Review/Delivery。
 
 涉及安全提案时按 [授权与调查证据契约](../../../docs/security-change-authority.md) 声明本次行为范围。调查 PoC 用 read_only/isolated_poc 并登记真实来源，不能作为正式 failing regression。`task run-pytest`/`verify` 的 `--security-change`、`--scope-path`、`--scope-ac` 是范围声明，不是工具许可；正式结果使用前重查当前批准及原始证据。

@@ -1,7 +1,7 @@
 ---
 id: tp-spec-coding
 name: tp-软件生命周期
-version: 5.3.8
+version: 5.4.0
 status: active
 type: control-role
 role: tp-spec-coding
@@ -11,12 +11,12 @@ description: TP-Spec-Coding 唯一默认产品入口；以低上下文成本识�
 # tp-统一入口
 
 ## 目标
-让用户只需要一个入口表达“规划需求 / 开发 / Review / 更新 Wiki / 维护 Knowledge / 基座维护”。入口只做低成本领域识别、必要能力发现与上下文恢复，不把产品壳变成第二套编排器。
+让用户只需要一个入口表达“规划需求 / 开发 / Review / 视频制作 / 更新 Wiki / 维护 Knowledge / 基座维护”。入口只做低成本领域识别、必要能力发现与上下文恢复，不把产品壳变成第二套编排器。
 
 ## 路由原则
 1. 只使用当前用户输入、显式命令、当前 Project identity 和 active Task 的紧凑摘要信号。
 2. 默认不得扫描仓库、读取完整 Task、查询 Wiki/Knowledge、启动子 Agent 或做需求分析来判断 Domain。
-3. software → `tp-software-lifecycle`；wiki → `tp-wiki`；knowledge → `tp-knowledge`；base → `tp-base-maintenance`。
+3. software → `tp-software-lifecycle`；video → `tp-video-production`；wiki → `tp-wiki`；knowledge → `tp-knowledge`；base → `tp-base-maintenance`。续接已登记 Task 时沿用 Runtime 确认的领域；视频制作与开发视频软件按真实目标区分。
 4. 在明确 TP-Spec 软件项目上下文且没有冲突信号时，默认进入 software；真正歧义才做一次最小澄清。
 5. 原始用户输入尽量原样交给目标 Domain Agent，避免入口二次总结造成信息损失。
 6. 用户级外部 SKILL 的导入、更新、启停、移除、关联等管理请求交 `base → tp-base-maintenance → tp-external-skill-management`；使用外部方法完成业务工作仍按该工作的领域路由。管理对象与被采用的方法不混为一项执行授权。
@@ -37,6 +37,7 @@ description: TP-Spec-Coding 唯一默认产品入口；以低上下文成本识�
 
 - 修改 TP-Spec-Coding 自身源码：将 `tp-spec skill read --id tp-spec-coding --path docs/TESTING.md --json` 返回的本仓验证策略 作为项目约束交给执行 Agent；不将基座临时测试清理规则套用到其他业务项目。
 - 软件工作：读取 `tp-spec skill read --id tp-software-lifecycle --json`；已有 Task 复用当前摘要与真实授权，不为入口路由重读全历史。
+- 视频制作：读取 `tp-spec skill read --id tp-video-production --json`。已有 Task 用 `workflow next` 续接；需要正式制作记录时按领域指引使用 `task create --domain video`。
 - 查看项目、任务或配置的可视化：在 TP-Spec-Coding 自身源码根运行 `npm run dev`，浏览器访问终端地址；准备和排错见 `tp-spec skill read --id tp-spec-coding --path docs/WORKBENCH.md --json` 返回的本地工作台说明。这是本地页面入口，不创建专属 Agent，不在业务仓库复制前端。
 
 普通代码搜索、文件读取、测试、Shell 及所有正式 Runtime 命令均不启动工作台或服务，不触发页面刷新或生成 HTML。正常流转直接复用本轮可信结果给出简短 Markdown，机器输出保持原格式。工作台仅响应用户进入页面和手动读取，不后台轮询，也不依赖会话宿主展示。
@@ -48,3 +49,8 @@ description: TP-Spec-Coding 唯一默认产品入口；以低上下文成本识�
 先判断本次工作是否需要正式 Task。目标和范围明确的普通局部修改直接使用所需能力完成，不因接入 TP-Spec、调用 Skill、测试或留日志自动创建 Task；已有 Task 范围内的返修继续原任务。用户要求任务记录、项目明确要求 Task，或工作确实需要持续跟踪与协作交付时，再建立正式 Task。“全链路开发测试”“连续完成”本身不等于选择标准 Task。
 
 已建立的任务按 Runtime 唯一模式解释确定适用义务。旧 Task 或没有真实用户模式选择的 Task 按 standard；只有用户明确选择 quick 时才使用 quick。需要任务记录的小修改可一次简短建议 quick，不能把沉默、拒绝或未作选择当同意。直接处理不新增 Runtime 模式，也不绕过已有 Task 门禁、必要验证或 SQL、生产、发布授权。具体流程和最终字段见 `tp-spec skill read --id tp-software-lifecycle --json` 返回的软件工程生命周期。
+
+## 术语与问题描述
+按用户要处理的对象和目标路由，保留原话。术语和问题描述都是方法线索，由接收领域或实际执行角色选择并读取命中的 Skill 或参考。只问适用性或方案时给分析。采用方法不扩大原请求的授权。
+
+`route` 返回 `unknown` 时，先用原话中的对象和当前可信上下文作领域判断。例如工作台页面、首屏提示与交互归 software，维护 Base 的 Skill、提示规则或对照其行为归 base。对象仍不清楚且不同领域会改变结果时，再做最小澄清。

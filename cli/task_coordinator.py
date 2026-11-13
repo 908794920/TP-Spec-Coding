@@ -10,38 +10,50 @@ from . import event_contract, event_policies
 SCHEMA = "tp-spec.task-coordinator/v1"
 CREATION_ACTOR = "tp-software-lifecycle"
 DEFAULT_COORDINATOR_ROLE = "tp-project-manager"
+VIDEO_CREATION_ACTOR = "tp-video-production"
+VIDEO_COORDINATOR_ROLE = "tp-video-producer"
+
+
+def _creation_roles(domain):
+    return (VIDEO_CREATION_ACTOR, VIDEO_COORDINATOR_ROLE) if domain == "video" else (CREATION_ACTOR, DEFAULT_COORDINATOR_ROLE)
 
 
 def claims_creation_metadata(detail, raw) -> bool:
     """Recognize explicit creation claims, including a damaged JSON object."""
     if isinstance(detail, dict) and (
-            "coordinator_schema" in detail or detail.get("producer") == "task_create"):
+            "coordinator_schema" in detail or detail.get("producer") == "task_create"
+            or "domain" in detail):
         return True
     return isinstance(raw, str) and (
         '"coordinator_schema"' in raw
-        or (detail is None and re.search(r'"producer"\s*:\s*"task_create"', raw) is not None))
+        or (detail is None and re.search(r'"(?:producer"\s*:\s*"task_create"|domain"\s*:)', raw) is not None))
 
 
 def creation_detail(*, task_id: str, actor_agent: str, created_at: str,
                     transaction_id: str, schema_version: str,
                     invocation_id: str | None = None, workflow_mode: str = 'standard',
-                    user_source: dict | None = None) -> dict:
+                    user_source: dict | None = None, domain: str = "software") -> dict:
     if (not isinstance(actor_agent, str)
             or any(not isinstance(value, str) or not value.strip()
                    for value in (task_id, created_at, transaction_id, schema_version))):
         raise ValueError("TASK_COORDINATOR_INVALID: creation identity requires strings")
+    if domain not in {"software", "video"}:
+        raise ValueError("TASK_DOMAIN_INVALID: expected software or video")
+    creator, coordinator = _creation_roles(domain)
     detail = {
-        "workflow_mode": workflow_mode,
-        "user_source": user_source,
         "coordinator_schema": SCHEMA,
-        "coordinator": {"role": DEFAULT_COORDINATOR_ROLE, "agent": actor_agent.strip()},
+        "coordinator": {"role": coordinator, "agent": actor_agent.strip()},
         "transaction_id": transaction_id, "flush_id": "CREATE-" + transaction_id,
         "schema_version": schema_version, "task_id": task_id,
-        "actor_role": CREATION_ACTOR, "created_at": created_at,
+        "actor_role": creator, "created_at": created_at,
     }
-    from .orchestration_policy import valid_user_source
-    if workflow_mode not in {'standard', 'quick'} or (workflow_mode == 'quick' and not valid_user_source(user_source)):
-        raise ValueError('TASK_MODE_INVALID: quick requires the actual user choice source')
+    if domain == "video":
+        detail["domain"] = domain
+    else:
+        from .orchestration_policy import valid_user_source
+        if workflow_mode not in {'standard', 'quick'} or (workflow_mode == 'quick' and not valid_user_source(user_source)):
+            raise ValueError('TASK_MODE_INVALID: quick requires the actual user choice source')
+        detail.update(workflow_mode=workflow_mode, user_source=user_source)
     if invocation_id:
         detail["cli_invocation_id"] = invocation_id
     return event_contract.add_event_semantics(
@@ -57,17 +69,20 @@ def read_creation_coordinator(task: dict, rows: list[dict]) -> dict:
     states.sort(key=lambda row: row["id"])
     creations = [row for row in states if row.get("from_state") is None and row.get("to_state") == "NEW"]
     coordinator, source, issues = None, None, []
+    domain = "software"
     for row in states:
         raw = row.get("detail_json") or "{}"
         try:
             detail = json.loads(raw)
         except (TypeError, ValueError):
             detail = None
-        if not claims_creation_metadata(detail, raw):
+        if not claims_creation_metadata(detail, raw) and row.get("actor_role") != VIDEO_CREATION_ACTOR:
             if row in creations and row is not states[0]:
                 issues.append(f"TASK_COORDINATOR_INVALID:{row['id']}")
             continue
         owner = detail.get("coordinator") if isinstance(detail, dict) else None
+        candidate = detail.get("domain", "software") if isinstance(detail, dict) else None
+        creator, expected_owner = _creation_roles(candidate)
         valid = (
             row is states[0] and len(creations) == 1 and row in creations
             and isinstance(detail, dict) and detail.get("coordinator_schema") == SCHEMA
@@ -80,16 +95,28 @@ def read_creation_coordinator(task: dict, rows: list[dict]) -> dict:
                     for key in ("transaction_id", "flush_id", "schema_version", "task_id", "actor_role", "created_at"))
             and all(detail.get(key) == row.get(key) for key in ("task_id", "actor_role", "created_at"))
             and detail.get("schema_version") == row.get("workflow_version")
-            and row.get("actor_role") == CREATION_ACTOR
+            and candidate in ("software", "video")
+            and (candidate != "video" or not {"workflow_mode", "user_source"} & detail.keys())
+            and row.get("actor_role") == creator
             and isinstance(owner, dict) and set(owner) == {"role", "agent"}
-            and owner.get("role") == DEFAULT_COORDINATOR_ROLE and isinstance(owner.get("agent"), str)
+            and owner.get("role") == expected_owner and isinstance(owner.get("agent"), str)
             and (row.get("actor_agent") is None or isinstance(row.get("actor_agent"), str))
             and owner["agent"] == (row.get("actor_agent") or "")
         )
         if not valid:
             issues.append(f"TASK_COORDINATOR_INVALID:{row['id']}")
         else:
+            domain = candidate
             coordinator = dict(owner)
             source = {"kind": "task_create", "event_id": int(row["id"]), "schema": SCHEMA}
-    return {"coordinator": None if issues else coordinator,
+    return {"coordinator": None if issues else coordinator, "domain": None if issues else domain,
             "source": None if issues else source, "issues": issues}
+
+
+def task_domain(conn, task):
+    rows = conn.execute("SELECT * FROM task_event WHERE task_id=? AND event_type='STATE' ORDER BY id",
+                        (task["task_id"],))
+    creation = read_creation_coordinator(task, rows)
+    if creation["issues"]:
+        raise ValueError("; ".join(creation["issues"]))
+    return creation["domain"]

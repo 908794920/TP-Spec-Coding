@@ -124,8 +124,7 @@ def _dir_file_set() -> set[str]:
             rel = p.relative_to(BASE).as_posix()
             if rel == "manifest.sha256" or not p.is_file():
                 continue
-            # Retired presentation output stays excluded; never delete user history.
-            if rel.startswith((".tp-spec/card/", "docs/planning/")):
+            if rel.startswith("docs/planning/"):
                 continue
             if p.suffix.lower() in _DIRECTORY_MODE_SUFFIX_IGNORES:
                 continue

@@ -767,7 +767,7 @@ def build_task_snapshot(
             except Exception as exc:
                 workflow = {
                     "completed_steps": [], "current_step": {}, "next_step": {}, "steps": [],
-                    "reference_steps": [] if mode_facts["workflow_mode"] == "quick" else ["需求确认", "方案/规划", "实现", "验证", "交付", "Knowledge/Wiki 收敛", "完成"],
+                    "reference_steps": [] if mode_facts["workflow_mode"] in ("quick", None) else ["需求确认", "方案/规划", "实现", "验证", "交付", "Knowledge/Wiki 收敛", "完成"],
                     **{key: value for key, value in mode_facts.items() if key != "issues"},
                     "retired": retired, "route": {}, "error": str(exc),
                 }
@@ -859,8 +859,8 @@ def build_task_snapshot(
         "project_id": str(task_row.get("project_id") or ""),
         "project_name": str(task_row.get("project_name") or ""),
         "project_root": str(task_row.get("project_root_path") or ""),
-        "risk_level": task_row.get("risk_level") if mode_facts["workflow_mode"] == "quick" else str(task_row.get("risk_level") or ""),
-        "flow_level": task_row.get("flow_level") if mode_facts["workflow_mode"] == "quick" else str(task_row.get("flow_level") or ""),
+        "risk_level": task_row.get("risk_level") if mode_facts["workflow_mode"] in ("quick", None) else str(task_row.get("risk_level") or ""),
+        "flow_level": task_row.get("flow_level") if mode_facts["workflow_mode"] in ("quick", None) else str(task_row.get("flow_level") or ""),
         "state": str(task_row.get("current_state") or ""),
         "phase": str(task_row.get("current_stage") or ""),
         "owner": str(task_row.get("owner_role") or ""),

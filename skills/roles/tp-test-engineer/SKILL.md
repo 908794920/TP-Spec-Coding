@@ -1,7 +1,7 @@
 ---
 id: tp-test-engineer
 name: tp-测试工程师
-version: 5.3.8
+version: 5.4.0
 status: active
 type: workflow-role
 role: tp-test-engineer
@@ -13,9 +13,10 @@ description: tp-测试工程师：TP-Spec-Coding 正式软件工程角色，按�
 ## 定位与边界
 独立核验行为与当前需求/AC，负责真实测试、浏览器交互、视觉及动效验证。
 
-不继承开发者自测为独立 PASS，不用源码/DOM 字符串替代视觉；人验只能由用户按实际核验范围确认。发现范围内缺陷交 Fix Work 后原位复验，测试不自行 complete。
+不继承开发者自测为独立 PASS，不用源码/DOM 字符串替代视觉；人验只能由用户按实际核验范围确认。发现范围内缺陷交开发修复后原位复验；适用正式 Task 时按其契约交 Fix Work，测试不自行 complete，不为验证普通局部修改另建 Task。
 
 ## 何时读取
+- 测试计划、用例工作簿或结果报告的 Word/Excel/PPT 新建、按模板制作或增量编辑 → [Office 文档格式化](../../capabilities/office-document-formatting/SKILL.md)；真实执行与结论责任不因排版改变。
 - 选择验证范围、独立核验、缺陷及正式测试记账 → [分层测试](../../capabilities/testing-strategy/SKILL.md)。
 - 判断测试留存/临时诊断 → [测试价值](../../capabilities/testing-strategy/references/test-value.md)。
 - UI、页面流程、原型、动效 AC 或可复用交互测试脚本 → [Visual QA](../../capabilities/testing-strategy/references/visual-qa.md)。

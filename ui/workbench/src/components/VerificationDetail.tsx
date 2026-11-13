@@ -12,7 +12,7 @@ export function Outcome({ title, value }: { title: string; value: unknown }) {
     <p><strong>{applicability[text(channel.applicability)] ?? `${valueText(channel.applicability)}（未识别）`}</strong></p>
     {channel.recorded ? <>
       <Fields value={{ recorded_decision: event.decision, result_status: event.result_status, scope: channel.scope ?? detail.verification_scope,
-        delivery_status: detail.delivery_status, ledger_trusted: channel.ledger_trusted, reasons: channel.reasons,
+        delivery_status: detail.delivery_status ?? record(detail.video_payload).status, ledger_trusted: channel.ledger_trusted, reasons: channel.reasons,
         source: channel.source, event_id: event.event_id, created_at: event.created_at }}
         labels={{ recorded_decision: '记录的结论', result_status: '记录的执行状态', scope: '验证范围', delivery_status: '记录的交付状态', ledger_trusted: '通过既有账本读取', reasons: '适用性说明', source: '判定来源', event_id: '事件 ID', created_at: '记录时间' }}/>
       <Disclosure label="最新记录的绑定与原始明细"><Fields value={detail}/><p className="muted">历史摘要（不作为 PASS 判断）：{valueText(event.summary)}</p></Disclosure>
@@ -26,17 +26,20 @@ export function Outcome({ title, value }: { title: string; value: unknown }) {
 export function VerificationDetail({ data }: { data: DetailData }) {
   const acceptance = record(data.acceptance), owner = record(data.owner_acceptance), effective = record(owner.effective);
   const quick = data.workflow_mode === 'quick', obligations = record(data.applicable_obligations);
-  const showReview = !quick || obligations.review === true || !!record(data.review).recorded;
+  const video = data.domain === 'video';
+  const showReview = !video && (!quick || obligations.review === true || !!record(data.review).recorded);
   const showOwner = !quick || !!owner.recorded;
   const showAcceptance = !quick || acceptance.status !== 'not_recorded';
   return <>
-    <Outcome title={quick ? '实际验证 · Verification' : '自动化验证 · Verification'} value={data.verification}/>
+    <Outcome title={video ? '媒体检查记录' : quick ? '实际验证 · Verification' : '自动化验证 · Verification'} value={data.verification}/>
     {showReview && <Outcome title="代码审查 · Review" value={data.review}/>}
     {showOwner && <Section title="人工验收与处置">
       <p className="muted">实际 accept、延期 defer、豁免 waive 分开记录；人验不证明机器测试已执行，也不代表用户已接收所有交付。</p>
       <Fields value={{ evaluation: owner.evaluation, source: owner.source, accepted_acs: effective.accepted_acs,
-        visual_acs: effective.visual_acs, subject_digest: effective.subject_digest, change_set_id: effective.change_set_id, reasons: owner.reasons }}
-        labels={{ evaluation: '本次判定', source: '来源', accepted_acs: '当前有效实际人验 AC', visual_acs: '当前有效视觉 AC', subject_digest: '受验主体', change_set_id: '受验产品', reasons: '未确认原因' }}/>
+        visual_acs: effective.visual_acs, subject_digest: effective.subject_digest,
+        ...(video ? { media_export_event_id: effective.media_export_event_id } : { change_set_id: effective.change_set_id }), reasons: owner.reasons }}
+        labels={{ evaluation: '本次判定', source: '来源', accepted_acs: '当前有效实际人验 AC', visual_acs: '当前有效视觉 AC',
+          subject_digest: '受验主体', change_set_id: '受验产品', media_export_event_id: '受验导出事件', reasons: '未确认原因' }}/>
       {Object.entries(record(effective.by_ac)).map(([ac, value]) => <Disclosure key={ac} label={`${ac} · ${valueText(record(value).mode)}`}><Fields value={value}/></Disclosure>)}
       <Outcome title="Owner 原始决定与历史" value={owner}/>
     </Section>}

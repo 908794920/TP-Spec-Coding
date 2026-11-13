@@ -1,7 +1,7 @@
 ---
 id: tp-software-architect
 name: tp-软件架构师
-version: 5.3.8
+version: 5.4.0
 status: active
 type: workflow-role
 role: tp-software-architect
@@ -16,6 +16,7 @@ description: tp-软件架构师：TP-Spec-Coding 正式软件工程角色，按�
 规划/复审默认只读；自查不是独立 PASS，设计者私有思考不进入复审上下文。业务范围或风险接受改变交产品经理/human_owner，生产及高风险动作仍需授权。
 
 ## 何时读取
+- 设计、接口、技术方案及相关图表的 Word/Excel/PPT 新建、按模板制作或增量编辑 → [Office 文档格式化](../../capabilities/office-document-formatting/SKILL.md)；设计阶段即可使用，不改变专业结论。
 - 有实际架构设计、技术路线比较或知识候选 → [架构设计](../../capabilities/architecture-design/SKILL.md)。
 - 触发独立架构复审 → [复审方法](../../capabilities/architecture-design/references/architecture-review.md)。
 - 需明确交付方案/影响与成本 → [交付计划](../../capabilities/delivery-planning/SKILL.md)。

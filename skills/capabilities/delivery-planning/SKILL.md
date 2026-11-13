@@ -1,7 +1,7 @@
 ---
 name: delivery-planning
 display_name: 交付计划
-version: 5.3.8
+version: 5.4.0
 description: Use when a task benefits from an explicit technical delivery plan. Produce an implementation-ready, risk-aware plan without creating mandatory workflow gates or handoff bookkeeping.
 ---
 
@@ -24,3 +24,6 @@ description: Use when a task benefits from an explicit technical delivery plan. 
 
 ## 完成判定
 后续开发 AI 能知道：为什么这样改、允许改什么、关键风险是什么、如何自测/验收、什么时候必须停止扩大范围。这是“计划可执行”的判定，不是 Task 已交付；最终由 [交付收敛](../delivery-convergence/SKILL.md) 核对结果，不为计划完整增加阶段许可证。
+
+## 概率估算
+需要估计不确定耗时、成本或超出窗口的概率时，可用蒙特卡罗。先明确决策、真实输入样本和分布依据，保留并行、依赖与重试关系。以可核算样本检查脚本，记录假设、可复现参数、分位数和超限概率。数据不足时列出缺口；并发覆盖、回滚等正确性问题用确定性场景验证。

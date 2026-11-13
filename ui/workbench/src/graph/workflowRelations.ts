@@ -57,6 +57,7 @@ export function buildRoleActivity(role: Pick<StageRole, 'events' | 'participatio
 const phaseLabels: Record<string, string> = {
     intake: '受理', requirement: '需求', product: '产品设计', architecture: '架构设计', architecture_review: '架构复审',
     discovery: '调研', planning: '实施规划', development: '开发', verification: '验证', review: '代码复审', delivery: '交付集成', other: '其他',
+    creative: '创作', asset_production: '素材制作', post_production: '剪辑后期', media_quality: '成片质检',
 };
 /** Completion colour reflects a recorded result, never event presence or words in a summary. */
 export function stageHasCompletedWork(stage: WorkflowStage): boolean {
@@ -76,6 +77,8 @@ function recordedStage(event: FactRecord): string {
         return kind === 'ARCHITECTURE' ? 'architecture_review' : ['CODE', 'IMPLEMENTATION', 'ULTRA_REVIEW'].includes(kind) ? 'review' : kind === 'VERIFICATION' ? 'verification' : '';
     }
     if (event.event_type === 'VERIFICATION_COMPLETED') return 'verification';
+    if (['VIDEO_EXPORT_RECORDED', 'VIDEO_QC_RECORDED', 'VIDEO_DELIVERY_RECORDED'].includes(text(event.event_type)))
+        return text(detail.phase);
     const phaseRecorded = operation === 'CHECKPOINT' || event.event_type === 'STATE' || event.event_type === 'BLOCKER';
     return text(detail.stage) || text(detail.source_stage) || (phaseRecorded ? text(detail.phase) || text(event.to_stage) : '');
 }

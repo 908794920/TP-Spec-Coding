@@ -72,9 +72,11 @@ export default function App() {
         catch { /* storage may be unavailable (private mode); the layout still works without it */ }
     }, [nav]);
     const health = useRead('health', revision, api.health), global = useRead('global', revision, api.global);
+    const notesWritable = health.data?.runtime_read_only === true && health.data.task_notes_writable === true;
     const contexts = global.data?.data.contexts ?? [];
     const context = contexts.find(c => c.context_key === contextKey);
-    const project = useRead(contextKey, revision, signal => api.project(contextKey, signal));
+    const [noteRevision, refreshNotes] = useState(0);
+    const project = useRead(contextKey, `${revision}:${noteRevision}`, signal => api.project(contextKey, signal, true));
     const task = useRead(page === 'task' && contextKey && selectedTask ? JSON.stringify([contextKey, selectedTask]) : '', revision, signal => api.task(contextKey, selectedTask, signal));
     // 窄屏选中目标后关闭覆盖式导航，并将焦点交给目标页面。
     function switchPage(next: Page) { setPage(next); if (narrow) { setNav(prev => ({ ...prev, collapsed: true })); requestAnimationFrame(() => document.getElementById('main-content')?.focus()); } }
@@ -116,7 +118,7 @@ export default function App() {
     <header className="app-header">
       <span className="header-actions"><Button ref={navButton} type="text" className="nav-toggle" icon={nav.collapsed ? <MenuUnfoldOutlined/> : <MenuFoldOutlined/>} aria-expanded={!nav.collapsed} aria-controls="workbench-navigation" aria-label={nav.collapsed ? '显示导航' : '隐藏导航'} title={nav.collapsed ? '显示导航' : '隐藏导航'} onClick={() => setNav(prev => ({ ...prev, collapsed: !prev.collapsed }))}/></span>
       <div className="brand"><Typography.Text strong>TP-Spec</Typography.Text><Typography.Text type="secondary">本地工作台</Typography.Text></div>
-      <Space className="header-right" size={8}><Space className="header-meta" size={8}><Tag variant="filled">只读</Tag><Typography.Text type="secondary">{health.data?.version ?? '版本未读取'}</Typography.Text></Space><span className="header-actions"><TaskSearch contexts={contexts} revision={revision} onOpenTask={openTaskInProject}/><Button type="text" icon={<SettingOutlined/>} aria-label="查看全局配置" title="查看全局配置" aria-pressed={page === 'global'} onClick={() => switchPage('global')}/><ThemeControl/></span><Button type="text" className="refresh-button" icon={<ReloadOutlined/>} onClick={() => refresh(n => n + 1)}>重新读取</Button></Space>
+      <Space className="header-right" size={8}><Space className="header-meta" size={8}><Tag variant="filled">{notesWritable ? '任务只读 · 备注可编辑' : '任务只读'}</Tag><Typography.Text type="secondary">{health.data?.version ?? '版本未读取'}</Typography.Text></Space><span className="header-actions"><TaskSearch contexts={contexts} revision={revision} onOpenTask={openTaskInProject}/><Button type="text" icon={<SettingOutlined/>} aria-label="查看全局配置" title="查看全局配置" aria-pressed={page === 'global'} onClick={() => switchPage('global')}/><ThemeControl/></span><Button type="text" className="refresh-button" icon={<ReloadOutlined/>} onClick={() => refresh(n => n + 1)}>重新读取</Button></Space>
     </header>
     {health.error && <Alert className="app-alert" banner role="alert" type="error" showIcon title={health.error}/>}
     <div className={`shell${nav.collapsed ? ' nav-collapsed' : ''}${resizing ? ' is-resizing' : ''}`} style={{ '--nav-w': `${nav.width}px` } as CSSProperties}>
@@ -147,7 +149,7 @@ export default function App() {
           would be clipped by its own overflow. */}
       <div className="nav-resizer" role="separator" aria-orientation="vertical" aria-label="调整导航宽度" aria-valuenow={nav.width} aria-valuemin={NAV_MIN} aria-valuemax={NAV_MAX} tabIndex={0} title="拖动调整宽度，双击恢复默认，方向键微调"
         onPointerDown={startResize} onPointerMove={dragResize} onPointerUp={stopResize} onPointerCancel={stopResize} onKeyDown={keyResize} onDoubleClick={() => setNav(prev => ({ ...prev, width: NAV_DEFAULT }))}/>
-      <main id="main-content" tabIndex={-1}>{page === 'global' ? <GlobalConfigPage read={global} health={health}/> : page === 'wiki' ? <WikiPage revision={revision}/> : page === 'knowledge' ? <KnowledgePage revision={revision}/> : page === 'task' ? <TaskPage context={context} taskId={selectedTask} read={task} revision={revision}/> : <ProjectPage context={context} read={project} onSelectTask={openTask}/>}</main>
+      <main id="main-content" tabIndex={-1}>{page === 'global' ? <GlobalConfigPage read={global} health={health}/> : page === 'wiki' ? <WikiPage revision={revision}/> : page === 'knowledge' ? <KnowledgePage revision={revision}/> : page === 'task' ? <TaskPage context={context} taskId={selectedTask} read={task} revision={revision}/> : <ProjectPage context={context} read={project} notesWritable={notesWritable} onSelectTask={openTask} onNoteSaved={() => refreshNotes(n => n + 1)}/>}</main>
     </div>
   </div>;
 }

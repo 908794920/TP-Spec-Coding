@@ -20,11 +20,14 @@ from . import command_context
 from . import recording
 from .role_registry import actor_ids
 from .version import active_version
+from .task_coordinator import task_domain
+from .video_policy import PHASE_ROLES, validate_phase_actor
 
 PHASES = (
     "intake", "requirement", "product", "discovery", "architecture", "planning",
     "development", "verification", "review", "delivery", "other",
 )
+TASK_PHASES = tuple(dict.fromkeys((*PHASES, *PHASE_ROLES)))
 PUBLIC_STATES = {"NEW", "ACTIVE", "BLOCKED", "COMPLETED", "CANCELLED"}
 TERMINAL_STATES = {"COMPLETED", "CANCELLED"}
 
@@ -200,6 +203,9 @@ def _change_set_roots(conn, task, explicit: Optional[Iterable[str]]) -> List[str
 
 
 def _compact_change_set(change_set: Dict[str, Any]) -> Dict[str, Any]:
+    from .change_set import OPS_SUBJECT_SCHEMA
+    if change_set.get('schema') == OPS_SUBJECT_SCHEMA:
+        return change_set
     return {
         "schema": str(change_set.get("schema") or ""),
         "content_digest": str(change_set.get("content_digest") or ""),
@@ -228,11 +234,22 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
                report_artifact_root: Optional[str] = None,
                recorded_result_ids: Optional[Iterable[int]] = None,
                security_context: Optional[Dict[str, Any]] = None,
+               media_manifest: Optional[str] = None, media_agent: str = "",
+               ops_subject: Optional[str] = None,
                db: Optional[str] = None) -> Dict[str, Any]:
-    if phase not in PHASES:
-        raise ValueError(f"invalid phase {phase!r}; choose one of: {', '.join(PHASES)}")
+    if phase not in TASK_PHASES:
+        raise ValueError(f"invalid phase {phase!r}; choose one of: {', '.join(TASK_PHASES)}")
     if actor not in actor_ids():
         raise ValueError(f"invalid actor: {actor}")
+    if ops_subject is not None and (phase != 'development' or repo_roots or change_impact or media_manifest):
+        raise ValueError('OPS_SUBJECT_OPTION_CONFLICT: use development without Git, media or change-impact options')
+    if media_manifest:
+        from .video_records import record
+        if any((evidence, knowledge_signals, delivery_signals, repo_roots, change_impact, collect,
+                result_reports, report_artifact_root, recorded_result_ids)):
+            raise ValueError("VIDEO_EXPORT_USES_MANIFEST: include the selected media and receipts in --media-manifest")
+        return record("video-export", task_id=task_id, task_dir=task_dir, actor=actor, summary=summary,
+                      payload={"manifest": media_manifest, "phase": phase}, request_id=request_id, agent=media_agent, db_path=db)
     if change_impact is not None and (change_impact != "non-behavioral"
             or phase != "development" or actor != "tp-development-engineer"):
         raise ValueError("CHANGE_IMPACT_INVALID: non-behavioral is an optional development engineer assessment")
@@ -259,11 +276,15 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
         repo_roots=repo_roots, collect=collect, context_usage=usage,
         result_reports=result_reports, recorded_result_ids=recorded_result_ids,
         report_artifact_root=report_artifact_root, security_context=security_context,
-        change_impact=change_impact)
+        change_impact=change_impact, ops_subject=ops_subject)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
     conn = dbmod.connect(db_path)
     try:
         task = _load(conn, task_id)
+        domain = task_domain(conn, task)
+        validate_phase_actor(domain, phase, actor)
+        if ops_subject is not None and domain != 'software':
+            raise ValueError('OPS_SUBJECT_SOFTWARE_ONLY')
         from . import transaction_commit
         transaction_commit._assert_task_workspace_identity(conn, tdir, task_id)
         replay = request.replay(conn)
@@ -295,7 +316,7 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
         mode = resolve_task_mode(dict(task), task_events)
         if mode['issues']:
             raise ValueError('; '.join(mode['issues']))
-        effective_risk = task['risk_level'] if mode['workflow_mode'] == 'quick' else str(task['risk_level'] or 'L1')
+        effective_risk = task['risk_level'] if domain == 'video' or mode['workflow_mode'] == 'quick' else str(task['risk_level'] or 'L1')
         if mode['workflow_mode'] == 'standard' and actor == "tp-software-architect" and phase == "architecture":
             from . import risk_signals
             scan = risk_signals.scan_task_artifacts(tdir)
@@ -317,9 +338,14 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
             # 先验证 Task 目录仍属于 Runtime 绑定的 workspace，再读取 Git。
             # 否则 registry 污染会把跨 workspace 写入误报为 ChangeSet/Git 错误。
             transaction_commit._assert_task_workspace_identity(conn, tdir, task_id)
-            roots = _change_set_roots(conn, task, repo_roots)
-            change_set = capture_change_set(roots)
-            roots = [str(repo["root_locator"]) for repo in change_set["repositories"]]
+            if ops_subject is not None:
+                from .ops_subject import capture
+                _require_ops_without_git(conn, task_id)
+                change_set = capture(tdir, ops_subject)
+            else:
+                roots = _change_set_roots(conn, task, repo_roots)
+                change_set = capture_change_set(roots)
+                roots = [str(repo["root_locator"]) for repo in change_set["repositories"]]
             if change_impact:
                 from .orchestration import non_behavioral_paths
                 from .digest import compute_verification_subject_digest
@@ -365,6 +391,10 @@ def checkpoint(*, task_id: str, task_dir: str, actor: str, phase: str,
             result["change_impact"] = impact
 
         def writer(dbconn, transaction_id=""):
+            if ops_subject is not None:
+                _require_ops_without_git(dbconn, task_id)
+                if capture(tdir, ops_subject) != change_set:
+                    raise ValueError("OPS_SUBJECT_CHANGED_BEFORE_COMMIT")
             if impact:
                 from .change_set import capture_change_set, same_bound_product_content
                 from .digest import compute_verification_subject_digest
@@ -435,21 +465,23 @@ def block(*, task_id: str, task_dir: str, actor: str, reason: str,
           db: Optional[str] = None) -> Dict[str, Any]:
     if actor not in actor_ids():
         raise ValueError(f"invalid actor: {actor}")
-    if phase is not None and phase not in PHASES:
+    if phase is not None and phase not in TASK_PHASES:
         raise ValueError(f"invalid phase: {phase}")
     tdir = _task_dir(task_dir)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
     conn = dbmod.connect(db_path)
     try:
         task = _load(conn, task_id)
+        domain = task_domain(conn, task)
         current = str(task["current_state"] or "")
         if current in TERMINAL_STATES:
             raise ValueError(f"terminal task cannot be blocked: {current}")
         if current == "BLOCKED":
             raise ValueError("task is already BLOCKED")
         phase0 = phase or str(task["current_stage"] or "other")
-        if phase0 not in PHASES:
+        if phase is None and domain == "software" and phase0 not in PHASES:
             phase0 = "other"
+        validate_phase_actor(domain, phase0, actor, waiting=True)
         from . import waiting
         wait_args = dict(kind=kind, responsibility=responsibility or (actor if kind in {"environment", "dependency"} else None), condition=condition,
                          requires_tasks=list(requires_tasks or []), prerequisite_evidence=list(prerequisite_evidence or []))
@@ -461,7 +493,9 @@ def block(*, task_id: str, task_dir: str, actor: str, reason: str,
             current_wait = waiting.build_wait(dbconn, task, tdir, **wait_args)
             if current_wait != waiting_fact:
                 raise ValueError("WAIT_PREREQUISITE_CHANGED: reread before blocking")
-            detail = _semantic_detail("BLOCKER", "BLOCK", flush_id, "BLOCKED", transaction_id=transaction_id, phase=phase0, reason=reason, reason_code="BLOCKED", waiting=waiting_fact or None)
+            wait_fields = {"waiting": waiting_fact or None} if waiting_fact or domain == "software" else {}
+            detail = _semantic_detail("BLOCKER", "BLOCK", flush_id, "BLOCKED", transaction_id=transaction_id,
+                                      phase=phase0, reason=reason, reason_code="BLOCKED", **wait_fields)
             dbconn.execute(
                 "INSERT INTO task_event (task_id,event_type,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?)",
                 (task_id, "BLOCKER", actor, reason, detail, active_version(), now),
@@ -496,8 +530,7 @@ def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
         if str(task["current_state"] or "") != "BLOCKED":
             raise ValueError("task resume requires current state BLOCKED")
         phase0 = phase or str(task["current_stage"] or "other")
-        if phase0 not in PHASES:
-            raise ValueError(f"invalid phase: {phase0}")
+        validate_phase_actor(task_domain(conn, task), phase0, actor, waiting=True)
         from . import waiting
         resolution_paths = list(resolution_evidence or [])
         def current_resolution(dbconn):
@@ -540,6 +573,13 @@ def resume(*, task_id: str, task_dir: str, actor: str, summary: str,
         return {**projection, "task_id": task_id, "state": "ACTIVE", "phase": phase0, "summary": summary, "flush_id": flush_id}
     finally:
         conn.close()
+
+
+def _require_ops_without_git(conn, task_id: str) -> None:
+    from .delivery_contract import load_repository_scope
+    binding = _latest_development_change_set(conn, task_id)
+    if load_repository_scope(conn, task_id)["repo_roots"] or (binding and binding["repo_roots"]):
+        raise ValueError("OPS_SUBJECT_GIT_SCOPE_CONFLICT: the task has an existing Git product scope")
 
 
 def _latest_development_change_set(conn, task_id: str) -> Optional[Dict[str, Any]]:
@@ -674,10 +714,20 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
            scope: str = "full", checks: Optional[Iterable[str]] = None,
            ac_results: Optional[Iterable[Dict[str, Any]]] = None,
            security_context: Optional[Dict[str, Any]] = None,
+           media_qc: Optional[str] = None, media_export_event: Optional[int] = None, media_agent: str = "",
            db: Optional[str] = None) -> Dict[str, Any]:
     """Record an actual technical verification result without adding a workflow gate."""
     if actor not in actor_ids():
         raise ValueError(f'invalid actor: {actor}')
+    if media_qc or media_export_event is not None:
+        from .video_records import record
+        if not media_qc or not media_export_event or media_export_event < 1:
+            raise ValueError("VIDEO_QC_INPUT_REQUIRED: supply --media-qc and --media-export-event")
+        if decision not in ("PASS", "FAIL", "NEEDS_FIX") or any((evidence, checks, knowledge_signals, delivery_signals)):
+            raise ValueError("VIDEO_QC_USES_REPORT: record actual coverage and findings in --media-qc")
+        return record("video-qc", task_id=task_id, task_dir=task_dir, actor=actor, summary=summary,
+                      payload={"report": media_qc, "export_event": media_export_event, "decision": decision,
+                               "ac_results": list(ac_results or [])}, request_id=request_id, agent=media_agent, db_path=db)
     if scope not in {"full", "technical"}:
         raise ValueError("verification scope must be full or technical")
     if isinstance(checks, str):
@@ -723,6 +773,8 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         mode = resolve_task_mode(dict(task), events)
         if mode['issues']:
             raise ValueError('; '.join(mode['issues']))
+        if mode["domain"] == "video":
+            raise ValueError("VIDEO_QC_INPUT_REQUIRED: use --media-qc and --media-export-event")
         if actor != 'tp-test-engineer' and not (mode['workflow_mode'] == 'quick' and actor in continuous_actor_ids(dict(task), events)):
             raise ValueError('technical verification requires the actual quick executor or tp-test-engineer')
         items = []
@@ -757,9 +809,9 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                 require_full_scope(conn, task_id, development["detail"], development_event_id=development["event_id"])
             else:
                 require_scope_checkpoint(conn, task_id, development_event_id=development["event_id"])
-        if development and development.get("repo_roots"):
-            from .change_set import capture_change_set
-            current_change_set = capture_change_set(development["repo_roots"])
+        from .change_set import capture_bound_product, is_ops_subject
+        if development and (development.get("repo_roots") or is_ops_subject(development["detail"])):
+            current_change_set = capture_bound_product(development["detail"], tdir, repo_roots=development["repo_roots"])
         from . import security_authority as authority
         security = authority.normalize_context(security_context or {"effect_scope": "regression"})
         if security["effect_scope"] != "regression":
@@ -771,7 +823,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         visual_summary = None
         owner_visual_items: List[Dict[str, Any]] = []
         if decision0 == "PASS":
-            if not development or not development.get("change_set_id") or not development.get("repo_roots"):
+            if not development or not development.get("change_set_id") or not current_change_set:
                 raise ValueError("DEVELOPMENT_CHANGE_SET_REQUIRED")
             from .change_set import same_bound_product_content
             if not current_change_set or not same_bound_product_content(development["detail"], current_change_set):
@@ -865,11 +917,10 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
             authority.check_formal_evidence(authority.read(dbconn, task_id, tdir), tdir, items)
             recording.validate_bound_items(tdir, items)
             if decision0 == "PASS":
-                from .change_set import capture_change_set
                 latest_development = _latest_development_change_set(dbconn, task_id)
                 if (not latest_development or latest_development["event_id"] != development["event_id"]
                         or compute_verification_subject_digest(tdir, scope=scope) != original_subject
-                        or not same_bound_product_content(development["detail"], capture_change_set(development["repo_roots"]))):
+                        or not same_bound_product_content(development["detail"], capture_bound_product(development["detail"], tdir, repo_roots=development["repo_roots"]))):
                     raise ValueError("VERIFICATION_STALE: subject changed before write")
                 if scope == "full":
                     require_full_scope(dbconn, task_id, development["detail"], development_event_id=development["event_id"])
@@ -945,7 +996,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
 
 
 
-def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
+def acceptance_truth_issues(conn, task_id: str, task_dir: Path, *, owner=None) -> List[str]:
     """Validate only acceptance claims that would become false history if forged.
 
     deliberately does *not* require every AC to be complete.  PENDING is a
@@ -965,7 +1016,7 @@ def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
     )
     deferred_entries = {str(x.get("ac") or "") for x in parsed.deferred_entries}
     waiver_entries = {str(x.get("ac") or "") for x in parsed.owner_waiver_entries}
-    effective_owner = event_policies.effective_owner_acceptance(
+    effective_owner = owner if owner is not None else event_policies.effective_owner_acceptance(
         conn, task_id, task_dir=task_dir,
     )
 
@@ -993,9 +1044,10 @@ def acceptance_truth_issues(conn, task_id: str, task_dir: Path) -> List[str]:
                     issues.append(f"{ac} PASS evidence invalid: {checked.error}")
             if witness == "human" and not witness_confirmed:
                 issues.append(f"{ac} human PASS requires confirmed human witness")
-            if witness == "human" and evidence.startswith("evidence/owner-acceptance/"):
+            if witness == "human" and (effective_owner.get("domain") == "video" or evidence.startswith("evidence/owner-acceptance/")):
                 owner_decision = effective_owner.get("by_ac", {}).get(ac) or {}
-                if str(owner_decision.get("mode") or "").lower() != "accept":
+                if (str(owner_decision.get("mode") or "").lower() != "accept"
+                        or effective_owner.get("domain") == "video" and owner_decision.get("source_evidence") != evidence):
                     issues.append(f"{ac} owner acceptance evidence lacks a current trusted OWNER_ACCEPTANCE_DECISION(accept)")
         elif verdict == "DEFERRED_ACCEPTED":
             if ac not in deferred_entries or (effective_owner.get("by_ac", {}).get(ac) or {}).get("mode") != "defer":
@@ -1132,6 +1184,11 @@ def complete(*, task_id: str, task_dir: str, actor: Optional[str], summary: str,
         actor0 = str(actor or task["owner_role"] or "").strip()
         if actor0 not in actor_ids():
             raise ValueError(f"invalid actor: {actor0 or '<missing>'}")
+        video = task_domain(conn, task) == "video"
+        if video:
+            from .video_policy import PRODUCER
+            if actor0 not in {PRODUCER, "human_owner"}:
+                raise ValueError("VIDEO_COMPLETION_ROLE_INVALID")
 
         def checked(dbconn):
             preflight = completion_check(task_id=task_id, task_dir=str(tdir), db=db_path, connection=dbconn)
@@ -1148,13 +1205,17 @@ def complete(*, task_id: str, task_dir: str, actor: Optional[str], summary: str,
         current = str(task["current_state"])
         now = dbmod.now_iso(); flush_id = f"COMPLETE-{uuid.uuid4().hex}"
         phase0 = str(task["current_stage"] or "delivery")
-        verification = _latest_verification(conn, task_id, tdir)
+        verification = {"decision": "NOT_APPLICABLE"} if video else _latest_verification(conn, task_id, tdir)
 
         def writer(dbconn, transaction_id=""):
             # Same connection as BEGIN IMMEDIATE: no stale, independent reader.
             preflight = checked(dbconn)
+            subject = next((check["facts"] for check in preflight["checks"] if check["id"] == "subject"), {})
+            ops = subject.get("ops_subject")
             detail = _detail("COMPLETE", flush_id, transaction_id=transaction_id, phase=phase0,
-                             verification=verification, closeout_schema=preflight["schema"])
+                             verification=verification, closeout_schema=preflight["schema"],
+                             **({"ops_subject": ops} if ops else {}),
+                             **({"media_delivery": preflight["media_delivery"]} if video else {}))
             dbconn.execute(
                 "INSERT INTO task_event (task_id,event_type,from_state,to_state,from_stage,to_stage,actor_role,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (task_id, "STATE", current, "COMPLETED", task["current_stage"], phase0,

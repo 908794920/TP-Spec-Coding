@@ -1,6 +1,6 @@
-catalog_version: "5.3.8"
-base_version: "5.3.8"
-generated_utc: 20261102T132922Z
+catalog_version: "5.4.0"
+base_version: "5.4.0"
+generated_utc: 20261106T024324Z
 generated_by: update_role_catalog.py deterministic metadata/hash/topology refresh
 human_actor:
   id: human_owner
@@ -14,7 +14,7 @@ roles:
   phases: [other]
   capabilities: [domain.routing, status.compact, explain.route]
   owns_states: []
-  content_sha256: ED4D18A5C790AA2BCE1AA25791D4D59A5E2E3F6FE923A26A77945A66D2899A62
+  content_sha256: EEDC44F375CBE5A3DC8F7001F76318DB37A48030D61C0E6B42FA872BC78A45C1
 - workflow_role: tp-software-lifecycle
   display_name: tp-软件工程生命周期
   type: control-role
@@ -23,7 +23,85 @@ roles:
   phases: [intake, requirement, product, discovery, architecture, planning, development, verification, review, delivery]
   capabilities: [lifecycle.routing, role.resolution, workflow.coordination]
   owns_states: [NEW]
-  content_sha256: BCD47CA81548FA5E50A79E788786FF286BA6561E9632155D58C335D09BC9C53E
+  content_sha256: A5D25E9D77B50FE4F591C297999E80E30CB6653B9A3F2F4FF3B3B4FDBF84C16F
+- workflow_role: tp-video-production
+  display_name: tp-视频制作
+  type: control-role
+  skill_path: agents/tp-video-production/SKILL.md
+  domain: video
+  phases: [intake, creative, asset_production, post_production, media_quality, delivery]
+  capabilities: [video.routing, video.workflow]
+  owns_states: []
+  content_sha256: EC6D1D8AB7B50945F9F7EB6890D59CFD4B3E701011CAF4D0AE4988A4101B9B53
+- workflow_role: tp-video-producer
+  display_name: tp-制片统筹
+  type: workflow-role
+  skill_path: skills/roles/tp-video-producer/SKILL.md
+  domain: video
+  phases: [intake, creative, asset_production, post_production, media_quality, delivery]
+  capabilities: [video.brief, video.coordination, video.delivery]
+  subskills:
+    - {id: video-brief, path: skills/capabilities/video-brief/SKILL.md, mode: default}
+  owns_states: []
+  content_sha256: B04B26ED8489A33CB442C850BF039AEDF88730063D3605F981D9422EF597D904
+- workflow_role: tp-video-director
+  display_name: tp-编导
+  type: workflow-role
+  skill_path: skills/roles/tp-video-director/SKILL.md
+  domain: video
+  phases: [creative, asset_production, media_quality]
+  capabilities: [video.script, video.storyboard, video.continuity]
+  subskills:
+    - {id: video-script-research, path: skills/capabilities/video-script-research/SKILL.md, mode: default}
+    - {id: video-storyboard-previs, path: skills/capabilities/video-storyboard-previs/SKILL.md, mode: conditional}
+  owns_states: []
+  content_sha256: CC5146FF570E8EFF8D8CAE6E5DFC25034AF39FE846230E4D6400A587C7C89C5E
+- workflow_role: tp-video-visual-artist
+  display_name: tp-视觉设计与镜头制作
+  type: workflow-role
+  skill_path: skills/roles/tp-video-visual-artist/SKILL.md
+  domain: video
+  phases: [creative, asset_production, post_production, media_quality]
+  capabilities: [video.visual, video.shot, video.asset]
+  subskills:
+    - {id: video-visual-design, path: skills/capabilities/video-visual-design/SKILL.md, mode: conditional}
+    - {id: video-shot-production, path: skills/capabilities/video-shot-production/SKILL.md, mode: conditional}
+  owns_states: []
+  content_sha256: 621E3A220571FCADD65DBC98007422E648EAB19358D42DAD978FEEB58B651CBE
+- workflow_role: tp-video-sound-designer
+  display_name: tp-声音制作
+  type: workflow-role
+  skill_path: skills/roles/tp-video-sound-designer/SKILL.md
+  domain: video
+  phases: [asset_production, post_production, media_quality]
+  capabilities: [video.sound, video.audio_alignment]
+  subskills:
+    - {id: video-sound-production, path: skills/capabilities/video-sound-production/SKILL.md, mode: default}
+  owns_states: []
+  content_sha256: C072BB7E28B858425BE1E87734E838DDC15AF7C774B86EF84D0F93143F45B6E5
+- workflow_role: tp-video-editor
+  display_name: tp-剪辑后期
+  type: workflow-role
+  skill_path: skills/roles/tp-video-editor/SKILL.md
+  domain: video
+  phases: [post_production, media_quality, delivery]
+  capabilities: [video.timeline, video.export]
+  subskills:
+    - {id: video-edit-export, path: skills/capabilities/video-edit-export/SKILL.md, mode: default}
+    - {id: video-quality-review, path: skills/capabilities/video-quality-review/SKILL.md, mode: conditional}
+  owns_states: []
+  content_sha256: 50FEB412E09CC19700D03A7356E632BBB3CFE683C44BD759019201447DC35F67
+- workflow_role: tp-video-reviewer
+  display_name: tp-成片质检
+  type: workflow-role
+  skill_path: skills/roles/tp-video-reviewer/SKILL.md
+  domain: video
+  phases: [media_quality]
+  capabilities: [video.media_quality, video.recheck]
+  subskills:
+    - {id: video-quality-review, path: skills/capabilities/video-quality-review/SKILL.md, mode: default}
+  owns_states: []
+  content_sha256: 1E0E9AC14717940C4B5D2F8698AFF4233013F7D9776059A89EB2F198BA398E75
 - workflow_role: tp-base-maintenance
   display_name: tp-基座维护
   type: human-owner-skill
@@ -38,7 +116,7 @@ roles:
     - {id: tp-base-workbench, path: skills/base/tp-base-workbench/SKILL.md, mode: conditional}
     - {id: tp-external-skill-management, path: skills/base/tp-external-skill-management/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: E2BD6951C516BFA5616227FD86C9EC842D3A0FAC0F75F7E4FB28606E7CAF0F75
+  content_sha256: C57B8CC5FE0DC7CC059888B02A266D765A3E46FBDD705AB4C483474B96117C22
 - workflow_role: tp-knowledge
   display_name: tp-knowledge
   type: human-owner-skill
@@ -54,7 +132,7 @@ roles:
     - {id: tp-knowledge-normalization, path: skills/knowledge/tp-knowledge-normalization/SKILL.md, mode: conditional}
     - {id: tp-knowledge-scheduled-maintenance, path: skills/knowledge/tp-knowledge-scheduled-maintenance/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 594D4F59E4E6BC3CF1A0E3D0B8A13DE06C6B3E1034C122F95B22B0AACBEB0B87
+  content_sha256: D6F4BE5171F10DCFDAE57F4FF496E8106CDA1E757F988DFEA2373572FC94ACE5
 - workflow_role: tp-wiki
   display_name: tp-wiki
   type: human-owner-skill
@@ -70,7 +148,7 @@ roles:
     - {id: tp-wiki-recovery, path: skills/wiki/tp-wiki-recovery/SKILL.md, mode: conditional}
     - {id: tp-wiki-scheduled-maintenance, path: skills/wiki/tp-wiki-scheduled-maintenance/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: C3145F3584682BECC494733F73D5505EA85E8ECBC256217DB1F0C211F904B5BF
+  content_sha256: 947FC780CE0E6313AB0AFDA15D4EAE7A81602BCDE8083DCFF095ADB9929F76AA
 - workflow_role: tp-project-manager
   display_name: tp-项目经理
   type: workflow-role
@@ -84,7 +162,7 @@ roles:
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
     - {id: external-redteam-review, path: skills/capabilities/external-redteam-review/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: B732BD7C7CA80B735EF65E034D402EBD012D402FE6FA0320AF32EE1101B0874D
+  content_sha256: 9927DAF19DFD7A4E56FA291E138C95D891D55A72615DC7145FB2FD395E3736AD
 - workflow_role: tp-product-manager
   display_name: tp-产品经理
   type: workflow-role
@@ -93,11 +171,12 @@ roles:
   phases: [intake, requirement, product]
   capabilities: [product.planning, product.goal, user.value, scope.management, priority.management, experience.goal, requirement.collaboration]
   subskills:
+    - {id: office-document-formatting, path: skills/capabilities/office-document-formatting/SKILL.md, mode: conditional}
     - {id: requirement-clarification, path: skills/capabilities/requirement-clarification/SKILL.md, mode: conditional}
     - {id: assumption-management, path: skills/capabilities/assumption-management/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: CE128FC3D65264F71A2CA4583F5AD0B93A257E389F23D439875CDB400F33B36E
+  content_sha256: 59036A57BA62429A73C76FD37366FFC0D4B5B88E0BB09EAD2A94A42761A2F309
 - workflow_role: tp-requirements-manager
   display_name: tp-需求经理
   type: workflow-role
@@ -106,11 +185,12 @@ roles:
   phases: [intake, requirement]
   capabilities: [requirement.analysis, requirement.clarification, requirement.decomposition, business_rules.analysis, acceptance.criteria, requirement.traceability, requirement.impact]
   subskills:
+    - {id: office-document-formatting, path: skills/capabilities/office-document-formatting/SKILL.md, mode: conditional}
     - {id: requirement-clarification, path: skills/capabilities/requirement-clarification/SKILL.md, mode: conditional}
     - {id: assumption-management, path: skills/capabilities/assumption-management/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 1EC7F66450185597B6F0C7ABC0268308D60E3A01AD7A435ACA902D9207642255
+  content_sha256: 44CF5F0F8DBBD46F17ABA41E02B651C8A062E7824E0BD556BEAC716214F668D2
 - workflow_role: tp-ux-designer
   display_name: tp-用户体验设计师
   type: workflow-role
@@ -122,7 +202,7 @@ roles:
     - {id: ui-prototype-design, path: skills/capabilities/ui-prototype-design/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 75C85DB54D0E3EA68CD6459483719C2631ED9A61EA8AD5A7FC27236776D31AEE
+  content_sha256: E29BE720CB67A36F759BF99ABBA875E71F534CBA0A42286CE4E62C57BA43059F
 - workflow_role: tp-software-architect
   display_name: tp-软件架构师
   type: workflow-role
@@ -132,11 +212,12 @@ roles:
   capabilities: [system.analysis, architecture.design, technology.selection, module.design, interface.design, dependency.design, dataflow.design, compatibility.design, reliability.design, migration.architecture, architecture.review]
   orchestration_capabilities: [auto_planning_host, architecture_review_host]
   subskills:
+    - {id: office-document-formatting, path: skills/capabilities/office-document-formatting/SKILL.md, mode: conditional}
     - {id: architecture-design, path: skills/capabilities/architecture-design/SKILL.md, mode: conditional}
     - {id: delivery-planning, path: skills/capabilities/delivery-planning/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: EC9116B50C21461C86A9E432F59ECF934959822822B10102F7FD90CFC7D85BF4
+  content_sha256: 323DDADC963FF6236051E86A6756D187FAF5074BC160914C5701C42B57D19C62
 - workflow_role: tp-tech-lead
   display_name: tp-技术主管
   type: workflow-role
@@ -145,12 +226,13 @@ roles:
   phases: [architecture, planning, review]
   capabilities: [technical.planning, coding.standard, engineering.guideline, task.decomposition, dependency.planning, execution.planning, risk.assessment, work.parallelization, implementation.constraints, technical.conformance]
   subskills:
+    - {id: office-document-formatting, path: skills/capabilities/office-document-formatting/SKILL.md, mode: conditional}
     - {id: delivery-planning, path: skills/capabilities/delivery-planning/SKILL.md, mode: conditional}
     - {id: task-decomposition, path: skills/capabilities/task-decomposition/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
     - {id: technical-review, path: skills/capabilities/technical-review/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: D2EE1F258D6194DA23CDCB81C8A19377199653DA1AB200F3F6C4E84066A5784D
+  content_sha256: 2CC827AF40204252B928477F1F97406DFC6F74C4B33EB64A585A37420B8F4E67
 - workflow_role: tp-security-engineer
   display_name: tp-安全工程师
   type: workflow-role
@@ -162,7 +244,7 @@ roles:
     - {id: security-analysis, path: skills/capabilities/security-analysis/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: F6AD011EDE30431DE2966B31239304B65AF4DD3DF5783965859331B05E857E23
+  content_sha256: 6AF671690A88BF61AD164130DF64FB2894742A518B7A1FFD528F121AA8D1BAE0
 - workflow_role: tp-development-engineer
   display_name: tp-开发工程师
   type: workflow-role
@@ -176,7 +258,7 @@ roles:
     - {id: systematic-debugging, path: skills/capabilities/systematic-debugging/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 23241A8BA58EE95DFA4ABE9165A18273657FB54FF1C5DC654CA978706297BF8A
+  content_sha256: B8F87C73F5C7E2AA811B6987382F4B14A4B81E3353379065EA591A0E70932A2E
 - workflow_role: tp-database-engineer
   display_name: tp-数据库工程师
   type: workflow-role
@@ -188,7 +270,7 @@ roles:
     - {id: database-engineering, path: skills/capabilities/database-engineering/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 48890638D49D381730B3062ACFDC21E5E4E8EDE1D6100D6C05D11E8FD88A8BE5
+  content_sha256: 697A6D1F0C16D2928A7FC4230ABBD3C749502734AA0ED728FD06DC70A119D5EC
 - workflow_role: tp-test-engineer
   display_name: tp-测试工程师
   type: workflow-role
@@ -197,10 +279,11 @@ roles:
   phases: [verification]
   capabilities: [test.analysis, test.strategy, unit.testing, integration.testing, api.testing, regression.testing, acceptance.testing, runtime.verification, browser_ui.verification, failure.reproduction, test_evidence.validation]
   subskills:
+    - {id: office-document-formatting, path: skills/capabilities/office-document-formatting/SKILL.md, mode: conditional}
     - {id: testing-strategy, path: skills/capabilities/testing-strategy/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: C6416FF59E3A89D788673475307ECD628ACD6E543F829AF8D0E9412C1DE4B9EB
+  content_sha256: 6B1D0DC433C2C2F15EC0F55AFEF0FF0E2F458D21616048073D37A32B6F5C33B6
 - workflow_role: tp-code-reviewer
   display_name: tp-代码审查员
   type: workflow-role
@@ -213,7 +296,7 @@ roles:
     - {id: technical-review, path: skills/capabilities/technical-review/SKILL.md, mode: default}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: 5A7A91EADD42D3B99B81B9F371DA196F3F184BCE9BAAC1B70D91A5E9A61B7938
+  content_sha256: 4A2FEC503C16A9B6429E650AEB8825F2A2C406F9F091F8050D33E8829D47280F
 - workflow_role: tp-integration-engineer
   display_name: tp-集成交付工程师
   type: workflow-role
@@ -222,11 +305,12 @@ roles:
   phases: [delivery]
   capabilities: [change.inspection, integration.readiness, git_state.validation, conflict.analysis, git.integration, post_integration.verification, release.readiness, residual_risk.summary, task_delivery.result, task_learning.assessment, task_learning.coverage]
   subskills:
+    - {id: office-document-formatting, path: skills/capabilities/office-document-formatting/SKILL.md, mode: conditional}
     - {id: delivery-convergence, path: skills/capabilities/delivery-convergence/SKILL.md, mode: conditional}
     - {id: knowledge-capture, path: skills/capabilities/knowledge-capture/SKILL.md, mode: conditional}
     - {id: tp-memory-capture, path: skills/capabilities/tp-memory-capture/SKILL.md, mode: conditional}
   owns_states: []
-  content_sha256: D6096A0EC34BE424729FF9B8549C276EF07AABE2A7257182B2AA352926C2414D
+  content_sha256: BA1EDF54053D924EB89C8BBC3816CBAC88105BCF9522A21CC8FA00A00E3E100B
 topology:
   schema: tp-spec.role-topology/v1
   generated: true
@@ -244,6 +328,48 @@ topology:
       kind: domain-agent
       path: agents/tp-software-lifecycle/SKILL.md
       domain: software
+    tp-video-production:
+      id: tp-video-production
+      name: tp-视频制作
+      kind: domain-agent
+      path: agents/tp-video-production/SKILL.md
+      domain: video
+    tp-video-producer:
+      id: tp-video-producer
+      name: tp-制片统筹
+      kind: formal-role
+      path: skills/roles/tp-video-producer/SKILL.md
+      domain: video
+    tp-video-director:
+      id: tp-video-director
+      name: tp-编导
+      kind: formal-role
+      path: skills/roles/tp-video-director/SKILL.md
+      domain: video
+    tp-video-visual-artist:
+      id: tp-video-visual-artist
+      name: tp-视觉设计与镜头制作
+      kind: formal-role
+      path: skills/roles/tp-video-visual-artist/SKILL.md
+      domain: video
+    tp-video-sound-designer:
+      id: tp-video-sound-designer
+      name: tp-声音制作
+      kind: formal-role
+      path: skills/roles/tp-video-sound-designer/SKILL.md
+      domain: video
+    tp-video-editor:
+      id: tp-video-editor
+      name: tp-剪辑后期
+      kind: formal-role
+      path: skills/roles/tp-video-editor/SKILL.md
+      domain: video
+    tp-video-reviewer:
+      id: tp-video-reviewer
+      name: tp-成片质检
+      kind: formal-role
+      path: skills/roles/tp-video-reviewer/SKILL.md
+      domain: video
     tp-base-maintenance:
       id: tp-base-maintenance
       name: tp-基座维护
@@ -334,6 +460,46 @@ topology:
       kind: formal-role
       path: skills/roles/tp-integration-engineer/SKILL.md
       domain: software
+    video-brief:
+      id: video-brief
+      name: 视频制作简报
+      kind: capability-skill
+      path: skills/capabilities/video-brief/SKILL.md
+    video-script-research:
+      id: video-script-research
+      name: 视频剧本与资料
+      kind: capability-skill
+      path: skills/capabilities/video-script-research/SKILL.md
+    video-storyboard-previs:
+      id: video-storyboard-previs
+      name: 视频分镜与预演
+      kind: capability-skill
+      path: skills/capabilities/video-storyboard-previs/SKILL.md
+    video-visual-design:
+      id: video-visual-design
+      name: 视频视觉设定
+      kind: capability-skill
+      path: skills/capabilities/video-visual-design/SKILL.md
+    video-shot-production:
+      id: video-shot-production
+      name: 视频镜头制作
+      kind: capability-skill
+      path: skills/capabilities/video-shot-production/SKILL.md
+    video-sound-production:
+      id: video-sound-production
+      name: 视频声音制作
+      kind: capability-skill
+      path: skills/capabilities/video-sound-production/SKILL.md
+    video-edit-export:
+      id: video-edit-export
+      name: 视频剪辑与导出
+      kind: capability-skill
+      path: skills/capabilities/video-edit-export/SKILL.md
+    video-quality-review:
+      id: video-quality-review
+      name: 视频成片审看
+      kind: capability-skill
+      path: skills/capabilities/video-quality-review/SKILL.md
     tp-base-installation:
       id: tp-base-installation
       name: 安装与健康检查
@@ -439,6 +605,11 @@ topology:
       name: 外部红队对抗审查
       kind: capability-skill
       path: skills/capabilities/external-redteam-review/SKILL.md
+    office-document-formatting:
+      id: office-document-formatting
+      name: Office 文档格式化
+      kind: capability-skill
+      path: skills/capabilities/office-document-formatting/SKILL.md
     requirement-clarification:
       id: requirement-clarification
       name: 需求澄清
@@ -504,6 +675,9 @@ topology:
     to: tp-software-lifecycle
     relation: routes-to
   - from: tp-spec-coding
+    to: tp-video-production
+    relation: routes-to
+  - from: tp-spec-coding
     to: tp-base-maintenance
     relation: routes-to
   - from: tp-spec-coding
@@ -512,6 +686,24 @@ topology:
   - from: tp-spec-coding
     to: tp-wiki
     relation: routes-to
+  - from: tp-video-production
+    to: tp-video-producer
+    relation: owns-role
+  - from: tp-video-production
+    to: tp-video-director
+    relation: owns-role
+  - from: tp-video-production
+    to: tp-video-visual-artist
+    relation: owns-role
+  - from: tp-video-production
+    to: tp-video-sound-designer
+    relation: owns-role
+  - from: tp-video-production
+    to: tp-video-editor
+    relation: owns-role
+  - from: tp-video-production
+    to: tp-video-reviewer
+    relation: owns-role
   - from: tp-software-lifecycle
     to: tp-project-manager
     relation: owns-role
@@ -548,6 +740,42 @@ topology:
   - from: tp-software-lifecycle
     to: tp-integration-engineer
     relation: owns-role
+  - from: tp-video-producer
+    to: video-brief
+    relation: uses-skill
+    mode: default
+  - from: tp-video-director
+    to: video-script-research
+    relation: uses-skill
+    mode: default
+  - from: tp-video-director
+    to: video-storyboard-previs
+    relation: uses-skill
+    mode: conditional
+  - from: tp-video-visual-artist
+    to: video-visual-design
+    relation: uses-skill
+    mode: conditional
+  - from: tp-video-visual-artist
+    to: video-shot-production
+    relation: uses-skill
+    mode: conditional
+  - from: tp-video-sound-designer
+    to: video-sound-production
+    relation: uses-skill
+    mode: default
+  - from: tp-video-editor
+    to: video-edit-export
+    relation: uses-skill
+    mode: default
+  - from: tp-video-editor
+    to: video-quality-review
+    relation: uses-skill
+    mode: conditional
+  - from: tp-video-reviewer
+    to: video-quality-review
+    relation: uses-skill
+    mode: default
   - from: tp-base-maintenance
     to: tp-base-installation
     relation: uses-skill
@@ -633,6 +861,10 @@ topology:
     relation: uses-skill
     mode: conditional
   - from: tp-product-manager
+    to: office-document-formatting
+    relation: uses-skill
+    mode: conditional
+  - from: tp-product-manager
     to: requirement-clarification
     relation: uses-skill
     mode: conditional
@@ -642,6 +874,10 @@ topology:
     mode: conditional
   - from: tp-product-manager
     to: tp-memory-capture
+    relation: uses-skill
+    mode: conditional
+  - from: tp-requirements-manager
+    to: office-document-formatting
     relation: uses-skill
     mode: conditional
   - from: tp-requirements-manager
@@ -665,6 +901,10 @@ topology:
     relation: uses-skill
     mode: conditional
   - from: tp-software-architect
+    to: office-document-formatting
+    relation: uses-skill
+    mode: conditional
+  - from: tp-software-architect
     to: architecture-design
     relation: uses-skill
     mode: conditional
@@ -674,6 +914,10 @@ topology:
     mode: conditional
   - from: tp-software-architect
     to: tp-memory-capture
+    relation: uses-skill
+    mode: conditional
+  - from: tp-tech-lead
+    to: office-document-formatting
     relation: uses-skill
     mode: conditional
   - from: tp-tech-lead
@@ -725,6 +969,10 @@ topology:
     relation: uses-skill
     mode: conditional
   - from: tp-test-engineer
+    to: office-document-formatting
+    relation: uses-skill
+    mode: conditional
+  - from: tp-test-engineer
     to: testing-strategy
     relation: uses-skill
     mode: conditional
@@ -738,6 +986,10 @@ topology:
     mode: default
   - from: tp-code-reviewer
     to: tp-memory-capture
+    relation: uses-skill
+    mode: conditional
+  - from: tp-integration-engineer
+    to: office-document-formatting
     relation: uses-skill
     mode: conditional
   - from: tp-integration-engineer

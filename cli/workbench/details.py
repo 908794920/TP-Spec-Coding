@@ -14,7 +14,7 @@ import re
 from typing import Any
 
 from cli import delivery_contract, event_policies, orchestration_policy, waiting, workflow_records, yaml_checks
-from cli.change_set import capture_change_set, same_bound_product_content
+from cli.change_set import capture_bound_product, is_ops_subject, same_bound_product_content
 from .evidence_view import build_evidence_view, inspect_evidence_view
 
 HISTORY_LIMIT = 20
@@ -105,10 +105,10 @@ def _check_verification(conn, task_id: str, task_dir: Path, channel: dict, *, qu
         channel["reasons"].append("未取得既有 load_current_verification 的当前 PASS；可能为非 PASS、证据无效或范围不匹配，未细分的原因不推断。")
         return None
     roots = tuple(str(value) for value in current.detail.get("repo_roots") or [])
-    if not roots or not current.detail.get("change_set_id"):
+    if (not roots and not is_ops_subject(current.detail)) or not current.detail.get("change_set_id"):
         channel["reasons"].append("任务工件/证据校验通过，但记录缺少产品 ChangeSet 绑定；不能确认产品仍适用。")
         return None
-    product = capture_change_set(list(roots))
+    product = capture_bound_product(current.detail, task_dir, repo_roots=roots)
     if not same_bound_product_content(current.detail, product):
         channel.update(applicability="stale", reasons=["当前产品内容与验证绑定的 ChangeSet 不匹配。"])
         return None
@@ -127,13 +127,14 @@ def build_task_details(conn, task: dict[str, Any], task_dir: Path, *, project_ro
         problems.append({"code": code, "message": str(exc)})
 
     mode = orchestration_policy.resolve_task_obligations(task, events)
+    video = mode["domain"] == "video"
     quick = mode["workflow_mode"] == "quick"
     continuous_actors = orchestration_policy.continuous_actor_ids(task, events) if quick else set()
     terminal = retirement is not None or task.get("current_state") in {"COMPLETED", "CANCELLED"}
     route = {}
     for issue in mode["issues"]:
         problem("TASK_MODE_INVALID", issue)
-    if quick and not terminal:
+    if (quick or video) and not terminal:
         try:
             from cli import orchestration
             facts = orchestration._load_task_facts(task_id, connection=conn, task_dir=task_dir)
@@ -143,18 +144,21 @@ def build_task_details(conn, task: dict[str, Any], task_dir: Path, *, project_ro
     acceptance = acceptance_view(task_dir)
     if (acceptance["status"] != "read" and not quick and not terminal) or acceptance["issues"]:
         problem("ACCEPTANCE_DECLARATION_UNCONFIRMED", "; ".join(acceptance["issues"]) or "未取得 acceptance.md；不等于没有验收义务。")
-    verification = _channel(events, "VERIFICATION_COMPLETED", continuous_actors if quick else "tp-test-engineer")
+    from cli import video_records
+    verification = (_channel(events, video_records.QC, video_records.ACTORS[video_records.QC]) if video else
+                    _channel(events, "VERIFICATION_COMPLETED", continuous_actors if quick else "tp-test-engineer"))
     review = _channel(events, "REVIEW_COMPLETED", "tp-code-reviewer")
-    delivery = _channel(events, "DELIVERY_RESULT", continuous_actors if quick else "tp-integration-engineer")
+    delivery = (_channel(events, video_records.DELIVERY, video_records.ACTORS[video_records.DELIVERY]) if video else
+                _channel(events, "DELIVERY_RESULT", continuous_actors if quick else "tp-integration-engineer"))
     owner = _channel(events, "OWNER_ACCEPTANCE_DECISION", "human_owner")
     current = reviewed = None
     try:
-        current = None if terminal else _check_verification(conn, task_id, task_dir, verification, quick=quick)
+        current = None if terminal or video else _check_verification(conn, task_id, task_dir, verification, quick=quick)
     except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
         verification["reasons"].append(str(exc))
         problem("VERIFICATION_APPLICABILITY_UNAVAILABLE", exc)
 
-    if review["recorded"] and not terminal:
+    if review["recorded"] and not terminal and not video:
         try:
             review["ledger_trusted"] = bool(event_policies.load_trusted_governance_event(
                 conn, task_id, event_type="REVIEW_COMPLETED", actor="tp-code-reviewer", latest_only=True))
@@ -170,7 +174,7 @@ def build_task_details(conn, task: dict[str, Any], task_dir: Path, *, project_ro
             # The existing reader reports missing/invalid/stale together. Do not invent a more precise verdict.
             review["reasons"].append(str(exc))
 
-    if delivery["recorded"] and not terminal:
+    if delivery["recorded"] and not terminal and not video:
         try:
             delivery["ledger_trusted"] = bool(event_policies.load_trusted_governance_event(
                 conn, task_id, event_type="DELIVERY_RESULT", actor=str(delivery["recorded"]["actor"]) if quick else "tp-integration-engineer", latest_only=True))
@@ -245,10 +249,19 @@ def build_task_details(conn, task: dict[str, Any], task_dir: Path, *, project_ro
     if terminal:
         for channel in (verification, review, delivery):
             channel.update(applicability="historical", reasons=["终态或可信退休记录，仅展示原结果，未重验当前产品。"])
+    if video and not terminal:
+        media = route.get("media") or {}
+        for channel, kind in ((verification, video_records.QC), (delivery, video_records.DELIVERY)):
+            latest = next((row for row in reversed(events) if row["event_type"] == kind), None)
+            if latest:
+                channel.update(ledger_trusted=bool(video_records.trusted(latest)),
+                               applicability="not_confirmed", reasons=media.get("issues", []),
+                               source="video_records.route")
     return {"task": {"task_id": task_id, "state": task.get("current_state"), "phase": task.get("current_stage"),
-                     "owner": task.get("owner_role"), "completed_at": task.get("completed_at")},
+                     "domain": mode["domain"], "owner": task.get("owner_role"), "completed_at": task.get("completed_at")},
             **{key: route.get(key, value) for key, value in mode.items() if key != "issues"},
-            "quick_status": route.get("quick_status"), "retired": retirement is not None, "terminal": terminal,
+            "quick_status": route.get("quick_status"), "media": route.get("media"),
+            "retired": retirement is not None, "terminal": terminal,
             "task_dir": str(task_dir), "acceptance": acceptance, "verification": verification,
             "review": review, "delivery": delivery, "owner_acceptance": owner,
             "blockers": blockers, "evidence": evidence, "problems": problems,

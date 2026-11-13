@@ -2,7 +2,7 @@
 id: tp-knowledge
 name: tp-knowledge
 display_name: tp-knowledge
-version: 5.3.8
+version: 5.4.0
 status: active
 type: human-owner-skill
 tool_agnostic: Knowledge 根与项目身份由 Resolver 定位；不依赖特定 IDE、账号、插件或用户目录绝对路径。
@@ -22,7 +22,7 @@ Knowledge 保存跨 Task 可复用的业务规则、稳定架构/接口/数据�
 | 查找、读取已有知识及核对证据、搜索效果 | [知识检索与证据读取](../../skills/knowledge/tp-knowledge-retrieval/SKILL.md) |
 | 最终 Task 的可信 Request、候选判断、Knowledge/Memory Result | [Task 知识与记忆收敛](../../skills/knowledge/tp-knowledge-task-convergence/SKILL.md) |
 | 已有 source/canonical 增量变化、验证、索引与 baseline | [Knowledge 内容维护](../../skills/knowledge/tp-knowledge-maintenance/SKILL.md) |
-| 已登记的外部文档批次接入或重处理 | [外部文档接入](../../skills/knowledge/tp-knowledge-ingestion/SKILL.md) |
+| 获准的外部文档命名批次接入（含首次登记），或重处理已登记批次 | [外部文档接入](../../skills/knowledge/tp-knowledge-ingestion/SKILL.md) |
 | 旧 Vault 的迁移或结构标准化 | [Legacy Knowledge 标准化](../../skills/knowledge/tp-knowledge-normalization/SKILL.md) |
 | human_owner 已配置的 Knowledge Scheduler 唤起 | [Knowledge 定时维护](../../skills/knowledge/tp-knowledge-scheduled-maintenance/SKILL.md) |
 

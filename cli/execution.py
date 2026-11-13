@@ -57,18 +57,26 @@ def _string_list(value) -> bool:
     return isinstance(value, list) and all(_nonempty(item) for item in value) and len(set(value)) == len(value)
 
 
-def _valid_plan(body) -> bool:
+def _valid_plan(body, domain="software") -> bool:
     if not isinstance(body, dict) or body.get("effect_scope") != "record_only":
         return False
     coordinator, assessment = body.get("coordinator"), body.get("assessment")
     if (not isinstance(coordinator, dict) or not _nonempty(coordinator.get("role"))
             or not isinstance(coordinator.get("agent"), str) or not isinstance(assessment, dict)
             or not _nonempty(assessment.get("summary")) or not _string_list(assessment.get("source_refs"))
-            or not assessment["source_refs"] or not isinstance(assessment.get("omissions"), dict)
-            or not all(key in {"verification", "review"} and _nonempty(value) for key, value in assessment["omissions"].items())
-            or body.get("effective_level") not in ("L0", "L1", "L2", "L3")
+            or not assessment["source_refs"]
             or not _nonempty(body.get("reason")) or not _string_list(body.get("scope_refs")) or not body["scope_refs"]
             or not isinstance(body.get("steps"), list) or not body["steps"]):
+        return False
+    video = domain == "video"
+    from . import video_policy
+    if video:
+        if ("effective_level" in body or "omissions" in assessment
+                or coordinator["role"] != video_policy.PRODUCER):
+            return False
+    elif (domain != "software" or not isinstance(assessment.get("omissions"), dict)
+            or not all(key in {"verification", "review"} and _nonempty(value) for key, value in assessment["omissions"].items())
+            or body.get("effective_level") not in ("L0", "L1", "L2", "L3")):
         return False
     seen = set()
     for step in body["steps"]:
@@ -78,13 +86,19 @@ def _valid_plan(body) -> bool:
                 or not all(_string_list(step.get(field)) for field in ("roles", "depends_on", "work_item_ids"))
                 or not step["roles"] or set(step["depends_on"]) - seen):
             return False
+        if video and (not video_policy.phase_allowed(step["phase"], step["roles"])
+                      or step["phase"] == "delivery" and video_policy.PRODUCER not in step["roles"]):
+            return False
+        if not video and (set(step["roles"]) & (video_policy.ROLES | {video_policy.DOMAIN_AGENT})
+                          or step["phase"] in video_policy.PHASE_ROLES.keys() - {"intake", "delivery"}):
+            return False
         try:
             from .security_authority import step_context
             step_context(step)
         except ValueError:
             return False
         seen.add(step["id"])
-    return True
+    return not video or any(step["phase"] == "delivery" for step in body["steps"])
 
 
 def _valid_boundary(detail) -> bool:
@@ -198,7 +212,7 @@ def _project_execution(task, rows, *, retired: bool = False) -> dict:
         if kind == PLAN:
             body = detail.get("plan")
             try:
-                if (not _valid_plan(body) or type(detail.get("plan_version")) is not int
+                if (not _valid_plan(body, creation["domain"]) or type(detail.get("plan_version")) is not int
                         or detail["plan_version"] != version + 1 or digest(body) != detail.get("plan_digest")
                         or not isinstance(body.get("steps"), list) or not body["steps"]):
                     raise ValueError("invalid plan chain")
@@ -358,7 +372,7 @@ def _project_execution(task, rows, *, retired: bool = False) -> dict:
         current, next_step = None, None
     latest_record = max([*activities, *history], key=lambda item: item.get("event_id", 0), default={})
     return {"schema": SCHEMA, "status": "INVALID" if issues else "RECORDED" if plan else "NOT_RECORDED",
-            "source": "task_event", "plan_version": version, "plan": plan, "plan_history": history,
+            "source": "task_event", "domain": creation["domain"], "plan_version": version, "plan": plan, "plan_history": history,
             "coordinator": coordinator, "coordinator_source": coordinator_source, "terminal": terminal,
             "current_step": current, "next_step": next_step, "steps": list(steps.values()),
             "participations": list(participations.values()), "timeline": activities,

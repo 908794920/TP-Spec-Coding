@@ -1,7 +1,7 @@
 ---
 name: tp-wiki-audit
 display_name: Wiki 质量与语义审计
-version: 5.3.8
+version: 5.4.0
 description: 用于 Wiki 确定性质量验证、覆盖率判断及必要的 L4 源码语义审计；区分首次全仓与增量受影响范围，实际执行结果才可报告 PASS。
 ---
 
@@ -23,6 +23,10 @@ description: 用于 Wiki 确定性质量验证、覆盖率判断及必要的 L4 
 `verify PASS` 只证明确定性门通过，不能替代 L4。首次可信 baseline 的范围是 `initial-full-repo`；日常增量必须覆盖全部 affected documents，风险抽样不能替代 mandatory scope。
 
 只有维护规则变化时，先按 [维护规则指纹](../../../wiki/rules/source-fingerprint.md)审查实际差异。正式 `wiki policy-review` 通过旧规则字节与当前配置重建旧摘要，核对当前规则和证据绑定后，才可复用仍适用的旧语义证据；它不记录新的 L4 PASS，也不豁免真实 source/subject 变化、repair、topology 或旧 FAIL。缺少旧完整身份时不能靠当前 anchors 推定旧成功 completion 的文档身份。
+
+## 单独全量语义审计
+
+已有可信 baseline、无待处理的源码 Change Set、无活动 candidate，且本次只需复核正式 Wiki 时，按[质量门的单独审计分支](../../../wiki/rules/quality-gates.md#standalone-full-semantic-audit)执行 `wiki audit --repo <id> --full`。确认计划为 `standalone-full-repo`，逐篇核对 manifest 中的持久文档后，按实际结果记录。正式命令写计划或回执，正文与 baseline 保持原状。若请求限定零写入，仅定向读取已有证据并报告检查范围。
 
 ## 语义审计
 

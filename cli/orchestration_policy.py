@@ -259,6 +259,14 @@ def resolve_task_mode(task: dict, events: Iterable[Any]) -> dict:
     from . import event_contract, event_policies, task_coordinator, workflow_controls
     mode, source, issues = 'standard', None, []
     rows = sorted((dict(row) for row in events), key=lambda row: int(row.get('id') or 0))
+    creation_fact = task_coordinator.read_creation_coordinator(task, rows)
+    domain = creation_fact["domain"]
+    if domain != "software":
+        issues = list(creation_fact["issues"])
+        if domain == "video":
+            issues.extend(f"TASK_MODE_NOT_APPLICABLE:{row['id']}" for row in rows
+                          if row.get("task_id") == task["task_id"] and row.get("event_type") == "TASK_MODE_SELECTED")
+        return {"domain": domain, "workflow_mode": None, "mode_source": None, "issues": issues}
     for row in rows:
         if row.get('task_id') != task['task_id']:
             continue
@@ -276,7 +284,7 @@ def resolve_task_mode(task: dict, events: Iterable[Any]) -> dict:
                 issues.append(f'TASK_MODE_INVALID:{row.get("id")}')
             continue
         if creation:
-            trusted = task_coordinator.read_creation_coordinator(task, rows)
+            trusted = creation_fact
             valid = not trusted['issues'] and trusted['source'] and trusted['source']['event_id'] == row['id']
         else:
             valid = (isinstance(detail, dict) and event_policies.event_allowed_for_producer('TASK_MODE_SELECTED', 'task_mode_select')
@@ -293,13 +301,16 @@ def resolve_task_mode(task: dict, events: Iterable[Any]) -> dict:
         mode = value
         source = {'kind': 'task_create' if creation else 'task_mode_selected', 'event_id': int(row['id']),
                   'user_source': origin, 'digest': workflow_controls.event_digest(row)}
-    return {'workflow_mode': mode if not issues else 'standard', 'mode_source': source if not issues else None,
+    return {'domain': domain, 'workflow_mode': mode if not issues else 'standard', 'mode_source': source if not issues else None,
             'issues': issues}
 
 
 def resolve_task_obligations(task: dict, events: Iterable[Any], included_stages=None) -> dict:
     rows = [dict(row) for row in events]
     facts = resolve_task_mode(task, rows)
+    if facts["domain"] != "software":
+        facts["applicable_obligations"] = ({"delivery": True, "acceptance": "declared"} if facts["domain"] == "video" else {})
+        return facts
     quick = facts['workflow_mode'] == 'quick'
     if included_stages is None and not quick:
         from . import orchestration

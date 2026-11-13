@@ -1,7 +1,7 @@
 ---
 id: tp-development-engineer
 name: tp-开发工程师
-version: 5.3.8
+version: 5.4.0
 status: active
 type: workflow-role
 role: tp-development-engineer

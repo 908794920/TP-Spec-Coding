@@ -502,17 +502,18 @@ def _latest_development_fact(conn, task_id: str, *, event_id: Optional[int] = No
     return {}
 
 
-def _current_change_set(development: Dict[str, Any]) -> tuple[str, str]:
+def _current_change_set(development: Dict[str, Any], task_dir: Path | None = None) -> tuple[str, str]:
     """返回 (current_digest, development_status)；Git 读取失败时不伪造 CURRENT。"""
     recorded = str(development.get("change_set_id") or "")
     roots = list(development.get("repo_roots") or [])
     if not recorded:
         return "", "NOT_RECORDED"
-    if not roots:
+    from .change_set import capture_bound_product, is_ops_subject, same_bound_product_content
+    ops = is_ops_subject(development["detail"])
+    if not roots and (not ops or task_dir is None):
         return recorded, "UNKNOWN"
     try:
-        from .change_set import capture_change_set, same_bound_product_content
-        snapshot = capture_change_set(roots)
+        snapshot = capture_bound_product(development["detail"], task_dir, repo_roots=roots)
         current = str(snapshot.get("content_digest") or "")
         matches = same_bound_product_content(development["detail"], snapshot)
     except Exception:
@@ -544,8 +545,13 @@ def _extract_quality_facts(conn, task_id: str) -> Dict[str, str]:
     """从可信账本和当前 Git 内容投影 current/stale 质量事实。"""
     from . import event_policies
 
+    location = conn.execute(
+        "SELECT p.root_path FROM task t JOIN project p ON p.project_id=t.project_id WHERE t.task_id=?",
+        (task_id,),
+    ).fetchone()
+    task_dir = Path(location[0]) / ".tp-spec" / "tasks" / task_id if location and location[0] else None
     development = _latest_development_fact(conn, task_id)
-    current_digest, development_status = _current_change_set(development)
+    current_digest, development_status = _current_change_set(development, task_dir)
     recorded_digest = str(development.get("change_set_id") or "")
     current_id = current_digest or recorded_digest or "NOT_RECORDED"
     out = {
@@ -558,11 +564,6 @@ def _extract_quality_facts(conn, task_id: str) -> Dict[str, str]:
         "knowledge": "NOT_RECORDED",
         "memory": "NOT_RECORDED",
     }
-    location = conn.execute(
-        "SELECT p.root_path FROM task t JOIN project p ON p.project_id=t.project_id WHERE t.task_id=?",
-        (task_id,),
-    ).fetchone()
-    task_dir = Path(location[0]) / ".tp-spec" / "tasks" / task_id if location and location[0] else None
     dev_stale = development_status != "CURRENT"
     from .orchestration_policy import resolve_task_mode
     task_row = conn.execute('SELECT * FROM task WHERE task_id=?', (task_id,)).fetchone()
@@ -576,7 +577,7 @@ def _extract_quality_facts(conn, task_id: str) -> Dict[str, str]:
         verified = event_policies.load_current_verification(conn, task_id, task_dir) if task_dir else None
         facts[0]['_current_verification'] = {**verified.detail, 'event_id': int(verified.row['id'])} if verified else {}
         candidate = orchestration._development_change_set_binding(facts[1], task=facts[0])
-        facts[0]['_current_change_set'] = facts[0].get('_current_change_set') or (orchestration._current_bound_change_set(candidate) if candidate else {})
+        facts[0]['_current_change_set'] = facts[0].get('_current_change_set') or (orchestration._current_bound_change_set(candidate, task_dir) if candidate else {})
         current_delivery = orchestration._delivery_completion_event(facts[1], task_dir, task=facts[0])
         out['verification'] = quick.get('verification_decision', 'NOT_RECORDED')
         from .change_set import same_bound_product_content
@@ -750,8 +751,13 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
         raise ValueError('TASK_RETIRED: frozen historical projections cannot be rebuilt')
     from . import waiting
     state = str(task["current_state"] or "")
+    from .orchestration_policy import resolve_task_obligations
+    mode = resolve_task_obligations(dict(task), events)
+    if mode['issues']:
+        raise ValueError('; '.join(mode['issues']))
+    video = mode["domain"] == "video"
     waiting_fact = waiting.active_wait(events, state)
-    if state in {"NEW", "ACTIVE"}:
+    if state in {"NEW", "ACTIVE"} and not video:
         waiting_fact = waiting.result_wait(conn, task_id, events)
     blockers = _extract_blockers(conn, task_id, state, waiting_fact)
     created_date = ""
@@ -759,14 +765,20 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
         created_date = task["created_at"][:10]
     from .execution import read_execution
     from .task_views import execution_brief, excerpt, TERMINAL
-    execution = execution_brief(read_execution(conn, task, rows=events))
-    from .orchestration_policy import resolve_task_obligations
-    mode = resolve_task_obligations(dict(task), events)
-    if mode['issues']:
-        raise ValueError('; '.join(mode['issues']))
+    facts = read_execution(conn, task, rows=events)
+    execution = execution_brief(facts)
     latest = dict(events[-1]) if events else {}
     next_role = ""
-    if state not in TERMINAL:
+    media = None
+    if video:
+        from . import video_records
+        root = conn.execute("SELECT root_path FROM project WHERE project_id=?", (task["project_id"],)).fetchone()
+        directory = Path(root["root_path"]) / ".tp-spec" / "tasks" / task_id if root and root["root_path"] else None
+        route = video_records.route(conn, {**dict(task), "_progress_facts": {"execution": facts}},
+                                    [dict(row) for row in events], directory, {})
+        next_role = route["next_responsibility"] or ""
+        media = route["media"]
+    elif state not in TERMINAL:
         # A recorded coordinator is not an inferred next specialist. Without an
         # explicit wait/step, leave the projection unknown; workflow next owns routing.
         fallback = "unknown" if execution.get("coordinator") else task["owner_role"] or DEFAULT_OWNER_ROLE
@@ -785,14 +797,15 @@ def render_projection(conn, task) -> Tuple[str, str, List[str]]:
         current_state=task["current_state"] or "NEW",
         current_phase=task["current_stage"] or "intake",
         current_owner=task["owner_role"] or DEFAULT_OWNER_ROLE,
-        risk_level=task['risk_level'] if mode['workflow_mode'] == 'quick' else (task["risk_level"] or "L1"),
-        flow_level=task['flow_level'] if mode['workflow_mode'] == 'quick' else (task["flow_level"] or "L1"),
+        risk_level=task['risk_level'] if video or mode['workflow_mode'] == 'quick' else (task["risk_level"] or "L1"),
+        flow_level=task['flow_level'] if video or mode['workflow_mode'] == 'quick' else (task["flow_level"] or "L1"),
         blockers=blockers,
         findings=_extract_findings(conn, task_id),
         scope_changes=_extract_scope_changes(conn, task_id),
-        quality_facts=_extract_quality_facts(conn, task_id),
+        quality_facts={} if video else _extract_quality_facts(conn, task_id),
         next_responsibility=next_role,
-        presentation={**{key: mode[key] for key in ('workflow_mode', 'mode_source', 'applicable_obligations')},
+        presentation={**{key: mode[key] for key in ('domain', 'workflow_mode', 'mode_source', 'applicable_obligations')},
+                      **({"media": media} if video else {}),
                       "fact_revision": len(events), "execution": execution,
                       "last_activity": {"event_id": latest.get("id"), "actor": latest.get("actor_role"),
                                         "time": latest.get("created_at"), "summary": excerpt(latest.get("summary"))}},

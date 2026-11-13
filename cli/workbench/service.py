@@ -7,13 +7,17 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import sqlite3
 import sys
+import tempfile
 from typing import Any, Iterator
+import uuid
 
 from cli import db as dbmod, environment, event_policies, record_first
 from cli.path_identity import canonical_path, path_identity_key, same_path
+from cli.project_surface import project_path_issue
 from cli.skill_catalog import SkillCatalogError, read_skill_document
 from cli.version import active_version
 from . import snapshot
@@ -32,6 +36,26 @@ class ReadError(Exception):
     def __init__(self, code: str, message: str, status: int = 503):
         super().__init__(message)
         self.code, self.status = code, status
+
+
+@contextmanager
+def _note_lock(path: Path, *, write: bool) -> Iterator[None]:
+    # The lock stays at a stable path while the note file is atomically replaced.
+    with path.open("a+b" if write else "rb") as stream:
+        if os.name == "nt":
+            import msvcrt
+
+            stream.seek(0)
+            msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX if write else fcntl.LOCK_SH)
+            yield
 
 
 @dataclass(frozen=True)
@@ -109,7 +133,8 @@ class WorkbenchService:
         return {"schema": SCHEMA, "ready": True, "instance_id": self.instance_id,
                 "source_root": str(BASE_ROOT), "version": active_version(BASE_ROOT),
                 "python_executable": sys.executable, "user_root": str(environment.user_tp_spec_root()),
-                "registry_path": str(dbmod.registry_read_path()), "read_only": True}
+                "registry_path": str(dbmod.registry_read_path()), "read_only": False,
+                "runtime_read_only": True, "task_notes_writable": True}
 
     def _context(self, key: str) -> Context:
         contexts, problems = read_contexts()
@@ -152,6 +177,85 @@ class WorkbenchService:
         if row is None:
             raise ReadError("TASK_NOT_FOUND", "当前项目内不存在该 Task；不会搜索或使用其他项目同名任务", 404)
         return dict(row)
+
+    def _task_note_data(self, context: Context, task_id: str, *, update: tuple[str, str] | None = None) -> dict[str, str]:
+        root = Path(context.project_root)
+        identity = {"project_id": context.project_id, "task_id": task_id}
+        if Path(task_id).name != task_id or task_id in {".", ".."}:
+            raise ReadError("NOTE_STORAGE_UNAVAILABLE", "任务 ID 无法定位到单个任务目录。", 409)
+        task_dir = self._task_dir(context, task_id)
+        if project_path_issue(task_dir, root, directory=True) or not task_dir.is_dir():
+            raise ReadError("NOTE_STORAGE_UNAVAILABLE", "现有任务目录不可用，无法保存或读取备注。", 409)
+        directory = task_dir / ".tp-spec"
+        path = directory / "workbench-note.json"
+        lock = path.with_suffix(".lock")
+        empty = {**identity, "note": "", "revision": "0"}
+
+        def check_path(target: Path) -> None:
+            if project_path_issue(target, root):
+                raise ReadError("NOTE_STORAGE_UNAVAILABLE", "任务备注目录或文件不可用，请检查项目内的存储路径。")
+
+        def read() -> dict[str, str]:
+            check_path(path)
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                return empty
+            if (not isinstance(data, dict) or any(data.get(k) != v for k, v in identity.items())
+                    or not isinstance(data.get("note"), str)
+                    or not isinstance(data.get("revision"), str) or not data["revision"]):
+                raise ValueError("Invalid note record")
+            data["note"].encode("utf-8")
+            return data
+
+        try:
+            if update is None:
+                check_path(path)
+                if not path.exists():
+                    data = empty
+                else:
+                    # Windows readers can block replacement while holding the note open.
+                    check_path(lock)
+                    try:
+                        with _note_lock(lock, write=False):
+                            data = read()
+                    except FileNotFoundError:
+                        data = read()  # A copied note can be read before its first local save.
+            else:
+                note, revision = update
+                check_path(lock)
+                directory.mkdir(exist_ok=True)
+                with _note_lock(lock, write=True):
+                    data = read()
+                    if revision != data["revision"]:
+                        raise ReadError("NOTE_CONFLICT", "任务备注已被修改，请重新读取后保存。", 409)
+                    if note != data["note"]:
+                        data = {**identity, "note": note, "revision": uuid.uuid4().hex}
+                        temporary = None
+                        try:
+                            with tempfile.NamedTemporaryFile(dir=directory, prefix=".note-", delete=False) as stream:
+                                temporary = Path(stream.name)
+                                stream.write((json.dumps(data, ensure_ascii=False) + "\n").encode("utf-8"))
+                                stream.flush()
+                                os.fsync(stream.fileno())
+                            check_path(path)
+                            os.replace(temporary, path)
+                        finally:
+                            if temporary is not None:
+                                temporary.unlink(missing_ok=True)
+        except (ValueError, RecursionError) as exc:
+            raise ReadError("NOTE_STORAGE_INVALID", "任务备注数据无法读取，请检查保存文件。") from exc
+        except OSError as exc:
+            raise ReadError("NOTE_STORAGE_UNAVAILABLE", "任务备注文件暂时无法访问。") from exc
+        return data
+
+    def task_note(self, key: str, task_id: str, *, update: tuple[str, str] | None = None) -> dict[str, str]:
+        context = self._context(key)
+        with self._database(context) as conn:
+            self._task(conn, context, task_id)
+        data = self._task_note_data(context, task_id, update=update)
+        return {"schema": SCHEMA, "context_key": key, "task_id": task_id,
+                "note": data["note"], "revision": data["revision"]}
 
     @staticmethod
     def _task_revision(conn: sqlite3.Connection, task: dict[str, Any]) -> str:
@@ -314,7 +418,7 @@ class WorkbenchService:
             note="知识索引、日志和任务记录分别只读；跨来源与实时文件不承诺原子快照。人工搜索和页面全文读取不采集使用量。")
         return result
 
-    def project_view(self, key: str) -> dict[str, Any]:
+    def project_view(self, key: str, *, include_notes: bool = False) -> dict[str, Any]:
         started, context = timestamp(), self._context(key)
         with self._database(context) as conn:
             data = snapshot.build_project_snapshot(context.workspace_root,
@@ -322,6 +426,12 @@ class WorkbenchService:
                 registry_entries=[context.registry_entry()])
             if data.get("project", {}).get("runtime_status") != "available":
                 raise ReadError("PROJECT_READ_FAILED", "项目快照未能读取当前 Runtime；请检查数据库结构")
+        if include_notes:
+            for row in data["task_index"]:
+                try:
+                    row["note"] = self._task_note_data(context, row["task_id"])["note"]
+                except ReadError:
+                    row["note"] = None
         return self._response(data, context, started, database=True)
 
     def task_view(self, key: str, task_id: str) -> dict[str, Any]:

@@ -131,8 +131,8 @@ async function start() {
   const target = `http://127.0.0.1:${ready.port}`;
   const response = await fetch(`${target}/api/health`, { signal: AbortSignal.any([startupAbort.signal, AbortSignal.timeout(5000)]) });
   const health = await response.json();
-  if (!response.ok || health.instance_id !== instance || realpathSync(health.source_root) !== root || !health.read_only)
-    throw new Error('Python 健康检查未确认本次只读实例。');
+  if (!response.ok || health.instance_id !== instance || realpathSync(health.source_root) !== root || health.runtime_read_only !== true)
+    throw new Error('Python 健康检查未确认本次实例及 Runtime 只读边界。');
   if (closing) return;
   let candidate = options.port;
   while (!closing) {

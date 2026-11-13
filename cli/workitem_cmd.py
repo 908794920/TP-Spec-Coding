@@ -219,6 +219,8 @@ def cmd_workitem_receive(args) -> int:
             raise ValueError("WORK_RESULT_REQUIRED")
         if args.result_event != unit["result"]["event_id"]:
             raise ValueError("WORK_RESULT_CHANGED: receive the latest exact result event")
+        if unit["receipt"] and facts.get("domain") == "video":
+            return {"item_id": args.id, "event_id": unit["receipt"]["event_id"], "replayed": True}
         units.require_dependencies(conn, args.task, item)
         units.validate_result(conn, args.task, unit, source_output=True)
         if unit["receipt"]:

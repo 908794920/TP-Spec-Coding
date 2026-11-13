@@ -179,7 +179,15 @@ tp-spec knowledge read --workspace-root <登记工作区> --document-id <返回r
 `report task-summary --task <TASK> --db <DB>`、`report stage-time --task <TASK> --db <DB>`、`workitem list --task <TASK> --db <DB>` 只读账本，不启动工作台、不修订 WorkItem 或历史工作段。路由进度与本地工作台复用相同解释：
 
 - WorkItem 的待处理/已认领/已完成仅表示该任务里程碑登记。Task 已结单而 WorkItem 未完成、已完成项仍依赖未完成/不存在项、历史任务仍有 ACTIVE 项或损坏依赖，显示 `NEEDS_RECONCILIATION`，不自动补完成或计算项目百分比。旧式同任务依赖由 `--depends` 表达；采用显式计划的范围/依赖、Fix、结果与候选使用 [Work 结果契约](../WORK_UNITS.md)。跨任务等待沿用已有 `block/resume`，不新增调度器。
-- WP-0 等子范围结单不证明大型项目完成；取消/退休记录保持历史性质，不继续派发。非 Git 原型的获准 SHA-256 冻结仍按 canonical 当前范围及原证据表达；声明不代替哈希/授权核验，不强迫初始化 Git 或软件交付 Complete。
+- WP-0 等子范围结单不证明大型项目完成；取消/退休记录保持历史性质，不继续派发。非 Git 原型的获准 SHA-256 冻结仍按 canonical 当前范围及原证据表达；真实非 Git 运维交付可使用下述制品主体。
+
+### 非 Git 运维交付主体
+
+对于没有已登记 Git 产品范围的软件运维 Task，把本次实际交付的证据组织为 Task 内的 JSON 清单，再由实际开发执行者通过 `task checkpoint --phase development --ops-subject <Task 相对路径>` 绑定主体。已有 BLOCKED Task 先按等待类型使用 `task resume` 和真实解除证据。
+
+清单包括 `artifact_manifest`（制品 SHA256SUMS 的相对路径）、`image_id`（不可变镜像 SHA-256 ID 或带 digest 的镜像引用）、`deployment_config`（最终应用配置的本地记录）和 `cutover_receipts`（切换与验证回执的相对路径数组）。清单与每个引用文件都进入主体和终态校验。离线制品的本地校验清单与目标机校验回执分别记录，Runtime 只读取本地文件。最终配置以现场已保存的切换证据为准，引用时保留原始出处。
+
+后续沿 `workflow next`、`task verify`、适用审查、`task delivery-converge`、适用 Knowledge／Memory 与 `task complete --check` 继续。仍未实测的项使用 `--unverified` 披露，Owner 豁免沿既有验收记录。缺失或变动的主体文件需重新核对及登记，相关专业结果按受影响范围复验。历史 Git 任务继续使用 Git ChangeSet。
 - 工作段的 Task、角色、执行者、模型和时间只来自真实记录；未知不补造。ACTIVE 或未闭合 START 不能证明进程运行，END 也不能证明所有相关进程已停止。无可靠进程观察统一为 `UNKNOWN`，同时显示最后工作段记录、未闭合数和损坏/未配对/无法计时诊断。
 - START/END 按已记录的 Task、session、角色与执行者配对，必要时核对 `start_event_id`。重复、损坏或身份冲突不按最后一条修复；仅明确且唯一的旧记录可配对。无时区、时间倒退或缺失 END 不估算工作时长。已配对间隔按状态边界分摊，可能跨角色重叠；`active` 是已记录间隔之和，不是 CPU/模型工时，也不是 CLI 内部分段计时或 Token。等待结束原因不提供等待时长，未观察到的值显示 `-`。
 

@@ -77,6 +77,13 @@ const roleNames: Record<string, string> = {
     'tp-test-engineer': '测试工程师',
     'tp-code-reviewer': '代码审查员',
     'tp-integration-engineer': '集成交付工程师',
+    'tp-video-production': '视频制作',
+    'tp-video-producer': '制片统筹',
+    'tp-video-director': '编导',
+    'tp-video-visual-artist': '视觉设计与镜头制作',
+    'tp-video-sound-designer': '声音制作',
+    'tp-video-editor': '剪辑后期',
+    'tp-video-reviewer': '成片质检',
 };
 const explanations: Record<string, Record<string, string>> = {
     health: { ok: '正常', degraded: '降级', unavailable: '不可用' },
@@ -97,16 +104,19 @@ const explanations: Record<string, Record<string, string>> = {
     review_kind: { VERIFICATION: '验证', CODE: '代码' },
     severity: { info: '提示', warning: '告警', error: '错误' },
     completeness: { complete: '完整', partial: '部分' },
-    event_type: { FACT: '事实记录', CHECKPOINT: '检查点', VERIFICATION_COMPLETED: '验证完成', REVIEW_COMPLETED: '审查完成', OWNER_ACCEPTANCE_DECISION: '人工验收决定' },
+    event_type: { FACT: '事实记录', CHECKPOINT: '检查点', VERIFICATION_COMPLETED: '验证完成', REVIEW_COMPLETED: '审查完成',
+        OWNER_ACCEPTANCE_DECISION: '人工验收决定', VIDEO_EXPORT_RECORDED: '媒体导出', VIDEO_QC_RECORDED: '媒体检查', VIDEO_DELIVERY_RECORDED: '媒体交付' },
     operation: { CHECKPOINT: '检查点', VERIFY: '验证', REVIEW: '审查', checkpoint: '检查点', verify: '验证', review: '审查', SCOPE_CHANGE: '范围变更' },
-    phase: { intake: '受理', planning: '规划', development: '开发', verification: '验证', VERIFYING: '验证中', delivery: '交付', CLOSING: '结单中', COMPLETED: '已完成' },
+    phase: { intake: '受理', planning: '规划', development: '开发', verification: '验证', VERIFYING: '验证中',
+        creative: '创作', asset_production: '素材制作', post_production: '剪辑后期', media_quality: '成片质检',
+        delivery: '交付', CLOSING: '结单中', COMPLETED: '已完成' },
     from_stage: { planning: '规划', development: '开发', verification: '验证', delivery: '交付' },
     to_stage: { planning: '规划', development: '开发', verification: '验证', delivery: '交付' },
     mode: { default: '默认', conditional: '条件性', accept: '实际接受', defer: '延期', waive: '豁免' },
     result_status: { COMPLETED: '已完成', ACTIVE: '进行中', PENDING: '待处理', NOT_RECORDED: '未记录' },
     status_class: { ok: '正常', warning: '告警', unsafe: '不安全' },
     type: { local_file: '本地文件' },
-    domain: { software: '软件' },
+    domain: { software: '软件', video: '视频制作' },
     /* A knowledge scope id as it appears inside a bare id array — the one place where a list holds raw
        ids instead of records. This entry reaches the screen only through `FactValue`'s primitive-array
        branch, which applies the PARENT field name to each element. */

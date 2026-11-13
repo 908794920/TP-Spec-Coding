@@ -1,7 +1,7 @@
 ---
 name: technical-review
 display_name: 独立技术审查
-version: 5.3.8
+version: 5.4.0
 description: 对真实 Diff 和 subject 做独立代码审查；保留 Finding、定位、范围、证据及正式 Review 边界。
 ---
 
@@ -14,7 +14,7 @@ description: 对真实 Diff 和 subject 做独立代码审查；保留 Finding�
 
 ## Review Contract
 1. 固定 review subject（workspace snapshot / commit / base-head digest）；subject 实质变化后旧 PASS 不可复用。
-2. Reviewer 默认只读，不修改文件、不创建 commit，不把 Review 变成第二轮 Development。Reviewer 逻辑身份与实现者隔离；只读取 canonical Requirement、Architecture、Project Rules、Diff、Test Evidence 与必要代码事实。
+2. Reviewer 默认只读，不修改文件、不创建 commit，不把 Review 变成第二轮 Development。Reviewer 逻辑身份与实现者隔离；读取当前有效需求、项目规则、Diff 与必要代码事实，按实际影响核对已有架构和测试证据。正式 Task 的需求以 canonical Requirement 为准。
 3. 先检查完整真实 Diff、必要上下文、调用方和相关测试，不只相信实现摘要；核对测试的成功/失败预期是否有当前需求、契约或真实缺陷依据，不能用自拟测试通过为自增规则背书。
 4. Finding 只有同时满足以下条件才成立：由当前变更引入，或本 Task 明确要求修复但仍未满足；对 correctness/security/performance/maintainability 有实际影响；场景或调用路径可证明；问题离散且可行动；作者知道后大概率会修。
 5. speculative concern、范围外 pre-existing issue、已获准且符合要求的刻意行为变化和不影响理解的 style nit 不作为 Finding。没有确定 Finding 时不修改代码，输出 `No findings` / PASS 是正常结论。
@@ -38,7 +38,7 @@ AUTO_REVIEW / UltraReview 由本角色主持。并行 reviewer 必须隔离且�
 Test Engineer 的真实测试 Evidence 是输入之一；Code Reviewer 不重新执行整套测试，也不能用静态审查宣称测试 PASS。对于 UI 变更，源码/DOM/CSS 静态结构契约不能替代视觉 Evidence；Reviewer 核对 Visual Manifest 是否绑定当前变更与相关 AC，但视觉是否通过仍由真实浏览器验证事实决定。Reviewer 发现需执行验证的疑点时明确返回测试建议/要求。
 
 ## Runtime
-只通过 trusted review/result contract 写正式 Review 事实；不得因为自己是 Reviewer 直接完成 Task。
+普通局部审查直接报告证据与结论。适用正式 Task 时，只通过 trusted review/result contract 写正式 Review 事实；Reviewer 不自行完成 Task。
 
 ## Finding、范围与结果
 每条 Finding 写清当前需求/AC 或既定契约、受影响调用/场景、实际影响、证据与最小修复范围，定位无法确定则保持 unlocated。原有缺陷若是本 Task 明确要求修复而仍未满足，可作为该既定要求的缺口；普通历史问题不能冒充当前变更引入。
@@ -47,4 +47,4 @@ Test Engineer 的真实测试 Evidence 是输入之一；Code Reviewer 不重新
 
 正式审查使用现有 trusted `review` 命令/result contract，绑定 subject 与 evidence；按该接口选择 PASS / REVISE / BLOCKED / NEEDS_FIX / FAIL。**不得用 `task verify` 代替 Review Result**，也不因为静态审查通过宣称测试已经执行。没有确定 Finding 可输出 No findings / PASS；缺关键证据或隔离条件保持待核验，不制造假 PASS。
 
-正式记录有 Finding 时提供 `review record --findings evidence/findings.json --findings-count N`；阻塞项对应已有 AC、矩阵中的需求来源、实际影响、关系及证据。NEEDS_FIX/FAIL/REVISE 不能仅引用范围外建议。结构和来源边界见 [授权与 Finding 契约](../../../docs/security-change-authority.md#5-review-finding-契约)。
+正式记录有 Finding 时提供 `review record --findings evidence/findings.json --findings-count N`。阻塞项引用已有 AC 及其矩阵来源，或以 `requirement_ref=event:<ID>` 引用同 Task 已登记且仍有效的原始 `HUMAN_REQUIREMENT`，并提供实际影响、关系及证据。NEEDS_FIX/FAIL/REVISE 不能仅引用范围外建议。结构和来源边界见 [授权与 Finding 契约](../../../docs/security-change-authority.md#5-review-finding-契约)。

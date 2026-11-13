@@ -133,6 +133,7 @@ export const ExecutionWorkflow = forwardRef<WorkflowHandle, WorkflowProps>(({ wo
     const issues = strings(facts.issues);
     const noPlan = !facts.status || facts.status === 'NOT_RECORDED';
     const quick = workflow.workflow_mode === 'quick';
+    const video = workflow.domain === 'video';
     const retired = workflow.retired === true;
     const retirementNotice = retired && <Alert type="info" showIcon title="已退休 · 历史只读"
       description={`行政退休与流程完成分别记录；最后正式工作流状态：${stateLabel('task', task.state)}。未验项与历史证据保持原记录。`}/>;
@@ -155,7 +156,7 @@ export const ExecutionWorkflow = forwardRef<WorkflowHandle, WorkflowProps>(({ wo
         return <section className="workflow-strip execution-workflow" aria-label="任务评估与流程进展">
           {retirementNotice}
           {quick ? <QuickWorkflowSummary workflow={workflow} terminal={terminal} onDocuments={onDocuments}/>
-            : <div className="task-assessment"><div><span className="eyebrow">任务评估</span><strong className="assessment-level">{text(workflow.effective_level) || '等级未解析'}</strong></div>
+            : <div className="task-assessment"><div><span className="eyebrow">{video ? '任务领域' : '任务评估'}</span><strong className="assessment-level">{video ? '视频制作' : text(workflow.effective_level) || '等级未解析'}</strong></div>
             <p>阶段推进、角色工作和事件明细见下方工作关系。</p></div>}
           <div className="execution-summary">
             <p><span>当前记录阶段</span><strong>{retired ? '已退休，历史只读' : terminal ? '任务已结束' : stageLabel(recordedStage) || text(task.phase) || '尚未记录'}</strong></p>
@@ -164,19 +165,19 @@ export const ExecutionWorkflow = forwardRef<WorkflowHandle, WorkflowProps>(({ wo
           <Fields value={{ ...coordination, current_roles: retired ? '无（已退休，历史只读）' : terminal ? '无（任务已结束）' : currentRoles.length ? currentRoles : '未登记', next_responsibility: nextResponsibility }}/>
           {!!latestBlockers.length && <div className="task-blocker" role="status"><strong>任务阻塞</strong>{latestBlockers.map((blocker, index) => <p key={index}>{text(blocker.reason) || '原因未记录'}</p>)}</div>}
           {!!text(workflow.error) && <Alert type="warning" showIcon title="流程路由未解析" description={text(workflow.error)}/>}
-          <Disclosure label="流程与评估来源"><p>当前展示已有事件；此任务未登记独立执行计划，不补造步骤起止或角色参与记录。</p><Fields value={quick ? { phase: task.phase, route: workflow.route } : { risk_level: task.risk_level, flow_level: task.flow_level, effective_level: workflow.effective_level, phase: task.phase, route: workflow.route }}/></Disclosure>
+          <Disclosure label="流程与评估来源"><p>当前展示已有事件；此任务未登记独立执行计划，不补造步骤起止或角色参与记录。</p><Fields value={quick || video ? { phase: task.phase, route: workflow.route } : { risk_level: task.risk_level, flow_level: task.flow_level, effective_level: workflow.effective_level, phase: task.phase, route: workflow.route }}/></Disclosure>
         </section>;
     }
     return <section className="workflow-strip execution-workflow" aria-label="任务评估与执行步骤">
       {retirementNotice}
       {quick ? <QuickWorkflowSummary workflow={workflow} terminal={terminal} onDocuments={onDocuments}/>
-        : <><div className="task-assessment"><div><span className="eyebrow">任务评估</span><strong className="assessment-level">{text(workflow.effective_level) || '等级未解析'}</strong></div>
+        : <><div className="task-assessment"><div><span className="eyebrow">{video ? '任务领域' : '任务评估'}</span><strong className="assessment-level">{video ? '视频制作' : text(workflow.effective_level) || '等级未解析'}</strong></div>
         <div className="assessment-reason">{text(assessment.summary) ? <><span className="muted">计划登记时的评估依据</span><Typography.Paragraph ellipsis={{ rows: 2, expandable: 'collapsible', symbol: expanded => expanded ? '收起' : '展开依据' }}>{text(assessment.summary)}</Typography.Paragraph></> : <><p>未登记结构化评估依据</p><Button size="small" type="link" onClick={onDocuments}>查看当前任务文档</Button></>}
-          {!text(workflow.effective_level) && <p>已记录风险等级：{text(task.risk_level) || '未记录'} · 流程等级：{text(task.flow_level) || '未记录'}</p>}
+          {!video && !text(workflow.effective_level) && <p>已记录风险等级：{text(task.risk_level) || '未记录'} · 流程等级：{text(task.flow_level) || '未记录'}</p>}
         </div></div>
-      <Disclosure label="等级含义与评估来源"><p>L0–L3 表达风险与流程义务，不等同于独立技术难度或工作量评分。</p><Fields value={{ risk_level: task.risk_level, flow_level: task.flow_level,
+      {!video && <Disclosure label="等级含义与评估来源"><p>L0–L3 表达风险与流程义务，不等同于独立技术难度或工作量评分。</p><Fields value={{ risk_level: task.risk_level, flow_level: task.flow_level,
         effective_level: workflow.effective_level, registered_level: plan.effective_level, source_refs: assessment.source_refs,
-        omissions: assessment.omissions }} labels={{ registered_level: '计划登记等级', source_refs: '评估来源', omissions: '省略步骤的评估依据' }}/></Disclosure>
+        omissions: assessment.omissions }} labels={{ registered_level: '计划登记等级', source_refs: '评估来源', omissions: '省略步骤的评估依据' }}/></Disclosure>}
       {!!text(plan.effective_level) && !!text(workflow.effective_level) && plan.effective_level !== workflow.effective_level && <Alert type="warning" showIcon title="当前等级与计划登记等级不同，需复核计划义务" description={`计划登记 ${text(plan.effective_level)}；当前 ${text(workflow.effective_level)}。`}/>}
       </>}
       {(issues.length > 0 || facts.status === 'INVALID') && <Alert type="warning" showIcon title="部分执行事实无法可靠读取" description={issues.join('；') || '执行计划记录异常，不能按正常记录解释。'}/>}

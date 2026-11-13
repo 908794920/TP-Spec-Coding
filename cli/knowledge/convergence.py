@@ -106,15 +106,73 @@ def _locator_fields(task, rows):
     return fields
 
 
-def _event_content(row: dict) -> dict | None:
-    kind, detail = row.get("event_type"), detail_of(row)
-    if kind not in EVENTS:
+def _historical_input_ids(events, locator_fields):
+    from cli import execution, work_units
+
+    by_ref = {f"event:{row['id']}": row for row in events}
+    plan_field = ("detail", "plan", "assessment", "source_refs")
+    inputs = set()
+    for row in events:
+        if row["event_type"] == execution.PLAN and plan_field in locator_fields.get(row["id"], ()):
+            refs = detail_of(row)["plan"]["assessment"]["source_refs"]
+            target_kind = "DELIVERY_RESULT"
+        elif (row["event_type"] == "WORK_SESSION_ENDED"
+              and ("detail", "evidence_refs") in locator_fields.get(row["id"], ())):
+            refs = detail_of(row).get("evidence_refs", [])
+            target_kind = "FACT"
+        elif row["event_type"] == work_units.EVENT:
+            work = work_units.trusted(row)
+            if not work or work["action"] != "create":
+                continue
+            refs = work["spec"]["scope_refs"]
+            target_kind = "FACT"
+        else:
+            continue
+        for ref in refs:
+            target = by_ref.get(ref.strip())
+            if target and target["event_type"] == target_kind and target["id"] < row["id"]:
+                inputs.add(target["id"])
+    return inputs
+
+
+def _historical_input_detail(row, detail):
+    from cli import delivery_contract, event_contract, workflow_controls
+
+    kind = row["event_type"]
+    if event_contract.validate_event_semantics(kind, detail):
         return None
+    if kind == "FACT":
+        # Public FACT keeps its writer identity in the row and carries no owner authority.
+        if (detail.get("producer") != "event_add" or detail.get("operation") != "RECORD"
+                or detail.get("result_status") != "RECORDED" or not row.get("actor_role")):
+            return None
+        payload = {}
+    else:
+        if (workflow_controls.trusted_event_detail(row, event_type=kind, producer="delivery_converge",
+                actor="tp-integration-engineer") is None or detail.get("result_status") != "BLOCKED"
+                or detail.get("delivery_status") != "BLOCKED" or delivery_contract.validate_delivery_result(detail)):
+            return None
+        payload = delivery_content(detail)
+        payload.update({key: detail[key] for key in ("blocker_kind", "recovery_condition", "responsibility")})
+    return {**payload, "producer": detail["producer"], "operation": detail["operation"],
+            "result_status": detail["result_status"], "source_sha256": _source_event_digest(row)}
+
+
+def _event_content(row: dict, *, allow_referenced_history=True) -> dict | None:
+    kind, detail = row.get("event_type"), detail_of(row)
+    history = kind == "DELIVERY_RESULT" or (kind == "FACT" and (
+        detail.get("producer") != "record-first" or str(detail.get("operation")).upper() != "CHECKPOINT"))
+    if history:
+        # Index construction checks the referring field; selected-item reads already have index membership.
+        payload = _historical_input_detail(row, detail) if allow_referenced_history else None
+        if payload is None:
+            return None
+    elif kind not in EVENTS:
+        return None
+    else:
+        payload = {key: detail[key] for key in sorted(PAYLOAD_FIELDS) if key in detail}
     if kind == "WORK_ITEM_RECORDED" and (detail.get("work_payload") or {}).get("action") == "claim":
         return None  # A repeated claim is bookkeeping; results/failures retain real learning inputs.
-    if kind == "FACT" and (detail.get("producer") != "record-first"
-                            or str(detail.get("operation")).upper() != "CHECKPOINT"):
-        return None
     if kind in {"EXECUTION_STEP_RECORDED", "WORK_SESSION_UPDATED", "WORK_SESSION_ENDED"}:
         if not any(detail.get(k) for k in ("findings", "decisions", "result", "evidence_refs", "memory_candidates")):
             return None  # A start/wait/end timestamp alone isn't a new insight.
@@ -122,7 +180,7 @@ def _event_content(row: dict) -> dict | None:
             "work_item_id": row.get("work_item_id"), "phase": row.get("to_stage"),
             "summary": row.get("summary") or "",
             "evidence": [row["evidence_path"]] if row.get("evidence_path") else [],
-            "detail": {key: detail[key] for key in sorted(PAYLOAD_FIELDS) if key in detail}}
+            "detail": payload}
 
 
 def scope_content(task) -> dict:
@@ -225,13 +283,16 @@ def _historical_control_event(ref: str, events: dict) -> dict | None:
             return None
         if not workflow_controls.workflow_confirmation_matches(row, binding):
             return None
+    return {"event_id": row["id"], "event_type": kind, "sha256": _source_event_digest(row),
+            "reason": "trusted historical control event checked; not a learning input, current PASS or authorization"}
+
+
+def _source_event_digest(row):
     # Bind source facts, not optional telemetry columns omitted by orchestration.
-    source = {key: row.get(key) for key in (
+    return digest({key: row.get(key) for key in (
         "id", "task_id", "event_type", "from_state", "to_state", "from_stage", "to_stage",
         "actor_role", "actor_agent", "model_used", "work_item_id", "reason_code", "summary",
-        "detail_json", "evidence_path", "workflow_version", "created_at")}
-    return {"event_id": row["id"], "event_type": kind, "sha256": digest(source),
-            "reason": "trusted historical control event checked; not a learning input, current PASS or authorization"}
+        "detail_json", "evidence_path", "workflow_version", "created_at")})
 
 
 def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dict:
@@ -249,6 +310,7 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
     events = [dict(row) for row in events if row["task_id"] == task["task_id"]]
     events_by_id = {row["id"]: row for row in events}
     locator_fields = _locator_fields(task, events)
+    historical_inputs = _historical_input_ids(events, locator_fields)
     items, issues, contents = [], [], {}
     refs = {name for name in FILES if (task_dir / name).exists()}
     strict_refs = set(refs)
@@ -267,7 +329,7 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
         row = dict(value)
         if row.get("task_id") != task["task_id"]:
             continue
-        content = _event_content(row)
+        content = _event_content(row, allow_referenced_history=row["id"] in historical_inputs)
         if content is None:
             continue
         fingerprint = digest(content)

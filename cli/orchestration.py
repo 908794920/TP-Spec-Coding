@@ -390,6 +390,19 @@ def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_pro
         ).fetchall()
         task, facts = dict(row), [dict(e) for e in events]
         task.update(orchestration_policy.resolve_task_mode(task, facts))
+        if task["domain"] != "software":
+            from . import event_policies, video_records
+            task["_retired"] = event_policies.is_task_retired(conn, task_id)
+            if include_progress:
+                from .report_cmd import task_progress_facts
+                task["_progress_facts"] = task_progress_facts(conn, task, events=facts, retired=task["_retired"])
+            if task["domain"] == "video" and not task["issues"]:
+                catalog = load_role_catalog()
+                role_map = {item["workflow_role"]: item for item in catalog["roles"]}
+                project_root = task.get("project_root_path")
+                directory = task_dir or (Path(project_root) / ".tp-spec" / "tasks" / task_id if project_root else None)
+                task["_video_route"] = video_records.route(conn, task, facts, directory, role_map)
+            return task, facts
         task["_knowledge_work_items"] = [dict(item) for item in conn.execute(
             "SELECT * FROM work_item WHERE task_id=? ORDER BY item_id", (task_id,))]
         task["_orchestration_overrides"] = orchestration_policy.read_rows(conn)
@@ -612,11 +625,13 @@ def _development_change_set_binding(events: Iterable[Dict[str, Any]], task=None)
     }
 
 
-def _current_bound_change_set(binding: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    if not binding.get("change_set_id") or not binding.get("repo_roots"):
+def _current_bound_change_set(binding: Dict[str, Any], task_dir: Path | None = None) -> Optional[Dict[str, Any]]:
+    from .change_set import capture_bound_product, is_ops_subject
+    if not binding.get("change_set_id") or (not binding.get("repo_roots") and not is_ops_subject(binding["detail"])):
         return None
-    from .change_set import capture_change_set
-    return capture_change_set(binding["repo_roots"])
+    if task_dir is None and is_ops_subject(binding["detail"]):
+        return None
+    return capture_bound_product(binding["detail"], task_dir, repo_roots=binding["repo_roots"])
 
 
 def _stage_completion_event(stage: str, events: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -1349,6 +1364,13 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                   _facts: Optional[Tuple[Dict[str, Any], List[Dict[str, Any]]]] = None,
                   task_dir: Optional[Path] = None) -> Dict[str, Any]:
     root = _root(base_root)
+    task, events = _facts if _facts is not None else _load_task_facts(task_id, db_path, task_dir=task_dir)
+    if task.get("domain") != "software":
+        if task.get("issues"):
+            raise OrchestrationError("; ".join(task["issues"]))
+        if str(task.get("base_version") or "") != active_version(root):
+            raise OrchestrationError(f"task contract {task.get('base_version')!r} != active {active_version(root)!r}; migrate first")
+        return task["_video_route"]
     contract = load_contract(root)
     catalog = load_role_catalog(root)
     allowed_set = None if allowed_effects is None else {str(x) for x in allowed_effects}
@@ -1356,7 +1378,6 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
         unknown_allowed = sorted(allowed_set - KNOWN_EFFECTS)
         if unknown_allowed:
             raise OrchestrationError(f"unknown allowed effects: {unknown_allowed}")
-    task, events = _facts if _facts is not None else _load_task_facts(task_id, db_path, task_dir=task_dir)
     contract = orchestration_policy.resolve(contract, catalog, task["_orchestration_overrides"],
                                             project_id=str(task["project_id"]), task_id=task_id)
     task["_policy_sources"] = contract["_policy_sources"]
@@ -1550,11 +1571,13 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
     development_binding = _development_change_set_binding(events)
     # Final scope checks also run for legacy bindings without repository locators.
     known_scope = delivery_contract.repository_scope(events)
-    if development_binding and development_binding.get("change_set_id") and development_binding.get("repo_roots"):
+    from .change_set import is_ops_subject
+    if development_binding and development_binding.get("change_set_id") and (
+            development_binding.get("repo_roots") or is_ops_subject(development_binding["detail"])):
         if int(development_binding["event"]["id"]) <= known_scope["scope_event_id"]:
             return _full_repository_scope_wait(task, level, policy)
         try:
-            current_change_set = _current_bound_change_set(development_binding)
+            current_change_set = _current_bound_change_set(development_binding, task_dir)
         except Exception as exc:
             raise OrchestrationError(f"CHANGE_SET_UNAVAILABLE: {exc}") from exc
         task["_current_change_set"] = current_change_set
@@ -1812,12 +1835,14 @@ def _resolve_quick_route(task, events, role_map, *, policy, allowed_effects):
                 action='await_confirmation',confirmation_policy=policy,confirmation_required=True,
                 confirmation_reason='MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION',confirmation_binding=material,
                 required_effects=['repo_mutation'],allowed_effects=allowed_effects,reason_codes=['MATERIAL_DECISION_RETAINED'])
-    if not development or not development.get('change_set_id') or not development.get('repo_roots'):
+    from .change_set import is_ops_subject
+    if not development or not development.get('change_set_id') or (
+            not development.get('repo_roots') and not is_ops_subject(development['detail'])):
         task['_quick_status']['verification_current'] = False
         if task['_quick_status']['verification_decision'] == 'PASS':
             task['_quick_status']['verification_decision'] = 'PASS_STALE'
         return dispatch('development', ['CHANGE_SET_REQUIRED'])
-    snapshot = _current_bound_change_set(development)
+    snapshot = _current_bound_change_set(development, directory)
     task['_current_change_set'] = snapshot
     from .change_set import same_bound_product_content
     current_verification = task.get('_current_verification') or {}
@@ -1945,8 +1970,18 @@ def resolve_progress(
     rather than introducing a second workflow state machine.
     """
     root = _root(base_root)
-    contract = load_contract(root)
     catalog = load_role_catalog(root)
+    task, events = _load_task_facts(task_id, db_path, include_progress=True, connection=connection, task_dir=task_dir)
+    if task["domain"] != "software":
+        from .execution import progress_view
+        role_map = {row["workflow_role"]: row for row in catalog["roles"]}
+        route = resolve_route(task_id, base_root=root, _facts=(task, events), task_dir=task_dir)
+        facts = task["_progress_facts"]
+        return {**facts, **progress_view(facts["execution"], effective_level=None, role_map=role_map, route=route),
+                "domain": "video", "workflow_mode": None, "mode_source": None,
+                "applicable_obligations": route["applicable_obligations"],
+                "media": route["media"], "retired": task["_retired"]}
+    contract = load_contract(root)
     presentation = contract.get("presentation") or {}
     stage_presentation = presentation.get("stages") or {}
     action_presentation = presentation.get("actions") or {}
@@ -1956,7 +1991,6 @@ def resolve_progress(
         for item in (catalog.get("roles") or [])
         if isinstance(item, dict) and item.get("workflow_role")
     }
-    task, events = _load_task_facts(task_id, db_path, include_progress=True, connection=connection, task_dir=task_dir)
     contract = orchestration_policy.resolve(contract, catalog, task["_orchestration_overrides"],
                                             project_id=str(task["project_id"]), task_id=task_id)
     execution_facts = task["_progress_facts"]["execution"]

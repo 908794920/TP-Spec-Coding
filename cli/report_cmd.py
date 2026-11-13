@@ -358,7 +358,7 @@ def cmd_report_blocked(args) -> int:
             duration = (block_end - block_start).total_seconds() if block_start and block_end else None
             print(
                 f"{t['task_id']:<20} {t['project_id']:<12} {t['current_state']:<16} "
-                f"{t['risk_level']:<4} {_fmt_duration(duration):>16} {block_ev['summary'] if block_ev else ''}"
+                f"{t['risk_level'] or '-':<4} {_fmt_duration(duration):>16} {block_ev['summary'] if block_ev else ''}"
             )
         return 0
     finally:

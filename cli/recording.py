@@ -52,7 +52,8 @@ class LogicalRequest:
             return None
         rows = conn.execute(
             "SELECT * FROM task_event WHERE task_id=? "
-            "AND event_type IN ('FACT','VERIFICATION_COMPLETED','TASK_MODE_SELECTED','WORKFLOW_CONFIRMATION') ORDER BY id", (self.task_id,))
+            "AND event_type IN ('FACT','VERIFICATION_COMPLETED','TASK_MODE_SELECTED','WORKFLOW_CONFIRMATION',"
+            "'VIDEO_EXPORT_RECORDED','VIDEO_QC_RECORDED','VIDEO_DELIVERY_RECORDED') ORDER BY id", (self.task_id,))
         found = None
         for row in rows:
             raw = str(row["detail_json"] or "{}")
@@ -66,6 +67,22 @@ class LogicalRequest:
                 continue
             saved = detail.get("logical_request")
             if not isinstance(saved, dict) or saved.get("request_id") != self.request_id:
+                continue
+            if row["event_type"].startswith("VIDEO_") or self.operation.startswith("video-"):
+                from . import video_records
+                if saved.get("operation") != self.operation or saved.get("payload_sha256") != self.payload_sha256:
+                    raise ValueError("REQUEST_ID_CONFLICT: use a new ID for a different video operation")
+                media = video_records.trusted(row)
+                response = saved.get("response")
+                if (found is not None or row["event_type"] != video_records.OPERATIONS.get(self.operation)
+                        or media is None or not isinstance(response, dict)
+                        or response.get("event_id") != row["id"] or response.get("task_id") != self.task_id
+                        or response.get("request_id") != self.request_id or response.get("actor") != row["actor_role"]
+                        or response.get("phase") != detail.get("phase") or response.get("flush_id") != detail.get("flush_id")
+                        or response.get("summary") != row["summary"] or response.get("result") != detail.get("video_payload")):
+                    raise ValueError("REQUEST_RECORD_INVALID: untrusted video receipt")
+                found = {**response, "replayed": True, "receipt_event_id": row["id"], "view_status": "NOT_REFRESHED",
+                         "result_scope": "original video record; no media was rerun or reaccepted"}
                 continue
             if self.operation in {'task_mode_select', 'workflow_confirm'}:
                 producer = self.operation
@@ -195,7 +212,7 @@ def checkpoint_request(task_id: str, task_dir: Path, request_id: str | None, *,
                        actor: str, phase: str, summary: str, evidence=(),
                        knowledge_signals=(), delivery_signals=(), repo_roots=(),
                        collect=(), context_usage=(), result_reports=(), recorded_result_ids=(),
-                       report_artifact_root=None, security_context=None, change_impact=None) -> LogicalRequest:
+                       report_artifact_root=None, security_context=None, change_impact=None, ops_subject=None) -> LogicalRequest:
     """One payload definition for checkpoint writes and read-only recovery."""
     return LogicalRequest(task_id, task_dir, "checkpoint", {
         "actor": actor, "phase": phase, "summary": summary, "evidence": list(evidence),
@@ -206,6 +223,7 @@ def checkpoint_request(task_id: str, task_dir: Path, request_id: str | None, *,
         **({"report_artifact_root": report_artifact_root} if report_artifact_root is not None else {}),
         **({"security_context": security_context} if security_context is not None else {}),
         **({"change_impact": change_impact} if change_impact is not None else {}),
+        **({"ops_subject": ops_subject} if ops_subject is not None else {}),
     }, request_id)
 
 

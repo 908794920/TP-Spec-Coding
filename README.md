@@ -78,6 +78,8 @@ CLI / Runtime                  自动维护 Task / Event / Evidence / Workflow
 
 要求：Git、Python 3.10+；Windows 完整脚本推荐 PowerShell 7。
 
+视频制作任务使用 [视频领域与本地媒体交付](docs/agents/tp-video-production.md)。
+
 ```bash
 python -m pip install -r requirements.txt
 python -m cli.main base installation-doctor
@@ -133,7 +135,7 @@ Windows 上可用 `ui\install.cmd` 按锁文件准备依赖（锁文件未变化
 
 ## 按 Agent 选择能力
 
-第一次选择能力直接打开 [`docs/README.md`](docs/README.md)。软件研发从 [`docs/agents/tp-software-lifecycle.md`](docs/agents/tp-software-lifecycle.md) 开始；Base、Wiki、Knowledge、Autonomy 也各有独立导航。内置 Role/Skill 列表由 Role Catalog 驱动的生成区块维护，避免代码升级后人工同步多份能力清单。
+第一次选择能力直接打开 [`docs/README.md`](docs/README.md)。软件研发从 [`docs/agents/tp-software-lifecycle.md`](docs/agents/tp-software-lifecycle.md) 开始；Base、Wiki、Knowledge 也各有独立导航。内置 Role/Skill 列表由 Role Catalog 驱动的生成区块维护，避免代码升级后人工同步多份能力清单。
 
 ## 数据与安全边界
 

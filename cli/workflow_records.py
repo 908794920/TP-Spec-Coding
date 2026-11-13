@@ -112,7 +112,7 @@ def _checked_evidence_items(task_dir: Path, values: Optional[Iterable[str]]) -> 
 
 def _latest_trusted_verification(conn, task_id: str, task_dir: Path, *, require_full: bool = True):
     from . import event_policies
-    from .change_set import capture_change_set
+    from .change_set import capture_bound_product, is_ops_subject
     from .digest import compute_verification_subject_digest
 
     current_subject = compute_verification_subject_digest(task_dir)
@@ -122,9 +122,9 @@ def _latest_trusted_verification(conn, task_id: str, task_dir: Path, *, require_
     detail = dict(trusted.detail or {})
     change_set_id = str(detail.get('change_set_id') or '').strip()
     repo_roots = [str(value).strip() for value in (detail.get('repo_roots') or []) if str(value).strip()]
-    if not change_set_id or not repo_roots:
+    if not change_set_id or (not repo_roots and not is_ops_subject(detail)):
         raise ValueError('DELIVERY_CHANGE_SET_MISMATCH: verification is not bound to a product change set')
-    current_change_set = capture_change_set(repo_roots)
+    current_change_set = capture_bound_product(detail, task_dir, repo_roots=repo_roots)
     from .change_set import same_bound_product_content
     if not same_bound_product_content(detail, current_change_set):
         raise ValueError('DELIVERY_CHANGE_SET_MISMATCH: current product content differs from verification')
@@ -220,14 +220,17 @@ def confirm_boundary(*, task_id: str, task_dir: str, db: Optional[str] = None,
         pending = legacy_pending or route
         reason = str(pending.get('confirmation_reason') or '')
         binding = pending.get('confirmation_binding')
-        if reason not in {'MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION', 'QUICK_COMPLETION_REQUIRED'}:
+        video_permission = reason == "VIDEO_PERMISSION_REQUIRED" and pending.get("domain") == "video"
+        if reason not in {'MATERIAL_ARCHITECTURE_TO_IMPLEMENTATION', 'QUICK_COMPLETION_REQUIRED'} and not video_permission:
             raise ValueError('workflow confirm requires a current material/completion boundary; retired ordinary waits use retire-confirmation-wait')
         if not isinstance(binding, dict) or not binding:
             raise ValueError('workflow confirmation binding missing')
         if binding.get('confirmation_kind') == 'completion' and (source is None or not request_id):
             raise ValueError('QUICK_COMPLETION_USER_SOURCE_REQUIRED: explicit owner statement, reference and request-id required')
+        if video_permission and (source is None or not request_id):
+            raise ValueError("VIDEO_PERMISSION_SOURCE_REQUIRED: explicit owner statement, reference and request-id required")
         current, owner = str(task['current_state']), str(task['owner_role'])
-        if current == 'BLOCKED' and not legacy_pending:
+        if current == 'BLOCKED' and not (legacy_pending or video_permission):
             raise ValueError('task is BLOCKED; resolve its real blocker before confirmation')
         now, flush_id = dbmod.now_iso(), 'WF-CONFIRM-' + uuid.uuid4().hex
         response = {'task_id': task_id, 'state': current, 'request_id': request.request_id, 'flush_id': flush_id,
@@ -429,7 +432,7 @@ def validate_quick_acceptance(conn, task_id: str, task_dir: Path, *, require_com
 def _delivery_prerequisites(conn, task_id: str, task_dir: Path, db_path: str):
     """Resolve actual duties once; L0/L1 don't inherit the full L2/L3 review chain."""
     from . import orchestration, record_first
-    from .change_set import capture_change_set, same_bound_product_content
+    from .change_set import capture_bound_product, is_ops_subject, same_bound_product_content
     from .digest import compute_verification_subject_digest
     from .delivery_contract import require_full_scope
     facts = orchestration._load_task_facts(task_id, db_path, connection=conn, task_dir=task_dir)
@@ -447,14 +450,14 @@ def _delivery_prerequisites(conn, task_id: str, task_dir: Path, db_path: str):
         need_review = False
     verification = review = None
     development = record_first._latest_development_change_set(conn, task_id)
-    if not development or not development["repo_roots"]:
+    if not development or (not development["repo_roots"] and not is_ops_subject(development["detail"])):
         raise ValueError("DELIVERY_CHANGE_SET_REQUIRED: a development candidate must be recorded")
     if quick:
         from .delivery_contract import require_scope_checkpoint
         require_scope_checkpoint(conn, task_id, development_event_id=development['event_id'])
     else:
         require_full_scope(conn, task_id, development["detail"], development_event_id=development["event_id"])
-    snapshot = capture_change_set(development["repo_roots"])
+    snapshot = capture_bound_product(development["detail"], task_dir, repo_roots=development["repo_roots"])
     if not same_bound_product_content(development["detail"], snapshot):
         raise ValueError("DELIVERY_CHANGE_SET_MISMATCH: current product differs from development candidate")
     subject = compute_verification_subject_digest(task_dir)
@@ -480,6 +483,7 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
                            residual_risks: Optional[Iterable[str]] = None,
                            context_usage: Optional[Iterable[Dict[str, Any]]] = None,
                            actor: Optional[str] = None, unverified_items: Optional[Iterable[str]] = None,
+                           request_id: Optional[str] = None,
                            db: Optional[str] = None) -> Dict[str, Any]:
     """Record/reuse the same verified delivery, without re-running professional work.
 
@@ -526,6 +530,15 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
         mode = resolve_task_mode(dict(task), events)
         if mode['issues']:
             raise ValueError('; '.join(mode['issues']))
+        if mode["domain"] == "video":
+            from .video_policy import PRODUCER
+            from .video_records import record
+            if any((before_head, after_head, merge_commit)):
+                raise ValueError("VIDEO_DELIVERY_GIT_NOT_APPLICABLE")
+            return record("video-delivery", task_id=task_id, task_dir=str(tdir),
+                actor=actor or PRODUCER, summary=reason, request_id=request_id, db_path=db_path,
+                payload={"status": status, "recovery_condition": recovery_condition, "blocker_kind": blocker_kind,
+                         "responsibility": responsibility, "residual_risks": risks, "unverified": unverified, "evidence": paths})
         quick = mode['workflow_mode'] == 'quick'
         actor0 = actor or (task['owner_role'] if quick else 'tp-integration-engineer')
         if (not quick and actor0 != 'tp-integration-engineer') or (quick and actor0 not in continuous_actor_ids(dict(task), events)):
@@ -540,6 +553,9 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
                 raise ValueError(f"DELIVERY_STATE_CHANGED: {refreshed['current_state']}")
             prerequisites = _delivery_prerequisites(dbconn, task_id, tdir, db_path)
             verification, review = prerequisites["verification"], prerequisites["review"]
+            from .change_set import OPS_SUBJECT_SCHEMA
+            if prerequisites["snapshot"]["schema"] == OPS_SUBJECT_SCHEMA and any((before_head, after_head, merge_commit)):
+                raise ValueError("OPS_SUBJECT_GIT_METADATA_NOT_APPLICABLE")
             cs = str(prerequisites["snapshot"]["content_digest"])
             evidence_paths, items = _checked_evidence_items(tdir, paths)
             if status == "READY":

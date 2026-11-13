@@ -63,6 +63,6 @@ export function WorkResults({ value }: { value: unknown }) {
           outstanding_at_recording: candidate.outstanding_work_items, effect_scope: candidate.effect_scope }}/>
       </Disclosure>
     </> : <p role="status">{integration.status === 'NOT_REQUIRED' ? '没有采用结果契约的 Work；不追加旧任务义务。' : '尚未登记 Task 集成候选，不能将各 Work 结果相加当成整任务通过。'}</p>}
-    <p className="muted">工作台只读，不在此执行认领、批准、合并或结单。</p>
+    <p className="muted">工作结果只读。认领、批准、合并和结单通过正式 Runtime 执行。</p>
   </section>;
 }

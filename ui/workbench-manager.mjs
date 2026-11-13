@@ -137,7 +137,7 @@ async function start() {
       const url = `http://127.0.0.1:${state.port}/`;
       const response = await fetch(`${url}api/health`, { signal: AbortSignal.timeout(5000) });
       const health = await response.json();
-      if (!response.ok || health.instance_id !== state.instance || realpathSync(health.source_root) !== root || !health.read_only) throw new Error('Workbench health identity mismatch');
+      if (!response.ok || health.instance_id !== state.instance || realpathSync(health.source_root) !== root || health.runtime_read_only !== true) throw new Error('Workbench health identity mismatch');
       console.log(`Workbench ready: ${url}`);
       // Use Windows URL association; hiding a rundll32 launcher can suppress browser activation.
       // The helper is hidden, but the requested browser window uses its normal visible mode.

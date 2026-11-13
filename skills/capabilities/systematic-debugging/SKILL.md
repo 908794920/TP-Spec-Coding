@@ -1,7 +1,7 @@
 ---
 name: systematic-debugging
 display_name: 系统化调试
-version: 5.3.8
+version: 5.4.0
 description: Use when a test, build, runtime behavior, integration, or verification fails. Drive evidence-based reproduction, hypotheses, root-cause confirmation, minimal repair, and regression prevention.
 ---
 
@@ -9,9 +9,9 @@ description: Use when a test, build, runtime behavior, integration, or verificat
 
 需要 Wiki 缩小范围时按 [低成本检索与使用记录](../../../docs/WIKI_USAGE.md) 按需查询或读取；上下文足够可跳过，真实采用并入已有任务记录，不为计数新增调用。
 
-## 修改前门禁：Tight Red Feedback Loop
+## 修改前证据：Tight Red Feedback Loop
 
-面对 Bug、测试失败、运行异常、集成失败或性能回退时，**修改产品代码之前**必须先建立一个针对用户实际症状的反馈回路，并且已经实际执行至少一次、观察到当前失败。仅证明“命令能运行”“没有抛异常”或附近测试失败，不算捕获当前症状。
+修复 Bug、测试失败、运行异常、集成失败或性能回退前，先取得能定位用户实际症状的复现或针对性证据。优先用获准的反馈回路观察失败，可复用与当前主体、输入和环境仍相符的已执行失败证据。仅证明“命令能运行”“没有抛异常”或附近测试失败，不算捕获当前症状。
 
 反馈回路必须尽量同时满足：
 
@@ -20,31 +20,19 @@ description: Use when a test, build, runtime behavior, integration, or verificat
 - **Fast**：足以支持多轮假设验证，优先秒级；
 - **Agent-runnable**：无需持续人工点击即可重复执行；确需人工参与时使用结构化 HITL 并记录输入与结果。
 
-按最小成本优先选择：
-
-```text
-已有失败测试
-→ 新增最小回归测试
-→ CLI/HTTP fixture
-→ Headless Browser
-→ Trace/Event replay
-→ Throwaway harness
-→ Property/Fuzz loop
-→ Differential/Bisect loop
-→ 结构化 HITL
-```
-
-可以跳过不适用项，但必须能说明选定回路为什么覆盖当前症状。若当前环境无法复现或无法建立可信回路，记录 `LOOP_UNAVAILABLE`、已尝试方法和缺失证据，请求可复现环境、脱敏日志/Trace/HAR/载荷，或增加临时诊断 instrumentation；不得把“无法复现”转换成无证据修改。
+按实际症状覆盖和执行成本，优先复用已有失败测试、CLI、HTTP 或浏览器路径。有覆盖缺口时才补最小回路，可用回归测试、事件重放或结构化 HITL。回路不可用时记录 `LOOP_UNAVAILABLE`、尝试和缺口。若可归因的日志、Trace、输入及对应版本等证据已确认症状与根因，按现有授权做最小修复并保留原环境待验项。证据不足以确认因果时，继续定向取证，不盲改。
 
 ## 方法
 
-1. 固定复现条件：环境、输入、步骤、实际/预期结果、日志或失败证据，并保存上面的已执行反馈回路。
+1. 固定症状发生时的环境、输入、步骤和实际/预期结果，保存适用的反馈回路或可归因证据。
 2. 提出少量可证伪假设，优先收集能区分假设的最小证据；同一失败命令/盲改不要无变化重复。
 3. 先确认根因，再做满足任务范围的最小修复；不要把“症状消失”直接当成根因被修复。
-4. 修复完成前同时闭环：最小回归在修复前能够失败、修复后通过，并重新执行原始、未最小化的反馈回路确认用户症状已消失。
+4. 在获准且可运行的环境执行必要复验，记录有效的修复前证据和修复后结果。已充分覆盖原症状的有效结果可复用。若局部回路遗漏共享入口或真实运行条件，按适用验证要求回原路径复验；不能执行时保留该范围待验，不替代正式门禁。
 5. 删除或明确隔离临时诊断 instrumentation、Throwaway harness 和一次性 Artifact；若架构没有正确 test seam，记录缺口，不用错误的浅层测试制造信心。
 6. 按风险补必要回归检查并说明仍未验证的边界与残余风险；只有有复用价值时才把调试过程整理进 implementation/verification/knowledge，不为每个尝试写流程事件。
 
+已知好提交是坏提交的祖先，且同一低成本探针能在可比条件下稳定分类时，可在获准的隔离 checkout 复验两端后用 [Git 二分](https://git-scm.com/docs/git-bisect/2.56.0) 缩小回退范围。无法有效测试的版本用 `skip`，不把无关构建失败标为坏。自动探针用 0 表示症状未出现、1 表示目标症状、125 表示无法测试。保留二分记录后重置，在候选提交及可测父版本核对症状和因果。症状不稳或版本不可比时先定向取证；跳过版本或症状反复出现时，二分结果只定位候选范围或过渡点。
+
 ## 边界
 
-本门禁只强化故障、失败和性能回退类任务，不把所有普通开发任务强制改成 TDD。若修复需要改变需求、架构、数据语义、权限、安全边界、外部契约或执行高风险生产动作，停止局部调试并升级判断/授权；不要借故障修复静默扩大 scope。
+本方法适用于故障、失败和性能回退。若修复需要改变需求、架构、数据语义、权限、安全边界、外部契约或执行高风险生产动作，停止受影响的动作并升级判断或授权。

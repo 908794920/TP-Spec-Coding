@@ -68,4 +68,6 @@ Role 只留职责、边界和准确触发指针，方法由 Capability/其按需
 
 角色默认/条件能力由 Catalog 及对应 Role 的触发指针维护；共享方法不在导航中复制正文。历史方法抽取、原使用者与引用处置见 [CHANGELOG](../CHANGELOG.md#history-capability-extraction)，该记录不作为当前安装或宿主缓存已同步的证明。
 
+客户 Office 成品的新建、按模板制作及增量编辑可用 [Office 文档格式化](../skills/capabilities/office-document-formatting/SKILL.md)，由已有内容角色按需读取一份介质参考与唯一默认样式片段；需求期和 pre-task 即可使用，不要求切到交付阶段、不自动创建 Task 或把治理 Markdown 转为 Office。客户模板/有效既有格式优先，真实公文与普通参照排版分开，内容、结构、运行/重算、真实渲染与人验分别说明。内置准确发现/读取可用 `tp-spec skill list --query office-document-formatting --json` 与 `tp-spec skill read --id office-document-formatting --json`；纯文档无领域上下文仍受已有入口的 unknown/最小澄清边界约束，不代表增加了路由关键词。
+
 软件工程共享 Capability 方法路径以 `skills/capabilities/` 为根，领域专项方法位于 `skills/base/`、`skills/knowledge/` 或 `skills/wiki/`；具体可点击路径从生命周期导航或对应领域/Role 进入。Knowledge 与 Wiki 的领域入口只保留职责、意图路由、共享边界和结果汇总；具体方法按命中意图读取，不预载全部能力。共用的 Task 收敛契约保留原路径，拆分不改变 Runtime、CLI 或既有数据边界。Runtime 的[执行事实](EXECUTION_FACTS.md)、[Work/Fix 与集成候选](WORK_UNITS.md)、[来源审批](security-change-authority.md)和[结单/提炼](agents/tp-software-lifecycle.md)分别承载实际行为；本章与拓扑只负责导航，不能代替运行验证或真实验收。新旧事实按各自标记解释，不由角色关系推断过去已执行。

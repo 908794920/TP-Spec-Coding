@@ -46,10 +46,12 @@ function uniqueContextFields(context: Context | null | undefined, project: Recor
     return result;
 }
 
-export function ProjectPage({ context, read, onSelectTask }: {
+export function ProjectPage({ context, read, notesWritable, onSelectTask, onNoteSaved }: {
     context?: Context;
     read: ReadState<Envelope<ProjectData>>;
+    notesWritable: boolean;
     onSelectTask: (id: string) => void;
+    onNoteSaved: () => void;
 }) {
     if (!context)
         return <div className="page project-page"><div className="page-heading"><div><span className="eyebrow">项目总览</span><h2>尚未选择项目</h2></div></div>
@@ -73,7 +75,8 @@ export function ProjectPage({ context, read, onSelectTask }: {
       {data && <>
         <Problems items={data.problems}/>
         <Card className="project-task-progress" size="small" title="任务进展">
-          <TaskIndex key={context.context_key} rows={taskIndexAvailable ? data.task_index : []} available={taskIndexAvailable} onSelect={onSelectTask}/>
+          <TaskIndex key={context.context_key} contextKey={context.context_key} rows={taskIndexAvailable ? data.task_index : []}
+            available={taskIndexAvailable} notesWritable={notesWritable} onSelect={onSelectTask} onNoteSaved={onNoteSaved}/>
         </Card>
         <Card className="project-details" size="small" title="项目资料与环境详情">
           <Fields value={{ ...project, registry: data.registry, wiki: systemAvailability(data.wiki), knowledge: systemAvailability(data.knowledge),

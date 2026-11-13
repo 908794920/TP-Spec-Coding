@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Neutral durable transaction/projection primitives for Record-first Runtime.
 
-This module contains no legacy long-state workflow or Action-role policy.  Migration-only
-compatibility remains under :mod:`cli.migrations.v5_2_3`.
+This module contains no legacy long-state workflow or Action-role policy. Retired
+migration-only compatibility is not part of the active transaction path.
 """
 from __future__ import annotations
 from . import command_context
@@ -174,9 +174,14 @@ def build_terminal_manifest_text(
     terminal_state: str,
     terminal_event_id: int,
     overlays: Optional[Dict[str, str]] = None,
+    ops_subject: Optional[Dict[str, Any]] = None,
 ) -> str:
     """生成结单时的只读文件清单；调用方负责与 DB/投影同事务提交。"""
     records = _terminal_file_records(task_dir, overlays)
+    if ops_subject:
+        for item in ops_subject["evidence_items"]:
+            if records.get(item["path"], {}).get("sha256") != "sha256:" + item["sha256"]:
+                raise ValueError(f"OPS_SUBJECT_CHANGED_BEFORE_SEAL: {item['path']}")
     payload = {
         "schema": TERMINAL_MANIFEST_SCHEMA,
         "task_id": task_id,
@@ -250,6 +255,9 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
         # stamped as current using a slice read from the previous source set.
         raise ValueError("CURRENT_CONTEXT_SOURCES_CHANGED: rebuild the view from current canonical sources")
     status_context = _status_context(task_dir)
+    video = status_context.get("domain") == "video"
+    media = status_context.get("media") or {}
+    media_text = f"- 媒体导出：{media.get('version') or '未记录'}；交付记录：{media.get('delivery_status') or '未记录'}\n"
     quality = status_context.get("quality_facts") or {}
     verification = quality.get("verification", "NOT_RECORDED")
     execution = status_context.get("execution") or {}
@@ -285,7 +293,9 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
                 f"DEFERRED_ACCEPTED：{counts.get('DEFERRED_ACCEPTED', 0)}；"
                 f"OWNER_WAIVED：{counts.get('OWNER_WAIVED', 0)}；未处置：{unresolved}\n"
             )
-        if database_operations:
+        if video:
+            body += media_text
+        elif database_operations:
             db_items = [
                 f"{item.get('id', '?')}={item.get('type', '?')}/{item.get('status', '?')}"
                 for item in database_operations
@@ -293,22 +303,26 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
             body += "- 数据库操作：" + "、".join(db_items) + "\n"
         else:
             body += "- 数据库操作：未列出操作条目（不能从 UI 人验推断执行）\n"
+        if not video:
+            body += (
+                f"- Verification：{quality.get('verification', 'NOT_RECORDED')}\n"
+                f"- Code Review：{quality.get('review', 'NOT_RECORDED')}\n"
+                f"- Delivery：{quality.get('delivery', 'NOT_RECORDED')}\n"
+                f"- Knowledge：{quality.get('knowledge', 'NOT_RECORDED')}\n"
+                f"- Memory：{quality.get('memory', 'NOT_RECORDED')}\n"
+            )
         body += (
-            f"- Verification：{quality.get('verification', 'NOT_RECORDED')}\n"
-            f"- Code Review：{quality.get('review', 'NOT_RECORDED')}\n"
-            f"- Delivery：{quality.get('delivery', 'NOT_RECORDED')}\n"
-            f"- Knowledge：{quality.get('knowledge', 'NOT_RECORDED')}\n"
-            f"- Memory：{quality.get('memory', 'NOT_RECORDED')}\n"
             f"- 未解决阻塞：{blocker_text}\n"
             "- 终态完整性：CAPTURED（同一结单事务生成 terminal manifest；后续使用 `task terminal-check` 检查漂移）\n"
         )
         deferred = _deferred_acceptance_items(task_dir)
         if deferred:
             body += "- 延期验收项：" + "、".join(deferred) + "（见 acceptance.md）\n"
-        if verification != "PASS":
+        if not video and verification != "PASS":
             body += "- 提示：COMPLETED 表示任务工作已结束，不代表未记录/失败/延期的验证被改写为 PASS。\n"
-        body += _delivery_view_text(task_dir)
-        body += _learning_view_text(task_dir)
+        if not video:
+            body += _delivery_view_text(task_dir)
+            body += _learning_view_text(task_dir)
         body += task_views.render_navigation(nav)
         body += "\n> 终态按 Runtime 记录解释；业务文档中的旧进度、模板注释和最后阶段不能覆盖已完成事实。\n"
         return _generated_view_text(task_dir, "final-result.md", body, sources, flush_id, source_digests, identity)
@@ -349,13 +363,15 @@ def _rebuild_current_view_text(task_dir: Path, task, summary: str, flush_id: str
         f"- Task 协调来源：{coordination_source}\n"
         f"- 最后阶段（历史）：{phase}\n"
         f"- 最近记录角色（历史）：{last_actor}；时间：{latest.get('time') or '历史未记录'}\n"
-        f"- 最新 Change Set：{status_context.get('change_set_id') or quality.get('change_set_id') or 'NOT_RECORDED'}\n"
+        + (media_text if video else f"- 最新 Change Set：{status_context.get('change_set_id') or quality.get('change_set_id') or 'NOT_RECORDED'}\n")
+        +
         f"- 当前阻塞：{blocker_text}\n"
         f"- 等待子工作：{'、'.join(step.get('waiting_work_items') or []) or '未记录'}\n"
         f"- 步骤等待原因：{task_views.excerpt(step.get('wait_reason')) or '未记录'}\n"
         f"- 下一责任：{next_role}\n"
         f"- 下一计划步骤：{next_text}\n"
-        f"- 技术验证事实：{verification}\n"
+        + ("" if video else f"- 技术验证事实：{verification}\n")
+        +
         f"- 最近记录摘录（events.jsonl）：{summary}\n"
         f"\n> {guidance} 未闭合参与不证明执行者在线。\n"
     )
@@ -513,7 +529,7 @@ def _sha256_file(path: Path) -> Optional[str]:
         return hashlib.sha256(handle.read()).hexdigest()
 
 def _assert_task_workspace_identity(conn, task_dir: Path, task_id: str) -> None:
-    """Fail closed when a canonical task directory belongs to another project root.
+    """Check the workspace and the declared identity of a video Task directory.
 
     This is the mutation-time defense for stale or externally corrupted registry
     state.  Custom task directories that do not prove a canonical workspace root are
@@ -523,21 +539,41 @@ def _assert_task_workspace_identity(conn, task_dir: Path, task_id: str) -> None:
         return
     resolved = task_dir.resolve()
     parent = resolved.parent
-    if parent.name != "tasks" or parent.parent.name != ".tp-spec":
-        return
-    workspace_root = parent.parent.parent.resolve()
+    canonical_layout = parent.name == "tasks" and parent.parent.name == ".tp-spec"
     task = conn.execute("SELECT project_id FROM task WHERE task_id=?", (task_id,)).fetchone()
     if task is None:
         return
     project_id = str(task["project_id"] or "")
-    project = conn.execute("SELECT root_path FROM project WHERE project_id=?", (project_id,)).fetchone()
-    stored_root = str(project["root_path"] or "").strip() if project is not None else ""
-    if not stored_root or not os.path.isabs(stored_root) or not same_path(stored_root, workspace_root):
-        raise ValueError(
-            f"PROJECT_WORKSPACE_MISMATCH: Runtime project '{project_id}' is bound to "
-            f"{stored_root or '<missing>'}, but task directory belongs to workspace {workspace_root}; "
-            "refusing cross-workspace mutation"
-        )
+    if canonical_layout:
+        workspace_root = parent.parent.parent.resolve()
+        project = conn.execute("SELECT root_path FROM project WHERE project_id=?", (project_id,)).fetchone()
+        stored_root = str(project["root_path"] or "").strip() if project is not None else ""
+        if not stored_root or not os.path.isabs(stored_root) or not same_path(stored_root, workspace_root):
+            raise ValueError(
+                f"PROJECT_WORKSPACE_MISMATCH: Runtime project '{project_id}' is bound to "
+                f"{stored_root or '<missing>'}, but task directory belongs to workspace {workspace_root}; "
+                "refusing cross-workspace mutation"
+            )
+    from .task_coordinator import read_creation_coordinator
+    states = conn.execute("SELECT * FROM task_event WHERE task_id=? AND event_type='STATE' ORDER BY id", (task_id,))
+    if read_creation_coordinator({"task_id": task_id}, states)["domain"] != "video":
+        return
+
+    from . import frontmatter, task_views
+    from .yaml_checks import parse_frontmatter_yaml
+    status_path = resolved / "status.yaml"
+    task_path = resolved / "task.md"
+    status = task_views.parse_status(_read(status_path)) if status_path.is_file() else {}
+    task_text = _read(task_path) if task_path.is_file() else ""
+    declaration = parse_frontmatter_yaml(task_text, "task.md") if frontmatter.split(task_text) else {}
+    identities = [value for value in (status.get("task_id"), declaration.get("task_id")) if value]
+    if canonical_layout:
+        other = conn.execute("SELECT task_id FROM task WHERE project_id=? AND task_id=? COLLATE NOCASE",
+                             (project_id, resolved.name)).fetchone()
+        if other:
+            identities.append(other["task_id"])
+    if any(identity != task_id for identity in identities):
+        raise ValueError(f"TASK_DIRECTORY_MISMATCH: expected {task_id} in {resolved}")
 
 def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_render: Callable,
                          task_id: str = "", operation: str = "commit",
@@ -631,7 +667,7 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
             # Both entrypoints belong to the same recovery boundary and terminal seal.
             texts["generated/continuation.md"] = _terminal_continuation_text(texts["generated/final-result.md"])
             state_event = conn.execute(
-                "SELECT id FROM task_event WHERE task_id=? AND event_type='STATE' "
+                "SELECT id,detail_json FROM task_event WHERE task_id=? AND event_type='STATE' "
                 "AND to_state='COMPLETED' AND detail_json LIKE ? ORDER BY id DESC LIMIT 1",
                 (task_id, f'%"{flush_id}"%'),
             ).fetchone()
@@ -643,6 +679,7 @@ def _commit_with_recovery(task_dir: Path, conn, rel_paths: List[str], db_and_ren
                 terminal_state=target_state,
                 terminal_event_id=int(state_event["id"]),
                 overlays=texts,
+                ops_subject=json.loads(state_event["detail_json"]).get("ops_subject"),
             )
         journal["expected_revision_after"] = transaction_journal.current_revision(conn, task_id)
         _stage_and_replace(task_dir, texts, effective_rel_paths)

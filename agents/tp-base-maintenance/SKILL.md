@@ -1,7 +1,7 @@
 ---
 id: tp-base-maintenance
 name: tp-基座维护
-version: 5.3.8
+version: 5.4.0
 status: active
 type: human-owner-skill
 tool_agnostic: Base 与用户根来自 Installation/Resolver；能力按需读取，不依赖特定 IDE。
@@ -37,3 +37,6 @@ description: 基座维护薄领域入口；识别安装健康、项目接入、�
 ## 结果
 
 汇总实际对象、动作、检查结论和未解决条件；安装健康、项目同步、契约迁移、运行实例与页面验证分别报告。查询、方法可读和图谱连线不代表执行成功；某一能力阻塞时只停止依赖它的动作。
+
+## 基座规则对照
+用户说「消融实验」，或想知道某条 Skill／提示词规则删掉后是否会变差时，按需读取[消融对照](../../skills/capabilities/testing-strategy/references/test-value.md#消融对照)。单纯整理措辞按原任务处理。

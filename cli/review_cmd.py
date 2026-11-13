@@ -274,7 +274,7 @@ def _code_review_subject_digest(task_dir: Path, scope: str = "full") -> str:
 
 def _verified_change_set_for_code_review(conn, task_id: str, task_dir: Path) -> tuple[Any, str, list[str], Dict[str, Any]]:
     """加载当前 Test PASS，并确认它仍绑定当前产品内容。"""
-    from .change_set import capture_change_set
+    from .change_set import capture_bound_product, is_ops_subject
 
     verification = event_policies.load_current_verification(conn, task_id, task_dir)
     if verification is None:
@@ -282,9 +282,9 @@ def _verified_change_set_for_code_review(conn, task_id: str, task_dir: Path) -> 
     detail = dict(verification.detail or {})
     change_set_id = str(detail.get("change_set_id") or "").strip()
     repo_roots = [str(value).strip() for value in (detail.get("repo_roots") or []) if str(value).strip()]
-    if not change_set_id or not repo_roots:
+    if not change_set_id or (not repo_roots and not is_ops_subject(detail)):
         raise ValueError("VERIFICATION_CHANGE_SET_REQUIRED")
-    current = capture_change_set(repo_roots)
+    current = capture_bound_product(detail, task_dir, repo_roots=repo_roots)
     from .change_set import same_bound_product_content
     if not same_bound_product_content(detail, current):
         raise ValueError("VERIFICATION_STALE")
@@ -339,6 +339,9 @@ def _cmd_code_review_record(args) -> int:
         if task is None:
             print(f"ERROR: task not found in DB: {task_id}", file=sys.stderr)
             return 4
+        from .task_coordinator import task_domain
+        if task_domain(conn, task) == "video":
+            raise ValueError("VIDEO_SOFTWARE_REVIEW_NOT_APPLICABLE")
         if event_policies.is_task_retired(conn, task_id):
             print("ERROR: retired historical tasks are immutable archives", file=sys.stderr)
             return 5
@@ -551,6 +554,9 @@ def cmd_review_record(args) -> int:
         if task is None:
             print(f"ERROR: task not found in DB: {task_id}", file=sys.stderr)
             return 4
+        from .task_coordinator import task_domain
+        if task_domain(conn, task) == "video":
+            raise ValueError("VIDEO_SOFTWARE_REVIEW_NOT_APPLICABLE")
         if event_policies.is_task_retired(conn, task_id):
             print("ERROR: retired historical tasks are immutable archives", file=sys.stderr)
             return 5

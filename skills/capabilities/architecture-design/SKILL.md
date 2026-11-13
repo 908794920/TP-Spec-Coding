@@ -1,7 +1,7 @@
 ---
 name: architecture-design
 display_name: 架构设计与复审
-version: 5.3.8
+version: 5.4.0
 description: 在系统设计或独立架构复审有实际价值时读取；以真实代码、约束和成本决策，不扩大范围。
 ---
 
@@ -11,7 +11,7 @@ description: 在系统设计或独立架构复审有实际价值时读取；以�
 只有系统边界、模块、接口、兼容、可靠性、数据流、迁移或技术选型确有设计价值时读取。复杂度和成本不足以支持新增设计时，复用现有方案。技术实施拆解交技术主管，风险增加调查深度但不扩大授权范围。
 
 ## 工作方法
-1. 先读取 canonical Requirement、确认 decision 和必要代码坐标。未知关键事实进入定向 `discovery`，不把推测写成设计前提；历史知识先做 canonical-first 定向检索，当前实现仍回 Wiki/Source Code 核验。
+1. 先读取当前有效需求（正式 Task 使用 canonical Requirement）、已确认决定和必要代码。未知关键事实定向调查，不把推测写成设计前提；需要历史知识时优先定向检索 canonical，当前实现仍回 Wiki/Source Code 核验。
 2. 依据 `governance/risk-rule.yaml` 判断真实影响与风险。代码量不是风险等级依据；未知影响不默认低风险。认证授权、敏感信息可见性、数据下发/附件、权限边界等至少按高风险安全信号处理。
 3. 根据 `governance/planning-strategy.yaml` 选择 DIRECT 或深度规划。只有多条 materially different 且真实可行路线会显著改变风险、性能、兼容或维护成本时才 fan-out。
 4. 设计前后仅核对当前需求、实际变更及有证据的风险所触及的维度：需求覆盖、模块/依赖、接口兼容、数据、权限/安全、并发/事务/幂等、消息/定时/缓存、配置/部署运行、失败恢复、回滚/补偿和可验证 acceptance criteria。该列表用于发现相关风险，不要求逐项补齐能力，也不授权新增业务规则。
@@ -30,4 +30,4 @@ Task 已存在且形成有意义架构结果时最多一次 `task checkpoint --p
 规划/评审默认只读，不直接实现业务代码。生产读写、DML/DDL、不可逆动作继续遵守最小权限和动作级授权。业务目标、范围与风险接受改变交 human_owner/Product Manager。
 
 ## 按需复审
-高风险、跨系统、数据库/安全架构变化、多实质路线、高不确定性或用户要求正式评审时，只读 [独立架构复审](references/architecture-review.md)。不将设计自查当作正式 PASS，不因 L2/L3 固定追加评审。工程交付规划复用 [交付计划](../delivery-planning/SKILL.md)。
+按用户明确要求和 [工作流契约](../../../governance/workflow.yaml) 的实际风险信号选择是否独立复审，有正式 Task 时核对当前 Runtime。跨系统信号关注影响显著的变更，普通局部工作和 quick 不自动增加架构复审义务。适用正式复审时按 [独立架构复审](references/architecture-review.md) 执行；已采用的正式义务继续完成。仅推荐的复审未运行按 WARN 处理，设计自查不签正式 PASS。工程交付规划复用 [交付计划](../delivery-planning/SKILL.md)。

@@ -1,4 +1,4 @@
-version: 5.3.8
+version: 5.4.0
 mode: record-first
 principle: business work first; Runtime owns bookkeeping
 daily_api:
@@ -124,7 +124,7 @@ daily_api:
 project_api:
   project_bootstrap_check: tp-spec project bootstrap --id <PROJECT> --root <ROOT> --check-only
   project_bootstrap: tp-spec project bootstrap --id <PROJECT> --root <ROOT>
-  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.3.8
+  project_upgrade_contract: tp-spec project upgrade-contract --id <PROJECT> --to 5.4.0
 errors:
   PROJECT_BOOTSTRAP_AVAILABLE: read-only bootstrap check found a pristine project that may be initialized only after explicit human_owner action
   PROJECT_NOT_INITIALIZED: project ledger is not initialized; run project bootstrap/init first
@@ -155,7 +155,6 @@ optional_capabilities:
   knowledge_task_convergence: >-
     Required per-Task assessment after new READY Delivery, not a new lifecycle stage. Read `knowledge task-inputs --task <TASK> --task-dir <DIR> --db <DB>` and the referenced actual inputs, then `knowledge task-converge --task <TASK> --task-dir <DIR> --db <DB> --workspace-root <ROOT> --request-event-id <ID> --assessment <JSON>`.
     Use per-input coverage entries, targeted current-project+shared queries and truthful Knowledge/Memory dispositions; mandatory assessment does not require low-value writes. Stable inputs replay without a duplicate request/result. Legacy --disposition payloads apply only to markerless requests. See agents/tp-knowledge/SKILL.md and skills/capabilities/knowledge-capture/SKILL.md.
-  legacy_commit: compatibility/recovery surface; not the daily role API
   context_effectiveness: >-
     Read-only report over Task-bound Context Usage receipts. It never gates workflow
     and never mutates Context assets.
@@ -172,7 +171,6 @@ rules:
     - rework fix / task security source / propose / observe
     - knowledge task-converge
     - acceptance-override
-    - legacy commit (compatibility/recovery only)
     direct_sqlite_edit: forbidden
     projection_write: Runtime-owned; status/events/generated views are rebuilt automatically
   execution_timing:

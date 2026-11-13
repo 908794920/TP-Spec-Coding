@@ -367,8 +367,10 @@ def load_repository_scope(conn, task_id: str) -> Dict[str, Any]:
 
 
 def full_scope_matches(scope: Dict[str, Any], detail: Dict[str, Any], *, development_event_id: int) -> bool:
-    from .change_set import repository_keys
+    from .change_set import is_ops_subject, repository_keys
     roots = detail.get("repo_roots")
+    if is_ops_subject(detail):
+        return not roots and not scope["repo_roots"] and development_event_id > int(scope["scope_event_id"])
     return bool(isinstance(roots, list) and roots and all(isinstance(r, str) and r.strip() for r in roots)
                 and repository_keys(roots) == repository_keys(scope["repo_roots"])
                 and development_event_id > int(scope["scope_event_id"]))

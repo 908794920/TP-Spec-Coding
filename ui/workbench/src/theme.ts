@@ -32,10 +32,10 @@ function buildTheme(resolved: ResolvedTheme, motion: boolean): ThemeConfig {
         },
         components: {
             Layout: { bodyBg: color('--bg'), headerBg: color('--surface'), siderBg: color('--sidebar'), headerHeight: 52, headerPadding: 0 },
-            Table: { headerBg: color('--muted-surface'), headerColor: color('--muted'), headerSplitColor: 'transparent', cellFontSize: 13, cellPaddingBlockSM: 10, cellPaddingInlineSM: 12 },
+            Table: { headerBg: color('--muted-surface'), headerColor: color('--muted'), headerSplitColor: 'transparent', cellFontSize: 14, cellPaddingBlockSM: 12, cellPaddingInlineSM: 12 },
             Descriptions: { labelBg: color('--muted-surface'), itemPaddingBottom: 8 },
             Tag: { defaultBg: color('--tag-bg'), defaultColor: color('--muted') },
-            Card: { headerBg: 'transparent', headerFontSize: 15, paddingLG: 16, borderRadiusLG: 8 },
+            Card: { headerBg: 'transparent', headerFontSize: 16, paddingLG: 20, borderRadiusLG: 8 },
             Tooltip: { colorBgSpotlight: color('--elevated'), colorTextLightSolid: color('--text') },
             Empty: { colorTextDescription: color('--muted') },
         },

@@ -3,6 +3,7 @@ import { Button, Input, Pagination, Table, Tag, Typography } from 'antd';
 import { explainValue, stateLabel, stateTone, text, timestampRaw, timestampText } from '../facts';
 import type { TaskIndexRow } from '../types';
 import { countProjectTasks, filterProjectTasks, taskFilters, type TaskFilter } from './projectTaskView';
+import { TaskNoteDialog } from './TaskNoteDialog';
 
 /* 沿用现有 CSS 色调契约：未知或不可用状态不使用成功色。 */
 const toneColor: Record<string, string | undefined> = { blocked: 'error', completed: 'success', active: 'processing', unknown: 'warning' };
@@ -17,12 +18,26 @@ function RecordedResponsibility({ row }: { row: TaskIndexRow }) {
     return <><span>{explainValue('phase', row.phase) || row.phase || '未记录'}</span><Typography.Text type="secondary">{explainValue('owner', row.owner) || row.owner || '责任角色未记录'}</Typography.Text></>;
 }
 
-export function TaskIndex({ rows, available = true, onSelect }: {
+function NoteCell({ taskId, note, onEdit }: {
+    taskId: string;
+    note: TaskIndexRow['note'];
+    onEdit: () => void;
+}) {
+    const label = note === null ? '读取失败，重试' : note?.trim() || '添加备注';
+    return <Button type="link" size="small" className="link task-index-note" aria-label={`任务 ${taskId} 备注：${label}`}
+      onClick={event => { event.stopPropagation(); onEdit(); }}><span>{label}</span></Button>;
+}
+
+export function TaskIndex({ contextKey, rows, available = true, notesWritable, onSelect, onNoteSaved }: {
+    contextKey: string;
     rows: TaskIndexRow[];
     available?: boolean;
+    notesWritable: boolean;
     onSelect: (id: string) => void;
+    onNoteSaved: () => void;
 }) {
     const [query, setQuery] = useState(''), [filter, setFilter] = useState<TaskFilter>('in_progress'), [page, setPage] = useState(1);
+    const [noteTask, setNoteTask] = useState<TaskIndexRow>();
     const id = useId();
     const counts = useMemo(() => countProjectTasks(rows), [rows]);
     const filtered = useMemo(() => filterProjectTasks(available ? rows : [], query, filter), [available, rows, query, filter]);
@@ -34,8 +49,6 @@ export function TaskIndex({ rows, available = true, onSelect }: {
         : !rows.length ? '当前项目没有已取得的任务。'
         : searching ? '没有匹配项；可清空搜索或筛选。'
         : filter === 'in_progress' ? '当前没有在途任务；可切换到其他筛选查看。'
-        : filter === 'blocked' ? '当前没有阻塞任务；可切换到其他筛选查看。'
-        : filter === 'completed' ? '当前没有已完成任务；可切换到其他筛选查看。'
         : filter === 'other' ? '当前没有其他任务；可切换到其他筛选查看。'
         : '没有匹配项；可清空搜索或筛选。';
     function chooseFilter(next: TaskFilter) {
@@ -53,8 +66,16 @@ export function TaskIndex({ rows, available = true, onSelect }: {
     </div>
     <Table<TaskIndexRow> className="task-index-table" size="small" rowKey="task_id" dataSource={visible} pagination={false}
       locale={{ emptyText }} onRow={row => ({ onClick: () => onSelect(row.task_id) })} columns={[
-            { title: '任务', render: (_, row) => <div className="task-index-title-cell"><Button type="link" className="link task-index-title" onClick={event => { event.stopPropagation(); onSelect(row.task_id); }}>{row.title || '未记录'}</Button>{row.workflow_mode === 'quick' && <Tag>快速开发</Tag>}<small><code>{row.task_id || '任务 ID 未记录'}</code></small><div className="task-index-mobile-responsibility"><RecordedResponsibility row={row}/></div></div> },
-            { title: '状态', dataIndex: 'state', render: (_, row) => { const state = text(row.state).trim().toUpperCase(); return <div className="task-index-status"><Tag variant="filled" color={toneColor[stateTone('task', state)]}>{chineseState(row)}</Tag>{row.retired === true && <Tag>已退休</Tag>}</div>; } },
+            { title: '任务', render: (_, row) => <div className="task-index-title-cell">
+              <Button type="link" className="link task-index-title" onClick={event => { event.stopPropagation(); onSelect(row.task_id); }}>{row.title || '未记录'}</Button>
+              {row.workflow_mode === 'quick' && <Tag>快速开发</Tag>}{row.domain === 'video' && <Tag>视频制作</Tag>}
+              <small><code>{row.task_id || '任务 ID 未记录'}</code></small>
+              <div className="task-index-mobile-responsibility"><RecordedResponsibility row={row}/></div>
+            </div> },
+            { title: '备注', className: 'task-index-note-column', hidden: !notesWritable, render: (_, row) => row.task_id
+                ? <NoteCell taskId={row.task_id} note={row.note}
+                    onEdit={() => setNoteTask(row)}/> : '—' },
+            { title: '状态', className: 'task-index-status-column', dataIndex: 'state', render: (_, row) => { const state = text(row.state).trim().toUpperCase(); return <div className="task-index-status"><Tag variant="filled" color={toneColor[stateTone('task', state)]}>{chineseState(row)}</Tag>{row.retired === true && <Tag>已退休</Tag>}</div>; } },
             { title: '已记录阶段 / 责任角色', className: 'task-index-responsibility-column', render: (_, row) => <div className="task-index-stage-owner"><RecordedResponsibility row={row}/></div> },
             { title: '最近更新', className: 'task-index-date-column', dataIndex: 'updated_at', render: (_, row) => { const raw = timestampRaw(row.updated_at), display = timestampText(row.updated_at); return <time dateTime={raw || undefined} title={text(row.updated_at) || '未记录'}>{raw ? display.slice(5, 16) : display}</time>; } },
     ]}/>
@@ -63,5 +84,7 @@ export function TaskIndex({ rows, available = true, onSelect }: {
       {available && filtered.length > 0 && <Pagination size="small" current={currentPage} pageSize={PAGE_SIZE} total={filtered.length}
         showSizeChanger={false} showTotal={(_total, range) => `第 ${range[0]}-${range[1]} 条`} onChange={setPage}/>}
     </div>
+    {noteTask && <TaskNoteDialog contextKey={contextKey} task={noteTask} onClosed={() => setNoteTask(undefined)}
+      onSaved={onNoteSaved}/>}
   </div>;
 }

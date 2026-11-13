@@ -78,21 +78,28 @@ def normalize_plan(conn, task, raw, *, coordinator=None) -> tuple[dict, int]:
     expected = raw.get("expected_version")
     if type(expected) is not int or expected < 0:
         raise ValueError("expected_version must be a non-negative integer (0 for first adoption)")
-    roles = role_ids()
+    from . import video_policy
+    from .task_coordinator import task_domain
+    video = task_domain(conn, task) == "video"
+    roles = video_policy.ROLES if video else role_ids() - video_policy.ROLES - {video_policy.DOMAIN_AGENT}
     owner = _keys(raw.get("coordinator", coordinator), {"role", "agent"}, "coordinator")
     owner = {"role": _text(owner.get("role"), "coordinator.role"),
              "agent": _text(owner.get("agent", ""), "coordinator.agent", required=False)}
-    if owner["role"] not in roles:
+    if owner["role"] not in roles or (video and owner["role"] != video_policy.PRODUCER):
         raise ValueError("unknown coordinator.role")
     assessment = _keys(raw.get("assessment"), {"summary", "source_refs", "omissions"}, "assessment")
     omissions = _keys(assessment.get("omissions", {}), {"verification", "review"}, "assessment.omissions")
     omissions = {key: _text(value, f"omissions.{key}") for key, value in omissions.items()}
+    if video and omissions:
+        raise ValueError("VIDEO_SOFTWARE_OMISSIONS_NOT_APPLICABLE")
     assessment = {"summary": _text(assessment.get("summary"), "assessment.summary"),
-                  "source_refs": validate_refs(conn, task["task_id"], assessment.get("source_refs")), "omissions": omissions}
+                  "source_refs": validate_refs(conn, task["task_id"], assessment.get("source_refs"))}
+    if not video:
+        assessment["omissions"] = omissions
     if not assessment["source_refs"]:
         raise ValueError("assessment.source_refs must identify the actual assessment basis")
     from .record_first import PHASES
-    phases = set(PHASES) | {"architecture_review"}
+    phases = set(video_policy.PHASE_ROLES) if video else set(PHASES) | {"architecture_review"}
     steps = raw.get("steps")
     if not isinstance(steps, list) or not steps:
         raise ValueError("steps must be a non-empty list")
@@ -108,6 +115,8 @@ def normalize_plan(conn, task, raw, *, coordinator=None) -> tuple[dict, int]:
         expected_roles = _strings(step.get("roles"), "step.roles", required=True)
         if set(expected_roles) - roles:
             raise ValueError("step.roles contains unknown roles")
+        if video and not video_policy.phase_allowed(phase, expected_roles):
+            raise ValueError(f"VIDEO_PHASE_ROLE_INVALID: {phase}")
         dependencies = _strings(step.get("depends_on", []), "step.depends_on")
         if set(dependencies) - seen:
             raise ValueError(f"STEP_DEPENDENCY_ORDER: {sid}; dependencies must be earlier explicit step IDs")
@@ -120,28 +129,34 @@ def normalize_plan(conn, task, raw, *, coordinator=None) -> tuple[dict, int]:
             ctx = authority.step_context(step)
             normalized[-1].update({key: ctx[key] for key in security_keys})
         seen.add(sid)
-    level = effective_level(conn, task)
+    level = None if video else effective_level(conn, task)
     present = {step["phase"] for step in normalized}
-    required = {"development", "delivery"}
-    if level != "L0":
-        required.add("verification")
-    if level in {"L2", "L3"}:
-        required.add("review")
+    required = {"delivery"}
+    if not video:
+        required.add("development")
+        if level != "L0":
+            required.add("verification")
+        if level in {"L2", "L3"}:
+            required.add("review")
     if required - present:
         raise ValueError(f"PLAN_OBLIGATIONS_MISSING: {', '.join(sorted(required - present))}")
-    for phase in {"verification", "review"} - present:
+    for phase in (set() if video else {"verification", "review"} - present):
         if phase not in omissions:
             raise ValueError(f"assessment.omissions.{phase} must explain why no separate step applies")
     if set(omissions) & present:
         raise ValueError("an included phase cannot also be declared omitted")
     # Specialized outcomes remain with their registered roles, even with other participants.
-    for phase, owner_role in {"verification": "tp-test-engineer", "review": "tp-code-reviewer", "delivery": "tp-integration-engineer"}.items():
+    accountable = {"delivery": video_policy.PRODUCER} if video else {
+        "verification": "tp-test-engineer", "review": "tp-code-reviewer", "delivery": "tp-integration-engineer"}
+    for phase, owner_role in accountable.items():
         if any(step["phase"] == phase and owner_role not in step["roles"] for step in normalized):
             raise ValueError(f"{phase} requires its accountable role {owner_role}")
-    result = {"coordinator": owner, "assessment": assessment, "effective_level": level,
+    result = {"coordinator": owner, "assessment": assessment,
               "reason": _text(raw.get("reason"), "reason"),
               "scope_refs": validate_refs(conn, task["task_id"], raw.get("scope_refs")),
               "effect_scope": "record_only", "steps": normalized}
+    if not video:
+        result["effective_level"] = level
     if not result["scope_refs"]:
         raise ValueError("scope_refs must identify the existing authorized Task scope; a plan is not approval")
     return result, expected
@@ -296,7 +311,7 @@ def cmd_work_plan(args) -> int:
         conn.execute("UPDATE task SET owner_role=?,owner_agent=? WHERE task_id=?",
                      (body["coordinator"]["role"], body["coordinator"]["agent"], args.task))
         return {"task_id": args.task, "plan_version": version, "event_id": event_id,
-                "effective_level": body["effective_level"], "replayed": False}
+                "effective_level": body.get("effective_level"), "replayed": False}
     return _write_command(args, write)
 
 

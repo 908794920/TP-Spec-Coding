@@ -6,6 +6,7 @@ import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import re
 import signal
 import sys
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -34,7 +35,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         else:
             super().log_request(code, size)
 
-    def _send(self, status: int, payload: dict, *, allow: bool = False) -> None:
+    def _send(self, status: int, payload: dict, *, allow: str = "") -> None:
         body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
         try:
             self.send_response(status)
@@ -42,11 +43,21 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             if allow:
-                self.send_header("Allow", "GET")
+                self.send_header("Allow", allow)
             self.end_headers()
             self.wfile.write(body)
         except ConnectionError:
-            pass  # Navigation may cancel a read; it never requires a retry/write.
+            pass  # The client may navigate away before receiving the response.
+
+    def _note_host(self) -> str:
+        host = self.headers.get("Host", "")
+        if not re.fullmatch(r"(?:127\.0\.0\.1|localhost)(?::[0-9]+)?", host, re.IGNORECASE):
+            raise ReadError("NOTE_REQUEST_FORBIDDEN", "任务备注仅供本机工作台访问。", 403)
+        return host.lower()
+
+    @staticmethod
+    def _note_route(path: list[str]) -> bool:
+        return len(path) == 6 and path[:2] == ["api", "projects"] and path[3] == "tasks" and path[5] == "note"
 
     def do_GET(self) -> None:
         with command_context.read_request():
@@ -77,13 +88,17 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 result = service.knowledge_view(path[2], parse_qs(urlsplit(self.path).query, keep_blank_values=True))
             elif len(path) >= 3 and path[:2] == ["api", "projects"]:
                 if len(path) == 3:
-                    result = service.project_view(path[2])
+                    include_notes = parse_qs(urlsplit(self.path).query).get("notes") == ["1"]
+                    result = service.project_view(path[2], include_notes=include_notes)
                 elif len(path) == 5 and path[3] == "tasks":
                     result = service.task_view(path[2], path[4])
                 elif len(path) == 6 and path[3] == "tasks" and path[5] == "details":
                     result = service.details_view(path[2], path[4])
                 elif len(path) == 6 and path[3] == "tasks" and path[5] == "closeout":
                     result = service.closeout_view(path[2], path[4])
+                elif self._note_route(path):
+                    self._note_host()
+                    result = service.task_note(path[2], path[4])
                 else:
                     raise ReadError("NOT_FOUND", "接口不存在", 404)
             else:
@@ -104,14 +119,54 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             self._send(500, {"schema": SCHEMA, "error": {"code": "READ_FAILED", "message": message},
                              "failed_at": timestamp()})
 
-    def _read_only(self) -> None:
-        self._send(405, {"schema": SCHEMA, "error": {"code": "READ_ONLY", "message": "工作台仅支持 GET 读取"}}, allow=True)
+    def do_PUT(self) -> None:
+        path = [unquote(part) for part in urlsplit(self.path).path.strip("/").split("/")]
+        if not self._note_route(path):
+            self._read_only()
+            return
+        try:
+            host = self._note_host()
+            origin = self.headers.get("Origin")
+            if self.headers.get("X-Workbench-Request") != "task-note" or (origin and origin != f"http://{host}"):
+                raise ReadError("NOTE_REQUEST_FORBIDDEN", "任务备注仅接受工作台同源请求。", 403)
+            if self.headers.get_content_type() != "application/json":
+                raise ReadError("INVALID_NOTE_REQUEST", "任务备注请求须使用 JSON。", 415)
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0:
+                    raise ValueError("Missing JSON body")
+                body = self.rfile.read(length)
+                if len(body) != length:
+                    raise ValueError("Incomplete JSON body")
+                payload = json.loads(body.decode("utf-8"))
+                if (not isinstance(payload, dict) or not isinstance(payload.get("note"), str)
+                        or not isinstance(payload.get("revision"), str) or not payload["revision"]):
+                    raise ValueError("Invalid note fields")
+                payload["note"].encode("utf-8")
+            except (ValueError, RecursionError, OverflowError) as exc:
+                raise ReadError("INVALID_NOTE_REQUEST", "任务备注请求须包含有效的文本和版本。", 400) from exc
+            result = self.server.service.task_note(path[2], path[4], update=(payload["note"], payload["revision"]))
+            self._send(200, result)
+        except ReadError as exc:
+            self._send(exc.status, {"schema": SCHEMA, "error": {"code": exc.code, "message": str(exc)},
+                                    "failed_at": timestamp()})
+        except Exception as exc:
+            self.log_error("note write failed: %s", type(exc).__name__)
+            self._send(500, {"schema": SCHEMA, "error": {"code": "NOTE_WRITE_FAILED", "message": "任务备注保存失败。"},
+                             "failed_at": timestamp()})
 
-    do_POST = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = do_HEAD = _read_only
+    def _read_only(self) -> None:
+        path = [unquote(part) for part in urlsplit(self.path).path.strip("/").split("/")]
+        is_note = self._note_route(path)
+        message = "任务备注接口支持 GET 和 PUT。" if is_note else "此工作台接口仅支持 GET 读取。"
+        self._send(405, {"schema": SCHEMA, "error": {"code": "METHOD_NOT_ALLOWED" if is_note else "READ_ONLY",
+                                                     "message": message}}, allow="GET, PUT" if is_note else "GET")
+
+    do_POST = do_PATCH = do_DELETE = do_OPTIONS = do_HEAD = _read_only
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="TP-Spec local read-only workbench API")
+    parser = argparse.ArgumentParser(description="TP-Spec local workbench API")
     parser.add_argument("--port", type=int, default=0, help="loopback API port; 0 chooses a free port")
     args = parser.parse_args()
     if not 0 <= args.port <= 65535:

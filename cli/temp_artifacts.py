@@ -101,9 +101,9 @@ def _ensure_safe_parent_tree(base: Path, project_id: str, task_id: str) -> None:
             raise ValueError(f"temporary artifact parent is not a directory: {path}")
 
 
-def _validate_safe_cleanup_ancestors(base: Path, project_id: str, task_id: str) -> Optional[str]:
+def _validate_safe_cleanup_ancestors(root: Path) -> Optional[str]:
     """清理前再次验证中间父目录，避免 TOCTOU 把受控路径替换为链接。"""
-    for path in (base, base / project_id, base / project_id / task_id):
+    for path in (root.parents[2], root.parents[1], root.parent):
         try:
             st = os.lstat(path)
         except FileNotFoundError:
@@ -130,6 +130,8 @@ def create_run_root(
     _validate_identity(project_id, task_id, rid)
     base = temp_base_root(temp_root)
     root = _expected_run_root(project_id, task_id, rid, temp_root=temp_root)
+    if _owned_io_root(base, root, project_id, task_id, rid) is None:
+        raise ValueError("temporary artifact identity normalizes to a different Windows path")
     mpath = _manifest_path(project_id, task_id, rid, user_root=user_root)
 
     if mpath.is_file():
@@ -211,6 +213,28 @@ def _lexical_key(value: "str | Path | None") -> str:
     return os.path.normcase(os.path.abspath(os.path.normpath(os.fspath(value))))
 
 
+def _filesystem_path(path: Path) -> Path:
+    """Use Windows extended paths for I/O after the owned path has been validated."""
+    if os.name != "nt":
+        return path
+    raw = os.path.abspath(path)
+    if raw.startswith(("\\\\?\\", "\\\\.\\")):
+        return path
+    if raw.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + raw[2:])
+    return Path("\\\\?\\" + raw)
+
+
+def _owned_io_root(base: Path, root: Path, project_id: str, task_id: str, run_id: str) -> Path | None:
+    io_root = _filesystem_path(root)
+    if (io_root.parents[2] != _filesystem_path(base)
+            or io_root.parent != _filesystem_path(root.parent)
+            or io_root.parent.parent.name != project_id
+            or io_root.parent.name != task_id or io_root.name != run_id):
+        return None
+    return io_root
+
+
 def _is_reparse_stat(st: os.stat_result) -> bool:
     return bool(int(getattr(st, "st_file_attributes", 0)) & _REPARSE_POINT)
 
@@ -283,12 +307,16 @@ def cleanup_run(
         return _set_cleanup_status(mpath, payload, status=STATUS_CLEANUP_PENDING, error="controlled temp base mismatch")
     if _lexical_key(payload.get("root_path")) != _lexical_key(expected_root):
         return _set_cleanup_status(mpath, payload, status=STATUS_CLEANUP_PENDING, error="owned root mismatch")
-    ancestor_error = _validate_safe_cleanup_ancestors(expected_base, project_id, task_id)
+    io_root = _owned_io_root(expected_base, expected_root, project_id, task_id, run_id)
+    if io_root is None:
+        return _set_cleanup_status(mpath, payload, status=STATUS_CLEANUP_PENDING,
+                                   error="normalized owned root mismatch")
+    ancestor_error = _validate_safe_cleanup_ancestors(io_root)
     if ancestor_error:
         return _set_cleanup_status(mpath, payload, status=STATUS_CLEANUP_PENDING, error=ancestor_error)
 
     try:
-        _remove_tree_no_follow(expected_root)
+        _remove_tree_no_follow(io_root)
     except OSError as exc:
         return _set_cleanup_status(
             mpath,

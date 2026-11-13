@@ -2,7 +2,7 @@
 id: external-redteam-review
 name: external-redteam-review
 display_name: 外部红队对抗审查
-version: 5.3.8
+version: 5.4.0
 status: active
 type: capability-skill
 description: 用户显式触发的外部红队对抗审查方法；以用户原始需求与契约为锚，检查无依据防御、过度开发与错误方向，保留原文、回应与证据闭环。

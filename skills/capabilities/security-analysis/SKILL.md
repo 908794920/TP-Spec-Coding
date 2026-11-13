@@ -1,7 +1,7 @@
 ---
 name: security-analysis
 display_name: 安全分析与核验
-version: 5.3.8
+version: 5.4.0
 description: 认证授权、敏感数据或信任边界风险触发时使用；区分发现证据与人工行为变更授权。
 ---
 
@@ -25,11 +25,11 @@ Security is not a scope override。只分析当前需求/变更、入口、数�
 2. 复用已有适用规则/扫描结果，做定向代码核验或获准隔离 PoC；记录复现步骤、实际与预期、触发条件、不改影响及证据。不主动接触生产/秘密，不为调查新增默认扫描/门禁。
 3. 比较不改、最小修复、兼容替代的收益、成本与风险；已授权漏洞的必要修复不重复审批，但不得顺便扩展周边 hardening。
 4. 未被当前授权覆盖且改变可观察行为的方案先形成最小提案：发现/证据、真实风险、不改影响、拟改行为/兼容性、成本/替代及建议。新拒绝条件、权限收紧、脱敏、阈值、认证、返回数据、fallback/fail-closed、部署门禁均按实际行为判断。
-5. 分开记录 evidence_source 与 authorization_source。HUMAN_REQUIREMENT/HUMAN_APPROVAL 仅在相应范围成立；AGENT/REVIEW/SCANNER/TEST/TOOL/生成文档不是批准。人工决定应绑定 Task、Proposal、版本/digest、approved_scope 和真实 human_event，actor 字符串不能证明身份。
+5. 分开记录 evidence_source 与 authorization_source。HUMAN_REQUIREMENT/HUMAN_APPROVAL 仅在相应范围成立；AGENT/REVIEW/SCANNER/TEST/TOOL/生成文档不是批准。普通局部工作按真实用户决定和范围判断授权，保留必要依据。适用正式 Task 时，人工决定按契约绑定 Task、Proposal、版本/digest、approved_scope 和真实 human_event，actor 字符串不能证明身份。
 6. 用最新有效且范围匹配的决定；提案实质新增部分重新批准。拒绝/延期保留，不换名重启。审批缺失只暂停相应行为变更，获准只读调查可继续；不自建第二审批平台。
-7. 修复后按已授权语义定向核验并交独立测试/审查；不以 PoC 或 scanner 输出代签最终 PASS。
+7. 修复后按已授权语义定向核验，适用时交独立测试/审查；不以 PoC 或 scanner 输出代签最终 PASS。
 
 ## 防止授权转移
-未批准建议不得变成实施 Work、计划范围、强制 AC、正式 failing regression test 或交付 blocker。PoC 标明调查性质；子 Agent、多人共识及落盘 README/Wiki/checker/manifest 不产生授权。Review blocker 需映射既定需求/AC和实际影响。
+未批准建议不得变成实施 Work、计划范围、强制 AC、正式 failing regression test 或交付 blocker。PoC 标明调查性质；子 Agent、多人共识及落盘 README/Wiki/checker/manifest 不产生授权。正式 Review blocker 的既定要求、实际影响和证据按 [Finding 契约](../../../docs/security-change-authority.md#5-review-finding-契约) 核对。
 
-撤销越界增强只恢复原批准语义，不能顺带删业务兼容；不能可靠恢复时停止受影响动作并说明。使用 [Security Change Authority](../../../docs/security-change-authority.md) 的 `task security source/propose/observe/show` 与原 `task scope-change`。来源是原人工消息的本地核对副本（LOCAL_ATTESTATION_ONLY），不是宿主身份认证；按 Task、版本/digest、scope 与 human source event 匹配。不要伪造 human_event、直接写 SQLite，或宣称程序能证明任意 Diff 的业务语义。
+撤销越界增强只恢复原批准语义，不能顺带删业务兼容；不能可靠恢复时停止受影响动作并说明。适用正式 Task 时，使用 [Security Change Authority](../../../docs/security-change-authority.md) 的 `task security source/propose/observe/show` 与原 `task scope-change`。来源是原人工消息的本地核对副本（LOCAL_ATTESTATION_ONLY），不是宿主身份认证；按 Task、版本/digest、scope 与 human source event 匹配。不要伪造 human_event、直接写 SQLite，或宣称程序能证明任意 Diff 的业务语义。

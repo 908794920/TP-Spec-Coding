@@ -19,6 +19,7 @@
 | Domain Agent | ID | 导航 | 执行契约 |
 | --- | --- | --- | --- |
 | tp-软件工程生命周期 | `tp-software-lifecycle` | [打开](./agents/tp-software-lifecycle.md) | [`agents/tp-software-lifecycle/SKILL.md`](../agents/tp-software-lifecycle/SKILL.md) |
+| tp-视频制作 | `tp-video-production` | [打开](./agents/tp-video-production.md) | [`agents/tp-video-production/SKILL.md`](../agents/tp-video-production/SKILL.md) |
 | tp-基座维护 | `tp-base-maintenance` | [打开](./agents/tp-base-maintenance.md) | [`agents/tp-base-maintenance/SKILL.md`](../agents/tp-base-maintenance/SKILL.md) |
 | tp-knowledge | `tp-knowledge` | [打开](./agents/tp-knowledge.md) | [`agents/tp-knowledge/SKILL.md`](../agents/tp-knowledge/SKILL.md) |
 | tp-wiki | `tp-wiki` | [打开](./agents/tp-wiki.md) | [`agents/tp-wiki/SKILL.md`](../agents/tp-wiki/SKILL.md) |

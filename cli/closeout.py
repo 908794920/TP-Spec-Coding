@@ -56,6 +56,9 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
     events = [dict(row) for row in conn.execute('SELECT * FROM task_event WHERE task_id=? ORDER BY id', (task_id,))]
     from .orchestration_policy import resolve_task_mode
     mode = resolve_task_mode(task, events)
+    if mode["domain"] != "software":
+        from .video_records import closeout
+        return closeout(conn, task, task_dir, events, mode=mode, base_root=base_root)
     quick = mode['workflow_mode'] == 'quick'
     result: dict[str, Any] = {"schema": SCHEMA, "task_id": task_id, "state": state,
         "ready": False, "already_terminal": state in record_first.TERMINAL_STATES,
@@ -199,13 +202,13 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
     subject = ""
     def subject_check():
         nonlocal snapshot, binding, subject
-        from .change_set import capture_change_set, same_bound_product_content
+        from .change_set import capture_bound_product, is_ops_subject, same_bound_product_content
         from .digest import compute_verification_subject_digest
         subject = compute_verification_subject_digest(task_dir)
         binding = record_first._latest_development_change_set(conn, task_id)
-        if not binding or not binding.get("repo_roots") or not binding.get("change_set_id"):
+        if not binding or not binding.get("change_set_id") or (not binding.get("repo_roots") and not is_ops_subject(binding["detail"])):
             raise ValueError("CHANGE_SET_REQUIRED: no explicit development product binding")
-        snapshot = capture_change_set(binding["repo_roots"])
+        snapshot = capture_bound_product(binding["detail"], task_dir, repo_roots=binding["repo_roots"])
         issues = []
         if not same_bound_product_content(binding["detail"], snapshot):
             issues.append("CHANGE_SET_STALE: current product differs from the recorded development candidate")
@@ -217,6 +220,8 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
         except ValueError as exc:
             issues.append(str(exc))
         return pending(issues, subject_digest=subject, change_set_id=snapshot["content_digest"],
+                       product_schema=snapshot["schema"],
+                       **({"ops_subject": snapshot} if is_ops_subject(binding["detail"]) else {}),
                        development_event_id=binding["event_id"])
     check("subject", "tp-development-engineer", ["identity"], subject_check)
 

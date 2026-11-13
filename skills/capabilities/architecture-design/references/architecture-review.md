@@ -1,6 +1,6 @@
 # 独立架构复审
 
-正式 Architecture Review 是本角色的独立 capability，不再另造永久“评审动作角色”。它不是所有 L2/L3 的固定门禁；只有高风险、跨系统、数据库/安全架构变化、多实质路线、高不确定性或 human_owner 明确要求时触发。
+正式 Architecture Review 由架构师在独立上下文执行，适用性按 [架构设计的按需复审](../SKILL.md#按需复审) 确定。以下约束适用于正式结果，设计自查按实际性质记录。
 
 正式 Review 必须：
 - 使用与设计执行不同的 isolated execution context；

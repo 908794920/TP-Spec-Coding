@@ -6,7 +6,7 @@ Git 首建/重建与日常维护使用同一来源规则：必须配置本地已
 
 1. `wiki doctor`
 2. `wiki init --repo <id>`
-3. 没有 baseline 时 `wiki build --repo <id>`；已有成功 baseline 的明确全量复核用 `wiki maintain --repo <id> --repair`，不删除旧 baseline；旧身份缺 commit 时使用 `--initialize-source` 并按初次范围验证。先固定来源，初次 scan 将 scanner-visible source 记为 STRUCTURAL/added，plan 标注 `wiki_eligibility`，initial 不触发 mass-change guard。
+3. 没有 baseline 时 `wiki build --repo <id>`；已有成功 baseline 的获准全量重建或修复用 `wiki maintain --repo <id> --repair`，保留旧 baseline；旧身份缺 commit 时使用 `--initialize-source` 并按初次范围验证。仅复核正式 Wiki 时走[质量门的单独全量语义审计](../../wiki/rules/quality-gates.md#standalone-full-semantic-audit)。先固定来源，初次 scan 将 scanner-visible source 记为 STRUCTURAL/added，plan 标注 `wiki_eligibility`，initial 不触发 mass-change guard。
 4. AI 用 `wiki source-read --repo <id> --path <source>` 按需读取固定来源，先按 topology 中的 Wiki eligibility 与真实源码做**能力/子系统聚类**，再设计高信息密度 Wiki 结构；一个源码文件不等于一篇 Markdown。遵循 `wiki/rules/content-standard.md` 的 Currentity、Existence≠Authority、Responsibility Attribution、Pipeline Stage Ownership 与 Interface/Scope Exactness；关键 cite 首建即带行号。任何 command/CLI option/config key/threshold/default/mandatory step 必须回真实 parser/schema/config/canonical protocol 核验，禁止根据旧模板或相邻流程补全。
 5. 分批填充正文；不修改 source repo。对同一能力同时存在新旧实现的场景，必须明确 CURRENT 与 COMPATIBILITY/RECOVERY/HISTORICAL，不能混成一条主流程。
 6. `wiki manifest-refresh --repo <id>`

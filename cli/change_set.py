@@ -15,6 +15,7 @@ from typing import Any, Iterable
 from . import command_context
 
 SCHEMA = "tp-spec.change-set/v1"
+OPS_SUBJECT_SCHEMA = "tp-spec.ops-subject/v1"
 _EXCLUDED_ROOTS = {".tp-spec", ".execution"}
 
 
@@ -224,6 +225,22 @@ def _capture_change_set(repo_roots: Iterable[str | Path]) -> dict[str, Any]:
     }
 
 
+def is_ops_subject(detail: dict[str, Any]) -> bool:
+    snapshot = detail.get("change_set")
+    return isinstance(snapshot, dict) and snapshot.get("schema") == OPS_SUBJECT_SCHEMA
+
+
+def capture_bound_product(detail: dict[str, Any], task_dir: str | Path | None, *,
+                          repo_roots: Iterable[str | Path] | None = None) -> dict[str, Any]:
+    """Re-read the recorded product identity using its existing evidence source."""
+    if is_ops_subject(detail):
+        if task_dir is None:
+            raise ChangeSetError("ops subject requires a Task directory")
+        from .ops_subject import capture
+        return capture(task_dir, detail["change_set"].get("manifest_ref"))
+    return capture_change_set((detail.get("repo_roots") or []) if repo_roots is None else repo_roots)
+
+
 def current_content_digest(repo_roots: Iterable[str | Path]) -> str:
     return str(capture_change_set(repo_roots)["content_digest"])
 
@@ -248,6 +265,9 @@ def same_bound_product_content(detail: dict[str, Any], current: dict[str, Any]) 
     bound = detail.get("change_set") or {}
     if not isinstance(bound, dict):
         return False
+    if is_ops_subject(detail) or current.get("schema") == OPS_SUBJECT_SCHEMA:
+        return (bound == current and is_ops_subject(detail)
+                and not detail.get("repo_roots"))
     expected, actual = bound.get("repositories"), current.get("repositories")
     if not isinstance(expected, list) or not expected or not isinstance(actual, list):
         return False

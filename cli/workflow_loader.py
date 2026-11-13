@@ -306,9 +306,8 @@ def load_workflow(base_root=None) -> WorkflowDef:
         raise
     except Exception as e:
         raise WorkflowLoadError(f"failed to parse workflow.yaml: {e}")
-    # Active runtime loads only the five-state current contract. Frozen
-    # pre-Record-first microstates live under cli.migrations.v5_2_3 and are
-    # imported only by explicit migration/history tooling.
+    # Active runtime loads only the five-state current contract. Retired
+    # pre-Record-first microstate helpers are not part of the active surface.
     wf = WorkflowDef(
         version=data["version"],
         states=dict(data["states"]),

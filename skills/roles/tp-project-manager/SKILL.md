@@ -1,7 +1,7 @@
 ---
 id: tp-project-manager
 name: tp-项目经理
-version: 5.3.8
+version: 5.4.0
 status: active
 type: workflow-role
 role: tp-project-manager

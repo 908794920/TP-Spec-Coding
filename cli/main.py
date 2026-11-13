@@ -125,8 +125,6 @@ def build_parser() -> argparse.ArgumentParser:
     config_parser = subparsers.add_parser("config", help="Config management")
     config_cmd.add_config_subparsers(config_parser)
 
-    # legacy commit compatibility/recovery surface; daily roles use task record-first APIs.
-
     # 高风险动作收据（不改变状态）
     receipt_cmd.add_receipt_subparsers(subparsers)
 

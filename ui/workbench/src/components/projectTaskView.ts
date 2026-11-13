@@ -1,11 +1,10 @@
 import type { TaskIndexRow } from '../types';
+import { timestampRaw } from '../facts';
 
-export type TaskFilter = 'in_progress' | 'blocked' | 'completed' | 'other' | 'all';
+export type TaskFilter = 'in_progress' | 'other' | 'all';
 
 export const taskFilters: { key: TaskFilter; label: string }[] = [
     { key: 'in_progress', label: '在途' },
-    { key: 'blocked', label: '阻塞' },
-    { key: 'completed', label: '已完成' },
     { key: 'other', label: '其他' },
     { key: 'all', label: '全部' },
 ];
@@ -19,15 +18,10 @@ export function isInProgress(row: TaskIndexRow): boolean {
 }
 
 export function matchesTaskFilter(row: TaskIndexRow, filter: TaskFilter): boolean {
-    const state = stateOf(row), active = isInProgress(row);
     if (filter === 'in_progress')
-        return active;
-    if (filter === 'blocked')
-        return row.retired !== true && state === 'BLOCKED';
-    if (filter === 'completed')
-        return row.retired !== true && state === 'COMPLETED';
+        return isInProgress(row);
     if (filter === 'other')
-        return !active && !(row.retired !== true && state === 'COMPLETED');
+        return !isInProgress(row);
     return true;
 }
 
@@ -37,6 +31,10 @@ export function filterProjectTasks(rows: TaskIndexRow[], query: string, filter: 
         if (!matchesTaskFilter(row, filter))
             return false;
         return !needle || `${row.task_id}\n${row.title}\n${row.owner ?? ''}`.toLocaleLowerCase().includes(needle);
+    }).sort((a, b) => {
+        const noteOrder = Number(!!b.note?.trim()) - Number(!!a.note?.trim());
+        const time = (row: TaskIndexRow) => Date.parse(timestampRaw(row.updated_at)) || 0;
+        return noteOrder || time(b) - time(a);
     });
 }
 

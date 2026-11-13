@@ -1,7 +1,7 @@
 ---
 name: tp-knowledge-task-convergence
 display_name: Task 知识与记忆收敛
-version: 5.3.8
+version: 5.4.0
 description: 用于 standard Task 最终交付时消费可信 Knowledge Request，逐项评估输入、定向判重或维护 canonical，并记录 Knowledge Result 与项目 Memory 评估；不运行全库维护链。
 ---
 
@@ -9,21 +9,23 @@ description: 用于 standard Task 最终交付时消费可信 Knowledge Request�
 
 ## 入口与可信输入
 
-standard Task 交付由集成交付工程师调用 [knowledge-capture](../../capabilities/knowledge-capture/SKILL.md) 提炼有效需求与各步骤材料，并通过正常 `delivery-converge` 为适用 L0–L3 创建或复用 `KNOWLEDGE_CONVERGENCE_REQUEST`；没有 knowledge signals 也要评估，不强制新增知识。quick 不自动创建 Request 或运行此收敛；用户明确提出知识工作时按相应范围处理。先只读 `tp-spec knowledge task-inputs --task <TASK-ID> --task-dir <TASK-DIR> --db <DB>`，按清单逐项读取来源，再提交 `knowledge task-converge --assessment FILE|-`。`task-inputs` 本身不创建 Request、不查询 Knowledge，也不证明正文已读。
+standard Task 交付由集成交付工程师调用 [knowledge-capture](../../capabilities/knowledge-capture/SKILL.md) 提炼有效需求与各步骤材料，并通过正常 `delivery-converge` 为适用 L0–L3 创建或复用 `KNOWLEDGE_CONVERGENCE_REQUEST`。没有 knowledge signals 也要评估，不强制新增知识。quick 不自动创建 Request 或运行此收敛。用户另行提出知识工作时按实际意图选择对应能力。
+
+复用同一当前 Request 的有效交接，缺导航或需核对时先只读 `tp-spec knowledge task-inputs --task <TASK-ID> --task-dir <TASK-DIR> --db <DB> --compact`，按契约定向取完整索引或单项。清单不创建 Request、不查询 Knowledge，也不证明正文已读。完成实际评估后提交 `knowledge task-converge --assessment FILE|-`。
 
 核对可信 Request、`request_current`、当前 READY、有效 Change Set、输入 digest 与实际适用的 Verification/Review。轻量任务不适用的前置为 0，不伪造 PASS。输入问题或最终候选失效时保持待处理，由原交付流程解决后重发或复用 Request；本能力不重裁软件验收，不手改 Runtime。完整字段、命令、复用、失败和历史兼容契约只在本类任务中读 [Task 知识与记忆收敛契约](../../../agents/tp-knowledge/references/task-convergence.md)，并以该原路径为权威。
 
 ## 逐项处置
 
-- 覆盖所有真实输入；已替代或临时内容保留来源与分类，不升级为永久约束。只读已知工件和明确引用，不全盘递归扫描其他 Task、历史或 Vault。
-- 仅在 current project + registered shared scopes 做最小 targeted search；该次收敛关闭 global fallback。每个候选保留实际 query、相关输入与具体判断，不以主题相似代替精确命中。
+- 覆盖所有真实输入。核对交接已读来源、覆盖、判断与当前输入指纹；复用仍有效的逐项评估，自己定向阅读本角色处置所依赖、变化或缺失的材料，不把接收的阅读证据写成亲读。已替代或临时内容保留来源与分类，不升级为永久约束。不全盘递归扫描其他 Task、历史或 Vault。
+- 正式命令执行候选的定向 queries，仅限 current project + registered shared scopes，关闭 global fallback，同一次提交内相同 query 去重。确需先查才能确定目标时再预查。每个候选保留实际 query、相关输入与具体判断，不以主题相似代替精确命中。
 - `CREATED / UPDATED`：在获准范围内先写好 exact canonical，绑定本 Task 和该候选准确的文件、事件或 Work locator；正式命令读回内容/来源、局部 lint 并索引该条。`UPDATED` 还要有同一 canonical ID 的真实定向命中。
 - `DUPLICATE`：实际搜索命中并读回已有 exact canonical，不复制第二份正文。`NO_DURABLE_INSIGHT`：同样实际阅读、执行非空定向 query，并记录来源和具体原因，不绑定伪目标。
-- 一份 assessment 记录逐项 `coverage`、Knowledge 处置及 Memory 判断；混合结果以 `knowledge_results` 为准，不能把摘要 disposition 推断到全部候选。Result 保留检索、目标内容与适用的单条索引 receipt。
+- 一份 assessment 记录逐项 `coverage`、Knowledge 处置及 Memory 判断。已实读且同语义的输入可按契约分组，同一 canonical 目标的决定合并。混合结果以 `knowledge_results` 为准，Result 保留检索、目标内容与适用的单条索引 receipt。
 
 ## 项目记忆与结果复用
 
-使用 [tp-memory-capture](../../capabilities/tp-memory-capture/SKILL.md) 判断项目 Memory 正文及根 `AGENTS.md` 薄入口的可发现性；已评估与已持久化分开。保存或已覆盖需真实目标、片段和读回；可选项未保存要记 `NOT_PERSISTED`、责任与恢复条件，不能称已保存，也不把未持久化误称未评估。授权不清只停止对应写入；临时/已替代信息不升级为永久规则。
+按 [tp-memory-capture](../../capabilities/tp-memory-capture/SKILL.md) 核对交接的项目 Memory 与根 `AGENTS.md` 薄入口处置，仅补缺失或失效部分。已评估与已持久化分开，保存或已覆盖需真实目标、片段和读回。可选项未保存记 `NOT_PERSISTED`、责任与恢复条件。授权不清只停止对应写入；临时/已替代信息不升级为永久规则。
 
 相同稳定输入、assessment、检索上下文和目标读回可复用原 Result；输入变化只重评受影响项，不重跑仍有效的技术检查。旧 Request 保留原参数兼容，旧终态不追补；采用旧 closeout 但缺当前学习 Request 的在途任务走正常 `delivery-converge`，不补造历史、Result 或 PASS。普通 FACT 不替代正式 Result；索引/telemetry 与 Runtime 不构成跨库原子事务，失败按实际 `external_effects` 和 journal/reconcile 恢复。
 

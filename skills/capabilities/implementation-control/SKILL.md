@@ -1,7 +1,7 @@
 ---
 name: implementation-control
 display_name: 实现过程控制
-version: 5.3.8
+version: 5.4.0
 description: Use while implementing an TP-Spec-Coding task when code changes, refactoring, reuse decisions, debugging, or scope control are required.
 ---
 
@@ -12,7 +12,7 @@ description: Use while implementing an TP-Spec-Coding task when code changes, re
 
 ## 按当前影响选用的方法
 
-这是方法清单，不是每轮必跑步骤；按触发条件选用，不要求逐项回答或生成固定路线。已确认的局部反馈留在原 Task，围绕本轮目标、当前事实、获准范围和完成/停止条件行动；父 Task 为 L2/L3 不改变本轮边界。无需修改是合法结论。
+这是方法清单，不是每轮必跑步骤；按触发条件选用，不要求逐项回答或生成固定路线。围绕本轮目标、当前事实、获准范围和完成/停止条件行动。下文 Task/Work、执行 Envelope 与 Runtime 记账只在适用正式 Task 时执行，已有 Task 的返修留在原任务，父等级不扩大本轮范围；普通局部修改直接处理。无需修改是合法结论。
 
 ### THINK — 事实先于简化
 找到真实入口、当前实现、调用链、可验证目标和关键假设。仅相关事实存在缺口时定向调查，不为凑清单扫描全仓。
@@ -54,7 +54,7 @@ description: Use while implementing an TP-Spec-Coding task when code changes, re
 
 ## 文件归属
 - 产品运行、部署、长期维护所需资产：遵循目标仓库既有目录，例如正式 Migration SQL、Mapper XML、目标业务仓库明确允许的长期回归测试、产品 README；基座临时用例不属于持久产品资产。
-- 当前 Task 的方案、调查、路线和事实修正：放 `.tp-spec/tasks/<TASK-ID>/`。
+- 已有 Task 的方案、调查、路线和事实修正：放 `.tp-spec/tasks/<TASK-ID>/`；无 Task 时沿用项目既有获准位置，不为存放说明创建任务。
 - 当前 Task 的测试/验收证据：放 `evidence/`，例如验证 SQL、日志、截图、测试报告。
 - 一次性夹具、Mock、中间输出：使用 TP-Spec 受控系统临时目录，不污染产品仓库。
 - SQL 不按扩展名一刀切：随产品交付的 SQL 属于产品资产；一次性调查/验证 SQL 属于 Task Evidence。

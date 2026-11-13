@@ -73,6 +73,15 @@ event_families:
   DELIVERY_RESULT:
     required: [operation, result_status, verification_change_set_id, review_event_id, review_change_set_id, change_set_id]
     operation: DELIVERY_CONVERGE
+  VIDEO_EXPORT_RECORDED:
+    required: [operation, result_status, domain, phase, video_payload, video_digest]
+    operation: RECORD
+  VIDEO_QC_RECORDED:
+    required: [operation, result_status, domain, phase, decision, video_payload, video_digest]
+    operation: RECORD
+  VIDEO_DELIVERY_RECORDED:
+    required: [operation, result_status, domain, phase, video_payload, video_digest]
+    operation: RECORD
   KNOWLEDGE_CONVERGENCE_REQUEST:
     required: [operation, result_status, delivery_event_id, verification_event_id, review_event_id, change_set_id, trigger_reason_codes, search_scope, source_refs]
     operation: KNOWLEDGE_REQUEST

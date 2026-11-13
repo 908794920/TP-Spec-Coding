@@ -52,6 +52,7 @@ export function TaskDetail({ object, snapshot, initialTab, defaultTab, details, 
   const execution = record(workflow.execution);
   const terminal = task.state === 'COMPLETED' || task.state === 'CANCELLED' || workflow.retired === true || execution.terminal === true;
   const quick = workflow.workflow_mode === 'quick';
+  const video = task.domain === 'video';
   const retired = workflow.retired === true;
   const mismatch = !!details.data && details.data.read.task_revision !== snapshot.read.task_revision;
   return <dialog className="task-detail task-detail-modal" ref={dialog} aria-labelledby="detail-heading" onCancel={e => { e.preventDefault(); onClose(); }} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}>
@@ -72,13 +73,18 @@ export function TaskDetail({ object, snapshot, initialTab, defaultTab, details, 
           <Fields value={{ task_state: stateLabel('task', task.state), ...(retired ? { retirement_state: '已退休（历史只读）' } : {}),
             current: retired ? '无（已退休，历史只读）' : terminal ? '无（任务已结束）' : stageLabel(workflow.current_step) || '当前步骤未解析',
             next: retired ? '无（已退休，历史只读）' : terminal ? '无（任务已结束）' : stageLabel(workflow.next_step) || '下一步未解析',
-            current_source: workflow.current_step_source, next_source: workflow.next_step_source, ...(!quick ? { effective_level: workflow.effective_level } : {}),
+            current_source: workflow.current_step_source, next_source: workflow.next_step_source,
+            ...(video ? { domain: '视频制作' } : !quick ? { effective_level: workflow.effective_level } : {}),
             coordinator: execution.coordinator || '历史未记录', coordinator_source: execution.coordinator_source || '历史未记录',
             current_roles: retired ? '无（已退休，历史只读）' : terminal ? '无（任务已结束）' : execution.current_roles,
             next_responsibility: workflowNextResponsibility(workflow, terminal),
             completed_at: task.completed_at, read_at: snapshot.read.completed_at }} labels={{ task_state: retired ? '最后正式工作流状态' : 'Task 正式状态', retirement_state: '行政退休记录', current: '当前步骤', next: '下一步', current_source: '当前步骤来源', next_source: '下一步来源', effective_level: '有效流程等级', coordinator: 'Task 协调责任（独立于本步角色）', completed_at: '正式结束时间', read_at: '读取时间' }}/>
           <Disclosure label="路由与来源字段"><Fields value={{ current: workflow.current_step, next: workflow.next_step, route: workflow.route }}/></Disclosure>
         </section>
+        {video && <section className="detail-section"><h4>媒体导出与检查</h4>
+          <Fields value={record(workflow.media)} labels={{ version: '导出版本', main: '主文件', status: '记录状态',
+            event_id: '导出事件', recorded_at: '登记时间', hashes_rechecked: '本次重查文件哈希',
+            qc: '当前导出的检查记录', delivery_status: '交付记录', issues: '当前待处理事项' }}/></section>}
         <Disclosure label="Task 最近记录与工作段（只读）">
           <p className="muted">以下属于父 Task {String(task.task_id ?? '')}，不是所选 WorkItem 的独立结论；摘要不决定 PASS，工作段不证明执行者在线。</p>
           <Fields value={{ latest_checkpoint: snapshot.data.latest_checkpoint, summary: snapshot.data.summary,
@@ -102,7 +108,7 @@ export function TaskDetail({ object, snapshot, initialTab, defaultTab, details, 
         </>}
         {tab === 'verification' && data && <VerificationDetail data={data}/>}
         {tab === 'evidence' && data && <>
-          <EvidenceList value={data.evidence}/><Outcome title="Delivery（不等于正式结单或已上线）" value={data.delivery}/>
+          <EvidenceList value={data.evidence}/><Outcome title={video ? '媒体交付记录' : 'Delivery（不等于正式结单或已上线）'} value={data.delivery}/>
           {/* `stateLabel` needs the object kind, which `Fields` cannot know, so the kind is applied here. */}
           <Fields value={{ ...record(data.task), state: stateLabel('task', record(data.task).state) }} labels={{ task_id: '正式 Task', state: '正式状态', phase: '阶段', owner: terminal ? 'Task 责任记录（历史）' : 'Task 负责人', completed_at: '正式结束时间' }}/>
           <p className="muted">未取得单独的“用户接收交付”事实时保持未记录，不从 Owner accept、Delivery READY 或 WorkItem 完成推断。</p>

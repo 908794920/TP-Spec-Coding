@@ -98,6 +98,9 @@ EVENT_POLICIES: Dict[str, Dict[str, Any]] = {
     "TASK_MODE_SELECTED": _policy("governance", ("task_mode_select",), True,
         _EVENT_SCHEMA_FIELDS + ("workflow_mode", "previous_mode", "user_source", "flush_id")),
     "OWNER_ACCEPTANCE_DECISION": _policy("governance", ("task_acceptance_override",), True, _EVENT_SCHEMA_FIELDS + ("mode", "acs", "reason", "residual_risk")),
+    "VIDEO_EXPORT_RECORDED": _policy("governance", ("video_records",), True, _EVENT_SCHEMA_FIELDS + ("video_payload", "video_digest")),
+    "VIDEO_QC_RECORDED": _policy("governance", ("video_records",), True, _EVENT_SCHEMA_FIELDS + ("video_payload", "video_digest")),
+    "VIDEO_DELIVERY_RECORDED": _policy("governance", ("video_records",), True, _EVENT_SCHEMA_FIELDS + ("video_payload", "video_digest")),
     "WORKFLOW_CONFIRMATION": _policy(
         "governance", ("workflow_confirm",), True,
         _EVENT_SCHEMA_FIELDS + ("confirmation_kind", "source_stage", "source_role", "source_event_id", "source_event_digest",
@@ -190,6 +193,14 @@ def load_owner_acceptance_decisions(conn, task_id: str) -> list[dict]:
             source = detail.get("decision_source")
             logical = detail.get("logical_request")
             response = logical.get("response") if isinstance(logical, dict) else None
+            media = detail.get("subject_scope") == "media"
+            if media and (type(detail.get("media_export_event_id")) is not int
+                          or detail["media_export_event_id"] < 1
+                          or not re.fullmatch(r"[0-9a-f]{64}", str(detail.get("media_manifest_digest") or ""))
+                          or not isinstance(response, dict)
+                          or any(response.get(key) != detail.get(key) for key in (
+                              "subject_scope", "subject_digest", "media_manifest_digest", "media_export_event_id"))):
+                continue
             if (not isinstance(source, dict)
                     or source.get("kind") != "human_owner_statement"
                     or not str(source.get("reference") or "").strip()
@@ -197,7 +208,7 @@ def load_owner_acceptance_decisions(conn, task_id: str) -> list[dict]:
                     or not str(detail.get("request_id") or "").strip()
                     or not re.fullmatch(r"[0-9a-f]{64}", str(detail.get("payload_sha256") or ""))
                     or not str(detail.get("subject_digest") or "").strip()
-                    or not str(detail.get("change_set_id") or "").strip()
+                    or (not media and not str(detail.get("change_set_id") or "").strip())
                     or not str(detail.get("source_evidence") or "").strip()
                     or not re.fullmatch(r"[0-9a-f]{64}", str(detail.get("source_evidence_sha256") or ""))
                     or not isinstance(logical, dict)
@@ -224,6 +235,7 @@ def effective_owner_acceptance(
     task_dir: Optional[Union[str, Path]] = None,
     change_set_id: Optional[str] = None,
     subject_digest: Optional[str] = None,
+    media: Optional[dict] = None,
 ) -> Dict[str, Any]:
     """Return the latest trusted owner disposition for each acceptance criterion.
 
@@ -242,7 +254,19 @@ def effective_owner_acceptance(
     base = Path(task_dir).resolve() if task_dir is not None else None
     current_change_set = str(change_set_id or "").strip()
     current_subject = str(subject_digest or "").strip()
-    if base is not None:
+    from .task_coordinator import task_domain
+    task = conn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
+    domain = task_domain(conn, task) if task is not None else "software"
+    if domain == "video":
+        current_change_set = ""
+        if base is not None and media is None:
+            from .video_records import media_binding
+            try:
+                media = media_binding(conn, task, base)
+            except (ValueError, OSError, KeyError, TypeError):
+                media = {}
+        current_subject = (media or {}).get("subject_digest", "")
+    elif base is not None:
         if not current_subject:
             from .digest import compute_verification_subject_digest
             try:
@@ -254,9 +278,9 @@ def effective_owner_acceptance(
                 from . import record_first
                 development = record_first._latest_development_change_set(conn, task_id)
                 roots = list(development.get("repo_roots") or []) if development else []
-                if development and development.get("change_set_id") and roots:
-                    from .change_set import capture_change_set, same_bound_product_content
-                    current = capture_change_set(roots)
+                from .change_set import capture_bound_product, is_ops_subject, same_bound_product_content
+                if development and development.get("change_set_id") and (roots or is_ops_subject(development["detail"])):
+                    current = capture_bound_product(development["detail"], base, repo_roots=roots)
                     if same_bound_product_content(development["detail"], current):
                         current_change_set = str(current.get("content_digest") or "")
             except Exception:
@@ -274,21 +298,23 @@ def effective_owner_acceptance(
             by_ac.pop(str(raw_ac).strip(), None)
         if mode == "accept":
             scope = item.get("subject_scope", "full")
-            if scope not in ("full", "technical"):
-                continue
-            if scope == "technical" and scope not in subjects and base is not None:
-                from .digest import compute_verification_subject_digest
-                try:
-                    subjects[scope] = compute_verification_subject_digest(base, scope=scope)
-                except (OSError, UnicodeError):
-                    subjects[scope] = ""
-            bound_subject = subjects.get(scope, "")
-            if not base or not current_change_set or not bound_subject:
-                continue
-            if str(item.get("change_set_id") or "") != current_change_set:
-                continue
-            if str(item.get("subject_digest") or "") != bound_subject:
-                continue
+            if domain == "video":
+                if not base or not media or any(item.get(key) != value for key, value in media.items()):
+                    continue
+            else:
+                if scope not in ("full", "technical"):
+                    continue
+                if scope == "technical" and scope not in subjects and base is not None:
+                    from .digest import compute_verification_subject_digest
+                    try:
+                        subjects[scope] = compute_verification_subject_digest(base, scope=scope)
+                    except (OSError, UnicodeError):
+                        subjects[scope] = ""
+                bound_subject = subjects.get(scope, "")
+                if (not base or not current_change_set or not bound_subject
+                        or str(item.get("change_set_id") or "") != current_change_set
+                        or str(item.get("subject_digest") or "") != bound_subject):
+                    continue
             source_path = str(item.get("source_evidence") or "").strip()
             checked = validate_evidence_path(base, source_path, require_evidence_dir=True)
             if (not checked.ok
@@ -307,11 +333,13 @@ def effective_owner_acceptance(
         if isinstance(scope, dict) and ac in {str(value).strip() for value in scope.get("acs") or []}:
             visual.add(ac)
     return {
+        "domain": domain,
         "by_ac": by_ac,
         "accepted_acs": accepted,
         "visual_acs": sorted(visual),
         "change_set_id": current_change_set,
         "subject_digest": current_subject,
+        **(media or {} if domain == "video" else {}),
     }
 
 
@@ -602,4 +630,11 @@ def load_current_verification(conn, task_id: str, task_dir: Union[str, Path], *,
         return None
     if require_full and scope != "full":
         return None
+    from .change_set import is_ops_subject, same_bound_product_content
+    if is_ops_subject(current.detail):
+        from .record_first import _latest_development_change_set
+        development = _latest_development_change_set(conn, task_id)
+        if (not development or development["repo_roots"] or known["repo_roots"]
+                or not same_bound_product_content(development["detail"], current.detail["change_set"])):
+            return None
     return current

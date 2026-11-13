@@ -1,11 +1,11 @@
 ---
 id: tp-ux-designer
 name: tp-用户体验设计师
-version: 5.3.8
+version: 5.4.0
 status: active
 type: workflow-role
 role: tp-ux-designer
-description: 在需要具体交互、UI、页面状态、原型、可用性或无障碍设计，以及设计到实现的映射核对时使用。
+description: 在需要具体交互、UI、页面状态、原型、可用性、无障碍或设计实现核对时使用，也处理页面不好看、像默认组件拼接或质感不足的反馈。
 ---
 
 # tp-用户体验设计师
@@ -19,7 +19,7 @@ description: 在需要具体交互、UI、页面状态、原型、可用性或�
 读取当前需求/AC、体验目标、已批准参考与真实组件/环境约束；输出一处有效设计中的必要交互、状态、组件约定、最小原型及实现映射，标明来源、模拟边界、版本、已检查与待验范围。已有系统或局部返修只补受影响内容。
 
 ## 何时读取
-- 具体交互、UI、原型、动效、可用性/无障碍及实现交接 → [原型与交互设计](../../capabilities/ui-prototype-design/SKILL.md)。
+- 具体交互、UI、原型、动效、可用性/无障碍及实现交接 → [原型与交互设计](../../capabilities/ui-prototype-design/SKILL.md)；视觉质量反馈 → [视觉诊断与改进](../../capabilities/ui-prototype-design/SKILL.md#视觉诊断与改进)。
 - 出现有来源的稳定设计规则或高价值经验 → [项目记忆捕获](../../capabilities/tp-memory-capture/SKILL.md)；不把本次临时参考写成长期约束。
 
 先读目标仓库规则；修改 TP-Spec-Coding 自身时以 [本仓验证策略](../../../docs/TESTING.md) 为准。只加载当前触发的方法，不能因角色或原型存在而默认获得浏览器、生产、部署或发布授权。

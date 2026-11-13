@@ -130,7 +130,7 @@ def trusted(row):
         result = body.get("result")
         if (not isinstance(result, dict) or not isinstance(result.get("artifact"), dict)
                 or not isinstance(result["artifact"].get("kind"), str)
-                or result["artifact"]["kind"] not in {"snapshot", "patch", "commit"}
+                or result["artifact"]["kind"] not in {"snapshot", "patch", "commit", "media"}
                 or any(not isinstance(result.get(k), list) for k in ("changed_paths", "outputs", "evidence_items"))
                 or any(not isinstance(output, dict) or not isinstance(output.get("path"), str) for output in result["outputs"])
                 or result.get("output_digest") != execution.digest(result["outputs"])):
@@ -140,10 +140,14 @@ def trusted(row):
     return body
 
 
-def project_units(rows):
+def project_units(rows, *, domain=None):
     """Replay only registered Work facts. Legacy rows never acquire invented metadata."""
     units, candidates, issues = {}, [], []
     from . import work_takeover
+    if domain is None and rows:
+        from .task_coordinator import read_creation_coordinator
+        domain = read_creation_coordinator({"task_id": rows[0]["task_id"]}, rows)["domain"]
+    video = domain == "video"
     prior = []
     legacy_takeovers = {}
     for raw in rows:
@@ -185,11 +189,17 @@ def project_units(rows):
             continue
         action, wid = body["action"], row.get("work_item_id")
         if action == "candidate":
+            if video:
+                issues.append(f"VIDEO_GIT_CANDIDATE_INVALID:{row['id']}")
+                continue
             candidates.append({"event_id": row["id"], "created_at": row["created_at"], **body})
             continue
         if action == "create":
             if wid in units or not isinstance(body.get("spec"), dict):
                 issues.append(f"WORK_CREATE_INVALID:{row['id']}")
+                continue
+            if body["spec"].get("domain", "software") != ("video" if video else "software"):
+                issues.append(f"WORK_DOMAIN_INVALID:{row['id']}")
                 continue
             units[wid] = {"item_id": wid, "spec": body["spec"], "create_event_id": row["id"],
                           "attempt": 0, "result": None, "receipt": None, "history": [],
@@ -206,6 +216,9 @@ def project_units(rows):
             continue
         if action in {"result", "release"} and (row.get("actor_role"), row.get("actor_agent")) != (unit.get("owner_role"), unit.get("owner_agent")):
             issues.append(f"WORK_OWNER_INVALID:{row['id']}")
+            continue
+        if action == "result" and (body["result"]["artifact"]["kind"] == "media") != video:
+            issues.append(f"WORK_DOMAIN_INVALID:{row['id']}")
             continue
         unit["history"].append(record)
         if action == "claim":
@@ -267,8 +280,11 @@ def coordinator(facts, actor, agent):
 def normalize_spec(conn, task, facts, raw, *, item_id, kind="WORK", issue=None):
     from .execution_cmd import role_ids
     from .yaml_checks import check_acceptance_yaml
+    from . import video_policy
+    video = facts.get("domain") == "video"
     raw = authority.obj(raw, {"scope", "scope_refs", "step_id", "roles", "paths", "ac_refs", "depends_on",
-        "repo_root", "target_root", "isolation", "shared_paths", "security_context"}, "Work spec")
+        "repo_root", "target_root", "isolation", "shared_paths", "security_context"} | ({"media_root"} if video else set()),
+        "Work spec")
     if not facts.get("plan"):
         raise ValueError("WORK_PLAN_REQUIRED: adopt an explicit execution plan before scoped Work")
     step = next((s for s in facts["steps"] if s["id"] == raw.get("step_id")), None)
@@ -291,17 +307,23 @@ def normalize_spec(conn, task, facts, raw, *, item_id, kind="WORK", issue=None):
     if step.get("ac_refs") and set(acs) - set(step["ac_refs"]):
         raise ValueError("WORK_OUTSIDE_PARENT_AC")
     roles = _strings(raw.get("roles"), "roles", required=True)
-    if set(roles) - role_ids() or (kind == "WORK" and set(roles) - set(step["roles"])):
+    available_roles = video_policy.ROLES if video else role_ids() - video_policy.ROLES - {video_policy.DOMAIN_AGENT}
+    if set(roles) - available_roles or (kind == "WORK" and set(roles) - set(step["roles"])):
         raise ValueError("WORK_ROLE_NOT_PLANNED: normal Work uses parent roles; Fix declares repair participants")
     root = task_dir(conn, task["task_id"]).parents[2]
-    repo = Path(raw.get("repo_root") or root).expanduser().resolve()
-    target = Path(raw.get("target_root") or root).expanduser().resolve()
-    if not repo.is_dir() or not target.is_dir():
-        raise ValueError("WORK_REPOSITORY_UNAVAILABLE")
-    from .delivery_contract import load_repository_scope
-    known = load_repository_scope(conn, task["task_id"])["repo_roots"] or [str(root.resolve())]
-    if str(target) not in {str(Path(p).resolve()) for p in known}:
-        raise ValueError("WORK_TARGET_OUTSIDE_TASK: bind the actual parent repository scope first")
+    if video:
+        if "repo_root" in raw or "target_root" in raw:
+            raise ValueError("VIDEO_WORK_REQUIRES_MEDIA_ROOT")
+        repo = target = video_policy.media_root(root, _text(raw.get("media_root"), "media_root"))
+    else:
+        repo = Path(raw.get("repo_root") or root).expanduser().resolve()
+        target = Path(raw.get("target_root") or root).expanduser().resolve()
+        if not repo.is_dir() or not target.is_dir():
+            raise ValueError("WORK_REPOSITORY_UNAVAILABLE")
+        from .delivery_contract import load_repository_scope
+        known = load_repository_scope(conn, task["task_id"])["repo_roots"] or [str(root.resolve())]
+        if str(target) not in {str(Path(p).resolve()) for p in known}:
+            raise ValueError("WORK_TARGET_OUTSIDE_TASK: bind the actual parent repository scope first")
     isolation = authority.obj(raw.get("isolation", {"mode": "sequential"}), {"mode", "reference"}, "isolation")
     if isolation.get("mode") not in {"sequential", "declared"}:
         raise ValueError("WORK_ISOLATION_INVALID: sequential or declared; neither asserts host enforcement")
@@ -316,7 +338,8 @@ def normalize_spec(conn, task, facts, raw, *, item_id, kind="WORK", issue=None):
             raise ValueError("WORK_SHARED_PATH_OUTSIDE_SCOPE")
         if owner != item_id:
             checked_item(conn, task["task_id"], owner)
-    ctx = authority.normalize_context(raw.get("security_context") or {})
+    ctx = authority.normalize_context(raw.get("security_context") or (
+        {"effect_scope": "implementation"} if video and allowed_paths else {}))
     ctx.update(paths=allowed_paths, ac_refs=acs)
     authority.check_effect(conn, task["task_id"], ctx)
     if ctx["effect_scope"] not in authority.READ_EFFECTS and not allowed_paths:
@@ -325,7 +348,7 @@ def normalize_spec(conn, task, facts, raw, *, item_id, kind="WORK", issue=None):
         "roles": roles, "paths": allowed_paths, "ac_refs": acs,
         "depends_on": dependencies(conn, task["task_id"], raw.get("depends_on", []), self_id=item_id),
         "repo_root": str(repo), "target_root": str(target), "isolation": isolation,
-        "shared_paths": shared, "security_context": ctx}
+        "shared_paths": shared, "security_context": ctx, **({"domain": "video"} if video else {})}
 
 
 def create(conn, task, facts, *, item_id, title, spec, actor, agent):
@@ -379,11 +402,20 @@ def claim_guard(conn, task, item, unit, actor, agent, *, record_only=False):
         if not other_unit:
             raise ValueError("WORK_ISOLATION_UNKNOWN: active legacy Work has no workspace binding")
         other_spec = other_unit["spec"]
-        if spec["repo_root"] != other_spec["repo_root"]:
+        video = spec.get("domain") == "video"
+        root, other_root = Path(spec["repo_root"]), Path(other_spec["repo_root"])
+        if video and not (root.is_relative_to(other_root) or other_root.is_relative_to(root)):
+            continue
+        if not video and spec["repo_root"] != other_spec["repo_root"]:
             continue
         if spec["isolation"]["mode"] == "sequential" or other_spec["isolation"]["mode"] == "sequential":
             raise ValueError("WORK_SEQUENTIAL_WAIT: " + other["item_id"])
-        if any(authority._overlap(a, b) for a in spec["paths"] for b in other_spec["paths"]):
+        current_paths, other_paths = spec["paths"], other_spec["paths"]
+        if video:
+            from os.path import normcase
+            current_paths = [normcase(str(root / path)) for path in current_paths]
+            other_paths = [normcase(str(other_root / path)) for path in other_paths]
+        if any(authority._overlap(a, b) for a in current_paths for b in other_paths):
             raise ValueError("WORK_SHARED_PATH_BUSY: serialize shared files or use genuinely isolated workspaces")
 
 
@@ -401,21 +433,51 @@ def output_records(root, values):
     return result
 
 
+def check_result_path(path, spec, item_id, *, normalize=lambda value: value):
+    candidate = normalize(path)
+    if not matches(candidate, [normalize(pattern) for pattern in spec["paths"]]):
+        raise ValueError("WORK_RESULT_OUTSIDE_SCOPE: " + path)
+    if any(owner != item_id and matches(candidate, [normalize(pattern)])
+           for pattern, owner in spec["shared_paths"].items()):
+        raise ValueError("WORK_SHARED_PATH_NOT_OWNED: " + path)
+
+
+def media_work_root(conn, task_id, unit):
+    from .video_policy import bound_media_root
+    stored = Path(unit["spec"]["repo_root"])
+    root = bound_media_root(task_dir(conn, task_id).parents[2], stored)
+    if root != stored:
+        raise ValueError(f"VIDEO_WORK_ROOT_CHANGED: {stored}")
+    return root
+
+
+def check_media_output_path(root, resolved, unit):
+    from os.path import normcase
+    if not resolved.is_relative_to(root):
+        raise ValueError(f"WORK_RESULT_OUTSIDE_SCOPE: {resolved}")
+    check_result_path(resolved.relative_to(root).as_posix(), unit["spec"], unit["item_id"], normalize=normcase)
+
+
+def media_outputs(conn, task_id, unit, paths):
+    from .video_policy import media_files
+    root = media_work_root(conn, task_id, unit)
+    return media_files(root, paths, check_work_path=lambda _, resolved: check_media_output_path(root, resolved, unit))
+
+
 def prepare_result(conn, task, item, unit, raw):
     raw = authority.obj(raw, {"summary", "changed_paths", "evidence_refs", "artifact", "limitations"}, "Work result")
     summary = _text(raw.get("summary"), "result.summary")
     changed = paths(raw.get("changed_paths", []))
     spec = unit["spec"]
-    if any(not matches(path, spec["paths"]) for path in changed):
-        raise ValueError("WORK_RESULT_OUTSIDE_SCOPE")
+    video = spec.get("domain") == "video"
     for path in changed:
-        if any(matches(path, [pattern]) and owner != item["item_id"] for pattern, owner in spec["shared_paths"].items()):
-            raise ValueError("WORK_SHARED_PATH_NOT_OWNED: " + path)
+        check_result_path(path, spec, item["item_id"])
     if changed and spec["security_context"]["effect_scope"] in authority.READ_EFFECTS:
         raise ValueError("WORK_INVESTIGATION_CANNOT_DELIVER_PRODUCT_CHANGE")
     evidence = references(conn, task["task_id"], raw.get("evidence_refs"), evidence=True)
-    artifact = authority.obj(raw.get("artifact", {"kind": "snapshot"}), {"kind", "ref"}, "artifact")
-    if not isinstance(artifact.get("kind"), str) or artifact["kind"] not in {"snapshot", "patch", "commit"}:
+    artifact = authority.obj(raw.get("artifact", {"kind": "media" if video else "snapshot"}), {"kind", "ref"}, "artifact")
+    allowed_kinds = {"media"} if video else {"snapshot", "patch", "commit"}
+    if not isinstance(artifact.get("kind"), str) or artifact["kind"] not in allowed_kinds:
         raise ValueError("WORK_ARTIFACT_INVALID")
     if artifact["kind"] == "patch":
         artifact = {**artifact, "evidence": references(conn, task["task_id"], [_text(artifact.get("ref"), "artifact.ref")], evidence=True)}
@@ -442,7 +504,10 @@ def prepare_result(conn, task, item, unit, raw):
         head = str(_run_git(Path(spec["repo_root"]), "rev-parse", "HEAD")).strip()
         if artifact["ref"] != head or str(_run_git(Path(spec["repo_root"]), "status", "--porcelain", "--", *changed)).strip():
             raise ValueError("WORK_COMMIT_NOT_CURRENT_OUTPUT: use a workspace snapshot or the actual clean HEAD")
-    outputs = output_records(spec["repo_root"], changed)
+    if video:
+        outputs = media_outputs(conn, task["task_id"], unit, changed)
+    else:
+        outputs = output_records(spec["repo_root"], changed)
     return {"summary": summary, "changed_paths": changed, "outputs": outputs, "output_digest": execution.digest(outputs),
             "evidence_items": evidence, "evidence_refs": [e["ref"] for e in evidence], "artifact": artifact,
             "limitations": _strings(raw.get("limitations", []), "limitations"),
@@ -462,8 +527,13 @@ def validate_result(conn, task_id, unit, *, source_output=False):
     check_references(conn, task_id, body["evidence_items"], evidence=True)
     if body["artifact"]["kind"] == "patch":
         check_references(conn, task_id, body["artifact"]["evidence"], evidence=True)
-    if source_output and output_records(unit["spec"]["repo_root"], body["changed_paths"]) != body["outputs"]:
-        raise ValueError("WORK_OUTPUT_CHANGED: source workspace no longer matches the reported result")
+    if source_output:
+        if body["artifact"]["kind"] == "media":
+            current = media_outputs(conn, task_id, unit, body["changed_paths"])
+        else:
+            current = output_records(unit["spec"]["repo_root"], body["changed_paths"])
+        if current != body["outputs"]:
+            raise ValueError("WORK_OUTPUT_CHANGED: source workspace no longer matches the reported result")
 
 
 def candidate_binding(events):
@@ -540,6 +610,8 @@ def record_candidate(conn, task, facts, raw, *, actor, agent):
     from .delivery_contract import load_repository_scope
     from .digest import compute_verification_subject_digest
     coordinator(facts, actor, agent)
+    if facts.get("domain") == "video":
+        raise ValueError("VIDEO_GIT_CANDIDATE_NOT_APPLICABLE")
     raw = authority.obj(raw, {"summary", "evidence_refs", "resolutions"}, "integration")
     data = read(conn, task["task_id"])
     if data["issues"]:
@@ -618,6 +690,10 @@ def step_guard(conn, task, facts, step, action):
         needed = relevant if action == "complete" else fixes
         if any(not u["receipt"] for u in needed):
             raise ValueError("WORK_RESULT_NOT_RECEIVED: receive required child results before resuming/completing parent")
+        if facts.get("domain") == "video":
+            from .video_records import check_step
+            check_step(conn, task, step, action, needed, fixes)
+            return relevant
         if fixes:
             status = integration_status(conn, task, required_items=[u["item_id"] for u in needed])
             if status["issues"]:

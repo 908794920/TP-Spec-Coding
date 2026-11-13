@@ -70,6 +70,20 @@ def load_wait(conn, task_id: str) -> dict[str, Any]:
     return active_wait(events, str(row["current_state"] or ""))
 
 
+def video_permission_confirmation(task_id, rows, wait):
+    from . import orchestration_policy, video_policy, workflow_controls
+    source = next(row for row in rows if row["id"] == wait["block_event_id"])
+    binding = workflow_controls.build_boundary_binding(
+        task_id=task_id, source_stage=source["to_stage"], source_role=source["actor_role"],
+        source_event_id=source["id"], source_event_digest=workflow_controls.event_digest(source),
+        target_stage=source["to_stage"], target_role=video_policy.PRODUCER,
+        execution_mode="DIRECT", confirmation_kind="material")
+    confirmed = workflow_controls.find_matching_confirmation(rows, binding)
+    if confirmed and not orchestration_policy.valid_user_source(json.loads(confirmed["detail_json"]).get("user_source")):
+        confirmed = None
+    return binding, confirmed
+
+
 def _evidence(task_dir: Path, values: Iterable[str] | None) -> list[dict]:
     items = []
     for path in values or []:
@@ -142,6 +156,15 @@ def validate_resolution(conn, task_id: str, task_dir: Path, *, actor: str,
         return {}
     if wait["kind"] in _OWNER_KINDS and actor != "human_owner":
         raise ValueError("OWNER_RESOLUTION_REQUIRED")
+    if wait["kind"] == "permission" and not resolution_evidence:
+        from .execution import read_events
+        from .task_coordinator import task_domain
+        task = conn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
+        if task_domain(conn, task) == "video":
+            _, confirmed = video_permission_confirmation(task_id, read_events(conn, task_id), wait)
+            if confirmed:
+                return {"kind": "permission", "block_event_id": wait["block_event_id"],
+                        "confirmation_event_id": confirmed["id"]}
     if wait["kind"] == "dependency":
         for task in wait.get("requires_tasks") or []:
             row = conn.execute("SELECT current_state FROM task WHERE task_id=?", (task,)).fetchone()
@@ -223,7 +246,9 @@ def _result_resolved(conn, task_id: str, events: list[dict], result, stage: str,
     # summary edits and incidental documents cannot discharge an owner decision.
     if not owner_required and stage != "architecture_review":
         development = _latest_development_change_set(conn, task_id)
-        if (development and development["event_id"] > result_id and development["repo_roots"]
+        from .change_set import is_ops_subject
+        if (development and development["event_id"] > result_id
+                and (development["repo_roots"] or is_ops_subject(development["detail"]))
                 and detail.get("change_set_id") and development["change_set_id"]
                 and development["change_set_id"] != detail["change_set_id"]):
             return True
