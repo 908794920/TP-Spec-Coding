@@ -132,7 +132,9 @@ def measured(name: str):
 
 
 def _root() -> Path:
-    return Path(os.environ.get("TP_SPEC_USER_ROOT") or (Path.home() / ".tp-spec")).expanduser().resolve() / "diagnostics" / "cli"
+    from cli.path_identity import canonical_path
+    root = os.environ.get("TP_SPEC_USER_ROOT")
+    return canonical_path(root if root else Path.home() / ".tp-spec") / "diagnostics" / "cli"
 
 
 def _persist(receipt: dict) -> None:

@@ -104,6 +104,10 @@ python -m cli.main base resolve --workspace-root "<project-root>"
 
 已有安装或已有项目 binding 时不要机械重复 configure/init；先 doctor/resolve，再做最小必要修复。
 
+安装、项目绑定和 Content Systems 的路径字符串支持 `$NAME`、`${NAME}`；Windows 还支持 `%NAME%`。裸 `$NAME` 使用字母/下划线开头的字母、数字、下划线；带定界符的形式也支持 `ProgramFiles(x86)` 等环境变量名。仅展开一次，变量值中的引用不递归展开。未定义变量会报 `UNDEFINED_PATH_VARIABLE` 并列出变量名，阻止依赖该配置的写入；展开为空也会报错，不静默回退。`installation-doctor`、`knowledge doctor` 仍可报告无效配置，旧配置不会被自动改写。
+
+需要字面路径时在整个字符串前加 `literal:`，例如 YAML 中 `root: 'literal:./$archive'`；该前缀同时关闭环境变量和 `~` 展开，不把 `$$`、`%%` 或嵌入的引号当作转义。旧配置若依赖这些平台特定转义，应显式改用 `literal:`。POSIX 上 `%NAME%` 是普通文件名；`100% complete`、`$5` 也保持字面值。命令行传参还需按所用 Shell 引号规则保护 `$`/`%`，避免它们在进入 TP 前被 Shell 展开。此约定适用于上述配置解析器及共享路径入口，不改变源码、摘要引用或其他业务正文的字面内容。
+
 首次安装完成项目绑定后，还需显式准备该项目的 Knowledge 登记与检索投影，才能完成后续任务的知识评估：
 
 ```bash

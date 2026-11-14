@@ -10,11 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
-import os
 
 from cli.config_loader import load_config
 from cli.environment import load_installation_config, load_project_binding, resolve_base_root
-from cli.path_identity import canonical_path, same_path
+from cli.path_identity import canonical_path, same_path, expand_path_text, path_config_text
 
 BASE_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = BASE_ROOT / "governance" / "content-systems.yaml"
@@ -38,7 +37,7 @@ def _path_value(value: Any, *, anchor: Path) -> Path:
     text = str(value or "").strip()
     if not text:
         raise ContentSystemsConfigError("empty path must be resolved by its caller")
-    text = os.path.expandvars(os.path.expanduser(text))
+    text = expand_path_text(text)
     path = Path(text)
     if not path.is_absolute():
         path = anchor / path
@@ -243,8 +242,8 @@ def load_content_systems(
     if installation.exists:
         install_override = {
             "systems": {
-                "wiki": {"root": str(installation.wiki_root) if installation.wiki_root else ""},
-                "knowledge": {"root": str(installation.knowledge_root) if installation.knowledge_root else ""},
+                "wiki": {"root": path_config_text(installation.wiki_root) if installation.wiki_root else ""},
+                "knowledge": {"root": path_config_text(installation.knowledge_root) if installation.knowledge_root else ""},
             }
         }
         base = _merge(base, install_override)

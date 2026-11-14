@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import re
 import sys
 from typing import Optional
@@ -33,7 +34,7 @@ def cmd_project_init(args) -> int:
     root_path = str(canonical_path(args.root or "."))
     base_version = args.base_version or active_version()
     try:
-        binding = load_project_binding(root_path)
+        binding = load_project_binding(Path(root_path))
     except EnvironmentConfigError as exc:
         print(f"ERROR: invalid project binding: {exc}", file=sys.stderr)
         return 4
@@ -73,7 +74,7 @@ def cmd_project_init(args) -> int:
         return 2
     # 解析 db 路径：--db 优先，否则 <root>/.tp-spec/db/<pid>.db
     if args.db:
-        db_path = args.db
+        db_path = str(canonical_path(args.db))
     else:
         db_path = os.path.join(root_path, ".tp-spec", "db", f"{project_id}.db")
     # 创建父目录
@@ -112,8 +113,8 @@ def cmd_project_init(args) -> int:
     # 写入 registry
     reg_path = dbmod.register_project(
         project_id=project_id,
-        db_path=db_path,
-        root_path=root_path,
+        db_path=Path(db_path),
+        root_path=Path(root_path),
         base_version=base_version,
         schema_version=dbmod.EXPECTED_SCHEMA_VERSION,
         project_name=args.name,
@@ -121,7 +122,7 @@ def cmd_project_init(args) -> int:
     )
     if not binding.exists:
         binding_path = write_project_binding(
-            root_path,
+            Path(root_path),
             project_id=project_id,
             base_version=base_version,
         )
@@ -168,11 +169,11 @@ def cmd_project_bootstrap(args) -> int:
         )
         return 2
 
-    root_path = os.path.abspath(args.root or ".")
+    root_path = str(canonical_path(args.root or "."))
     registry_path = getattr(args, "registry", None)
     registered = _registered_project(project_id, registry_path)
     if args.db:
-        db_path = args.db
+        db_path = str(canonical_path(args.db))
     elif registered is not None:
         # Registry remains the resolver authority for custom DB locations. Do not silently
         # create a second default DB next to an already-registered project.
@@ -262,9 +263,9 @@ def cmd_project_bootstrap(args) -> int:
     init_args = type("ProjectInitArgs", (), {
         "id": project_id,
         "name": getattr(args, "name", None),
-        "root": root_path,
+        "root": Path(root_path),
         "base_version": None,
-        "db": db_path,
+        "db": Path(db_path),
         "registry": registry_path,
     })()
     rc = cmd_project_init(init_args)

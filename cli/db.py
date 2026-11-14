@@ -335,8 +335,8 @@ def _lookup_db_for_task(reg_path: Path, task_id: str) -> Optional[str]:
 
 def register_project(
     project_id: str,
-    db_path: str,
-    root_path: str,
+    db_path: str | Path,
+    root_path: str | Path,
     base_version: str,
     schema_version: int,
     project_name: Optional[str] = None,

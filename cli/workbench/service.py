@@ -16,7 +16,7 @@ from typing import Any, Iterator
 import uuid
 
 from cli import db as dbmod, environment, event_policies, record_first
-from cli.path_identity import canonical_path, path_identity_key, same_path
+from cli.path_identity import canonical_path, path_identity_key, same_path, expand_path_text
 from cli.project_surface import project_path_issue
 from cli.skill_catalog import SkillCatalogError, read_skill_document
 from cli.version import active_version
@@ -71,7 +71,7 @@ class Context:
 
     @classmethod
     def from_entry(cls, entry: dict[str, Any], registry: Path, workspace: Path, source: str) -> "Context":
-        root = canonical_path(str(entry["root_path"]))
+        root = canonical_path(Path(entry["root_path"]))
         database = snapshot._registered_db_path(entry)
         identity = [str(entry["project_id"]), path_identity_key(root), path_identity_key(workspace),
                     path_identity_key(database) if database else ""]
@@ -96,7 +96,7 @@ def read_contexts() -> tuple[list[Context], list[dict[str, str]]]:
         if not str(entry.get("project_id") or "").strip() or not str(entry.get("root_path") or "").strip():
             problems.append(snapshot._problem("CONTEXT_INCOMPLETE", "Registry 项缺少 project_id 或 root_path"))
             continue
-        root = canonical_path(str(entry["root_path"]))
+        root = canonical_path(Path(entry["root_path"]))
         context = Context.from_entry(entry, registry, root, "registry-root")
         if context.context_key in contexts:
             problems.append(snapshot._problem("CONTEXT_DUPLICATE", f"重复 Registry 项：{context.project_id}"))
@@ -108,7 +108,7 @@ def read_contexts() -> tuple[list[Context], list[dict[str, str]]]:
             raw = str(row.get("root") or "").strip()
             if not raw:
                 continue
-            root = Path(raw).expanduser()
+            root = Path(expand_path_text(raw))
             root = canonical_path(root if root.is_absolute() else inventory.path.parent / root)
             if any(same_path(root, ctx.workspace_root) for ctx in contexts.values()):
                 continue

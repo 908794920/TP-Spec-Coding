@@ -19,7 +19,7 @@ import yaml
 
 from cli import db as dbmod
 from cli.content_systems import load_content_systems, same_path
-from cli.path_identity import canonical_path, path_identity_key
+from cli.path_identity import canonical_path, path_identity_key, expand_path_text, path_config_text
 from cli.environment import (
     BINDING_SCHEMA,
     current_base_root,
@@ -157,7 +157,7 @@ def _simple_content_override_redundant(workspace: Path, cfg, installation) -> Di
     def resolved_override_root(raw: str) -> Optional[Path]:
         if not raw:
             return None
-        expanded = os.path.expandvars(os.path.expanduser(raw))
+        expanded = expand_path_text(raw)
         candidate = Path(expanded)
         if not candidate.is_absolute():
             candidate = workspace / candidate
@@ -479,7 +479,7 @@ def inventory_rows(*, installation_config: Optional[str]=None, inventory_path: O
     for row in rows:
         root=str(row.get("root") or row.get("workspace_root") or "").strip()
         if not root: continue
-        rp=canonical_path(root); key=path_identity_key(rp)
+        rp=canonical_path(root if row.get("source") == "workspace-inventory" else Path(root)); key=path_identity_key(rp)
         cur=merged.setdefault(key,{"id":str(row.get("id") or ""),"root":str(rp),"enabled":bool(row.get("enabled",True)),"sources":[]})
         if not cur["id"] and row.get("id"): cur["id"]=str(row["id"])
         src=str(row.get("source") or "unknown")
@@ -525,7 +525,7 @@ def reconcile_inventory_project(project_id: str, workspace_root: Path, inventory
     if not inv.exists:
         return None
     rows=[dict(row) for row in inv.workspaces if str(row.get("id") or "") != project_id]
-    rows.append({"id":project_id,"root":str(canonical_path(workspace_root)),"enabled":True})
+    rows.append({"id":project_id,"root":path_config_text(canonical_path(workspace_root)),"enabled":True})
     return write_workspace_inventory(rows,path=inventory_path or inv.path)
 
 
@@ -596,7 +596,10 @@ def cmd_inventory(args) -> int:
         rows=inventory_rows(installation_config=args.installation_config,inventory_path=args.inventory,search_roots=args.search_root or [],max_depth=args.max_depth)
         path=None
         if args.write:
-            path=write_workspace_inventory(rows,path=args.inventory)
+            path=write_workspace_inventory(
+                [{**row, "root": path_config_text(Path(row["root"]))} for row in rows],
+                path=args.inventory,
+            )
         _emit({"schema":INVENTORY_SCHEMA,"status":"PASS","read_only":not args.write,"count":len(rows),"path":str(path or (args.inventory or default_inventory_path())),"workspaces":rows}); return 0
     except Exception as exc: _emit({"schema":INVENTORY_SCHEMA,"status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 

@@ -355,7 +355,7 @@ def repository_scope(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not is_scope and scope_event_id and any(path_identity_key(value) not in roots for value in values):
             raise ValueError("REPOSITORY_SCOPE_MISMATCH: a development record exceeds the owner repository scope")
         for value in values:
-            roots[path_identity_key(value)] = str(canonical_path(value))
+            roots[path_identity_key(value)] = str(canonical_path(Path(value)))
     return {"repo_roots": [roots[key] for key in sorted(roots)], "scope_event_id": scope_event_id}
 
 

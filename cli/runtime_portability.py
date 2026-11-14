@@ -28,13 +28,13 @@ def runtime_db_path(
         return canonical_path(explicit)
     reg = _registry_entry(project_id, registry_path)
     if reg and reg.get("db_path"):
-        registered = canonical_path(dbmod._resolve_project_db_abs(str(reg["db_path"])))
+        registered = canonical_path(Path(dbmod._resolve_project_db_abs(str(reg["db_path"]))))
         root = str(reg.get("root_path") or "").strip()
         if root and os.path.isabs(root):
             try:
                 # A project-local DB keeps its relative location after a move;
                 # do not guess filenames or scan unrelated databases.
-                relocated = workspace / registered.relative_to(canonical_path(root))
+                relocated = workspace / registered.relative_to(canonical_path(Path(root)))
             except ValueError:
                 pass  # A registered shared/external DB stays at its own locator.
             else:
@@ -255,8 +255,8 @@ def apply_runtime_rebind(
         registry_written = dbmod.register_project(
             project_id=project_id,
             project_name=str(plan.get("project_name") or project_id),
-            db_path=str(db_path),
-            root_path=str(workspace),
+            db_path=db_path,
+            root_path=workspace,
             base_version=str(plan.get("base_version") or ""),
             schema_version=int(plan.get("schema_version") or dbmod.EXPECTED_SCHEMA_VERSION),
             registry_path=registry_path,

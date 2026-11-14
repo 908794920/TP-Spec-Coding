@@ -64,7 +64,7 @@ def _registered_db_path(entry: Dict[str, Any]) -> Optional[Path]:
     resolver = getattr(dbmod, "_resolve_project_db_abs", None)
     if callable(resolver):
         try:
-            return canonical_path(resolver(raw))
+            return canonical_path(Path(resolver(raw)))
         except Exception:
             pass
     path = Path(raw)
@@ -92,7 +92,7 @@ def _runtime_health(db_path: Optional[Path], *, connection: Optional[sqlite3.Con
 
 def _registered_project_view(entry: Dict[str, Any]) -> Dict[str, Any]:
     root_text = str(entry.get("root_path") or "").strip()
-    root = canonical_path(root_text) if root_text else None
+    root = canonical_path(Path(root_text)) if root_text else None
     db_path = _registered_db_path(entry)
     runtime_status, runtime_issues = _runtime_health(db_path)
     return {

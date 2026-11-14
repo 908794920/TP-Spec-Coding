@@ -18,7 +18,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import shutil
+import os
+import tempfile
 import sys
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,7 @@ from .snapshot_cmd import (
     MANIFEST_FILE_NAME,
     SNAPSHOT_ROOT_NAME,
     _serialize,
+    _snapshot_path,
 )
 from .version import active_version, next_version
 
@@ -47,12 +49,20 @@ def list_snapshots(base_root: "str | Path | None" = None) -> list[Path]:
 
 
 def load_manifest(snap_dir: Path) -> dict[str, Any]:
-    manifest_path = snap_dir / MANIFEST_FILE_NAME
+    manifest_path = _snapshot_path(snap_dir, MANIFEST_FILE_NAME)
     if not manifest_path.is_file():
         raise ValueError(f"snapshot has no manifest: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError("snapshot manifest must be an object")
     if manifest.get("manifest_version") != "1.0.0":
         raise ValueError(f"unsupported manifest version: {manifest.get('manifest_version')}")
+    if not isinstance(manifest.get("entries"), list):
+        raise ValueError("snapshot entries must be a list")
+    for entry in manifest["entries"]:
+        if not isinstance(entry, dict):
+            raise ValueError("snapshot entry must be an object")
+        _snapshot_path(snap_dir, entry.get("path"))
     return manifest
 
 
@@ -73,7 +83,7 @@ def verify_snapshot(snap_dir: Path) -> dict[str, Any]:
         errors.append("manifest_sha256 self-hash mismatch")
     for entry in manifest.get("entries", []):
         rel = entry.get("path")
-        file_path = snap_dir / rel
+        file_path = _snapshot_path(snap_dir, rel)
         if not file_path.is_file():
             errors.append(f"missing snapshot file: {rel}")
             continue
@@ -95,17 +105,25 @@ def restore_snapshot(
 
     apply=False（默认）→ 只打印 would-restore 清单（零写入）；
     apply=True → 逐项复制回 base 仓根，还原后逐项 sha256 与 manifest 比对。
+    清单哈希只校验一致性，不认证来源。单文件替换不保证整批原子或断电持久；
+    路径检查不防御其他进程在检查后替换父目录，源与目标须由可信调用方控制。
     """
     base = Path(base_root) if base_root else default_base_root()
     base = base.resolve()
     manifest = load_manifest(snap_dir)
+    if not _verify_manifest_self_hash(manifest):
+        raise ValueError("manifest_sha256 self-hash mismatch")
+    # Check every destination before writing any member, including parent links.
+    for entry in manifest["entries"]:
+        if entry.get("status") == "snapshotted":
+            _snapshot_path(base, entry["path"])
     restored: list[dict[str, Any]] = []
     for entry in manifest.get("entries", []):
         if entry.get("status") != "snapshotted":
             continue
         rel = entry["path"]
-        src = snap_dir / rel
-        dst = base / rel
+        src = _snapshot_path(snap_dir, rel)
+        dst = _snapshot_path(base, rel)
         restored.append({
             "path": rel,
             "expected_sha256": entry.get("sha256"),
@@ -116,8 +134,30 @@ def restore_snapshot(
             continue
         if not src.is_file():
             raise ValueError(f"snapshot file missing during restore: {src}")
+        content = src.read_bytes()
+        if len(content) != entry.get("size") or hashlib.sha256(content).hexdigest() != entry.get("sha256"):
+            raise ValueError(f"snapshot content changed before restore: {rel}")
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(src, dst)  # 仅复制内容，不复制快照只读位
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=dst.parent, prefix=".restore-", delete=False) as handle:
+                temporary = Path(handle.name)
+                handle.write(content)
+            if dst.exists():
+                os.chmod(temporary, dst.stat().st_mode)
+            _snapshot_path(base, rel)
+            os.replace(temporary, dst)
+        finally:
+            if temporary is not None:
+                failure = sys.exc_info()[1]
+                try:
+                    if temporary.exists():
+                        os.chmod(temporary, temporary.stat().st_mode | 0o200)
+                    temporary.unlink(missing_ok=True)
+                except OSError as cleanup_error:
+                    if failure is None:
+                        raise
+                    print(f"WARNING: restore temporary cleanup failed: {cleanup_error}", file=sys.stderr)
         actual = hashlib.sha256(dst.read_bytes()).hexdigest()
         if actual != entry.get("sha256"):
             raise ValueError(f"restore readback sha256 mismatch: {rel}")

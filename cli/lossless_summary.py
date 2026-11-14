@@ -599,7 +599,9 @@ def parse_handle(retrieve_handle: str) -> tuple[str, int, int]:
     """解析 rel://<source_path>#B<start>-<end>；非法 -> ValueError（fail-closed）。"""
     if not retrieve_handle.startswith("rel://"):
         raise ValueError(f"{SUMMARY_RETRIEVE_FAILED}: invalid handle: {retrieve_handle}")
-    path_part, _, range_part = retrieve_handle[6:].partition("#")
+    # The generator appends the range suffix; earlier '#' characters belong
+    # to the literal filename (these handles do not use URL fragment decoding).
+    path_part, _, range_part = retrieve_handle[6:].rpartition("#")
     if not range_part.startswith("B") or "-" not in range_part:
         raise ValueError(f"{SUMMARY_RETRIEVE_FAILED}: invalid handle: {retrieve_handle}")
     try:

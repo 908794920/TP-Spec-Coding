@@ -25,7 +25,7 @@ import tempfile
 import yaml
 
 from cli.config_loader import load_config
-from cli.path_identity import canonical_path, path_identity_key
+from cli.path_identity import canonical_path, path_identity_key, expand_path_text, path_config_text
 
 INSTALLATION_SCHEMA = "tp-spec.installation/v1"
 BINDING_SCHEMA = "tp-spec.project-binding/v1"
@@ -69,7 +69,7 @@ def _as_abs(value: Any, *, anchor: Path) -> Optional[Path]:
     text = str(value or "").strip()
     if not text:
         return None
-    text = os.path.expandvars(os.path.expanduser(text))
+    text = expand_path_text(text)
     p = Path(text)
     if not p.is_absolute():
         p = anchor / p
@@ -250,10 +250,10 @@ def write_installation_config(
     p = canonical_path(path) if path else default_installation_path(home)
     payload: Dict[str, Any] = {
         "schema": INSTALLATION_SCHEMA,
-        "base": {"root": str(canonical_path(base_root))},
+        "base": {"root": path_config_text(canonical_path(base_root))},
         "systems": {
-            "wiki": {"root": str(canonical_path(wiki_root)) if wiki_root else ""},
-            "knowledge": {"root": str(canonical_path(knowledge_root)) if knowledge_root else ""},
+            "wiki": {"root": path_config_text(canonical_path(wiki_root)) if wiki_root else ""},
+            "knowledge": {"root": path_config_text(canonical_path(knowledge_root)) if knowledge_root else ""},
         },
     }
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -326,11 +326,11 @@ def write_workspace_inventory(rows: Iterable[Dict[str, Any]], path: "str | Path 
         if key in seen:
             continue
         seen.add(key)
-        out = {"root": str(rp), "enabled": bool(row.get("enabled", True))}
+        out = {"root": path_config_text(rp), "enabled": bool(row.get("enabled", True))}
         if row.get("id"):
             out["id"] = str(row["id"])
         normalized.append(out)
-    normalized.sort(key=lambda x: path_identity_key(x["root"]))
+    normalized.sort(key=lambda x: path_identity_key(canonical_path(x["root"])))
     payload = {"schema": INVENTORY_SCHEMA, "workspaces": normalized}
     p.parent.mkdir(parents=True, exist_ok=True)
     text = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)

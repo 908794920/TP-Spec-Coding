@@ -6,7 +6,7 @@
 - 快照范围 = governance/{compat-matrix,lifecycle,workflow,ai-role,risk-rule,knowledge-rule,orchestration}
   + governance/role-catalog.yaml + templates/<active-version>/（8 文件）+ VERSION；
 - 生成 CUTOVER-SNAPSHOT-MANIFEST.json（每项 path/sha256/size/status；manifest 自身
-  manifest_sha256 两段式防篡改，§2.2）；
+  manifest_sha256 两段式一致性校验，§2.2；不认证快照来源）；
 - cutover receipt 写入 base_root/evidence/receipts/REC-<UTC>-<UUID>.json
   （create-new 原子创建，禁止覆盖；§2.3），快照目录内保留 CUTOVER-RECEIPT 副本；
 - 快照文件设只读位（best-effort，Windows 权限模型差异容忍）；
@@ -24,7 +24,7 @@ import shutil
 import sys
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from .config_loader import default_base_root, read_base_version
@@ -69,8 +69,23 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _snapshot_path(root: Path, relative: str) -> Path:
+    """Check member spelling and current links; not a hostile-filesystem race guard."""
+    if not isinstance(relative, str) or not relative:
+        raise ValueError("snapshot member must be a non-empty relative path")
+    normalized = relative.replace("\\", "/")
+    posix, windows = PurePosixPath(normalized), PureWindowsPath(normalized)
+    if (posix.is_absolute() or windows.drive or windows.root or ":" in normalized
+            or not posix.parts or ".." in posix.parts):
+        raise ValueError("snapshot member must stay inside its declared root")
+    candidate = root.resolve() / Path(normalized)
+    if candidate.resolve(strict=False) != candidate:
+        raise ValueError("snapshot member is redirected by a filesystem link")
+    return candidate
+
+
 def _entry_for(rel_path: str, base_root: Path) -> dict[str, Any]:
-    src = base_root / rel_path
+    src = _snapshot_path(base_root, rel_path)
     if not src.is_file():
         raise ValueError(f"snapshot source missing: {rel_path}")
     return {
@@ -98,15 +113,20 @@ def _serialize(obj: dict[str, Any]) -> bytes:
 
 
 def _existing_manifest_matches(snap_dir: Path, entries: list[dict[str, Any]]) -> bool:
-    """幂等校验：已存在快照的 manifest entries 与当前源逐项一致。"""
-    manifest_path = snap_dir / MANIFEST_FILE_NAME
-    if not manifest_path.is_file():
-        return False
+    """幂等校验：清单与当前源一致，且已有快照文件仍完整。"""
     try:
+        manifest_path = _snapshot_path(snap_dir, MANIFEST_FILE_NAME)
+        if not manifest_path.is_file():
+            return False
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+        if manifest.get("entries") != entries:
+            return False
+        body = {key: value for key, value in manifest.items() if key != "manifest_sha256"}
+        if hashlib.sha256(_serialize(body)).hexdigest() != manifest.get("manifest_sha256"):
+            return False
+        return all(_entry_for(entry["path"], snap_dir) == entry for entry in entries)
+    except (ValueError, OSError, TypeError, AttributeError):
         return False
-    return manifest.get("entries") == entries
 
 
 def _set_readonly(path: Path) -> None:

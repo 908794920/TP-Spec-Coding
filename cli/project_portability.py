@@ -27,15 +27,14 @@ _DRIVE_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
 
 def _is_dynamic(text: str) -> bool:
-    return "${" in text or "%" in text or text.startswith("~")
+    return "$" in text or "%" in text or text.startswith(("~", "literal:"))
 
 
 def _resolved(raw: str, workspace: Path) -> Optional[Path]:
     text = str(raw or "").strip()
     if not text or _is_dynamic(text):
         return None
-    expanded = os.path.expandvars(os.path.expanduser(text))
-    p = Path(expanded)
+    p = Path(text)
     if not p.is_absolute():
         return None
     return p.resolve(strict=False)
@@ -125,11 +124,9 @@ def project_portability_plan(workspace_root: "str | Path", *, installation_confi
             # Explicit semantic values remain pinned, even when they currently
             # equal Base defaults. Only known machine-path duplicates are removed.
             raw = str(sec.get("root") or "").strip()
-            if not raw:
-                if "root" in sec:
-                    sec.pop("root", None)
-                    changes.append({"action": "REMOVE_EMPTY_OVERRIDE", "field": f"systems.{name}.root"})
-            elif not _is_dynamic(raw):
+            # An explicit empty root selects the project-local fallback after
+            # merging. Removing it would reactivate the installation root.
+            if raw and not _is_dynamic(raw):
                 abs_root = _resolved(raw, workspace)
                 if abs_root is not None:
                     if install_root and same_path(abs_root, install_root):
