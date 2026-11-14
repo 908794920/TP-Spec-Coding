@@ -23,7 +23,7 @@ roles:
   phases: [intake, requirement, product, discovery, architecture, planning, development, verification, review, delivery]
   capabilities: [lifecycle.routing, role.resolution, workflow.coordination]
   owns_states: [NEW]
-  content_sha256: A5D25E9D77B50FE4F591C297999E80E30CB6653B9A3F2F4FF3B3B4FDBF84C16F
+  content_sha256: 9272261849F2CC872B2B82B65C558D867957B9FE2A0D02C75B977355135BBD60
 - workflow_role: tp-video-production
   display_name: tp-视频制作
   type: control-role

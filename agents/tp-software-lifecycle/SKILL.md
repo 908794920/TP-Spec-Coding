@@ -88,9 +88,9 @@ standard 最终交付读取 [交付收敛](../../skills/capabilities/delivery-co
 
 ### 紧凑接续与终态导航
 
-standard 收尾从 `task complete --check --compact` 和 [交付收敛](../../skills/capabilities/delivery-convergence/SKILL.md) 定位实际缺口，复用当前有效证据；预检不产生 PASS、验收或发布授权。没有可比 AI 成本基线时不宣称提效百分比。
+已有 Task 先用 `workflow next --task <TASK> --json`。在命令侧摘取 `current_state`、`current_phase`、`blocker`、`next_responsibility` 和 `context.waiting` 中的责任人与恢复条件，按需补当前步骤摘要。纯状态查询（如「到哪了」）用这些事实直接回答。接续按需展开当前有效范围；旧 ACTIVE、历史 actor 或备注不恢复成待办。
 
-纯状态/接续查询先读紧凑事实与引用，按需展开有效范围；旧 ACTIVE、历史 actor 或备注不恢复成待办。归档检查、派生视图新鲜度和终态边界见 [任务视图契约](../../docs/TASK_VIEWS.md)；不因此重建材料、补新义务或重跑业务。
+查询 standard Task 的交付缺口（如「离正式交付还差什么」）时，在上述路由之后追加只读 `task complete --check --compact`，结合 [交付收敛](../../skills/capabilities/delivery-convergence/SKILL.md) 定位缺口并复用当前有效证据。实际收尾仍按同一预检和授权规则办理。查询和预检均不产生 PASS、人工验收、实施、模式切换、发布或结单授权。归档检查、派生视图新鲜度和终态边界见 [任务视图契约](../../docs/TASK_VIEWS.md)；不为查询重建材料、补新义务或重跑业务。没有可比 AI 成本基线时不宣称提效百分比。
 
 ## 按问题选交互方法
 用户说「渐进式披露」，或页面首屏提示太多、下一步难找、提示仅在特定动作才有用时，由现有交互设计路径读取[信息何时呈现](../../skills/capabilities/ui-prototype-design/SKILL.md#信息何时呈现)。
