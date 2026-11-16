@@ -27,11 +27,24 @@ def _preferences_path() -> Path:
 
 def cmd_next(args) -> int:
     try:
-        route = orchestration.resolve_route(
-            args.task, db_path=args.db, base_root=args.base_root,
-            confirmation_policy=args.confirmation_policy,
-            allowed_effects=args.allowed_effect,
-        )
+        if getattr(args, "check", False):
+            from . import db as dbmod, verification_preflight, work_units
+            path = dbmod.resolve_db_path(args.db, task_id=args.task)
+            conn = dbmod.connect_readonly(path)
+            try:
+                conn.execute("BEGIN")
+                task = conn.execute("SELECT * FROM task WHERE task_id=?", (args.task,)).fetchone()
+                directory = work_units.task_dir(conn, args.task)
+                route = orchestration.resolve_route(args.task, db_path=path, base_root=args.base_root,
+                    confirmation_policy=args.confirmation_policy, allowed_effects=args.allowed_effect,
+                    _facts=orchestration._load_task_facts(args.task, path, connection=conn, task_dir=directory), task_dir=directory)
+                route["verification_preflight"] = verification_preflight.collect(
+                    conn, task, directory, db_path=path, base_root=args.base_root)
+            finally:
+                conn.close()
+        else:
+            route = orchestration.resolve_route(args.task, db_path=args.db, base_root=args.base_root,
+                confirmation_policy=args.confirmation_policy, allowed_effects=args.allowed_effect)
     except Exception as exc:
         print(f"WORKFLOW_ROUTE_ERROR: {exc}", file=sys.stderr)
         return 4
@@ -116,6 +129,7 @@ def add_workflow_subparsers(subparsers) -> None:
     pn.add_argument("--allowed-effect", action="append", choices=["repo_mutation"], default=None,
                     help="optional execution-envelope effect allowed by an external controller")
     pn.add_argument("--json", action="store_true")
+    pn.add_argument("--check", action="store_true", help="Read-only current verification-step prerequisites and separate later delivery/closeout conditions")
     pn.set_defaults(func=cmd_next)
 
     pc = sub.add_parser("confirm", help="human_owner: record the current material decision or explicit quick completion instruction")

@@ -2005,10 +2005,10 @@ def _owner_acceptance_replay(conn, task_id: str, request) -> Optional[Dict[str, 
             raise ValueError("REQUEST_ID_CONFLICT: the ID belongs to different semantics; use a new ID for new work")
         if found is not None:
             raise ValueError("REQUEST_RECORD_INVALID: duplicate owner acceptance receipt; reconcile before retrying")
-        if detail.get("subject_scope") == "media":
+        if detail.get("subject_scope") == "media" or logical["response"].get("visual_only"):
             from .event_policies import load_owner_acceptance_decisions
             if not any(item["_event_id"] == row["id"] for item in load_owner_acceptance_decisions(conn, task_id)):
-                raise ValueError("REQUEST_RECORD_INVALID: untrusted media Owner receipt")
+                raise ValueError("REQUEST_RECORD_INVALID: untrusted Owner receipt")
         found = dict(logical["response"])
     if found is not None:
         if (found.get("task_id") != task_id
@@ -2054,6 +2054,15 @@ def cmd_task_acceptance_override(args) -> int:
         from . import transaction_commit, projection_cmd, event_policies
         from . import recording, command_context
         source = str(getattr(args, "source", "") or "").strip()
+        page_only = args.scope == "visual-only"
+        visual_requested = args.scope in {"visual", "visual-only"}
+        expected_change_set = getattr(args, "change_set_id", None)
+        if page_only and (args.mode != "accept" or not args.ac or not expected_change_set):
+            print("ERROR: --scope visual-only requires --mode accept, explicit --ac, and --change-set-id", file=sys.stderr)
+            return 6
+        if expected_change_set is not None and not page_only:
+            print("ERROR: --change-set-id requires --scope visual-only", file=sys.stderr)
+            return 6
         if args.mode == "accept" and not source:
             print("ERROR: accept requires --source with the owner-provided acceptance statement", file=sys.stderr)
             return 6
@@ -2073,6 +2082,8 @@ def cmd_task_acceptance_override(args) -> int:
         media_export_event = getattr(args, "media_export_event", None)
         if media_export_event is not None:
             request_payload["media_export_event_id"] = media_export_event
+        if page_only:
+            request_payload["change_set_id"] = expected_change_set
         request = recording.LogicalRequest(
             args.task, task_dir, "acceptance-override", request_payload,
             getattr(args, "request_id", None),
@@ -2088,6 +2099,8 @@ def cmd_task_acceptance_override(args) -> int:
             return 4
         from .task_coordinator import task_domain
         video = task_domain(conn, task) == "video"
+        if page_only and video:
+            raise ValueError("OWNER_VISUAL_ONLY_NOT_APPLICABLE: video acceptance uses the reviewed media export")
         if args.mode == "accept" and video and (type(media_export_event) is not int or media_export_event < 1):
             raise ValueError("VIDEO_OWNER_EXPORT_REQUIRED: specify the export actually reviewed with --media-export-event")
         if media_export_event is not None and (not video or args.mode != "accept"):
@@ -2106,16 +2119,18 @@ def cmd_task_acceptance_override(args) -> int:
         selected: List[str] = []
         explicit_acs = list(args.ac or [])
         visual_scope = None
-        if args.scope == "visual":
+        if visual_requested:
             from .yaml_checks import check_acceptance_yaml
-            visual_owner_acs = set(event_policies.effective_owner_acceptance(
+            effective_owner = event_policies.effective_owner_acceptance(
                 conn, args.task, task_dir=task_dir,
-            ).get("visual_acs") or [])
+            )
+            visual_owner_acs = set(effective_owner["visual_acs"])
             # 旧人验可能已失效；显式重新验收先检查结构，后续仍逐项核实旧回执与新绑定。
             if args.mode == "accept":
                 visual_owner_acs.update(explicit_acs)
             visual_check = check_acceptance_yaml(
                 text, owner_visual_acs=visual_owner_acs,
+                owner_page_acs=effective_owner["visual_only_acs"], allow_visual_pending=page_only,
                 enforce_completion=False, allow_human_pending=True,
             )
             if not visual_check.ok:
@@ -2165,27 +2180,23 @@ def cmd_task_acceptance_override(args) -> int:
         if missing:
             print("ERROR: unknown acceptance criteria: " + ", ".join(missing), file=sys.stderr)
             return 6
-        stale_owner_passes = {
-            ac for ac in selected
-            if args.mode == "accept"
-            and rows[ac]["verdict"] == "PASS"
-            and _stale_owner_acceptance_pass(conn, args.task, task_dir, ac, rows[ac])
-        }
-        illegal = [
-            ac for ac in selected
-            if rows[ac]["verdict"] not in {"PENDING", "BLOCKED", "DEFERRED_ACCEPTED", "OWNER_WAIVED"}
-            and ac not in stale_owner_passes
-        ]
-        if illegal:
-            replay = _owner_acceptance_replay_serialized(conn, args.task, request)
-            if replay is not None:
-                print(json.dumps(replay, ensure_ascii=False))
-                return 0
-            print("ERROR: acceptance-override only applies to pending/blocked/deferred/waived rows: " + ", ".join(illegal), file=sys.stderr)
-            return 6
-        if args.mode == "accept" and any(rows[ac]["witness"] != "human" for ac in selected):
-            print("ERROR: accept only applies to acceptance criteria witnessed by human", file=sys.stderr)
-            return 6
+        if not page_only:
+            illegal = [
+                ac for ac in selected
+                if rows[ac]["verdict"] not in {"PENDING", "BLOCKED", "DEFERRED_ACCEPTED", "OWNER_WAIVED"}
+                and not (args.mode == "accept" and rows[ac]["verdict"] == "PASS"
+                         and _stale_owner_acceptance_pass(conn, args.task, task_dir, ac, rows[ac]))
+            ]
+            if illegal:
+                replay = _owner_acceptance_replay_serialized(conn, args.task, request)
+                if replay is not None:
+                    print(json.dumps(replay, ensure_ascii=False))
+                    return 0
+                print("ERROR: acceptance-override only applies to pending/blocked/deferred/waived rows: " + ", ".join(illegal), file=sys.stderr)
+                return 6
+            if args.mode == "accept" and any(rows[ac]["witness"] != "human" for ac in selected):
+                print("ERROR: accept only applies to acceptance criteria witnessed by human", file=sys.stderr)
+                return 6
         if args.scope == "visual" and args.mode != "accept":
             print("ERROR: --scope visual is only valid with --mode accept", file=sys.stderr)
             return 6
@@ -2212,6 +2223,9 @@ def cmd_task_acceptance_override(args) -> int:
                         or (not development.get("repo_roots") and not is_ops_subject(development["detail"]))):
                     print("ERROR: accept requires a bound current Development ChangeSet", file=sys.stderr)
                     return 7
+                if page_only and expected_change_set != development["change_set_id"]:
+                    print("ERROR: OWNER_ACCEPTANCE_STALE: --change-set-id must match the current Development ChangeSet", file=sys.stderr)
+                    return 7
                 current_change_set = capture_bound_product(development["detail"], task_dir, repo_roots=development["repo_roots"])
                 if not same_bound_product_content(development["detail"], current_change_set):
                     print("ERROR: DEVELOPMENT_CHANGE_SET_STALE: product changed before owner acceptance", file=sys.stderr)
@@ -2227,7 +2241,9 @@ def cmd_task_acceptance_override(args) -> int:
 
         target_verdict = "DEFERRED_ACCEPTED" if args.mode == "defer" else "OWNER_WAIVED"
         timestamp = dbmod.now_iso()
-        if args.mode == "accept":
+        if page_only:
+            updated = text
+        elif args.mode == "accept":
             updated = _set_owner_acceptance_result(text, selected, source_rel)
         else:
             verdicts = {ac: target_verdict for ac in selected}
@@ -2254,14 +2270,16 @@ def cmd_task_acceptance_override(args) -> int:
 
         # Validate the candidate artifact before any durable write.
         from .yaml_checks import check_acceptance_yaml
-        owner_visual_acs = set(event_policies.effective_owner_acceptance(
+        effective_owner = event_policies.effective_owner_acceptance(
             conn, args.task, task_dir=task_dir,
-        ).get("visual_acs") or [])
+        )
+        owner_visual_acs = set(effective_owner["visual_acs"])
         if args.mode == "accept" and args.scope == "visual":
             # 本次人验已校验范围、来源及产品绑定；候选尚未提交，不冒充已有账本事实。
             owner_visual_acs.update(selected)
         candidate = check_acceptance_yaml(
             updated, enforce_completion=False, owner_visual_acs=owner_visual_acs,
+            owner_page_acs=effective_owner["visual_only_acs"], allow_visual_pending=page_only,
         )
         if not candidate.ok:
             print("ERROR: acceptance override would create invalid acceptance.md: " + "; ".join(candidate.issues), file=sys.stderr)
@@ -2280,14 +2298,14 @@ def cmd_task_acceptance_override(args) -> int:
             and row["verdict"] in {"PENDING", "BLOCKED", "DEFERRED_ACCEPTED", "OWNER_WAIVED"}
         }
         resume_wait = bool(
-            args.mode == "accept" and state == "BLOCKED"
+            args.mode == "accept" and not page_only and state == "BLOCKED"
             and waiting_fact.get("kind") == "human_acceptance"
             and human_pending_before.issubset(set(selected))
         )
         reason = args.reason or source or "Owner acceptance decision"
         residual_risk = args.residual_risk or (
             "Automated visual execution remains unrun; this record covers only the declared owner scope."
-            if args.scope == "visual" else "No additional residual risk was stated by the owner."
+            if visual_requested else "No additional residual risk was stated by the owner."
         )
         response = {
             "task_id": args.task,
@@ -2297,7 +2315,8 @@ def cmd_task_acceptance_override(args) -> int:
             "acs": selected,
             "state_before": state,
             "source_evidence": source_rel or None,
-            "visual_scope": args.scope == "visual",
+            "visual_scope": visual_requested,
+            **({"visual_only": True, "change_set_id": expected_change_set} if page_only else {}),
             "facts_committed": True,
             "replayed": False,
             **media,
@@ -2355,7 +2374,8 @@ def cmd_task_acceptance_override(args) -> int:
                     }),
                     "source_evidence": source_rel,
                     "source_evidence_sha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
-                    "visual_scope": {"kind": "selected_acceptance", "acs": selected} if args.scope == "visual" else None,
+                    "visual_scope": ({"kind": "page_only" if page_only else "selected_acceptance", "acs": selected}
+                                     if visual_requested else None),
                 })
             detail["logical_request"] = request.detail(response)
             tx_conn.execute(
@@ -2371,7 +2391,8 @@ def cmd_task_acceptance_override(args) -> int:
                 print(f"WARN: {warning}", file=sys.stderr)
             return transaction_commit._finalize_texts(
                 task_dir,
-                {"acceptance.md": updated, "status.yaml": status_yaml, "events.jsonl": events_jsonl,
+                {"status.yaml": status_yaml, "events.jsonl": events_jsonl,
+                 **({"acceptance.md": updated} if not page_only else {}),
                  **({source_rel: source_text} if source_rel else {})},
                 view_rel,
                 lambda: transaction_commit._rebuild_current_view_text(
@@ -2386,7 +2407,8 @@ def cmd_task_acceptance_override(args) -> int:
 
         try:
             transaction_commit._commit_with_recovery(
-                task_dir, conn, ["acceptance.md", "status.yaml", "events.jsonl", view_rel] + ([source_rel] if source_rel else []), db_and_render,
+                task_dir, conn, ([] if page_only else ["acceptance.md"]) + ["status.yaml", "events.jsonl", view_rel]
+                + ([source_rel] if source_rel else []), db_and_render,
                 task_id=args.task, operation="owner_acceptance_override",
                 db_state_before=state, target_state=state,
                 owner_before=owner, owner_after=owner, flush_id=flush_id,
@@ -2505,6 +2527,7 @@ def cmd_task_verify(args) -> int:
         decision=args.decision, summary=args.summary, evidence=args.evidence,
         scope=getattr(args, "scope", "full"), checks=getattr(args, "check", None),
         ac_results=[json.loads(value) for value in (getattr(args, "ac_result_json", None) or [])],
+        deferred_checks=[json.loads(value) for value in (getattr(args, "deferred_check_json", None) or [])],
         media_qc=getattr(args, "media_qc", None), media_export_event=getattr(args, "media_export_event", None),
         media_agent=getattr(args, "media_agent", ""),
         security_context=authority.explicit_context(args, effect="regression"),
@@ -2766,6 +2789,7 @@ def add_task_subparsers(task_parser) -> None:
     p_verify.add_argument("--summary", required=True)
     p_verify.add_argument("--evidence", action="append")
     p_verify.add_argument("--ac-result-json", action="append", help="exact technical AC result: JSON object with ac, verdict (PASS/PENDING/BLOCKED), evidence (existing evidence/*); repeatable, atomic with verification")
+    p_verify.add_argument("--deferred-check-json", action="append", help="explicit Owner-approved technical check deferral as JSON; repeatable")
     p_verify.add_argument("--scope", choices=["full", "technical"], default="full", help="full keeps all existing checks; technical is explicitly limited and cannot satisfy delivery/completion")
     p_verify.add_argument("--check", action="append", help="actual check performed; required for technical scope, repeat for multiple checks")
     p_verify.add_argument("--request-id", help="reuse only for retrying the same actual verification record")
@@ -2890,8 +2914,9 @@ def add_task_subparsers(task_parser) -> None:
     p_accept.add_argument("--task-dir", required=True)
     p_accept.add_argument("--actor", default="human_owner", choices=["human_owner"])
     p_accept.add_argument("--mode", required=True, choices=["accept", "defer", "waive"])
-    p_accept.add_argument("--scope", choices=["human-pending", "visual"], default=None)
+    p_accept.add_argument("--scope", choices=["human-pending", "visual", "visual-only"], default=None)
     p_accept.add_argument("--ac", action="append", help="acceptance criterion id; repeatable")
+    p_accept.add_argument("--change-set-id", help="visual-only: expected current ChangeSet confirmed by the Owner")
     p_accept.add_argument("--source", default=None, help="owner-provided acceptance statement; required for --mode accept")
     p_accept.add_argument("--media-export-event", type=int, help="video: event ID of the export actually reviewed by the Owner")
     p_accept.add_argument("--request-id", default=None, help="stable logical request id for safe replay")

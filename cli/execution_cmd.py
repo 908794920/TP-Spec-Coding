@@ -223,11 +223,6 @@ def record_step(conn, task, facts: dict, *, step_id: str, plan_version: int, act
             raise ValueError("TASK_BLOCKED: resolve the existing Task wait before starting another step")
     from .work_units import step_guard
     step_guard(conn, task, facts, step, action)
-    if action == "complete":
-        for wid in step.get("work_item_ids", []):
-            row = conn.execute("SELECT status FROM work_item WHERE task_id=? AND item_id=?", (task["task_id"], wid)).fetchone()
-            if row is None or row["status"] != "COMPLETED":
-                raise ValueError("WORK_PENDING: " + wid)
     if action == "complete" and any(p["step_id"] == step_id and p["ended_at"] is None for p in facts["participations"]):
         raise ValueError("STEP_HAS_OPEN_PARTICIPATIONS: end or hand off the recorded sessions first")
     if action == "resume" and task["current_state"] == "BLOCKED":

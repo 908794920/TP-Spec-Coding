@@ -1471,14 +1471,15 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
         return result
 
     from .execution import project_execution
-    from .work_units import candidate_binding, project_units
+    from .work_units import candidate_binding, project_units, replacement_matches
     execution_facts = project_execution(task, events)
     scoped = project_units(events)
     task["_work_units"] = scoped
     if execution_facts["plan"]:
         current = execution_facts["current_step"]
         related = [u for u in scoped["units"].values() if current and u["waiting_step_id"] == current["id"]]
-        outstanding = [u for u in related if not u["receipt"]]
+        outstanding = [u for u in related if not u["receipt"] and not (
+            (binding := u.get("supersession")) and replacement_matches(u, scoped["units"].get(binding["replacement_id"]), binding))]
         if scoped["issues"] or outstanding:
             owner = execution_facts["coordinator"]
             return _route_dict(task, level, next_stage=current["phase"] if current else None,

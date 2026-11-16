@@ -189,11 +189,21 @@ def load_owner_acceptance_decisions(conn, task_id: str) -> list[dict]:
             continue
         if any(not isinstance(ac, str) or not ac.strip() for ac in acs):
             continue
+        visual = detail.get("visual_scope")
+        page_only = isinstance(visual, dict) and visual.get("kind") == "page_only"
+        if page_only and mode != "accept":
+            continue
         if mode == "accept":
             source = detail.get("decision_source")
             logical = detail.get("logical_request")
             response = logical.get("response") if isinstance(logical, dict) else None
             media = detail.get("subject_scope") == "media"
+            if page_only or isinstance(response, dict) and response.get("visual_only"):
+                if (not page_only or detail.get("subject_scope") != "technical"
+                        or visual.get("acs") != acs or not isinstance(response, dict)
+                        or response.get("visual_only") is not True or response.get("visual_scope") is not True
+                        or response.get("change_set_id") != detail.get("change_set_id")):
+                    continue
             if media and (type(detail.get("media_export_event_id")) is not int
                           or detail["media_export_event_id"] < 1
                           or not re.fullmatch(r"[0-9a-f]{64}", str(detail.get("media_manifest_digest") or ""))
@@ -290,12 +300,16 @@ def effective_owner_acceptance(
 
     subjects = {"full": current_subject}
     by_ac: Dict[str, Dict[str, Any]] = {}
+    page_by_ac: Dict[str, Dict[str, Any]] = {}
     for item in load_owner_acceptance_decisions(conn, task_id):
         mode = str(item.get("mode") or "").lower()
+        visual_scope = item.get("visual_scope")
+        page_only = isinstance(visual_scope, dict) and visual_scope.get("kind") == "page_only"
+        dispositions = page_by_ac if page_only else by_ac
         # A newer scoped decision supersedes the old one even when its evidence
         # is now unavailable. Never resurrect an older acceptance after corruption.
         for raw_ac in item.get("acs") or []:
-            by_ac.pop(str(raw_ac).strip(), None)
+            dispositions.pop(str(raw_ac).strip(), None)
         if mode == "accept":
             scope = item.get("subject_scope", "full")
             if domain == "video":
@@ -323,20 +337,23 @@ def effective_owner_acceptance(
         for raw_ac in item.get("acs") or []:
             ac = str(raw_ac).strip()
             if ac:
-                by_ac[ac] = item
+                dispositions[ac] = item
 
     accepted = sorted(ac for ac, item in by_ac.items() if str(item.get("mode") or "").lower() == "accept")
-    visual = set()
+    visual_by_ac = dict(page_by_ac)
     for ac in accepted:
         item = by_ac[ac]
         scope = item.get("visual_scope")
         if isinstance(scope, dict) and ac in {str(value).strip() for value in scope.get("acs") or []}:
-            visual.add(ac)
+            # Prefer the whole-AC receipt when it also covers the visual scope.
+            visual_by_ac[ac] = item
     return {
         "domain": domain,
         "by_ac": by_ac,
         "accepted_acs": accepted,
-        "visual_acs": sorted(visual),
+        "visual_acs": sorted(visual_by_ac),
+        "visual_only_acs": sorted(page_by_ac),
+        "visual_by_ac": visual_by_ac,
         "change_set_id": current_change_set,
         "subject_digest": current_subject,
         **(media or {} if domain == "video" else {}),

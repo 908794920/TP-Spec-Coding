@@ -565,9 +565,9 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
                 problems = validate_task_temp_artifacts(records_for_task(task_id=task_id, project_id=task["project_id"]))
                 works = summarize_work_items(dbconn, refreshed)
                 problems.extend(works["issues"])
-                from .work_units import integration_status
+                from .work_units import TERMINAL_WORK_STATES, integration_status
                 problems.extend(integration_status(dbconn, refreshed)["issues"])
-                problems.extend(f"WORK_PENDING: {w['item_id']}" for w in works["items"] if w["status"] != "COMPLETED")
+                problems.extend(f"WORK_PENDING: {w['item_id']}" for w in works["items"] if w["status"] not in TERMINAL_WORK_STATES)
                 if problems:
                     raise ValueError("; ".join(problems))
                 if quick:

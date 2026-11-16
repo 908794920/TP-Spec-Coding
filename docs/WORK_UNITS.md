@@ -110,6 +110,14 @@ tp-spec workitem release --task TASK-ID --id TASK-ID-FIX01 --role tp-development
 
 释放回 PENDING，下一次 claim 增加尝试次数，保留旧结果与失败历史。已提交甚至已接收结果需再处理同一问题时，由协调者 `workitem retry --id ... --step 当前步骤 --reason ... --recovery ... --role ... --agent ...` 复用身份；新结果不沿用旧接收。Fix 可在更后的当前步骤重新接续，原步骤关联与完成时间保留，不能重开已完成父步骤。普通 Work 不允许通过 retry 迁往另一父步骤；应创建有依据的 Fix。
 
+从未认领的 scoped 软件 Work 已被同 Task、同集成位置的真实结果覆盖时，已登记协调者可凭说明和证据明确记录替代关系。
+
+```bash
+tp-spec workitem supersede --task TASK-ID --id OLD-WORK --replacement-id ACTUAL-WORK --replacement-result-event 123 --replacement-receipt-event 124 --reason "已有接收的 Work 完成了原范围，覆盖关系见证据" --evidence evidence/work-coverage.md --role tp-project-manager --agent ACTUAL-COORDINATOR-AGENT --db RUNTIME-DB
+```
+
+`SUPERSEDED` 保留原父步骤和登记记录，尝试次数仍为零。登记时核对原 Work 的依赖，替代 Work 的结果和接收须晚于原 Work 登记并覆盖其 AC；替代实施 Work 须有原允许路径内的实际输出。依赖、步骤完成及集成检查继续核对精确替代绑定和证据。同一替代 Work 的结果重试或覆盖证据更新后，由协调者用同一入口重新登记当前接收和证据，再刷新集成候选。原 Work 始终没有执行记录、结果或专业 PASS。
+
 `workflow next --json` 保留当前父 phase，实际需要补做的专业操作在 `context.operation_stage`。`rework_fix/workitem_resolve/workitem_candidate_then_resume` 是协调提示，不是自动派发、更高权限或已完成。Work 的结束/接收都不自动恢复或完成父步骤。
 
 ## 固定集成主体与原步骤复验

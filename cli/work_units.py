@@ -16,7 +16,8 @@ from . import execution, security_authority as authority
 SCHEMA = "tp-spec.work-unit/v1"
 EVENT = "WORK_ITEM_RECORDED"
 CANDIDATE = "WORK_INTEGRATION_RECORDED"
-ACTIONS = {"create", "claim", "release", "retry", "result", "receive"}
+ACTIONS = {"create", "claim", "release", "retry", "result", "receive", "supersede"}
+TERMINAL_WORK_STATES = {"COMPLETED", "SUPERSEDED"}
 
 
 def _text(value, name):
@@ -113,6 +114,9 @@ def trusted(row):
             return None
         if body.get("subject_scope", "full") not in ("full", "technical"):
             return None
+        dispositions = body.get("supersessions", {})
+        if not isinstance(dispositions, dict) or any(type(eid) is not int or eid < 1 for eid in dispositions.values()):
+            return None
     elif not isinstance(row.get("work_item_id"), str) or not row["work_item_id"]:
         return None
     if action == "create":
@@ -137,6 +141,11 @@ def trusted(row):
             return None
     if action == "receive" and type(body.get("result_event_id")) is not int:
         return None
+    if action == "supersede" and not (
+            execution._nonempty(body.get("summary")) and execution._nonempty(body.get("replacement_id"))
+            and all(type(body.get(k)) is int and body[k] > 0 for k in ("result_event_id", "receipt_event_id"))
+            and isinstance(body.get("evidence_items"), list) and body["evidence_items"]):
+        return None
     return body
 
 
@@ -150,8 +159,14 @@ def project_units(rows, *, domain=None):
     video = domain == "video"
     prior = []
     legacy_takeovers = {}
+    started_items = set()
     for raw in rows:
         row = dict(raw)
+        if row.get("event_type") == "WORK_SESSION_STARTED" and row.get("work_item_id"):
+            wid = row["work_item_id"]
+            started_items.add(wid)
+            if units.get(wid, {}).get("recorded_state") == "SUPERSEDED":
+                issues.append(f"WORK_SUPERSEDED_PARTICIPATION_INVALID:{row['id']}")
         if row.get("event_type") == work_takeover.EVENT:
             body = work_takeover.trusted(row, prior)
             prior.append(row)
@@ -210,7 +225,8 @@ def project_units(rows, *, domain=None):
             continue
         record = {"event_id": row["id"], "created_at": row["created_at"],
                   "actor": row.get("actor_role"), "agent": row.get("actor_agent"), **body}
-        permitted = {"PENDING": {"create", "claim"}, "ACTIVE": {"release", "result"}, "COMPLETED": {"receive", "retry"}}
+        permitted = {"PENDING": {"create", "claim", "supersede"}, "ACTIVE": {"release", "result"},
+                     "COMPLETED": {"receive", "retry"}, "SUPERSEDED": {"supersede"}}
         if action not in permitted[unit["recorded_state"]] or (action == "claim" and body["attempt"] != unit["attempt"] + 1):
             issues.append(f"WORK_TRANSITION_INVALID:{row['id']}")
             continue
@@ -220,6 +236,15 @@ def project_units(rows, *, domain=None):
         if action == "result" and (body["result"]["artifact"]["kind"] == "media") != video:
             issues.append(f"WORK_DOMAIN_INVALID:{row['id']}")
             continue
+        if action == "supersede":
+            previous = unit.get("supersession")
+            if (video or unit["spec"]["kind"] != "WORK" or unit["attempt"] != 0 or wid in started_items
+                    or not replacement_matches(unit, units.get(body["replacement_id"]), body)
+                    or (previous and (previous["replacement_id"] != body["replacement_id"]
+                                      or previous["receipt_event_id"] > body["receipt_event_id"]))):
+                issues.append(f"WORK_SUPERSESSION_INVALID:{row['id']}")
+                continue
+            unit.update(recorded_state="SUPERSEDED", supersession=record)
         unit["history"].append(record)
         if action == "claim":
             unit.update(attempt=body.get("attempt"), recorded_state="ACTIVE", owner_role=row.get("actor_role"),
@@ -250,6 +275,67 @@ def checked_item(conn, task_id, item_id):
     return dict(item)
 
 
+def replacement_matches(unit, replacement, binding):
+    if not (replacement and replacement["item_id"] != unit["item_id"]
+            and replacement["recorded_state"] == "COMPLETED" and replacement["result"] and replacement["receipt"]
+            and replacement["result"]["event_id"] == binding["result_event_id"]
+            and replacement["receipt"]["event_id"] == binding["receipt_event_id"]
+            and unit["create_event_id"] < binding["result_event_id"] < binding["receipt_event_id"]):
+        return False
+    original, actual = unit["spec"], replacement["spec"]
+    if actual["target_root"] != original["target_root"] or set(original["ac_refs"]) - set(actual["ac_refs"]):
+        return False
+    return (original["security_context"].get("effect_scope") in authority.READ_EFFECTS
+            or (actual["security_context"].get("effect_scope") not in authority.READ_EFFECTS
+                and any(matches(path, original["paths"]) for path in replacement["result"]["result"]["changed_paths"])))
+
+
+def check_supersession(conn, task_id, unit, units, *, check_content=True):
+    binding = unit.get("supersession") if unit else None
+    if not binding:
+        raise ValueError("WORK_SUPERSESSION_REQUIRED")
+    replacement = units.get(binding["replacement_id"])
+    if (not replacement_matches(unit, replacement, binding)
+            or checked_item(conn, task_id, binding["replacement_id"])["status"] != "COMPLETED"):
+        raise ValueError(f"WORK_SUPERSESSION_STALE: {unit['item_id']} -> {binding['replacement_id']}")
+    if check_content:
+        try:
+            check_references(conn, task_id, binding["evidence_items"], evidence=True)
+            validate_result(conn, task_id, replacement)
+        except (ValueError, OSError) as exc:
+            raise ValueError(f"WORK_SUPERSESSION_STALE: {unit['item_id']} -> {binding['replacement_id']}; {exc}") from exc
+
+
+def supersede(conn, task, facts, *, item_id, replacement_id, result_event_id, receipt_event_id, reason,
+              evidence, actor, agent):
+    from . import db as dbmod
+    coordinator(facts, actor, agent)
+    task_id = task["task_id"]
+    item = checked_item(conn, task_id, item_id)
+    units = read(conn, task_id)["units"]
+    unit = units.get(item_id)
+    if (facts.get("domain") == "video" or not unit or unit["spec"]["kind"] != "WORK" or unit["attempt"] != 0
+            or item["status"] not in {"PENDING", "SUPERSEDED"} or item["status"] != unit["recorded_state"]):
+        raise ValueError("WORK_SUPERSEDE_REQUIRES_UNSTARTED: expected a never-claimed scoped software Work")
+    if conn.execute("SELECT 1 FROM task_event WHERE task_id=? AND work_item_id=? AND event_type='WORK_SESSION_STARTED' LIMIT 1",
+                    (task_id, item_id)).fetchone():
+        raise ValueError("WORK_SUPERSEDE_REQUIRES_UNSTARTED: Work has participation history")
+    require_dependencies(conn, task_id, item)
+    binding = {"replacement_id": replacement_id, "result_event_id": result_event_id, "receipt_event_id": receipt_event_id,
+               "summary": _text(reason, "supersession.reason"), "evidence_items": references(conn, task_id, evidence, evidence=True)}
+    check_supersession(conn, task_id, {**unit, "supersession": binding}, units)
+    previous = unit.get("supersession")
+    if previous:
+        if all(previous.get(key) == value for key, value in binding.items()):
+            return {"item_id": item_id, "status": "SUPERSEDED", "event_id": previous["event_id"], "replayed": True}
+        if previous["replacement_id"] != replacement_id or previous["receipt_event_id"] > receipt_event_id:
+            raise ValueError("WORK_SUPERSESSION_REFRESH_INVALID: keep the same replacement Work and its current receipt")
+    event_id = append(conn, task, "supersede", binding, actor=actor, agent=agent, item=item_id)
+    conn.execute("UPDATE work_item SET status='SUPERSEDED',updated_at=? WHERE task_id=? AND item_id=?",
+                 (dbmod.now_iso(), task_id, item_id))
+    return {"item_id": item_id, "status": "SUPERSEDED", "event_id": event_id, "replayed": False}
+
+
 def dependencies(conn, task_id, values, *, self_id=None):
     values = _strings(values, "depends_on")
     for value in values:
@@ -265,7 +351,9 @@ def require_dependencies(conn, task_id, item):
     for dependency in json.loads(item.get("depends_on_json") or "[]"):
         row = checked_item(conn, task_id, dependency)
         unit = facts["units"].get(dependency)
-        if row["status"] != "COMPLETED" or (unit and not unit["receipt"]):
+        if row["status"] == "SUPERSEDED":
+            check_supersession(conn, task_id, unit, facts["units"])
+        elif row["status"] != "COMPLETED" or (unit and not unit["receipt"]):
             pending.append(dependency)
     if pending:
         raise ValueError("WORK_DEPENDENCIES_PENDING: " + ", ".join(pending))
@@ -566,13 +654,19 @@ def integration_status(conn, task, *, check_content=True, required_items=None):
         item = checked_item(conn, task["task_id"], wid)
         if item["status"] != unit["recorded_state"]:
             issues.append("WORK_ROW_FACT_MISMATCH: " + wid)
-        if wid in required and not unit["receipt"]:
+        if unit["recorded_state"] == "SUPERSEDED":
+            try:
+                check_supersession(conn, task["task_id"], unit, data["units"], check_content=check_content)
+            except (ValueError, OSError) as exc:
+                issues.append(str(exc))
+        elif wid in required and not unit["receipt"]:
             issues.append("WORK_RESULT_NOT_RECEIVED: " + wid)
     if not candidate:
         issues.append("WORK_INTEGRATION_REQUIRED")
     else:
         receipts = {wid: u["receipt"]["event_id"] for wid, u in data["units"].items() if u["receipt"]}
-        if receipts != candidate.get("receipts"):
+        supersessions = {wid: u["supersession"]["event_id"] for wid, u in data["units"].items() if u.get("supersession")}
+        if receipts != candidate.get("receipts") or supersessions != candidate.get("supersessions", {}):
             issues.append("WORK_CANDIDATE_INPUT_CHANGED")
         if check_content:
             try:
@@ -628,10 +722,14 @@ def record_candidate(conn, task, facts, raw, *, actor, agent):
         raise ValueError("WORK_PARENT_CHANGE_SET_REQUIRED: record the existing Task repository binding first")
     expected = {}
     receipts = {}
+    supersessions = {}
     for wid, unit in data["units"].items():
         item = checked_item(conn, task["task_id"], wid)
         if item["status"] != unit["recorded_state"]:
             raise ValueError("WORK_ROW_FACT_MISMATCH: " + wid)
+        if item["status"] == "SUPERSEDED":
+            check_supersession(conn, task["task_id"], unit, data["units"])
+            supersessions[wid] = unit["supersession"]["event_id"]
         if not unit["receipt"]:
             continue
         validate_result(conn, task["task_id"], unit)
@@ -665,8 +763,10 @@ def record_candidate(conn, task, facts, raw, *, actor, agent):
     snapshot = capture_change_set(roots)
     outstanding = [row["item_id"] for row in conn.execute(
         "SELECT item_id,status FROM work_item WHERE task_id=? ORDER BY item_id", (task["task_id"],))
-        if row["status"] != "COMPLETED" or (row["item_id"] in data["units"] and row["item_id"] not in receipts)]
+        if row["item_id"] not in supersessions
+        and (row["status"] != "COMPLETED" or (row["item_id"] in data["units"] and row["item_id"] not in receipts))]
     payload = {"summary": _text(raw.get("summary"), "integration.summary"), "receipts": receipts,
+        **({"supersessions": supersessions} if supersessions else {}),
         "outstanding_work_items": outstanding,
         "integrated_outputs": integrated, "resolutions": list(resolved.values()), "evidence_items": evidence,
         "repo_roots": roots, "change_set_id": snapshot["content_digest"], "change_set": _compact_change_set(snapshot),
@@ -686,10 +786,23 @@ def step_guard(conn, task, facts, step, action):
     if data["issues"]:
         raise ValueError("; ".join(data["issues"]))
     if action in {"resume", "complete"}:
-        fixes = [u for u in relevant if u["spec"]["kind"] == "FIX"]
-        needed = relevant if action == "complete" else fixes
+        required = [u for u in relevant if u["recorded_state"] != "SUPERSEDED"]
+        fixes = [u for u in required if u["spec"]["kind"] == "FIX"]
+        needed = required if action == "complete" else fixes
         if any(not u["receipt"] for u in needed):
             raise ValueError("WORK_RESULT_NOT_RECEIVED: receive required child results before resuming/completing parent")
+        if action == "complete":
+            explicit = step.get("work_item_ids", [])
+            superseded = [u["item_id"] for u in relevant if u["recorded_state"] == "SUPERSEDED"]
+            for wid in dict.fromkeys(explicit + superseded):
+                unit = data["units"].get(wid)
+                row = conn.execute("SELECT status FROM work_item WHERE task_id=? AND item_id=?", (task["task_id"], wid)).fetchone()
+                if row is None or row["status"] not in TERMINAL_WORK_STATES:
+                    raise ValueError("WORK_PENDING: " + wid)
+                if row["status"] == "SUPERSEDED" or wid in superseded:
+                    if not unit or row["status"] != unit["recorded_state"]:
+                        raise ValueError("WORK_ROW_FACT_MISMATCH: " + wid)
+                    check_supersession(conn, task["task_id"], unit, data["units"])
         if facts.get("domain") == "video":
             from .video_records import check_step
             check_step(conn, task, step, action, needed, fixes)
@@ -707,9 +820,23 @@ def step_guard(conn, task, facts, step, action):
                     review = _latest_trusted_code_review(conn, task["task_id"], task_dir=task_dir(conn, task["task_id"]),
                         subject_digest=subject, change_set_id=snapshot["content_digest"], verification_event_id=int(verification.row["id"]))
             elif step["phase"] == "delivery":
-                from .orchestration import _delivery_completion_event
-                delivery = _delivery_completion_event(execution.read_events(conn, task["task_id"]),
-                    task_dir(conn, task["task_id"]), task=task)
+                from . import orchestration
+                from .change_set import same_bound_product_content
+                from .delivery_contract import full_scope_matches, load_repository_scope
+                directory = task_dir(conn, task["task_id"])
+                task_facts, events = orchestration._load_task_facts(task["task_id"], connection=conn, task_dir=directory)
+                orchestration.resolve_route(task["task_id"], _facts=(task_facts, events), task_dir=directory)
+                if not task_facts.get("_current_change_set"):
+                    # A route can return before examining the product, including for an earlier unmet stage.
+                    binding = orchestration._development_change_set_binding(events, task_facts)
+                    scope = load_repository_scope(conn, task["task_id"])
+                    if binding and (event_id := int(binding["event"]["id"])) > scope["scope_event_id"] and (
+                            task_facts["workflow_mode"] == "quick"
+                            or full_scope_matches(scope, binding["detail"], development_event_id=event_id)):
+                        snapshot = orchestration._current_bound_change_set(binding, directory)
+                        if snapshot and same_bound_product_content(binding["detail"], snapshot):
+                            task_facts["_current_change_set"] = snapshot
+                delivery = orchestration._delivery_completion_event(events, directory, task=task_facts)
                 if not delivery or int(delivery["id"]) <= last_receipt:
                     raise ValueError("FIX_DELIVERY_RECHECK_REQUIRED: receive current delivery facts after the fix")
     return relevant

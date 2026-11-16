@@ -142,6 +142,8 @@ class LogicalRequest:
                 raise ValueError("REQUEST_RECORD_INVALID: response substituted the original evidence inventory")
             if self.operation == "verify" and response.get("ac_results", []) != detail.get("ac_results", []):
                 raise ValueError("REQUEST_RECORD_INVALID: response substituted the recorded AC results")
+            if self.operation == "verify" and response.get("deferred_checks", []) != detail.get("deferred_checks", []):
+                raise ValueError("REQUEST_RECORD_INVALID: response substituted the recorded deferred checks")
             validate_bound_items(self.task_dir, items, replay=True)
             self._validate_observations(conn, detail, response)
             expected = recorded_results(conn, self.task_id, self.task_dir, self.recorded_result_ids)

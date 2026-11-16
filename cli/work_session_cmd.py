@@ -235,10 +235,10 @@ def cmd_work_start(args) -> int:
         agent = args.agent if args.agent is not None else (task["owner_agent"] or "")
         item = getattr(args, "item", None)
         if item:
+            from .work_units import TERMINAL_WORK_STATES, read as read_units, checked_item
             row = conn.execute("SELECT status FROM work_item WHERE task_id=? AND item_id=?", (args.task, item)).fetchone()
-            if row is None or row["status"] == "COMPLETED":
-                raise ValueError("WORK_ITEM_UNAVAILABLE: item must belong to this task and not be completed")
-            from .work_units import read as read_units, checked_item
+            if row is None or row["status"] in TERMINAL_WORK_STATES:
+                raise ValueError("WORK_ITEM_UNAVAILABLE: item must belong to this task and remain open")
             scope = read_units(conn, args.task)
             unit = scope["units"].get(item)
             transferred = item in scope["legacy_takeovers"] or bool(

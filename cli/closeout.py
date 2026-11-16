@@ -50,6 +50,55 @@ def terminal_result(conn, task) -> dict[str, Any]:
             "view_status": "NOT_REFRESHED", "result_scope": "recorded terminal state; not a new verification"}
 
 
+def _architecture_review_gap(conn, task_id, task_dir, events):
+    from .digest import compute_architecture_subject_digest, compute_text_artifact_file_digest
+    from .evidence import validate_evidence_path
+
+    for event in reversed(events):
+        if event["event_type"] != "REVIEW_COMPLETED" or event["actor_role"] != "tp-software-architect":
+            continue
+        detail = orchestration._parse_detail(event["detail_json"])
+        if str(detail.get("review_kind") or "").upper() == "ARCHITECTURE":
+            break
+    else:
+        return {}, ["STAGE_RECORD_MISSING: architecture_review"]
+
+    recorded_id = int(event["id"])
+    context = f"architecture_review (event {recorded_id})"
+    decision = str(detail.get("decision") or "").upper()
+    facts = {"recorded_event_id": recorded_id, "recorded_decision": decision,
+             "artifact": detail.get("artifact"), "design_inputs": detail.get("design_inputs")}
+    trusted = event_policies.load_trusted_governance_event(
+        conn, task_id, event_type="REVIEW_COMPLETED", actor="tp-software-architect", review_kind="ARCHITECTURE")
+    if trusted is None or int(trusted.row["id"]) != recorded_id:
+        return facts, [f"TRUSTED_EVENT_SCHEMA_INVALID: {context}"]
+    if decision != "PASS":
+        return facts, [f"ARCHITECTURE_REVIEW_NOT_PASSED: {context}, decision={decision}"]
+
+    issues = []
+    artifact = validate_evidence_path(task_dir, detail.get("artifact"))
+    try:
+        artifact_matches = (artifact.ok and detail.get("artifact_digest")
+                            == compute_text_artifact_file_digest(task_dir / artifact.path))
+    except (OSError, UnicodeError):
+        artifact_matches = False
+    if not artifact_matches:
+        issues.append(f"{event_policies.ARCHITECTURE_REVIEW_ARTIFACT_MISMATCH}: {context}, field=artifact_digest")
+
+    expected = detail.get("subject_digest")
+    try:
+        current = compute_architecture_subject_digest(task_dir, design_inputs=detail.get("design_inputs"))
+    except (OSError, UnicodeError, ValueError, TypeError):
+        issues.append(f"{event_policies.ARCHITECTURE_REVIEW_STALE}: {context}, field=design_inputs")
+    else:
+        if expected != current:
+            issues.append(f"{event_policies.ARCHITECTURE_REVIEW_STALE}: {context}, field=subject_digest")
+        facts.update(recorded_subject_digest=expected, current_subject_digest=current)
+    if event.get("_security_current") is False:
+        issues.append(f"ARCHITECTURE_REVIEW_EVIDENCE_INAPPLICABLE: {context}, fields=security_context/evidence_items")
+    return facts, issues or [f"ARCHITECTURE_REVIEW_NOT_CURRENT: {context}"]
+
+
 def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict[str, Any]:
     task = dict(task)
     task_id, state = task["task_id"], str(task["current_state"])
@@ -141,9 +190,10 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
 
     def work_check():
         from .workitem_cmd import summarize_work_items
+        from .work_units import TERMINAL_WORK_STATES
         data = summarize_work_items(conn, task)
         issues = list(data["issues"])
-        issues.extend(f"WORK_PENDING: {w['item_id']} ({w['status']})" for w in data["items"] if w["status"] != "COMPLETED")
+        issues.extend(f"WORK_PENDING: {w['item_id']} ({w['status']})" for w in data["items"] if w["status"] not in TERMINAL_WORK_STATES)
         return pending(issues, items=data["items"], counts=data["counts"])
     check("work", "tp-software-lifecycle", [], work_check)
 
@@ -266,6 +316,7 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
             raise ValueError('QUICK_UNVERIFIED_DISCLOSURE_REQUIRED')
         verification, _, _, _ = _latest_trusted_verification(conn, task_id, task_dir, require_full=not quick)
         return pending([], event_id=int(verification.row["id"]), scope=verification.detail.get("verification_scope", "full"),
+                       deferred_checks=verification.detail.get("deferred_checks") or [],
                        reusable=True, note="复用当前范围/主体/原证据仍有效的PASS，不执行测试")
     check("verification", "tp-test-engineer", ["subject", "acceptance", "visual", "database"], verification_check)
 
@@ -292,7 +343,17 @@ def collect(conn, task, task_dir: Path, *, db_path: str, base_root=None) -> dict
                            steps=[{'stage': 'development', 'event_id': (development or {}).get('event', {}).get('id')}])
         rows = [{"stage": s, "event_id": (orchestration._stage_completion_event(s, stage_events) or {}).get("id")}
                 for s in included if s not in {"verification", "review", "delivery"}]
-        return pending([f"STAGE_RECORD_MISSING: {r['stage']}" for r in rows if not r["event_id"]], steps=rows)
+        issues = []
+        for row in rows:
+            if row["event_id"]:
+                continue
+            if row["stage"] == "architecture_review":
+                gap, review_issues = _architecture_review_gap(conn, task_id, task_dir, stage_events)
+                row.update(gap)
+                issues.extend(review_issues)
+            else:
+                issues.append(f"STAGE_RECORD_MISSING: {row['stage']}")
+        return pending(issues, steps=rows)
     check("stage_records", "tp-software-lifecycle", ["route"], stages_check)
 
     def temp_check():

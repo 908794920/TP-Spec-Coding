@@ -235,7 +235,7 @@ export function stageLabel(step: unknown): string {
 }
 const states: Record<string, Record<string, string>> = {
     task: { NEW: '新建', ACTIVE: '活跃', BLOCKED: '阻塞', COMPLETED: '已结单', CANCELLED: '已取消' },
-    work_item: { PENDING: '待处理', ACTIVE: '已认领', COMPLETED: '工作项已完成' },
+    work_item: { PENDING: '待处理', ACTIVE: '已认领', COMPLETED: '工作项已完成', SUPERSEDED: '已由其他工作覆盖' },
 };
 export function stateLabel(kind: string, state: unknown): string {
     const raw = text(state);

@@ -713,6 +713,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
            request_id: Optional[str] = None,
            scope: str = "full", checks: Optional[Iterable[str]] = None,
            ac_results: Optional[Iterable[Dict[str, Any]]] = None,
+           deferred_checks: Optional[Iterable[Dict[str, Any]]] = None,
            security_context: Optional[Dict[str, Any]] = None,
            media_qc: Optional[str] = None, media_export_event: Optional[int] = None, media_agent: str = "",
            db: Optional[str] = None) -> Dict[str, Any]:
@@ -723,7 +724,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         from .video_records import record
         if not media_qc or not media_export_event or media_export_event < 1:
             raise ValueError("VIDEO_QC_INPUT_REQUIRED: supply --media-qc and --media-export-event")
-        if decision not in ("PASS", "FAIL", "NEEDS_FIX") or any((evidence, checks, knowledge_signals, delivery_signals)):
+        if decision not in ("PASS", "FAIL", "NEEDS_FIX") or any((evidence, checks, knowledge_signals, delivery_signals, deferred_checks)):
             raise ValueError("VIDEO_QC_USES_REPORT: record actual coverage and findings in --media-qc")
         return record("video-qc", task_id=task_id, task_dir=task_dir, actor=actor, summary=summary,
                       payload={"report": media_qc, "export_event": media_export_event, "decision": decision,
@@ -744,10 +745,12 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
     tdir = _task_dir(task_dir)
     from .evidence import validate_evidence_path
     from .digest import compute_verification_subject_digest
+    from .verification_checks import bind_deferred_checks, normalize_deferred_checks
     evidence = list(evidence or [])
     knowledge_signals = list(knowledge_signals or [])
     delivery_signals = list(delivery_signals or [])
     ac_results = list(ac_results or [])
+    deferred_checks = normalize_deferred_checks(deferred_checks)
     from . import context_usage as context_usage_mod
     usage, context_warnings = context_usage_mod.normalize_context_usage(context_usage)
     context_usage_mod.emit_warnings(context_warnings)
@@ -757,6 +760,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         "knowledge_signals": knowledge_signals, "delivery_signals": delivery_signals,
         "context_usage": usage,
         **({"ac_results": ac_results} if ac_results else {}),
+        **({"deferred_checks": deferred_checks} if deferred_checks else {}),
         **({"security_context": security_context} if security_context is not None else {}),
     }, request_id)
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
@@ -793,6 +797,15 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
             for item in ac_items:
                 if item not in items:
                     items.append(item)
+        bound_deferred_checks = []
+        if deferred_checks:
+            deferred_acs = {check["ac"] for check in deferred_checks}
+            if any(result["ac"] in deferred_acs and result["verdict"] == "PASS" for result in accepted_results):
+                raise ValueError("DEFERRED_CHECK_INVALID: an AC with deferred checks cannot be passed in the same submission")
+            if not acceptance_path.is_file():
+                raise ValueError("DEFERRED_CHECK_INVALID: acceptance.md is missing")
+            acceptance_text = acceptance_path.read_text(encoding="utf-8-sig")
+            bound_deferred_checks = bind_deferred_checks(conn, task_id, tdir, deferred_checks, acceptance_text)
         current = str(task["current_state"] or "")
         if current in TERMINAL_STATES:
             raise ValueError(f"terminal task cannot accept verification: {current}")
@@ -809,9 +822,12 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                 require_full_scope(conn, task_id, development["detail"], development_event_id=development["event_id"])
             else:
                 require_scope_checkpoint(conn, task_id, development_event_id=development["event_id"])
-        from .change_set import capture_bound_product, is_ops_subject
+        from .change_set import capture_bound_product, is_ops_subject, same_bound_product_content
         if development and (development.get("repo_roots") or is_ops_subject(development["detail"])):
             current_change_set = capture_bound_product(development["detail"], tdir, repo_roots=development["repo_roots"])
+        if bound_deferred_checks and (not current_change_set or not development.get("change_set_id")
+                or not same_bound_product_content(development["detail"], current_change_set)):
+            raise ValueError("DEFERRED_CHECK_SUBJECT_INVALID: current candidate ChangeSet required")
         from . import security_authority as authority
         security = authority.normalize_context(security_context or {"effect_scope": "regression"})
         if security["effect_scope"] != "regression":
@@ -825,7 +841,6 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         if decision0 == "PASS":
             if not development or not development.get("change_set_id") or not current_change_set:
                 raise ValueError("DEVELOPMENT_CHANGE_SET_REQUIRED")
-            from .change_set import same_bound_product_content
             if not current_change_set or not same_bound_product_content(development["detail"], current_change_set):
                 raise ValueError("DEVELOPMENT_CHANGE_SET_STALE")
 
@@ -857,12 +872,15 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                         manifest_exists = manifest_target.is_relative_to(tdir) and manifest_target.is_file()
                     owner_visual = False
                     if not manifest_exists:
-                        owner_visual_items = _owner_visual_acceptance_evidence(
+                        owner_visual_items, uses_page_only = _owner_visual_acceptance_evidence(
                             conn, task_id, tdir, acceptance, visual,
                             change_set_id=str(current_change_set.get("content_digest") or ""),
                             subject_digest=subject_digest,
                         )
                         owner_visual = bool(owner_visual_items)
+                        if uses_page_only and not any(
+                                not item["path"].startswith("evidence/owner-acceptance/") for item in items):
+                            raise ValueError("verification PASS requires technical evidence in addition to the Owner page-only receipt")
                     if not owner_visual:
                         checked_visual = artifact_validation.validate_visual_verification_manifest(
                             tdir, manifest_path,
@@ -895,6 +913,9 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                             existing.add(item["path"])
             if not items:
                 raise ValueError("verification PASS requires at least one real evidence/* file")
+        for check in bound_deferred_checks:
+            if check["evidence"] not in items:
+                items.append(check["evidence"])
         knowledge = _normalize_knowledge_signals(knowledge_signals)
         delivery = _normalize_delivery_signals(delivery_signals)
 
@@ -908,26 +929,29 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
             result["change_set_snapshot_digest"] = str(current_change_set["snapshot_digest"])
         if accepted_results:
             result["ac_results"] = accepted_results
+        if bound_deferred_checks:
+            result["deferred_checks"] = bound_deferred_checks
 
         def writer(dbconn, transaction_id=""):
-            if ac_results and (transaction_commit._sha256_file(acceptance_path) != acceptance_before
+            if (ac_results or bound_deferred_checks) and (transaction_commit._sha256_file(acceptance_path) != acceptance_before
                     or compute_verification_subject_digest(tdir, scope=scope) != original_subject):
                 raise ValueError("ACCEPTANCE_CHANGED_BEFORE_COMMIT: reread the current acceptance declaration")
             authority.check_effect(dbconn, task_id, security, task_dir=tdir)
             authority.check_formal_evidence(authority.read(dbconn, task_id, tdir), tdir, items)
             recording.validate_bound_items(tdir, items)
-            if decision0 == "PASS":
+            if decision0 == "PASS" or bound_deferred_checks:
                 latest_development = _latest_development_change_set(dbconn, task_id)
                 if (not latest_development or latest_development["event_id"] != development["event_id"]
                         or compute_verification_subject_digest(tdir, scope=scope) != original_subject
                         or not same_bound_product_content(development["detail"], capture_bound_product(development["detail"], tdir, repo_roots=development["repo_roots"]))):
                     raise ValueError("VERIFICATION_STALE: subject changed before write")
+            if decision0 == "PASS":
                 if scope == "full":
                     require_full_scope(dbconn, task_id, development["detail"], development_event_id=development["event_id"])
                 else:
                     require_scope_checkpoint(dbconn, task_id, development_event_id=development["event_id"])
                 if owner_visual_items:
-                    current_owner_items = _owner_visual_acceptance_evidence(
+                    current_owner_items, _ = _owner_visual_acceptance_evidence(
                         dbconn, task_id, tdir, acceptance, visual,
                         change_set_id=str(current_change_set.get("content_digest") or ""),
                         subject_digest=subject_digest,
@@ -964,6 +988,8 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
             }
             if accepted_results:
                 detail_obj["ac_results"] = accepted_results
+            if bound_deferred_checks:
+                detail_obj["deferred_checks"] = bound_deferred_checks
             if development and current_change_set:
                 detail_obj["development_event_id"] = int(development["event_id"])
                 detail_obj["change_set_id"] = str(current_change_set["content_digest"])
@@ -1060,46 +1086,50 @@ def acceptance_truth_issues(conn, task_id: str, task_dir: Path, *, owner=None) -
 
 def _owner_visual_acceptance_evidence(conn, task_id: str, task_dir: Path, acceptance,
                                       visual: Dict[str, Any], *, change_set_id: str,
-                                      subject_digest: str) -> List[Dict[str, Any]]:
-    """Return current, bound receipt evidence for the declared visual AC scope."""
+                                      subject_digest: str) -> tuple[List[Dict[str, Any]], bool]:
+    """Return the bound visual evidence and whether it includes page-only receipts."""
     from . import event_policies
     from .evidence import validate_evidence_path
 
     refs = visual.get("acceptance_refs")
     if not isinstance(refs, list) or not refs or any(not str(value).strip() for value in refs):
-        return []
+        return [], False
     required = {str(value).strip() for value in refs}
     if not required:
-        return []
+        return [], False
     effective = event_policies.effective_owner_acceptance(
         conn, task_id, task_dir=task_dir, change_set_id=change_set_id,
         subject_digest=subject_digest,
     )
-    if not required.issubset(set(effective.get("visual_acs") or [])):
-        return []
+    by_ac = effective["visual_by_ac"]
+    if not required.issubset(by_ac):
+        return [], False
     source_paths = set()
+    uses_page_only = False
     for ac in required:
-        decision = (effective.get("by_ac") or {}).get(ac) or {}
+        decision = by_ac[ac]
+        uses_page_only |= decision["visual_scope"].get("kind") == "page_only"
         source_path = str(decision.get("source_evidence") or "").strip()
         if not source_path:
-            return []
+            return [], False
         source_paths.add(source_path)
     items: List[Dict[str, Any]] = []
     for source_path in sorted(source_paths):
         checked = validate_evidence_path(task_dir, source_path, require_evidence_dir=True)
         if not checked.ok:
-            return []
+            return [], False
         items.append(checked.item)
-    return items
+    return items, uses_page_only
 
 
 def _owner_visual_acceptance_covers(conn, task_id: str, task_dir: Path, acceptance, visual: Dict[str, Any], *,
                                     change_set_id: str, subject_digest: str) -> bool:
     """Return whether a trusted owner result covers the declared visual AC scope."""
-    return bool(_owner_visual_acceptance_evidence(
+    items, _ = _owner_visual_acceptance_evidence(
         conn, task_id, task_dir, acceptance, visual,
         change_set_id=change_set_id, subject_digest=subject_digest,
-    ))
+    )
+    return bool(items)
 
 
 def validate_final_acceptance(conn, task_id: str, task_dir: Path) -> None:

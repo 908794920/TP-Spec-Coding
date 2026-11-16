@@ -2,9 +2,9 @@ import { Alert, Tag } from 'antd';
 import { record, records, text } from '../facts';
 import { CopyText, Disclosure, Fields } from './Facts';
 
-const states: Record<string, string> = { PENDING: '待认领', ACTIVE: '已认领', COMPLETED: '结果已提交' };
+const states: Record<string, string> = { PENDING: '待认领', ACTIVE: '已认领', COMPLETED: '结果已提交', SUPERSEDED: '已由其他工作覆盖' };
 const actions: Record<string, string> = { create: '登记范围', claim: '认领', release: '失败 / 释放',
-  retry: '同一问题重试', result: '提交结果', receive: '协调者接收' };
+  retry: '同一问题重试', result: '提交结果', receive: '协调者接收', supersede: '登记替代依据' };
 
 /** Existing ledger facts only: no agent liveness, automatic merging or approval controls. */
 export function WorkResults({ value }: { value: unknown }) {
@@ -40,13 +40,14 @@ export function WorkResults({ value }: { value: unknown }) {
               receipt_event: receipt.event_id, received_by: receipt.actor, received_at: receipt.created_at }}
               labels={{ result_event: '精确结果事件', output_digest: '声明输出内容摘要', artifact: '实际结果载体',
                 evidence: '登记时证据绑定（不代替当前适用性检查）', receipt_event: '接收事件', received_by: '协调角色', received_at: '接收时间' }}/>
-              : <p>本次尝试尚无结果，旧尝试保留在下方历史。</p>}
+              : <p>{item.status === 'SUPERSEDED' ? '此工作未执行，替代依据见下方历史。' : '本次尝试尚无结果，旧尝试保留在下方历史。'}</p>}
             <Disclosure label={`尝试、失败恢复与接收历史 · ${records(unit.history).length} 条`}>
               {records(unit.history).map(row => <div className="record-block" key={text(row.event_id)}>
                 <h4>{actions[text(row.action)] || text(row.action)} · #{text(row.event_id)}</h4>
                 <Fields value={{ created_at: row.created_at, actor: row.actor, actor_agent: row.agent,
                   summary: row.summary, recovery_condition: row.recovery_condition, attempt: row.attempt,
-                  step_id: row.step_id, result_event_id: row.result_event_id }}/>
+                  step_id: row.step_id, result_event_id: row.result_event_id, replacement_id: row.replacement_id,
+                  receipt_event_id: row.receipt_event_id, evidence: row.evidence_items }}/>
               </div>)}
             </Disclosure>
           </>}
@@ -57,7 +58,7 @@ export function WorkResults({ value }: { value: unknown }) {
       <p role="status">已登记候选 #{text(candidate.event_id)}；不是当前验证 PASS。当前源码 / AC / 证据适用性由正式只读结单预检核对。</p>
       <CopyText value={candidate.change_set_id} label="复制候选摘要"/>
       <Disclosure label="集成输入、冲突处置与实际来源">
-        <Fields value={{ created_at: candidate.created_at, summary: candidate.summary, receipts: candidate.receipts,
+        <Fields value={{ created_at: candidate.created_at, summary: candidate.summary, receipts: candidate.receipts, supersessions: candidate.supersessions,
           repo_roots: candidate.repo_roots, change_set: candidate.change_set, integrated_outputs: candidate.integrated_outputs,
           resolutions: candidate.resolutions, evidence: candidate.evidence_items,
           outstanding_at_recording: candidate.outstanding_work_items, effect_scope: candidate.effect_scope }}/>

@@ -117,6 +117,8 @@ Base 中已有的信号名、条件角色 phases 和受角色能力约束的 mod
 
 ## 当前有效范围、决定与授权来源
 
+已有执行计划的 VERIFY 卡住时，可按需运行 `tp-spec workflow next --task <TASK> --db <DB> --check --json`：一次显示当前步骤的真实完成条件、full Verify 登记条件、旧验证的证据失配，以及仅在后续交付/结单适用的条件。`ready_to_complete_step` 只复用步骤自身的门禁，不给无 FIX 的步骤额外强加 full PASS；它不表示下一角色已启动或整任务已验收。普通状态查询仍用不带 `--check` 的紧凑入口。只读检查基于一次数据库快照，文件仍可能变化，正式写入会重新核对。
+
 当前业务摘要只维护在已有 `task.md` 或 canonical `requirement.md` **其中一处**；有明确 Requirement 时沿用它，简单 Task 直接在 Task 内维护。使用模板的 `<!-- tp-spec:current:start -->` 与 `<!-- tp-spec:current:end -->` 两个独立行界定短当前区，代码围栏中的示例不生效。它不是新工件、数据库、工作流阶段或必填表；没有内容的模板标题/注释以及旧任务缺少此区，都不会要求新建 Requirement 或重跑 Frontier。
 
 例如在选定工件的当前区写必要语义，机器身份、时间和事件仍由既有 CLI 生成：
@@ -372,6 +374,10 @@ CLI 不再注册卡片命令，也不为新诊断生成 `card` 计时区段；�
 当前门禁只消费最新同角色的适用结果：新的 FAIL/NEEDS_FIX/BLOCKED、失效主体或损坏证据不能被更早的 PASS 覆盖。CODE 的三个名称共用结果序列。审查绑定当前 Verification、ChangeSet 和证据；交付再次校验审查原证据与机器回执。事务写入前会复核已绑定结果，复核失败不追加对应事实，也不撤销已完成的产品修改。
 
 `delivery-converge --delivery-status READY` 与 `task complete` 共用必要 AC 处置及真实证据/owner 授权检查。技术和代码审查通过不授予人验 PASS；必需人验仍 PENDING/BLOCKED 时不得 READY。human_owner 可通过既有 `task acceptance-override --mode accept` 对当前绑定且实际核验的人工/视觉 AC 留证；在 `BLOCKED` 回执中这只消解所覆盖的人验阻塞，不清除权限、依赖、环境或账本等无关 blocker。合法 defer/waive 继续通过既有 `task acceptance-override` 留证，不手改账本或把未运行写为 PASS。
+
+用户只确认页面、同一 AC 还含技术条件时，使用 `task acceptance-override --mode accept --scope visual-only --change-set-id <已核对的产品摘要> --ac <实际页面范围> --source <原始用户确认及来源> --request-id <稳定请求ID>`（另传 Task/目录/DB）。这只新增候选绑定的页面见证，不改技术 AC、全局人验标记或等待状态。可以分批覆盖已声明的视觉范围；full Verify 仍需独立技术证据。不要从普通 FACT 自动猜测逐视口、状态或整项验收，也不为补登记重跑未变页面。
+
+只把个别技术检查留待后续时，在实际测试角色的 `task verify` 中逐项传 `--deferred-check-json`，JSON 字段为 `id`、`ac`、`description`、`source_event`、`evidence`、`owner_statement`、`reverify_owner`、`trigger`、`residual_risk`。来源必须是本任务 human_owner 或项目经理转录的 FACT，证据路径须与该事实一致；`owner_statement` 保存真实原决定/引用，这不是程序对真人身份的认证。条目以 `DEFERRED` 及证据 SHA 绑定当前验证主体，不能作为技术 PASS 的唯一证据，也不能同次把对应整条 AC 标 PASS。它只披露本次验证的未执行边界，不将 AC 改成 `DEFERRED_ACCEPTED`，不免除后续 READY/结单要求。旧验证引用文件已变时须重新核实适用性后登记，刷新候选不能改写旧验证回执。
 
 新 Owner 接受记录的 `subject_scope=technical` 仅标识标准主体摘要的算法，不把人工验收改成技术验收：仍绑定当前产品 Change Set、明确选中 AC、实际 Owner 来源与证据 SHA。后续仅登记技术结果或 Owner 处置不让原人验重复失效；需求/标准/方法/见证、数据库声明和产品实质变化照常失效。旧记录无标记时仍按原 full 语义消费，不自动重绑或改写。混合验收 YAML 只规范化 Runtime 写回的 `deferred_acceptance` / `owner_waivers`，数据库及其他声明保留；此规范化可能使在途旧摘要过期，应由原获准执行者核对后显式登记，终态不追补。full Verify/Review 对技术结果及实际证据的保护保持。
 

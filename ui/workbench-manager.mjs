@@ -1,7 +1,7 @@
 // Local Windows entrypoint; source paths are resolved from this file, never machine constants.
 import { fork, spawn } from 'node:child_process';
 import { createServer, createConnection } from 'node:net';
-import { mkdir, readFile, writeFile, rename, unlink, open } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { realpathSync, openSync, closeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +10,6 @@ import { createHash, randomUUID } from 'node:crypto';
 const root = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
 const directory = join(root, 'workbench-logs');
 const statePath = join(directory, 'manager.json');
-const lockPath = join(directory, 'manager.lock');
 const pipe = `\\\\.\\pipe\\tp-spec-workbench-${createHash('sha256').update(root.toLowerCase()).digest('hex').slice(0, 24)}`;
 const action = process.argv[2];
 const port = Number(process.env.TP_SPEC_WORKBENCH_PORT || 15173);
@@ -38,6 +37,16 @@ async function request(command, state) {
     });
     socket.on('end', () => { if (!buffer.includes('\n')) reject(new Error('Manager disconnected')); });
   });
+}
+
+async function managementLock() {
+  // Windows releases the pipe when its owning process exits, including forced termination.
+  const lock = createServer(socket => socket.destroy());
+  await new Promise((resolve, reject) => {
+    lock.once('error', reject);
+    lock.listen(`${pipe}-operation`, resolve);
+  });
+  return lock;
 }
 
 async function current() {
@@ -168,7 +177,7 @@ if (action === '--serve') {
 } else {
   let lock;
   try {
-    lock = await open(lockPath, 'wx');
+    lock = await managementLock();
     if (action === 'stop' || action === 'restart') {
       const state = await current();
       if (state) { await stop(state); console.log('Workbench stopped.'); }
@@ -176,9 +185,9 @@ if (action === '--serve') {
     }
     if (action !== 'stop') await start();
   } catch (error) {
-    console.error(error.code === 'EEXIST' ? 'Another management operation is active. If it was interrupted, remove workbench-logs/manager.lock after checking.' : error.message);
+    console.error(error.code === 'EADDRINUSE' ? 'Another management operation is active. Retry after it finishes.' : error.message);
     process.exitCode = 1;
   } finally {
-    if (lock) { await lock.close(); await unlink(lockPath); }
+    if (lock) await new Promise(resolve => lock.close(resolve));
   }
 }

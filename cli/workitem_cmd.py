@@ -24,14 +24,27 @@ def _split_csv(s: Optional[str]) -> List[str]:
 
 def summarize_work_items(conn, task, *, rows=None, retired: bool = False) -> dict:
     """Read existing milestones; never derive Task/project completion or repair rows."""
+    from . import work_units
     task = dict(task)
     if rows is None:
         rows = conn.execute("SELECT * FROM work_item WHERE task_id=? ORDER BY created_at,item_id",
                             (task["task_id"],)).fetchall()
     items = [dict(row) for row in rows]
     by_id = {row["item_id"]: row for row in items}
-    counts = {"PENDING": 0, "ACTIVE": 0, "COMPLETED": 0}
+    counts = {"PENDING": 0, "ACTIVE": 0, "COMPLETED": 0, "SUPERSEDED": 0}
     issues = []
+    scoped = work_units.read(conn, task["task_id"])
+    units = scoped["units"]
+    issues.extend(scoped["issues"])
+    settled = {wid for wid, row in by_id.items() if row["status"] == "COMPLETED"}
+    for wid, unit in units.items():
+        binding = unit.get("supersession")
+        if binding and by_id.get(wid, {}).get("status") == "SUPERSEDED":
+            replacement = binding["replacement_id"]
+            if replacement in settled and work_units.replacement_matches(unit, units.get(replacement), binding):
+                settled.add(wid)
+            else:
+                issues.append(f"{wid}: WORK_SUPERSESSION_STALE")
     current = not retired and task.get("current_state") not in {"COMPLETED", "CANCELLED"}
     for item in items:
         state = item.get("status")
@@ -46,7 +59,7 @@ def summarize_work_items(conn, task, *, rows=None, retired: bool = False) -> dic
         except (ValueError, TypeError):
             depends = []
             issues.append(f"{item['item_id']}: INVALID_DEPENDENCIES")
-        unresolved = [d for d in depends if d not in by_id or by_id[d]["status"] != "COMPLETED"]
+        unresolved = [d for d in depends if d not in settled]
         if any(d not in by_id or d == item["item_id"] for d in depends):
             issues.append(f"{item['item_id']}: DEPENDENCY_UNRESOLVED")
         if state == "COMPLETED" and unresolved:
@@ -58,23 +71,23 @@ def summarize_work_items(conn, task, *, rows=None, retired: bool = False) -> dic
         issues.append("TERMINAL_TASK_OPEN_ITEMS")
     elif not current and counts["ACTIVE"]:
         issues.append("HISTORICAL_ACTIVE_ITEM")
-    from . import work_units
-    scoped = work_units.read(conn, task["task_id"])
-    issues.extend(scoped["issues"])
     for item in items:
-        pending_receipts = [wid for wid in item["depends_on"] if wid in scoped["units"] and not scoped["units"][wid]["receipt"]]
+        pending_receipts = [wid for wid in item["depends_on"] if wid in units and units[wid]["recorded_state"] == "COMPLETED"
+                            and not units[wid]["receipt"]]
         item["unresolved_dependencies"] = sorted(set(item["unresolved_dependencies"]) | set(pending_receipts))
         if item["status"] == "COMPLETED" and pending_receipts:
             issues.append(f"{item['item_id']}: COMPLETED_WITH_UNRECEIVED_DEPENDENCY")
-        unit = scoped["units"].get(item["item_id"])
+        unit = units.get(item["item_id"])
         if unit:
             item["work_unit"] = unit
             if item["status"] != unit["recorded_state"]:
                 issues.append(f"{item['item_id']}: WORK_ROW_FACT_MISMATCH")
             if current and item["status"] == "COMPLETED" and not unit["receipt"]:
                 issues.append(f"{item['item_id']}: WORK_RESULT_NOT_RECEIVED")
+        elif item["status"] == "SUPERSEDED":
+            issues.append(f"{item['item_id']}: WORK_SUPERSESSION_REQUIRED")
     consistency = "NEEDS_RECONCILIATION" if issues else ("RECORDED" if items else "NOT_RECORDED")
-    summary = (f"WorkItem 登记：待处理 {counts['PENDING']} / 已认领 {counts['ACTIVE']} / 已完成 {counts['COMPLETED']}；"
+    summary = (f"WorkItem 登记：待处理 {counts['PENDING']} / 已认领 {counts['ACTIVE']} / 已完成 {counts['COMPLETED']} / 已替代 {counts['SUPERSEDED']}；"
                f"{consistency}。只代表该任务里程碑记录，不是整任务/项目验收或进程存活。")
     if issues:
         summary += " 待核对：" + "; ".join(issues)
@@ -266,6 +279,14 @@ def cmd_workitem_candidate(args) -> int:
         actor=args.role, agent=args.agent))
 
 
+def cmd_workitem_supersede(args) -> int:
+    from .work_units import supersede
+    return _write(args, lambda conn, task, facts: supersede(conn, task, facts, item_id=args.id,
+        replacement_id=args.replacement_id, result_event_id=args.replacement_result_event,
+        receipt_event_id=args.replacement_receipt_event, reason=args.reason, evidence=args.evidence,
+        actor=args.role, agent=args.agent))
+
+
 def cmd_workitem_list(args) -> int:
     task_id = args.task
     db_path = dbmod.resolve_db_path(args.db, project_id=getattr(args, "project", None), task_id=task_id)
@@ -355,12 +376,13 @@ def add_workitem_subparsers(workitem_parser) -> None:
     # workitem list
     p_list = sub.add_parser("list", help="List work items for a task")
     p_list.add_argument("--task", required=True, help="task id")
-    p_list.add_argument("--status", required=False, default=None, choices=["PENDING", "ACTIVE", "COMPLETED"])
+    p_list.add_argument("--status", required=False, default=None, choices=["PENDING", "ACTIVE", "COMPLETED", "SUPERSEDED"])
     p_list.add_argument("--db", required=False, default=None)
     p_list.add_argument("--json", action="store_true", help="Include exact result/receipt IDs and integration facts")
     p_list.set_defaults(func=cmd_workitem_list)
 
-    for name, function in (("receive", cmd_workitem_receive), ("retry", cmd_workitem_retry), ("candidate", cmd_workitem_candidate)):
+    for name, function in (("receive", cmd_workitem_receive), ("retry", cmd_workitem_retry),
+                           ("candidate", cmd_workitem_candidate), ("supersede", cmd_workitem_supersede)):
         parser = sub.add_parser(name, help="Record scoped Work " + name + "; no product operation")
         parser.add_argument("--task", required=True)
         parser.add_argument("--db", default=None)
@@ -375,6 +397,12 @@ def add_workitem_subparsers(workitem_parser) -> None:
             parser.add_argument("--step", required=True)
             parser.add_argument("--reason", required=True)
             parser.add_argument("--recovery", required=True)
+        elif name == "supersede":
+            parser.add_argument("--replacement-id", required=True)
+            parser.add_argument("--replacement-result-event", required=True, type=int)
+            parser.add_argument("--replacement-receipt-event", required=True, type=int)
+            parser.add_argument("--reason", required=True)
+            parser.add_argument("--evidence", required=True, action="append")
         else:
             parser.add_argument("--file", required=True)
         parser.set_defaults(func=function)
