@@ -119,6 +119,8 @@ Base 中已有的信号名、条件角色 phases 和受角色能力约束的 mod
 
 已有执行计划的 VERIFY 卡住时，可按需运行 `tp-spec workflow next --task <TASK> --db <DB> --check --json`：一次显示当前步骤的真实完成条件、full Verify 登记条件、旧验证的证据失配，以及仅在后续交付/结单适用的条件。`ready_to_complete_step` 只复用步骤自身的门禁，不给无 FIX 的步骤额外强加 full PASS；它不表示下一角色已启动或整任务已验收。普通状态查询仍用不带 `--check` 的紧凑入口。只读检查基于一次数据库快照，文件仍可能变化，正式写入会重新核对。
 
+有执行计划时，`workflow next --json` 另返回只读的 `plan_route_alignment`：`completed_step_ids`、`current_step`、`next_planned_step`、`routed_next_stage`、`operation_stage`、`responsible_role`、`recommended_action`、`alignment_status`、`reason_codes`、`requires_human`。它解释顶层路由与实际计划的关系，不改变顶层 `next_stage`、角色、effect 或授权：当前步骤 ACTIVE 而路由实际派发的是另一专业操作（例如 VERIFY 中需要补架构复审）时为 `PREREQUISITE_REPAIR`，不因父阶段被改写成当前步骤而同报 `ALIGNED`；`BLOCKED`、等待事实、`work_step_complete`、`rework_fix` 分别对应 `BLOCKED_STATE`、`WAITING_HUMAN_OR_DEPENDENCY`、`STEP_READY_TO_COMPLETE`、`REWORK_FIX_REQUIRED`。它不完成步骤、不派发角色，也不据此推断用户权限。
+
 当前业务摘要只维护在已有 `task.md` 或 canonical `requirement.md` **其中一处**；有明确 Requirement 时沿用它，简单 Task 直接在 Task 内维护。使用模板的 `<!-- tp-spec:current:start -->` 与 `<!-- tp-spec:current:end -->` 两个独立行界定短当前区，代码围栏中的示例不生效。它不是新工件、数据库、工作流阶段或必填表；没有内容的模板标题/注释以及旧任务缺少此区，都不会要求新建 Requirement 或重跑 Frontier。
 
 例如在选定工件的当前区写必要语义，机器身份、时间和事件仍由既有 CLI 生成：
@@ -369,6 +371,10 @@ CLI 不再注册卡片命令，也不为新诊断生成 `card` 计时区段；�
 
 ## 当前审查证据与交付前置
 
+正式架构审查（`review record --kind ARCHITECTURE`）仍由 `tp-software-architect` 提交，并要求 `--context-policy isolated`、实际不同的 `--design-context-id` / `--review-context-id`、真实 `--evidence` 和已填写的检查项。当前架构结论只取最新一条同类正式结果，再判断可信、结论和适用性：更新的 REVISE/BLOCKED、失效主体或已分类为调查/PoC 的证据不能被更早的 PASS 覆盖。新记录显式绑定 `design_digest_mode=criteria_only_v1` 与逐文件 `design_input_digests`；摘要只规范化 `acceptance.md` 实际 AC 行（不含代码围栏中的示例）的执行证据/结论列、Runtime 生成的纯 Owner 结果块及正式回写造成的文件末尾换行边界，业务条件、来源、风险、方法、见证策略、行增删、普通正文与视觉/数据库声明仍属受审主体。缺少逐文件摘要、逐文件表结构不完整或与记录的聚合摘要不一致的旧记录只报 `aggregate_only`，不推测具体变化文件；未知摘要模式与非法输入路径分别报告，不互相冒充。执行结果（新验证、Owner 处置）的增补不让当前架构结论失效；设计输入、业务要求或产品范围变化仍使其失效。
+
+同一 `work end` 收尾中，若本次会话本身产出了正式架构报告（START 属于 `tp-software-architect` 角色并通过执行可信检查、分类执行者也必须是该角色、仍是唯一开放参与，Review 的 `review_execution_context_id` 等于该 START 的申报 agent，报告 path/SHA 与本次已捕获的证据项和 artifact 摘要精确匹配），该报告不再被重复登记为调查证据。豁免按完整 `(path, SHA)` 对照：检查期间文件内容已变化时仍保留调查分类。这只防止未来误分类：既有观察、旧 PASS 和历史事件不因此改写，`isolated_poc`、checkpoint、并行会话、改名复制或路径改写仍按原约束处理。
+
 `review record --kind CODE`（含 `IMPLEMENTATION` / `ULTRA_REVIEW`）的 PASS 必须由 `tp-code-reviewer` 提交，`--findings-count` 非负，并通过 `--evidence evidence/<实际审查结果>` 引用真实文件。Runtime 生成的回执只包装结论，不代替实际审查；`--actor` 也不证明启动了独立执行者。不得把开发自测复制成独立 Reviewer 结果。计数没有表达严重度，不能仅凭非零计数把建议项自动升级为阻断项；真实Reviewer仍须对所声明的decision负责。
 
 当前门禁只消费最新同角色的适用结果：新的 FAIL/NEEDS_FIX/BLOCKED、失效主体或损坏证据不能被更早的 PASS 覆盖。CODE 的三个名称共用结果序列。审查绑定当前 Verification、ChangeSet 和证据；交付再次校验审查原证据与机器回执。事务写入前会复核已绑定结果，复核失败不追加对应事实，也不撤销已完成的产品修改。
@@ -377,7 +383,9 @@ CLI 不再注册卡片命令，也不为新诊断生成 `card` 计时区段；�
 
 用户只确认页面、同一 AC 还含技术条件时，使用 `task acceptance-override --mode accept --scope visual-only --change-set-id <已核对的产品摘要> --ac <实际页面范围> --source <原始用户确认及来源> --request-id <稳定请求ID>`（另传 Task/目录/DB）。这只新增候选绑定的页面见证，不改技术 AC、全局人验标记或等待状态。可以分批覆盖已声明的视觉范围；full Verify 仍需独立技术证据。不要从普通 FACT 自动猜测逐视口、状态或整项验收，也不为补登记重跑未变页面。
 
-只把个别技术检查留待后续时，在实际测试角色的 `task verify` 中逐项传 `--deferred-check-json`，JSON 字段为 `id`、`ac`、`description`、`source_event`、`evidence`、`owner_statement`、`reverify_owner`、`trigger`、`residual_risk`。来源必须是本任务 human_owner 或项目经理转录的 FACT，证据路径须与该事实一致；`owner_statement` 保存真实原决定/引用，这不是程序对真人身份的认证。条目以 `DEFERRED` 及证据 SHA 绑定当前验证主体，不能作为技术 PASS 的唯一证据，也不能同次把对应整条 AC 标 PASS。它只披露本次验证的未执行边界，不将 AC 改成 `DEFERRED_ACCEPTED`，不免除后续 READY/结单要求。旧验证引用文件已变时须重新核实适用性后登记，刷新候选不能改写旧验证回执。
+只把个别技术检查留待后续时，在实际测试角色的 `task verify` 中逐项传 `--deferred-check-json`，JSON 字段为 `id`、`ac`、`description`、`source_event`、`evidence`、`owner_statement`、`reverify_owner`、`trigger`、`residual_risk`。来源必须是本任务 human_owner 或项目经理转录的 FACT，证据路径须与该事实一致；`owner_statement` 保存真实原决定/引用，这不是程序对真人身份的认证。条目以 `DEFERRED` 及证据 SHA 绑定当前验证主体，不能作为技术 PASS 的唯一证据，也不能同次把对应整条 AC 标 PASS：验收文本仍把该 AC 记为整项 PASS 时明确拒绝并保留 `PENDING` 纠正入口。它只披露本次验证的未执行边界，不将 AC 改成 `DEFERRED_ACCEPTED`，不免除后续 READY/结单要求。旧验证引用文件已变时须重新核实适用性后登记，刷新候选不能改写旧验证回执。
+
+存在延期检查或使用 `--scope visual-only` 页面回执时，本次技术 PASS（`full` 与 `technical` 两种范围同样适用）还须有至少一份非延期说明、非纯页面回执的技术证据：按正式绑定的用途与 path/SHA 排除该延期条目自身的来源证据和 Owner 回执文件，不按文件名或“是否出现在某视觉引用中”猜测。没有延期、未用页面回执的旧整项 Owner 验收不因此新增“必须另有技术文件”的限制；视觉与技术合并报告仍按真实内容判断，不由文件名决定。此检查不宣称程序能判断报告正文的技术充分性。
 
 新 Owner 接受记录的 `subject_scope=technical` 仅标识标准主体摘要的算法，不把人工验收改成技术验收：仍绑定当前产品 Change Set、明确选中 AC、实际 Owner 来源与证据 SHA。后续仅登记技术结果或 Owner 处置不让原人验重复失效；需求/标准/方法/见证、数据库声明和产品实质变化照常失效。旧记录无标记时仍按原 full 语义消费，不自动重绑或改写。混合验收 YAML 只规范化 Runtime 写回的 `deferred_acceptance` / `owner_waivers`，数据库及其他声明保留；此规范化可能使在途旧摘要过期，应由原获准执行者核对后显式登记，终态不追补。full Verify/Review 对技术结果及实际证据的保护保持。
 
@@ -403,11 +411,15 @@ tp-spec task verify --task <TASK> --task-dir <TASK_DIR> --db <DB> --scope techni
 
 `--check` 可重复，technical 至少需要一项非空检查说明；PASS 仍要求真实文件和当前 Development ChangeSet。范围、检查清单与证据进入同一正式事件/回执及幂等请求身份，不新增账本。状态、进度、接续摘要和工作台保留 `TECHNICAL` 限定；技术/审查均通过后，完整验收缺口仍显示等待，不能反复派发已知不满足前置的交付。未知范围不按完整 PASS 放行；无范围字段的历史事件保留原 full 语义，不自动转换旧 PASS。
 
+`--check --json` 的 preflight 与结单节点读的是三个不同事实：当前技术验证可否复用（`latest_verification`，不因缺 full 而判缺失）、当前步骤能否登记完成（`ready_to_complete_step` 复用与实际 `work step --action complete` 相同的只读条件：步骤状态、`check_step`、`step_guard` 与未结束参与）、以及当前完整验证能否支撑后续交付（`full_verification` 与结单检查）。有 FIX 时由 `step_guard` 自身要求 full，缺 full 属当前步骤缺口；无 FIX 时不由分类器强加 full。`WAITING` 步骤先按既有 resume 条件接续，`COMPLETED` 步骤只展示历史。已有 verification 步骤全部完成而下一未开始步骤为 review/delivery 时，返回 `verification_step_completed=true`、`ready_to_complete_step=false`，同时保留只读的 `nodes`、`current_stage_blockers`、`downstream_closeout_pending`、`unknowns` 与 `plan_route_alignment` 诊断及后续阶段条件（`blocks_current_step=false`），表示“无需再次完成”，不重新阻塞旧步骤，也不因此丢掉诊断。
+
 补齐实际视觉/人验后，按当前完整验收范围重新执行默认 Verify 留证。原 CODE 审查明确绑定 technical 结果，当前产品、验收标准和检查方案未变，且原技术证据和审查产物仍有效时，不单凭补验的 Verify 事件编号要求重做该审查。普通 full 结果的既有重验证/Review 策略不因此放宽。只允许补充 AC 的执行证据/结论，不忽略 AC 标准、方法、必要视觉策略或产品变化；新 FAIL/NEEDS_FIX、损坏证据或失效主体不能被后来的 PASS 遮蔽。新执行应保留旧证据原件，不能覆盖旧文件后仍沿用其审查。
 
 `technical PASS` 本身不能满足 READY 或 Complete（包括 L0）。最终门禁仍汇合当前完整验证、必要 AC/human 处置和适用独立审查；提交边界复核当前主体，不能沿用预检后已经变化的结果。范围是证据含义，不是跳过权限或降低 Review 频度的开关。使用新范围事件时，读取/写入端须同步使用本升级；未验证旧二进制混用，不修改 Task 版本绕过检查。
 
 历史无独立证据的 CODE PASS 保留为历史，不能继续作为新交付的有效前置；需要真正的当前审查与证据，不自动补造旧报告、迁移或重开终态任务。本次没有更改公共状态、数据库 schema 或独立审查的授权要求。
+
+新 CODE 独审若在正式 Work 参与中完成，`review record` 传 `--review-context-id <该参与声明的agent>`，并将实际报告作为第一项 `--evidence evidence/...`。Runtime 仅在同角色唯一开放参与、当前候选和 Verify、报告路径及 SHA 均吻合时，于 `work end` 免除这份正式报告的重复调查分类；其余材料照常分类。未传上下文的历史回执不追溯豁免。新候选、Verify、CODE 使用记录内的 `subject_mode` 绑定技术条件；Owner 结果变动仍由当前验收与交付门禁单独检查。
 
 ## 完整仓库范围与最终交付
 
@@ -439,6 +451,21 @@ ChangeSet 原内容 ID 保持原格式；正式新记录额外保留既有快照
 `checks` 逐项列出判定、适用性、真实依据、问题、`responsibility` 和 `depends_on`；
 `blockers` 保留扁平兼容字段，`unknowns` 明示未取得确定结果的必需项，`next_actions`
 列出尚未满足的依赖。有效等级和适用步骤来自统一 Runtime，不以裸 `flow_level` 推断。
+`nodes` 是固定十二个节点的解释层（需求/范围、架构、开发、页面验证、技术验证、延期、VERIFY、
+CODE-REVIEW、AC 汇总、DELIVER、Knowledge/Memory、结单），状态取 `REUSABLE`、
+`REGISTRATION_PENDING`、`CURRENT_GAP`、`OWNER_DEFERRED`、`BLOCKED_BY_UPSTREAM`、`NOT_YET_DUE`、
+`OWNER_PENDING`、`NOT_APPLICABLE`、`UNKNOWN`。节点按实际路由与当前阶段义务解释，而不是按节点是否存在：
+VERIFY 当前时，整任务 AC 汇总与交付属后续义务（`NOT_YET_DUE`），不列为当前阻塞；路由已到 CODE-REVIEW
+时它是当前缺口而非 `NOT_YET_DUE`；DELIVER 当前时交付为当前缺口。这不降低最终 `ready` 门禁，也不单凭
+阶段存在就宣称证据可复用。`current_stage_blockers` 只列当前行动受阻的原因与必要前置，
+`downstream_closeout_pending` 列未到期项，`unknown_sources` 给出真正抛出异常的来源与影响；
+这些展示字段不替代正式 `ready` 判断，也不把后续未到期项算成当前阻塞。已完成步骤只显示为历史完成，
+不再要求重新完成；VERIFY 节点定位计划中实际适用的验证步骤（多个验证步骤时不硬编码第一个），
+延期节点只展示当前有效验证/正式 AC 处置中的条目，无正式登记时明示“尚无正式延期绑定”。
+只有已识别的业务前置缺失/过期（如当前 Verification 缺失、Review 未绑定验证、知识输入未就绪）转为
+`PENDING` 并保留 issue 原文；JSON 解析、编码、I/O 和未识别异常仍为 `UNKNOWN`，且本检查自身的读取/解析
+失败不会被上游 UNKNOWN 降级为依赖 `PENDING`。上游 `UNKNOWN` 使下游为 `PENDING` 并带
+`DEPENDENCY_UNKNOWN:<上游>`，不为每个依赖复制 UNKNOWN。
 检查范围按唯一模式 reader 返回的 `applicable_obligations` 确定，包括适用的步骤与 Work、AC/Owner、数据库操作、Visual Manifest、候选/Subject、
 当前 Verification/Review/Delivery、临时工件以及 standard 的知识/记忆处置。文件不可读或信息缺失
 不会当作通过，也不因为其中一项失败而隐藏独立的其他缺口。

@@ -424,14 +424,13 @@ def _load_task_facts(task_id: str, db_path: Optional[str] = None, *, include_pro
                         event["_security_current"] = authority.formal_record_current(security, task_dir, detail)
                         if (event['event_type'] == 'REVIEW_COMPLETED' and str(detail.get('review_kind') or '').upper() == 'ARCHITECTURE'
                                 and not task['_retired'] and task.get('current_state') not in TERMINAL):
-                            from .digest import compute_architecture_subject_digest, compute_text_artifact_file_digest
+                            from .digest import compute_architecture_subject_digest_for_detail, compute_text_artifact_file_digest
                             from .evidence import validate_evidence_path
                             checked = validate_evidence_path(task_dir, detail.get('artifact'))
                             try:
                                 event['_architecture_current'] = bool(checked.ok
                                     and detail.get('artifact_digest') == compute_text_artifact_file_digest(task_dir / checked.path)
-                                    and detail.get('subject_digest') == compute_architecture_subject_digest(task_dir,
-                                        design_inputs=detail.get('design_inputs')))
+                                    and detail.get('subject_digest') == compute_architecture_subject_digest_for_detail(task_dir, detail))
                             except (ValueError, OSError, TypeError):
                                 event['_architecture_current'] = False
             except (ValueError, OSError, KeyError, TypeError):
@@ -795,7 +794,8 @@ def _current_verification_for_delivery(events: List[Dict[str, Any]], task_dir: O
         return None
     if task_dir is not None:
         from .digest import compute_verification_subject_digest
-        if compute_verification_subject_digest(task_dir) != subject_digest:
+        if compute_verification_subject_digest(task_dir, subject_mode=verification["detail"].get(
+                "subject_mode", "legacy")) != subject_digest:
             return None
     return verification
 
@@ -1257,12 +1257,70 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
     return _forward_execution_route(data, execution_facts)
 
 
+ALIGNMENT_STATES = ("ALIGNED", "STEP_READY_TO_COMPLETE", "REWORK_FIX_REQUIRED",
+                    "PREREQUISITE_REPAIR", "WAITING_HUMAN_OR_DEPENDENCY", "BLOCKED_STATE")
+
+
+def _plan_route_alignment(data, facts, waiting=None):
+    """Explain how the routed professional operation relates to the actual plan.
+
+    Read-only interpretation of existing route + execution projection. It does not
+    gate a step, mint a dispatch or change required effects. The routed operation is
+    taken from the real ``operation_stage`` (recorded before a parent cursor is
+    re-expressed), so an ACTIVE VERIFY with a stale architecture result reports
+    PREREQUISITE_REPAIR instead of appearing aligned with the rewritten phase.
+    """
+    context = data.get("context") or {}
+    operation_stage = context.get("operation_stage") or data.get("next_stage")
+    current = facts.get("current_step")
+    planned_next = facts.get("next_step")
+    target = current or planned_next
+    completed = [step["id"] for step in facts.get("steps") or [] if step["status"] == "COMPLETED"]
+    action = data.get("recommended_action")
+    after_step = context.get("after_step")
+    # A recorded step wait is an explicit waiting fact even though the task state
+    # itself stays ACTIVE; it is read from the projection, never inferred.
+    step_waiting = bool(current and current.get("status") == "WAITING")
+    if data.get("current_state") == "BLOCKED":
+        status, codes = "BLOCKED_STATE", ["TASK_BLOCKED"]
+    elif data.get("requires_human") or waiting or step_waiting:
+        status, codes = "WAITING_HUMAN_OR_DEPENDENCY", ["WAITING_HUMAN_OR_DEPENDENCY"]
+    elif action == "work_step_complete":
+        status, codes = "STEP_READY_TO_COMPLETE", ["STEP_READY_TO_COMPLETE"]
+    elif action == "rework_fix":
+        status, codes = "REWORK_FIX_REQUIRED", ["REWORK_FIX_REQUIRED"]
+    elif target is not None and operation_stage != target["phase"] and not after_step:
+        status, codes = "PREREQUISITE_REPAIR", ["PREREQUISITE_REPAIR"]
+    else:
+        status, codes = "ALIGNED", []
+    return {
+        "completed_step_ids": completed,
+        "current_step": current["id"] if current else None,
+        "next_planned_step": planned_next["id"] if planned_next else None,
+        "routed_next_stage": data.get("next_stage"),
+        "operation_stage": operation_stage,
+        "responsible_role": data.get("role_id") or data.get("next_responsibility"),
+        "recommended_action": action,
+        "alignment_status": status,
+        "reason_codes": codes,
+        "requires_human": bool(data.get("requires_human")),
+    }
+
+
 def _forward_execution_route(data, facts):
     """Keep an adopted parent cursor forward; quality operations retain their own scope.
 
     Does not complete a step or mint dispatch/approval. Required effects and denied
     boundaries are preserved from the normal routing/authority calculation.
     """
+    data = _forward_execution_cursor(data, facts)
+    if facts.get("plan") and not facts.get("terminal"):
+        waiting = (data.get("context") or {}).get("waiting")
+        data["plan_route_alignment"] = _plan_route_alignment(data, facts, waiting=waiting)
+    return data
+
+
+def _forward_execution_cursor(data, facts):
     if not facts.get("plan") or facts.get("terminal") or data["current_state"] == "BLOCKED":
         return data
     current = facts.get("current_step")

@@ -17,7 +17,7 @@ from . import db as dbmod
 from . import event_policies
 from . import frontmatter
 from . import projection_cmd
-from .digest import compute_architecture_subject_digest
+from .digest import compute_architecture_subject_digest_for_detail
 from .version import active_version
 
 # 稳定错误码（ValidationIssue.code）
@@ -294,12 +294,12 @@ def _has_arch_review_event(conn, task_id: str) -> bool:
     return _trusted_arch_pass(conn, task_id) is not None
 
 
-def _design_digest(task_dir: Path, design_inputs=None) -> str:
+def _design_digest(task_dir: Path, detail=None) -> str:
     """当前设计 digest（受评审内容指纹）。
 
-    复用单一摘要实现和 Review 事件已绑定的实际输入集合，不重新猜受审范围。
+    复用单一摘要实现和 Review 事件已绑定的实际输入集合与记录模式，不重新猜受审范围。
     """
-    return compute_architecture_subject_digest(task_dir, design_inputs=design_inputs)
+    return compute_architecture_subject_digest_for_detail(task_dir, detail)
 
 
 def _latest_arch_pass_digest(conn, task_id: str) -> Optional[str]:
@@ -521,7 +521,7 @@ def _check_architecture_review(task_dir: Path, conn, task_id: str, issues: List[
         except json.JSONDecodeError:
             pass
     try:
-        current_subject = _design_digest(task_dir, detail.get("design_inputs"))
+        current_subject = _design_digest(task_dir, detail)
     except (OSError, UnicodeError, ValueError, TypeError) as exc:
         issues.append(ValidationIssue(code=ARCHITECTURE_REVIEW_STALE,
             message=f"architecture review inputs unavailable: {exc}",
@@ -689,6 +689,21 @@ def _check_acceptance(task_dir: Path, issues: List[ValidationIssue], enforce_no_
             code=ACCEPTANCE_PENDING,
             message="acceptance has PENDING/BLOCKED entries: " + ", ".join(result.pending_rows[:5]),
             artifact="acceptance.md",
+        ))
+    # A deferred AC cannot stay an integral PASS. Only the AC's own declared
+    # obligation is compared; an out-of-scope suggestion never demotes a satisfied
+    # AC. The Owner corrects it through the existing NEEDS_FIX/PENDING entries.
+    from .task_cmd import _acceptance_table_rows
+    deferred_acs = {str(entry.get("ac") or "").strip() for entry in result.deferred_entries}
+    rows_now = _acceptance_table_rows(text)
+    conflicting = sorted(ac for ac in deferred_acs if ac and (rows_now.get(ac) or {}).get("verdict") == "PASS")
+    if conflicting:
+        issues.append(ValidationIssue(
+            code=DEFERRED_ACCEPTANCE_INVALID,
+            message="deferred_acceptance " + ", ".join(conflicting)
+                    + " also records PASS; record the remaining gap as PENDING instead",
+            artifact="acceptance.md",
+            field="deferred_acceptance",
         ))
     # OWNER_WAIVED / DEFERRED_ACCEPTED are valid only when backed by a trusted
     # human_owner ledger decision. This prevents an AI role from self-authoring an override.
@@ -977,6 +992,15 @@ def _check_trusted_verification_pass(task_dir: Path, conn, task_id: str, issues:
     review_path = task_dir / "codex-review.md"
     if not review_path.is_file():
         return  # body checker emits the concrete missing-artifact issue
+    latest_row = conn.execute("SELECT detail_json FROM task_event WHERE task_id=? "
+        "AND event_type='REVIEW_COMPLETED' AND actor_role='tp-test-engineer' "
+        "ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+    try:
+        subject_mode = json.loads(latest_row["detail_json"] or "{}").get("subject_mode", "legacy") if latest_row else "legacy"
+    except (ValueError, TypeError, AttributeError):
+        subject_mode = "legacy"
+    expected_subject = (compute_verification_subject_digest(task_dir, subject_mode=subject_mode)
+                        if subject_mode in {"legacy", "criteria_only_v1"} else "__invalid_subject_mode__")
     trusted = event_policies.load_trusted_governance_event(
         conn, task_id,
         event_type="REVIEW_COMPLETED",
@@ -984,7 +1008,7 @@ def _check_trusted_verification_pass(task_dir: Path, conn, task_id: str, issues:
         decision="PASS",
         review_kind="VERIFICATION",
         artifact_path=review_path,
-        expected_subject_digest=compute_verification_subject_digest(task_dir),
+        expected_subject_digest=expected_subject,
         evidence_dir=task_dir,
     )
     if trusted is None:

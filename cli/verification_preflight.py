@@ -7,12 +7,67 @@ from pathlib import Path
 from . import closeout, event_policies, execution, record_first, work_units
 
 
+def _latest_verification_summary(conn, task, directory: Path):
+    """Latest actual verification event with freshness facts; never a new result."""
+    latest = conn.execute("SELECT * FROM task_event WHERE task_id=? AND event_type='VERIFICATION_COMPLETED' "
+                          "ORDER BY id DESC LIMIT 1", (task["task_id"],)).fetchone()
+    if latest is None:
+        return {}
+    try:
+        detail = json.loads(latest["detail_json"] or "{}")
+    except (TypeError, ValueError):
+        return {"event_id": latest["id"], "note": "Unreadable historical detail; not a PASS."}
+    if not isinstance(detail, dict):
+        return {"event_id": latest["id"], "note": "Unreadable historical detail; not a PASS."}
+    return {"event_id": latest["id"], "decision": detail.get("decision"),
+            "scope": detail.get("verification_scope", "full"),
+            "subject_current": event_policies.verification_subject_matches(detail, directory),
+            "deferred_checks": detail.get("deferred_checks", []),
+            "note": "History alone does not establish current PASS."}
+
+
+def _diagnosis(report):
+    """The read-only explanation payload shared by every applicability branch.
+
+    Nodes, current blockers and plan alignment are diagnostics, not a completion
+    duty: they stay available after the verification step is finished.
+    """
+    return {"nodes": report.get("nodes") or [],
+            "current_stage_blockers": report.get("current_stage_blockers") or [],
+            "downstream_closeout_pending": report.get("downstream_closeout_pending") or [],
+            "unknowns": report.get("unknowns") or [],
+            "route": report.get("route"),
+            "plan_route_alignment": ((report.get("route") or {}).get("plan_route_alignment") or {}),
+            "ready_to_close": bool(report.get("ready"))}
+
+
 def collect(conn, task, directory: Path, *, db_path: str, base_root=None):
     plan = execution.read_execution(conn, task)
     step = next((s for s in plan["steps"] if s["status"] != "COMPLETED"), None)
     if not step or step["phase"] != "verification":
-        return {"read_only": True, "applicable": False,
-                "reason": "No current explicit verification step; use workflow routing."}
+        # Between stages: a completed verification may precede review/delivery or a
+        # newly planned supplementary review. Keep the applicable diagnosis and plan
+        # alignment instead of dropping them; a completed step never becomes a new
+        # completion duty.
+        verification_steps = [s for s in plan["steps"] if s["phase"] == "verification"]
+        if verification_steps and all(s["status"] == "COMPLETED" for s in verification_steps):
+            report = closeout.collect(conn, task, directory, db_path=db_path, base_root=base_root)
+            latest = _latest_verification_summary(conn, task, directory)
+            return {"read_only": True, "applicable": False, "verification_step_completed": True,
+                    "completed_verification_steps": [s["id"] for s in verification_steps],
+                    "ready_to_complete_step": False,
+                    "reason": "Verification steps are already completed; do not re-complete them.",
+                    "next_planned_step": step, "latest_verification": latest,
+                    "later_stage_conditions": [{**row, "blocks_current_step": False}
+                        for row in report["checks"] if row["id"] not in {
+                            "identity", "subject", "visual", "integration_candidate", "verification"}],
+                    "limits": "Completed steps are history. Later-stage prerequisites do not re-open them.",
+                    **_diagnosis(report)}
+        report = closeout.collect(conn, task, directory, db_path=db_path, base_root=base_root)
+        return {"read_only": True, "applicable": False, "verification_step_completed": False,
+                "ready_to_complete_step": False,
+                "reason": "No current explicit verification step; use workflow routing.",
+                **_diagnosis(report)}
     report = closeout.collect(conn, task, directory, db_path=db_path, base_root=base_root)
     task_id = task["task_id"]
     current = []
@@ -116,11 +171,13 @@ def collect(conn, task, directory: Path, *, db_path: str, base_root=None):
     following = next(iter(plan["steps"][plan["steps"].index(step) + 1:]), None)
     for condition in current:
         condition["applies_to"] = "step_completion" if condition["id"] in {"step_authority", "step_completion", "participants"} else "full_verification_record"
-    return {"read_only": True, "applicable": True, "step_id": step["id"],
+    return {"read_only": True, "applicable": True, "verification_step_completed": False,
+            "step_id": step["id"],
             "next_planned_step": following, "current_conditions": current,
             "ready_to_complete_step": all(c["status"] == "SATISFIED" for c in current if c["applies_to"] == "step_completion"),
             "latest_verification": historical,
             "later_stage_conditions": [{**r, "applies_to": "workflow_routing_and_closeout" if r["id"] == "stage_records" else "delivery_or_closeout", "blocks_current_step": False}
                 for r in report["checks"] if r["id"] not in {"identity", "subject", "visual", "integration_candidate", "verification"}],
             "next_step_boundary": "The planned next step and workflow routing are distinct. Stale architecture review may still reroute after VERIFY completes. This check neither starts any review nor accepts its result.",
-            "limits": "Registered facts only; not a new test or user acceptance. Later-stage failures do not become verification-step gates. Proposed evidence must still pass task verify validation."}
+            "limits": "Registered facts only; not a new test or user acceptance. Later-stage failures do not become verification-step gates. Proposed evidence must still pass task verify validation.",
+            **_diagnosis(report)}

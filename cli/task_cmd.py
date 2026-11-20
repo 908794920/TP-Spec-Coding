@@ -2231,7 +2231,8 @@ def cmd_task_acceptance_override(args) -> int:
                     print("ERROR: DEVELOPMENT_CHANGE_SET_STALE: product changed before owner acceptance", file=sys.stderr)
                     return 7
                 from .digest import compute_verification_subject_digest
-                subject_digest = compute_verification_subject_digest(task_dir, scope="technical")
+                subject_digest = compute_verification_subject_digest(
+                    task_dir, scope="technical", subject_mode="criteria_only_v1")
             source_rel = _owner_acceptance_source_path(request.request_id)
             source_text = _owner_acceptance_source_document(source)
             source_path = task_dir / source_rel
@@ -2340,7 +2341,8 @@ def cmd_task_acceptance_override(args) -> int:
                         or (not latest.get("repo_roots") and not is_ops_subject(latest["detail"]))
                         or not same_bound_product_content(latest["detail"], capture_bound_product(latest["detail"], task_dir, repo_roots=latest["repo_roots"]))
                         or latest.get("change_set_id") != development.get("change_set_id")
-                        or compute_verification_subject_digest(task_dir, scope="technical") != subject_digest):
+                        or compute_verification_subject_digest(task_dir, scope="technical",
+                            subject_mode="criteria_only_v1") != subject_digest):
                     raise ValueError("OWNER_ACCEPTANCE_STALE: subject or product changed before commit")
             detail = {
                 "transaction_id": transaction_id,
@@ -2370,6 +2372,7 @@ def cmd_task_acceptance_override(args) -> int:
                         "change_set_id": str(current_change_set.get("content_digest") or ""),
                         "change_set_snapshot_digest": str(current_change_set.get("snapshot_digest") or ""),
                         "subject_digest": subject_digest, "subject_scope": "technical",
+                        "subject_mode": "criteria_only_v1",
                         "repo_roots": list(development["repo_roots"]),
                     }),
                     "source_evidence": source_rel,

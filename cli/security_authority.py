@@ -28,6 +28,9 @@ WORK = "SECURITY_WORK_BOUND"
 OBSERVATION = "SECURITY_EVIDENCE_RECORDED"
 DECISION = "SCOPE_CHANGE"
 EFFECTS = {"implementation", "regression", "review_blocker", "read_only", "isolated_poc", "record_only"}
+# The only role whose own formal report may be exempted from investigation
+# classification; a development or other read-only session never qualifies.
+ARCHITECTURE_ROLE = "tp-software-architect"
 READ_EFFECTS = {"read_only", "isolated_poc", "record_only"}
 DISCOVERY_SOURCES = {"HUMAN_REQUIREMENT", "HUMAN_APPROVAL", "AGENT", "REVIEW", "SCANNER", "TEST", "TOOL", "DOCUMENT"}
 IDENTITY_LIMIT = "LOCAL_ATTESTATION_ONLY: source bytes and declared human provenance are checked; no host signature or human authentication"
@@ -551,13 +554,203 @@ def changed_paths(snapshot):
     return sorted(paths)
 
 
-def classify_evidence(conn, task_id, task_dir, context, evidence, *, actor, transaction_id=None):
+def _session_own_architecture_reports(conn, task_id, task_dir, start_event_id, *, classifier_actor=None):
+    """Formal architecture report (path, SHA) produced by exactly this open session.
+
+    This only prevents a future misclassification of a session's own formal
+    report. It never clears an existing observation, never revives an older PASS
+    and never treats adjacent IDs or role names as proof. Every condition that
+    cannot be verified keeps the original investigation classification.
+
+    The session, the classifier and the review must share the formal architect
+    role: a development or other read-only session cannot obtain the exemption
+    merely by declaring the same agent identifier. The returned identities are
+    complete ``(path, sha256)`` pairs so a later path-only match cannot exempt
+    different bytes.
+    """
+    from . import execution, event_policies
+    from .digest import compute_text_artifact_file_digest
+    from .work_session_cmd import _event_detail, pair_work_sessions
+
+    start_row = conn.execute("SELECT * FROM task_event WHERE id=? AND task_id=?",
+                             (start_event_id, task_id)).fetchone()
+    if start_row is None:
+        return set()
+    start = dict(start_row)
+    if start.get("event_type") != "WORK_SESSION_STARTED":
+        return set()
+    agent = str(start.get("actor_agent") or "")
+    role = str(start.get("actor_role") or "")
+    # Only the formal architecture role can own an architecture report. A
+    # development or other role session is never exempted, even with the same
+    # declared agent identifier as the review.
+    if not agent or role != ARCHITECTURE_ROLE:
+        return set()
+    if classifier_actor is not None and str(classifier_actor or "") != role:
+        return set()
+    detail = _event_detail(start_row)
+    if detail is None:
+        return set()
+    # Only an adopted (execution-scoped) session has a verifiable writer chain.
+    if detail.get("execution_schema") != execution.SCHEMA:
+        return set()
+    if not execution._trusted(start, detail, "work_session"):
+        return set()
+
+    rows = [dict(row) for row in conn.execute(
+        "SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id,)).fetchall()]
+    if start["id"] not in {row["id"] for row in pair_work_sessions(rows)["unmatched_starts"]}:
+        return set()
+
+    reviews = event_policies.load_trusted_governance_events(
+        conn, task_id, event_type="REVIEW_COMPLETED", actor=ARCHITECTURE_ROLE,
+        review_kind="ARCHITECTURE")
+    from datetime import datetime
+    try:
+        start_time = datetime.fromisoformat(str(start.get("created_at") or ""))
+    except (TypeError, ValueError):
+        return set()
+    if start_time.utcoffset() is None:
+        return set()
+
+    reports = set()
+    for review in reviews:
+        review_detail = review.detail
+        if review_detail.get("producer") != "review_record":
+            continue
+        if int(review.row["id"]) <= int(start["id"]):
+            continue
+        if str(review_detail.get("review_execution_context_id") or "") != agent:
+            continue
+        try:
+            review_time = datetime.fromisoformat(str(review.row["created_at"] or ""))
+        except (TypeError, ValueError):
+            continue
+        if review_time.utcoffset() is None or review_time < start_time:
+            continue
+        # The open participation at the review's own time must be this exact START.
+        prefix = [row for row in rows if int(row["id"]) < int(review.row["id"])]
+        opened = [row for row in pair_work_sessions(prefix)["unmatched_starts"]
+                  if row.get("task_id") == task_id and row.get("actor_role") == role
+                  and (row.get("actor_agent") or "") == agent]
+        if len(opened) != 1 or int(opened[0]["id"]) != int(start["id"]):
+            continue
+        # Only the formal report itself, bound as both evidence and structured item.
+        artifact = str(review_detail.get("artifact") or "").strip()
+        declared = review_detail.get("evidence")
+        if not artifact or not isinstance(declared, list) or artifact not in declared:
+            continue
+        structured = review_detail.get("evidence_items")
+        if not isinstance(structured, list) or not structured:
+            continue
+        bound = next((item for item in structured if isinstance(item, dict)
+                      and str(item.get("path") or "") == artifact), None)
+        if bound is None:
+            continue
+        # Exact current path+SHA for the report itself; other finding/input evidence
+        # in the same record is not swept into the exemption.
+        try:
+            checked = evidence_item(task_dir, bound)
+        except ValueError:
+            continue
+        if not review_detail.get("artifact_digest") or review_detail["artifact_digest"] != \
+                compute_text_artifact_file_digest(Path(task_dir) / checked["path"]):
+            continue
+        # An earlier investigation/PoC that already made this report inapplicable
+        # cannot be laundered by ending the session.
+        state = read(conn, task_id, task_dir)
+        if not formal_record_current(state, task_dir, review_detail):
+            continue
+        reports.add((checked["path"], checked["sha256"]))
+    return reports
+
+
+def code_review_session_start(conn, task_id, agent):
+    """Unique trusted open CODE participation explicitly claimed by its agent."""
+    from . import execution
+    from .work_session_cmd import _event_detail, pair_work_sessions
+
+    rows = [dict(row) for row in conn.execute(
+        "SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id,))]
+    opened = [row for row in pair_work_sessions(rows)["unmatched_starts"]
+              if row.get("actor_role") == "tp-code-reviewer"]
+    if len(opened) != 1 or opened[0].get("actor_agent") != agent:
+        raise ValueError("CODE_REVIEW_SESSION_REQUIRED: select one open CODE participation")
+    row = opened[0]
+    detail = _event_detail(row)
+    from .execution import read_execution
+    task = conn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
+    facts = read_execution(conn, dict(task)) if task is not None else {}
+    step = next((item for item in facts.get("steps", [])
+                 if item["id"] == (detail or {}).get("step_id")), None)
+    if (not detail or detail.get("execution_schema") != execution.SCHEMA
+            or not execution._trusted(row, detail, "work_session")
+            or not step or step["phase"] != "review"):
+        raise ValueError("CODE_REVIEW_SESSION_INVALID: expected a trusted planned participation")
+    return row
+
+
+def _session_own_code_report(conn, task_id, task_dir, start_event_id, actor):
+    if actor != "tp-code-reviewer":
+        return set()
+    from .workflow_records import _latest_trusted_verification
+
+    try:
+        start = dict(conn.execute("SELECT * FROM task_event WHERE task_id=? AND id=?",
+                                  (task_id, start_event_id)).fetchone())
+        agent = start.get("actor_agent") or ""
+        if start_event_id != code_review_session_start(conn, task_id, agent)["id"]:
+            return set()
+        review = event_policies.load_trusted_governance_event(
+            conn, task_id, event_type="REVIEW_COMPLETED", actor=actor,
+            review_kind="CODE", decision="PASS", evidence_dir=task_dir, latest_only=True)
+        if review is None:
+            return set()
+        detail = review.detail
+        if (detail.get("review_session_start_event_id") != start_event_id
+                or detail.get("review_execution_context_id") != agent
+                or int(review.row["id"]) <= start_event_id):
+            return set()
+        verification, subject, snapshot, _ = _latest_trusted_verification(
+            conn, task_id, Path(task_dir), require_full=False)
+        if (detail.get("verification_event_id") != int(verification.row["id"])
+                or detail.get("change_set_id") != snapshot["content_digest"]
+                or detail.get("subject_digest") != subject):
+            return set()
+        declared = detail.get("evidence")
+        if not isinstance(declared, list) or not declared:
+            return set()
+        report = declared[0]
+        if report != review.row["evidence_path"] or not str(report).startswith("evidence/"):
+            return set()
+        bound = next((item for item in detail.get("evidence_items", [])
+                      if isinstance(item, dict) and item.get("path") == report), None)
+        if bound is None or not formal_record_current(read(conn, task_id, task_dir), task_dir, detail):
+            return set()
+        checked = evidence_item(task_dir, bound)
+        return {(checked["path"], checked["sha256"])}
+    except (TypeError, ValueError, KeyError, OSError):
+        return set()
+
+
+def classify_evidence(conn, task_id, task_dir, context, evidence, *, actor, transaction_id=None,
+                      session_start_event_id=None):
     ctx = normalize_context(context)
     if ctx["effect_scope"] not in {"read_only", "isolated_poc"} or not evidence:
         return None
     state = read(conn, task_id, task_dir)
     check(state, ctx)
     items = [evidence_item(task_dir, ref) for ref in evidence]
+    if session_start_event_id is not None and ctx["effect_scope"] == "read_only":
+        own = _session_own_architecture_reports(conn, task_id, task_dir, session_start_event_id,
+                                                classifier_actor=actor)
+        own |= _session_own_code_report(conn, task_id, task_dir, session_start_event_id, actor)
+        if own:
+            # Match the complete captured identity, not just the path: a report
+            # whose content changed between capture and this check stays observed.
+            items = [item for item in items if (item["path"], item["sha256"]) not in own]
+    if not items:
+        return None
     payload = {"context": ctx, "evidence": items, "purpose": "investigation_only"}
     for prior in state["observations"]:
         if all(prior.get(k) == v for k, v in payload.items()):

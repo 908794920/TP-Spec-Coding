@@ -115,11 +115,12 @@ def _latest_trusted_verification(conn, task_id: str, task_dir: Path, *, require_
     from .change_set import capture_bound_product, is_ops_subject
     from .digest import compute_verification_subject_digest
 
-    current_subject = compute_verification_subject_digest(task_dir)
     trusted = event_policies.load_current_verification(conn, task_id, task_dir, require_full=require_full)
     if trusted is None:
         raise ValueError('DELIVERY_REQUIRES_CURRENT_VERIFICATION_PASS')
     detail = dict(trusted.detail or {})
+    current_subject = compute_verification_subject_digest(task_dir,
+        subject_mode=detail.get('subject_mode', 'legacy'))
     change_set_id = str(detail.get('change_set_id') or '').strip()
     repo_roots = [str(value).strip() for value in (detail.get('repo_roots') or []) if str(value).strip()]
     if not change_set_id or (not repo_roots and not is_ops_subject(detail)):
@@ -182,6 +183,7 @@ def _latest_trusted_code_review(conn, task_id: str, *, subject_digest: str,
                 and bound_id in valid_ids and int(verification_event_id) in valid_ids
                 and later_ids.issubset(valid_ids)
                 and scope == event_policies.verification_scope(original.detail)
+                and detail.get('subject_mode', 'legacy') == original.detail.get('subject_mode', 'legacy')
                 and detail.get("subject_digest") == original.detail.get("subject_digest")
             )
         except (TypeError, ValueError):
@@ -630,6 +632,71 @@ def record_delivery_result(*, task_id: str, task_dir: str, delivery_status: str,
         previous = replay(conn, digest)
         if previous is not None:
             return previous
+
+        def reusable_ready(dbconn):
+            if status != "READY" or request_input is None:
+                return None
+            from .workflow_controls import trusted_event_detail
+            from .delivery_contract import delivery_evidence_matches
+            row = dbconn.execute("SELECT * FROM task_event WHERE task_id=? AND event_type='DELIVERY_RESULT' "
+                                 "ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+            if row is None:
+                return None
+            detail = trusted_event_detail(dict(row), event_type="DELIVERY_RESULT",
+                                          producer="delivery_converge", actor=actor0)
+            current = build_delivery_detail(transaction_id="preview", **args)
+            stable_keys = set(current) - {"created_at", "flush_id", "transaction_id", "context_usage"}
+            if (detail is None or detail.get("delivery_status") != "READY"
+                    or validate_delivery_result(detail)
+                    or any(detail.get(key) != current[key] for key in stable_keys)
+                    or not delivery_evidence_matches(detail, tdir)):
+                return None
+            return int(row["id"])
+
+        ready_id = reusable_ready(conn)
+        if ready_id is not None:
+            def current_request(dbconn, current_input):
+                latest = dbconn.execute("SELECT * FROM task_event WHERE task_id=? "
+                    "AND event_type='KNOWLEDGE_CONVERGENCE_REQUEST' ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+                if latest is None:
+                    return None
+                from .workflow_controls import trusted_event_detail
+                detail = trusted_event_detail(dict(latest), event_type="KNOWLEDGE_CONVERGENCE_REQUEST",
+                                               producer="delivery_converge", actor=actor0)
+                return (int(latest["id"]) if detail and detail.get("delivery_event_id") == ready_id
+                        and all(detail.get(key) == value for key, value in current_input.items()) else None)
+
+            existing_request = current_request(conn, request_input)
+            if existing_request is not None:
+                return {"task_id": task_id, "delivery_event_id": ready_id,
+                        "knowledge_request_event_id": existing_request,
+                        "reused_delivery": True, "replayed": True, "facts_committed": False}
+
+            def refresh_request(dbconn, transaction_id=""):
+                _, fresh_request, fresh_digest = inputs(dbconn)
+                if fresh_digest != digest or reusable_ready(dbconn) != ready_id:
+                    raise ValueError("DELIVERY_INPUT_CHANGED: reread prerequisites before knowledge refresh")
+                if current_request(dbconn, fresh_request) is not None:
+                    raise recording.RequestReplay({"task_id": task_id, "delivery_event_id": ready_id,
+                        "knowledge_request_event_id": current_request(dbconn, fresh_request),
+                        "reused_delivery": True, "replayed": True, "facts_committed": False})
+                kd = build_knowledge_request_detail(task_id=task_id, transaction_id=transaction_id,
+                    created_at=now, schema_version=active_version(), delivery_event_id=ready_id,
+                    verification_event_id=args["verification_event_id"], review_event_id=args["review_event_id"],
+                    change_set_id=args["change_set_id"], request_input=fresh_request)
+                cursor = dbconn.execute(
+                    'INSERT INTO task_event (task_id,event_type,from_stage,to_stage,actor_role,reason_code,summary,detail_json,workflow_version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                    (task_id, 'KNOWLEDGE_CONVERGENCE_REQUEST', 'delivery', 'delivery', actor0,
+                     'KNOWLEDGE_REQUIRED', 'Knowledge convergence requested from verified delivery facts',
+                     json.dumps(kd, ensure_ascii=False), active_version(), now))
+                written.update(delivery_event_id=ready_id, knowledge_request_event_id=int(cursor.lastrowid),
+                               reused_delivery=True)
+
+            written = {}
+            projection = record_first._write_with_projection(conn, tdir, task,
+                operation="delivery_converge", target_state="ACTIVE", owner_after=actor0,
+                flush_id=flush_id, writer=refresh_request, summary=reason)
+            return {**projection, **written}
         written = {}
         response = {"task_id": task_id, "state": "ACTIVE", "phase": "delivery", "delivery_status": status,
                     "delivery_mode": args["delivery_mode"], "verification_event_id": args["verification_event_id"],

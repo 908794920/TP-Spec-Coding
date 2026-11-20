@@ -386,7 +386,8 @@ def cmd_work_end(args) -> int:
             ctx = authority.step_context(step)
         if ctx:
             refs = [ref for ref in payload.get("evidence_refs", []) if ref.startswith("evidence/")]
-            authority.classify_evidence(conn, args.task, authority.task_directory(conn, args.task), ctx, refs, actor=start["actor_role"])
+            authority.classify_evidence(conn, args.task, authority.task_directory(conn, args.task), ctx, refs,
+                                        actor=start["actor_role"], session_start_event_id=start["id"])
         event_id = _session_event(conn, task, "WORK_SESSION_ENDED", actor=start["actor_role"],
             agent=start.get("actor_agent") or "", item=start.get("work_item_id"), summary=args.summary,
             detail=payload, model=args.model, tokens_in=args.tokens_in, tokens_out=args.tokens_out)

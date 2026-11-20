@@ -239,7 +239,9 @@ def current_quick_delivery(event, task, task_dir):
     current = task.get('_current_change_set') or {}
     if detail.get('change_set_id') != current.get('content_digest'):
         return None
-    if detail.get('verification_subject_digest') != compute_verification_subject_digest(task_dir):
+    mode = (task.get('_current_verification') or {}).get('subject_mode', 'legacy')
+    if detail.get('verification_subject_digest') != compute_verification_subject_digest(
+            task_dir, subject_mode=mode):
         return None
     if detail.get('acceptance_digest') != compute_text_artifact_file_digest(task_dir / 'acceptance.md'):
         return None
@@ -279,7 +281,9 @@ def current_lightweight_delivery(event, task, task_dir):
     current = task.get("_current_change_set") or {}
     if not current or detail["change_set_id"] != current.get("content_digest"):
         return None
-    if detail["verification_subject_digest"] != compute_verification_subject_digest(task_dir):
+    mode = (task.get('_current_verification') or {}).get('subject_mode', 'legacy')
+    if detail["verification_subject_digest"] != compute_verification_subject_digest(
+            task_dir, subject_mode=mode):
         return None
     for kind in ("verification", "review"):
         if required[kind] == "NOT_REQUIRED":

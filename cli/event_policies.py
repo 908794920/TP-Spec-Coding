@@ -38,6 +38,7 @@ ARCHITECTURE_REVIEW_ARTIFACT_MISMATCH = "ARCHITECTURE_REVIEW_ARTIFACT_MISMATCH"
 ARCHITECTURE_REVIEW_KIND_MISMATCH = "ARCHITECTURE_REVIEW_KIND_MISMATCH"
 # ARCHITECTURE_REVIEW_STALE 定义于 migration-only transition compatibility module（保持同义常量）
 ARCHITECTURE_REVIEW_STALE = "ARCHITECTURE_REVIEW_STALE"
+ARCHITECTURE_DIGEST_MODE_UNSUPPORTED = "ARCHITECTURE_DIGEST_MODE_UNSUPPORTED"
 
 
 def _policy(authority: str, producers: tuple, affects_gate: bool,
@@ -312,19 +313,22 @@ def effective_owner_acceptance(
             dispositions.pop(str(raw_ac).strip(), None)
         if mode == "accept":
             scope = item.get("subject_scope", "full")
+            subject_mode = item.get("subject_mode", "legacy")
             if domain == "video":
                 if not base or not media or any(item.get(key) != value for key, value in media.items()):
                     continue
             else:
                 if scope not in ("full", "technical"):
                     continue
-                if scope == "technical" and scope not in subjects and base is not None:
+                key = (scope, subject_mode)
+                if key not in subjects and base is not None:
                     from .digest import compute_verification_subject_digest
                     try:
-                        subjects[scope] = compute_verification_subject_digest(base, scope=scope)
-                    except (OSError, UnicodeError):
-                        subjects[scope] = ""
-                bound_subject = subjects.get(scope, "")
+                        subjects[key] = compute_verification_subject_digest(
+                            base, scope=scope, subject_mode=subject_mode)
+                    except (OSError, UnicodeError, ValueError):
+                        subjects[key] = ""
+                bound_subject = subjects.get(key, "")
                 if (not base or not current_change_set or not bound_subject
                         or str(item.get("change_set_id") or "") != current_change_set
                         or str(item.get("subject_digest") or "") != bound_subject):
@@ -427,6 +431,40 @@ def _file_sha256(path: Path) -> str:
     return compute_text_artifact_file_digest(path)
 
 
+def single_line_governance_detail(row, *, event_type: Optional[str] = None,
+                                  producer: Optional[str] = None,
+                                  actor: Optional[str] = None,
+                                  required_fields: Optional[tuple] = None) -> Optional[dict]:
+    """Extract a governance event's detail if its single-line identity holds.
+
+    Shared by the trusted reader and the read-only diagnostics so both agree on
+    what a registered event is. Callers keep their own evidence/authority checks;
+    this function never grants permission or proves a professional conclusion.
+    """
+    from .event_contract import inapplicable_prerequisite_binding
+    event_type = event_type or str(row["event_type"] or "")
+    policy = EVENT_POLICIES.get(event_type)
+    if not policy or policy["authority"] != "governance":
+        return None
+    detail = _event_detail(row)
+    producer = producer or detail.get("producer") or detail.get("source_command") or ""
+    if producer not in policy["allowed_producers"]:
+        return None
+    if not detail.get("transaction_id"):
+        return None
+    for req in (policy["required_fields"] if required_fields is None else tuple(required_fields)):
+        if inapplicable_prerequisite_binding(event_type, detail, req):
+            continue
+        if detail.get(req):
+            continue
+        if req in row.keys() and row[req]:
+            continue
+        return None
+    if actor is not None and (row["actor_role"] or "") != actor:
+        return None
+    return detail
+
+
 def load_trusted_governance_events(
     conn,
     task_id: str,
@@ -462,25 +500,9 @@ def load_trusted_governance_events(
     fields = tuple(detail_required) if detail_required is not None else policy["required_fields"]
     trusted: list[TrustedEvent] = []
     for row in rows:
-        detail = _event_detail(row)
-        producer = detail.get("producer") or detail.get("source_command") or ""
-        if producer not in policy["allowed_producers"]:
-            continue
-        if not detail.get("transaction_id"):
-            continue
-        invalid = False
-        for req in fields:
-            if inapplicable_prerequisite_binding(event_type, detail, req):
-                continue
-            if detail.get(req):
-                continue
-            if req in row.keys() and row[req]:
-                continue
-            invalid = True
-            break
-        if invalid:
-            continue
-        if actor is not None and (row["actor_role"] or "") != actor:
+        detail = single_line_governance_detail(row, event_type=event_type, actor=actor,
+                                               required_fields=fields)
+        if detail is None:
             continue
         if decision is not None:
             ev_decision = detail.get("decision") or ""
@@ -581,6 +603,168 @@ def is_task_retired(conn, task_id: str) -> bool:
     return load_task_retirement(conn, task_id) is not None
 
 
+def diagnose_architecture_review(conn, task_id: str, task_dir: Union[str, Path]) -> Dict[str, Any]:
+    """One read-only diagnosis of the latest formal architecture result.
+
+    The newest ARCHITECTURE review is selected first; only then are trust,
+    decision and applicability examined. An older PASS is never revived by
+    filtering first. Known causes are returned together: artifact mismatch,
+    inapplicable security evidence, unsupported digest mode and changed inputs.
+    Absence of a record is reported separately from an invalid older record.
+    """
+    from .digest import (aggregate_architecture_parts, architecture_digest_parts,
+                         compute_architecture_subject_digest_for_detail,
+                         compute_text_artifact_file_digest, normalize_digest_mode)
+    from .evidence import validate_evidence_path
+    from . import security_authority as authority
+
+    base = Path(task_dir)
+    rows = conn.execute(
+        "SELECT * FROM task_event WHERE task_id=? AND event_type='REVIEW_COMPLETED' "
+        "AND actor_role='tp-software-architect' ORDER BY id DESC", (task_id,)).fetchall()
+    row = None
+    for candidate in rows:
+        if str(_event_detail(candidate).get("review_kind") or "").upper() == "ARCHITECTURE":
+            row = candidate
+            break
+    if row is None:
+        return {"status": "MISSING", "recorded_event_id": None, "reason_codes": ["ARCHITECTURE_REVIEW_MISSING"],
+                "issues": ["STAGE_RECORD_MISSING: architecture_review"], "facts": {}, "localized": "none"}
+    detail = _event_detail(row)
+    event_id = int(row["id"])
+    context = f"architecture_review (event {event_id})"
+    decision = str(detail.get("decision") or "").upper()
+    facts = {"recorded_event_id": event_id, "recorded_decision": decision,
+             "artifact": detail.get("artifact"), "design_inputs": detail.get("design_inputs"),
+             "design_digest_mode": detail.get("design_digest_mode") or "legacy"}
+    codes: list[str] = []
+    issues: list[str] = []
+
+    # Each decision has its own legal record shape: a BLOCKED/REVISE result may
+    # legitimately carry no PASS evidence, so identity is checked first and the
+    # decision is read before any PASS-only binding. A genuine non-PASS result is
+    # NOT_PASSED, never an invalid schema.
+    identity = single_line_governance_detail(
+        row, event_type="REVIEW_COMPLETED", actor="tp-software-architect",
+        required_fields=_EVENT_SCHEMA_FIELDS + ("decision",))
+    if identity is None:
+        return {"status": "INVALID", "reason_codes": [TRUSTED_EVENT_SCHEMA_INVALID],
+                "issues": [f"{TRUSTED_EVENT_SCHEMA_INVALID}: {context}"], "facts": facts, "localized": "none"}
+    if decision != "PASS":
+        return {"status": "NOT_PASSED", "reason_codes": [f"ARCHITECTURE_REVIEW_{decision or 'UNRECORDED'}"],
+                "issues": [f"ARCHITECTURE_REVIEW_NOT_PASSED: {context}, decision={decision}"],
+                "facts": facts, "localized": "none"}
+
+    checked = validate_evidence_path(base, detail.get("artifact"))
+    try:
+        artifact_matches = bool(checked.ok and detail.get("artifact_digest")
+                                == compute_text_artifact_file_digest(base / checked.path))
+    except (OSError, UnicodeError):
+        artifact_matches = False
+    if not artifact_matches:
+        codes.append(ARCHITECTURE_REVIEW_ARTIFACT_MISMATCH)
+        issues.append(f"{ARCHITECTURE_REVIEW_ARTIFACT_MISMATCH}: {context}, field=artifact_digest")
+
+    # A mode error and an input-path error are different findings and must not be
+    # conflated: only an unknown non-empty mode is unsupported.
+    localized = "none"
+    try:
+        mode = normalize_digest_mode(detail.get("design_digest_mode"))
+    except ValueError:
+        codes.append(ARCHITECTURE_DIGEST_MODE_UNSUPPORTED)
+        issues.append(f"{ARCHITECTURE_DIGEST_MODE_UNSUPPORTED}: {context}, "
+                      f"field=design_digest_mode, value={detail.get('design_digest_mode')!r}")
+        localized = "unsupported_mode"
+        mode = None
+    if mode is not None:
+        try:
+            expected = detail.get("subject_digest")
+            current = compute_architecture_subject_digest_for_detail(base, detail)
+            facts.update(recorded_subject_digest=expected, current_subject_digest=current)
+            if expected != current:
+                codes.append(ARCHITECTURE_REVIEW_STALE)
+                issues.append(f"{ARCHITECTURE_REVIEW_STALE}: {context}, field=subject_digest")
+                localized = _localize_architecture_change(base, detail, mode)
+                if localized != "none":
+                    facts["localized_scope"] = localized
+        except ValueError:
+            # Invalid/escaping design inputs are an input-path problem, not a mode.
+            codes.append(ARCHITECTURE_REVIEW_STALE)
+            issues.append(f"{ARCHITECTURE_REVIEW_STALE}: {context}, field=design_inputs")
+            localized = "aggregate_only"
+        except (OSError, UnicodeError, TypeError):
+            codes.append(ARCHITECTURE_REVIEW_STALE)
+            issues.append(f"{ARCHITECTURE_REVIEW_STALE}: {context}, field=design_inputs")
+            localized = "unreadable"
+
+    try:
+        security = authority.read(conn, task_id, base)
+        if not authority.formal_record_current(security, base, detail):
+            codes.append("ARCHITECTURE_REVIEW_EVIDENCE_INAPPLICABLE")
+            issues.append(f"ARCHITECTURE_REVIEW_EVIDENCE_INAPPLICABLE: {context}, "
+                          "fields=security_context/evidence_items")
+    except (ValueError, OSError, KeyError, TypeError):
+        codes.append("ARCHITECTURE_REVIEW_EVIDENCE_INAPPLICABLE")
+        issues.append(f"ARCHITECTURE_REVIEW_EVIDENCE_INAPPLICABLE: {context}, fields=security_context/evidence_items")
+
+    status = "CURRENT" if not codes else "INAPPLICABLE"
+    if status == "CURRENT":
+        issues = [f"ARCHITECTURE_REVIEW_NOT_CURRENT: {context}"]
+    return {"status": status, "reason_codes": codes, "issues": issues, "facts": facts,
+            "localized": localized}
+
+
+def _recorded_digest_parts(value: Any) -> list[dict] | None:
+    """A complete, structurally sound per-file table, or None.
+
+    Only an exact ``{path: str, content_digest: str|None}`` row set with unique,
+    ordered paths and a matching aggregate proves which file changed. Anything
+    else (missing keys, null rows, duplicates, inconsistent aggregate) is reported
+    conservatively as aggregate-only instead of inventing an exact change.
+    """
+    if not isinstance(value, list) or not value:
+        return None
+    parts = []
+    for item in value:
+        if not isinstance(item, dict) or set(item) != {"path", "content_digest"}:
+            return None
+        path, content = item.get("path"), item.get("content_digest")
+        if not isinstance(path, str) or not path.strip():
+            return None
+        if content is not None and not isinstance(content, str):
+            return None
+        parts.append({"path": path, "content_digest": content})
+    paths = [item["path"] for item in parts]
+    if len(set(paths)) != len(paths) or paths != sorted(paths):
+        return None
+    return parts
+
+
+def _localize_architecture_change(base: Path, detail: Dict[str, Any], mode: str) -> str:
+    """Exact per-file diff only when the record bound a complete matching input table.
+
+    Historical records without per-file digests report aggregate-only and never
+    guess which file changed. A table whose own aggregate does not reproduce the
+    recorded subject digest is also insufficient for exact attribution.
+    """
+    from .digest import aggregate_architecture_parts, architecture_digest_parts
+
+    recorded = _recorded_digest_parts(detail.get("design_input_digests"))
+    if recorded is None:
+        return "aggregate_only"
+    if aggregate_architecture_parts(recorded) != detail.get("subject_digest"):
+        return "aggregate_only"
+    try:
+        current = architecture_digest_parts(base, detail.get("design_inputs"), digest_mode=mode)
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return "aggregate_only"
+    if [item.get("path") for item in recorded] != [item.get("path") for item in current]:
+        return "aggregate_only"
+    changed = [item["path"] for item, now in zip(recorded, current)
+               if item.get("content_digest") != now.get("content_digest")]
+    return "exact:" + ",".join(changed) if changed else "aggregate_only"
+
+
 def verification_scope(detail: Dict[str, Any]) -> str:
     """Interpret only explicit supported scopes; old events retain full semantics."""
     scope = detail.get("verification_scope", "full")
@@ -599,7 +783,8 @@ def verification_subject_matches(detail: Dict[str, Any], task_dir: Union[str, Pa
     from .digest import compute_verification_subject_digest
     try:
         scope = verification_scope(detail)
-        return detail.get("subject_digest") == compute_verification_subject_digest(task_dir, scope=scope)
+        return detail.get("subject_digest") == compute_verification_subject_digest(
+            task_dir, scope=scope, subject_mode=detail.get("subject_mode", "legacy"))
     except (ValueError, OSError, UnicodeError):
         return False
 

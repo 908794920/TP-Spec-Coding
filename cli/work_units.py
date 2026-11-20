@@ -114,6 +114,8 @@ def trusted(row):
             return None
         if body.get("subject_scope", "full") not in ("full", "technical"):
             return None
+        if body.get("subject_mode", "legacy") not in ("legacy", "criteria_only_v1"):
+            return None
         dispositions = body.get("supersessions", {})
         if not isinstance(dispositions, dict) or any(type(eid) is not int or eid < 1 for eid in dispositions.values()):
             return None
@@ -682,7 +684,8 @@ def integration_status(conn, task, *, check_content=True, required_items=None):
                 if not same_bound_product_content(candidate, snapshot):
                     issues.append("WORK_CANDIDATE_PRODUCT_CHANGED")
                 current_subject = compute_verification_subject_digest(
-                    task_dir(conn, task["task_id"]), scope=candidate.get("subject_scope", "full"))
+                    task_dir(conn, task["task_id"]), scope=candidate.get("subject_scope", "full"),
+                    subject_mode=candidate.get("subject_mode", "legacy"))
                 if candidate["subject_digest"] != current_subject:
                     issues.append(
                         f"WORK_CANDIDATE_SUBJECT_CHANGED: candidate={candidate['subject_digest']}; current={current_subject}; "
@@ -770,8 +773,9 @@ def record_candidate(conn, task, facts, raw, *, actor, agent):
         "outstanding_work_items": outstanding,
         "integrated_outputs": integrated, "resolutions": list(resolved.values()), "evidence_items": evidence,
         "repo_roots": roots, "change_set_id": snapshot["content_digest"], "change_set": _compact_change_set(snapshot),
-        "subject_scope": "technical",
-        "subject_digest": compute_verification_subject_digest(task_dir(conn, task["task_id"]), scope="technical"),
+        "subject_scope": "technical", "subject_mode": "criteria_only_v1",
+        "subject_digest": compute_verification_subject_digest(
+            task_dir(conn, task["task_id"]), scope="technical", subject_mode="criteria_only_v1"),
         "effect_scope": "record_only"}
     previous = data["candidates"][-1] if data["candidates"] else {}
     if all(previous.get(k) == v for k, v in payload.items()):

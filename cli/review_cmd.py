@@ -34,7 +34,12 @@ from . import event_policies
 from . import frontmatter
 from . import projection_cmd
 from . import transaction_journal
-from .digest import compute_architecture_subject_digest, resolve_architecture_design_inputs
+from .digest import (
+    architecture_digest_parts,
+    aggregate_architecture_parts,
+    compute_architecture_subject_digest,
+    resolve_architecture_design_inputs,
+)
 from .transaction_commit import (
     _commit_with_recovery,
     _current_view_rel,
@@ -64,12 +69,17 @@ def _file_sha256(path: Path) -> str:
     return hashlib.sha256(_read(path).encode("utf-8")).hexdigest()
 
 
-def _design_digest(task_dir: Path, design_inputs=None) -> str:
+ARCHITECTURE_DIGEST_MODE = "criteria_only_v1"
+
+
+def _design_digest(task_dir: Path, design_inputs=None, *, digest_mode: str = ARCHITECTURE_DIGEST_MODE) -> str:
     """设计/受评审内容 digest。
 
     复用单一摘要实现；显式集合来自本次实际受审输入，后续复核沿事件集合读取。
+    新架构记录采用 criteria_only_v1；历史事件按其记录模式由
+    ``compute_architecture_subject_digest_for_detail`` 回放。
     """
-    return compute_architecture_subject_digest(task_dir, design_inputs=design_inputs)
+    return compute_architecture_subject_digest(task_dir, design_inputs=design_inputs, digest_mode=digest_mode)
 
 
 def _set_nested_frontmatter(text: str, parent: str, values: Dict[str, str]) -> str:
@@ -267,9 +277,9 @@ def _check_pass_content_gate(task_dir: Path, artifact_text: str, args, task) -> 
 
 
 
-def _code_review_subject_digest(task_dir: Path, scope: str = "full") -> str:
+def _code_review_subject_digest(task_dir: Path, scope: str = "full", subject_mode: str = "legacy") -> str:
     from .digest import compute_verification_subject_digest
-    return compute_verification_subject_digest(task_dir, scope=scope)
+    return compute_verification_subject_digest(task_dir, scope=scope, subject_mode=subject_mode)
 
 
 def _verified_change_set_for_code_review(conn, task_id: str, task_dir: Path) -> tuple[Any, str, list[str], Dict[str, Any]]:
@@ -362,7 +372,8 @@ def _cmd_code_review_record(args) -> int:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 8
         scope = event_policies.verification_scope(verification.detail)
-        subject_digest = _code_review_subject_digest(task_dir, scope)
+        subject_mode = verification.detail.get("subject_mode", "legacy")
+        subject_digest = _code_review_subject_digest(task_dir, scope, subject_mode)
         if str(args.decision).upper() == "PASS" and not args.evidence:
             print("ERROR: CODE_REVIEW_EVIDENCE_REQUIRED: PASS requires a real evidence/* review result", file=sys.stderr)
             return 8
@@ -388,6 +399,11 @@ def _cmd_code_review_record(args) -> int:
         if findings:
             evidence_items.append(findings["artifact"])
 
+        review_context = str(getattr(args, "review_context_id", "") or "").strip()
+        review_start_id = None
+        if review_context:
+            review_start_id = int(authority.code_review_session_start(conn, task_id, review_context)["id"])
+
         result_payload = {
             "schema": "tp-spec.code-review-result/v1",
             "security_context": security, "scoped_findings": findings,
@@ -402,6 +418,7 @@ def _cmd_code_review_record(args) -> int:
             "change_set_id": change_set_id,
             "verification_event_id": int(verification.row["id"]),
             "verification_scope": scope,
+            "subject_mode": subject_mode,
             "evidence": evidence,
             "recorded_at": timestamp,
         }
@@ -425,6 +442,7 @@ def _cmd_code_review_record(args) -> int:
             "change_set_id": change_set_id,
             "verification_event_id": int(verification.row["id"]),
             "verification_scope": scope,
+            "subject_mode": subject_mode,
             "security_context": security, "scoped_findings": findings,
             "repo_roots": repo_roots,
             "change_set_snapshot_digest": str(current_change_set.get("snapshot_digest") or ""),
@@ -439,9 +457,15 @@ def _cmd_code_review_record(args) -> int:
             "producer": "review_record",
             "schema_version": ACTIVE_CONTRACT,
         }
+        if review_start_id is not None:
+            detail.update(review_execution_context_id=review_context,
+                          review_session_start_event_id=review_start_id)
         view_rel = _current_view_rel(task["current_state"])
 
         def db_and_render(conn, transaction_id=""):
+            if review_start_id is not None and int(authority.code_review_session_start(
+                    conn, task_id, review_context)["id"]) != review_start_id:
+                raise ValueError("CODE_REVIEW_SESSION_CHANGED: reread the open participation")
             authority.check_effect(conn, task_id, security, task_dir=task_dir)
             authority.check_formal_evidence(authority.read(conn, task_id, task_dir), task_dir, evidence)
             current_findings = authority.validate_findings(conn, task_id, task_dir, getattr(args, "findings", None),
@@ -457,7 +481,7 @@ def _cmd_code_review_record(args) -> int:
             )
             if (int(checked_verification.row["id"]) != int(verification.row["id"])
                     or checked_change_set != change_set_id
-                    or _code_review_subject_digest(task_dir, scope) != subject_digest):
+                    or _code_review_subject_digest(task_dir, scope, subject_mode) != subject_digest):
                 raise ValueError("VERIFICATION_STALE: review prerequisite changed before write")
             detail["transaction_id"] = transaction_id
             conn.execute(
@@ -579,7 +603,8 @@ def cmd_review_record(args) -> int:
         artifact_digest = compute_text_artifact_digest(final_artifact_text)
         design_inputs = resolve_architecture_design_inputs(
             task_dir, getattr(args, "design_input", None), review_artifact=artifact_rel)
-        design_digest = _design_digest(task_dir, design_inputs)
+        design_parts = architecture_digest_parts(task_dir, design_inputs, digest_mode=ARCHITECTURE_DIGEST_MODE)
+        design_digest = aggregate_architecture_parts(design_parts)
         decisions_digest = ""
         dp = task_dir / "requirement-decisions.md"
         if dp.is_file():
@@ -626,6 +651,8 @@ def cmd_review_record(args) -> int:
             "artifact_digest": artifact_digest,  # normalized text digest; CRLF/BOM rewrites do not invalidate PASS
             "design_digest": design_digest,
             "design_inputs": design_inputs,
+            "design_digest_mode": ARCHITECTURE_DIGEST_MODE,
+            "design_input_digests": design_parts,
             "subject_digest": design_digest,  # INV-03：subject/design digest 绑定受评审内容
             "review_subject_digest": design_digest,
             "context_policy": getattr(args, "context_policy", "isolated"),
@@ -652,6 +679,8 @@ def cmd_review_record(args) -> int:
         def db_and_render(conn, transaction_id=""):
             if (resolve_architecture_design_inputs(task_dir, getattr(args, "design_input", None),
                                                    review_artifact=artifact_rel) != design_inputs
+                    or architecture_digest_parts(task_dir, design_inputs,
+                                                 digest_mode=ARCHITECTURE_DIGEST_MODE) != design_parts
                     or _design_digest(task_dir, design_inputs) != design_digest):
                 raise ValueError("REVIEW_DESIGN_INPUTS_CHANGED: reread the actual reviewed inputs")
             current_findings = authority.validate_findings(conn, task_id, task_dir, getattr(args, "findings", None),

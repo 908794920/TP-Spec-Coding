@@ -253,16 +253,16 @@ def _result_resolved(conn, task_id: str, events: list[dict], result, stage: str,
                 and development["change_set_id"] != detail["change_set_id"]):
             return True
     if not owner_required and task_dir is not None:
-        from .digest import compute_architecture_subject_digest, compute_verification_subject_digest
+        from .digest import compute_architecture_subject_digest_for_detail, compute_verification_subject_digest
         if stage == "architecture_review":
             try:
-                current_subject = compute_architecture_subject_digest(
-                    task_dir, design_inputs=detail.get("design_inputs"))
+                current_subject = compute_architecture_subject_digest_for_detail(task_dir, detail)
             except (OSError, UnicodeError, ValueError, TypeError):
                 return False  # 读取失败不是新的有效设计；保留等待并诊断来源。
             return bool(detail.get("subject_digest") and detail["subject_digest"] != current_subject)
         current_subject = compute_verification_subject_digest(
-            task_dir, scope=detail.get("verification_scope", "full")
+            task_dir, scope=detail.get("verification_scope", "full"),
+            subject_mode=detail.get("subject_mode", "legacy")
         )
         original_subject = detail.get("subject_digest") or detail.get("verification_subject_digest")
         if original_subject and original_subject != current_subject:

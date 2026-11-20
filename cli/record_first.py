@@ -649,7 +649,8 @@ def _latest_verification(conn, task_id: str, task_dir: Optional[Path] = None) ->
             subject = str(detail.get("subject_digest") or "")
             if task_dir is not None and subject:
                 from .digest import compute_verification_subject_digest
-                if compute_verification_subject_digest(task_dir, scope=detail.get('verification_scope', 'full')) != subject:
+                if compute_verification_subject_digest(task_dir, scope=detail.get('verification_scope', 'full'),
+                        subject_mode=detail.get('subject_mode', 'legacy')) != subject:
                     decision = f"{recorded}_STALE"
             return {
                 "decision": decision, "recorded_decision": recorded,
@@ -804,7 +805,19 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                 raise ValueError("DEFERRED_CHECK_INVALID: an AC with deferred checks cannot be passed in the same submission")
             if not acceptance_path.is_file():
                 raise ValueError("DEFERRED_CHECK_INVALID: acceptance.md is missing")
-            acceptance_text = acceptance_path.read_text(encoding="utf-8-sig")
+            acceptance_text = updated_acceptance if updated_acceptance is not None else \
+                acceptance_path.read_text(encoding="utf-8-sig")
+            # A deferred check belongs to an existing AC obligation. If the effective
+            # acceptance text (including this same update) still shows that AC as an
+            # integral PASS, the two claims conflict. The Owner corrects it through the
+            # existing NEEDS_FIX/PENDING entries; no new requirement is added.
+            from .task_cmd import _acceptance_table_rows
+            rows_now = _acceptance_table_rows(acceptance_text)
+            conflicting = sorted(ac for ac in deferred_acs
+                                 if (rows_now.get(ac) or {}).get("verdict") == "PASS")
+            if conflicting:
+                raise ValueError("DEFERRED_CHECK_CONFLICT: " + ", ".join(conflicting) +
+                                 " still passes while deferred; record the remaining gap as PENDING")
             bound_deferred_checks = bind_deferred_checks(conn, task_id, tdir, deferred_checks, acceptance_text)
         current = str(task["current_state"] or "")
         if current in TERMINAL_STATES:
@@ -812,8 +825,10 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
         if current == "BLOCKED":
             raise ValueError("task is BLOCKED; resolve the blocker before verification")
         now = dbmod.now_iso(); flush_id = f"VERIFY-{uuid.uuid4().hex}"
-        original_subject = compute_verification_subject_digest(tdir, scope=scope)
-        subject_digest = compute_verification_subject_digest(tdir, scope=scope, acceptance_text=updated_acceptance)
+        subject_mode = "criteria_only_v1"
+        original_subject = compute_verification_subject_digest(tdir, scope=scope, subject_mode=subject_mode)
+        subject_digest = compute_verification_subject_digest(tdir, scope=scope,
+            acceptance_text=updated_acceptance, subject_mode=subject_mode)
         development = _latest_development_change_set(conn, task_id)
         current_change_set = None
         if decision0 == "PASS" and development:
@@ -878,8 +893,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                             subject_digest=subject_digest,
                         )
                         owner_visual = bool(owner_visual_items)
-                        if uses_page_only and not any(
-                                not item["path"].startswith("evidence/owner-acceptance/") for item in items):
+                        if uses_page_only and not _non_owner_page_evidence(conn, task_id, tdir, items):
                             raise ValueError("verification PASS requires technical evidence in addition to the Owner page-only receipt")
                     if not owner_visual:
                         checked_visual = artifact_validation.validate_visual_verification_manifest(
@@ -911,6 +925,17 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                                 continue
                             items.append(item)
                             existing.add(item["path"])
+            if bound_deferred_checks and not _non_owner_page_evidence(
+                    conn, task_id, tdir, items, bound_deferred_checks):
+                raise ValueError("verification PASS requires technical evidence in addition to Owner deferral records")
+            # A pure page-only Owner receipt never supports a technical PASS on its
+            # own, in either applicable scope. Technical scope does not read the
+            # visual declaration, so the same boundary is checked here from the
+            # formal purpose binding rather than from a filename.
+            page_only_paths = _page_only_receipt_paths(conn, task_id)
+            if page_only_paths and any(str(item.get("path") or "") in page_only_paths for item in items):
+                if not _non_owner_page_evidence(conn, task_id, tdir, items):
+                    raise ValueError("verification PASS requires technical evidence in addition to the Owner page-only receipt")
             if not items:
                 raise ValueError("verification PASS requires at least one real evidence/* file")
         for check in bound_deferred_checks:
@@ -934,7 +959,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
 
         def writer(dbconn, transaction_id=""):
             if (ac_results or bound_deferred_checks) and (transaction_commit._sha256_file(acceptance_path) != acceptance_before
-                    or compute_verification_subject_digest(tdir, scope=scope) != original_subject):
+                    or compute_verification_subject_digest(tdir, scope=scope, subject_mode=subject_mode) != original_subject):
                 raise ValueError("ACCEPTANCE_CHANGED_BEFORE_COMMIT: reread the current acceptance declaration")
             authority.check_effect(dbconn, task_id, security, task_dir=tdir)
             authority.check_formal_evidence(authority.read(dbconn, task_id, tdir), tdir, items)
@@ -942,7 +967,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
             if decision0 == "PASS" or bound_deferred_checks:
                 latest_development = _latest_development_change_set(dbconn, task_id)
                 if (not latest_development or latest_development["event_id"] != development["event_id"]
-                        or compute_verification_subject_digest(tdir, scope=scope) != original_subject
+                        or compute_verification_subject_digest(tdir, scope=scope, subject_mode=subject_mode) != original_subject
                         or not same_bound_product_content(development["detail"], capture_bound_product(development["detail"], tdir, repo_roots=development["repo_roots"]))):
                     raise ValueError("VERIFICATION_STALE: subject changed before write")
             if decision0 == "PASS":
@@ -981,7 +1006,7 @@ def verify(*, task_id: str, task_dir: str, actor: str, decision: str,
                 "producer": "record-first", "schema_version": active_version(),
                 "task_id": task_id, "actor_role": actor, "created_at": now,
                 "decision": decision0, "review_kind": "VERIFICATION",
-                "verification_scope": scope, "checks": checks,
+                "verification_scope": scope, "subject_mode": subject_mode, "checks": checks,
                 "subject_digest": subject_digest, "evidence": [i["path"] for i in items],
                 "evidence_items": items, "knowledge_signals": knowledge, "delivery_signals": delivery,
                 "logical_request": request.detail(result), "security_context": security,
@@ -1084,6 +1109,56 @@ def acceptance_truth_issues(conn, task_id: str, task_dir: Path, *, owner=None) -
     return issues
 
 
+def _formally_bound_non_technical_paths(conn, task_id: str) -> set[str]:
+    """Paths whose formal purpose is a page-only receipt or a deferral decision.
+
+    Identified by the trusted Owner decision binding (``source_evidence`` of a
+    page-only visual acceptance or of a defer), not by filename patterns. A merged
+    visual+technical report is therefore not excluded merely because it is visual.
+    """
+    from . import event_policies
+    excluded = set()
+    for item in event_policies.load_owner_acceptance_decisions(conn, task_id):
+        path = str(item.get("source_evidence") or "").strip()
+        if not path:
+            continue
+        visual = item.get("visual_scope")
+        page_only = isinstance(visual, dict) and visual.get("kind") == "page_only"
+        if page_only or str(item.get("mode") or "").lower() == "defer":
+            excluded.add(path)
+    return excluded
+
+
+def _page_only_receipt_paths(conn, task_id: str) -> set[str]:
+    """Paths formally bound as a pure page-only Owner receipt (never a deferral)."""
+    from . import event_policies
+    paths = set()
+    for item in event_policies.load_owner_acceptance_decisions(conn, task_id):
+        visual = item.get("visual_scope")
+        if isinstance(visual, dict) and visual.get("kind") == "page_only":
+            path = str(item.get("source_evidence") or "").strip()
+            if path:
+                paths.add(path)
+    return paths
+
+
+def _non_owner_page_evidence(conn, task_id: str, task_dir: Path, items, deferred_checks=()) -> bool:
+    """Whether explicit technical evidence remains besides receipts/decisions.
+
+    Only the declared purpose and current path/SHA binding are used; this does not
+    claim the Runtime can judge a report body's technical sufficiency. A bound
+    deferred check's own source evidence is the deferral record, so it cannot also
+    count as the technical evidence for that PASS.
+    """
+    excluded = _formally_bound_non_technical_paths(conn, task_id)
+    for check in deferred_checks or ():
+        evidence = check.get("evidence") if isinstance(check, dict) else None
+        path = str((evidence or {}).get("path") or "").strip() if isinstance(evidence, dict) else ""
+        if path:
+            excluded.add(path)
+    return any(str(item.get("path") or "") not in excluded for item in items)
+
+
 def _owner_visual_acceptance_evidence(conn, task_id: str, task_dir: Path, acceptance,
                                       visual: Dict[str, Any], *, change_set_id: str,
                                       subject_digest: str) -> tuple[List[Dict[str, Any]], bool]:
@@ -1099,7 +1174,6 @@ def _owner_visual_acceptance_evidence(conn, task_id: str, task_dir: Path, accept
         return [], False
     effective = event_policies.effective_owner_acceptance(
         conn, task_id, task_dir=task_dir, change_set_id=change_set_id,
-        subject_digest=subject_digest,
     )
     by_ac = effective["visual_by_ac"]
     if not required.issubset(by_ac):
