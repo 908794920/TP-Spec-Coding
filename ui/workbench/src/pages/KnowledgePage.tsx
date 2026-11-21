@@ -88,6 +88,16 @@ function Collection({ title, value }: { title: string; value: KnowledgeCollectio
     </Card>;
 }
 
+function CollectionNotice({ title, value }: { title: string; value: KnowledgeCollection }) {
+    if (value.status === 'available' && value.window_complete !== false) return null;
+    const missing = [...new Set([...value.missing_projects, ...(value.unresolved_contexts ?? [])])];
+    return <div className="wiki-collection-note">
+      <strong>{title}</strong>
+      <span>{value.status === 'available' ? '所选时间范围内采集覆盖不完整。' : label(value.status)}</span>
+      {missing.length > 0 && <span className="wiki-coverage-note">缺少：{missing.join('、')}</span>}
+    </div>;
+}
+
 function DocumentRow({ doc, onOpen }: { doc: KnowledgeDocument; onOpen: (key: string) => void }) {
     return <li className="knowledge-document-row"><button type="button" onClick={() => onOpen(doc.key)}>
       <span className="knowledge-document-title"><strong title={doc.title || doc.id || doc.path}>{doc.title || doc.id || doc.path}</strong>
@@ -109,50 +119,57 @@ function Overview({ read, open, chooseProject, showRecords, showAdopted }: {
 }) {
     const data = read.data?.data;
     if (!data) return <ReadStatus {...read}/>;
-    const metrics = data.metrics;
+    const metrics = data.metrics, maintenance = data.maintenance;
+    const sourceUnavailable = !!data.collection.unresolved_contexts?.length;
+    const contentIncomplete = sourceUnavailable || maintenance.status !== 'available';
     return <div className="wiki-tab-body"><ReadStatus {...read}/><Problems items={data.problems}/>
-      <div className="wiki-two-columns"><Collection title="检索 / 读取日志状态" value={data.collection}/><Collection title="任务采用记录状态" value={data.adoption_collection}/></div>
-      <p className="muted">{data.statistics_note}</p>
+      <CollectionNotice title="检索日志" value={data.collection}/>
+      <CollectionNotice title="采用记录" value={data.adoption_collection}/>
       <div className="wiki-metrics-grid">
-        {[{ title: '已识别 AI 搜索', value: num(metrics.searches), note: '完成搜索；含成功零结果', action: () => showRecords() },
-          { title: '有结果占比', value: metrics.hit_rate === null ? '—' : `${(metrics.hit_rate * 100).toFixed(1)}%`, note: '有去重文档 / 完成搜索', action: () => showRecords('hit') },
-          { title: '已记录采用任务', value: num(metrics.adopted_tasks), note: '独立可信采用；不按检索用途过滤', action: showAdopted },
-          { title: '已记录采用条目', value: num(metrics.adopted_documents), note: '可信资产去重；未关联事实仍保留', action: showAdopted }].map(metric =>
+        {[{ title: '已识别 AI 搜索', value: num(metrics.searches), action: () => showRecords() },
+          { title: '有结果占比', value: metrics.hit_rate == null ? '—' : `${(metrics.hit_rate * 100).toFixed(1)}%`, action: () => showRecords('hit') },
+          { title: '已记录采用任务', value: num(metrics.adopted_tasks), action: showAdopted },
+          { title: '已记录采用条目', value: num(metrics.adopted_documents), action: showAdopted }].map(metric =>
           <button type="button" key={metric.title} className="wiki-metric" onClick={metric.action}><span className="wiki-metric-copy">
-            <span className="wiki-metric-label">{metric.title}</span><strong>{metric.value}</strong><small>{metric.note}</small></span></button>)}
+            <span className="wiki-metric-label">{metric.title}</span><strong>{metric.value}</strong></span></button>)}
       </div>
       <Card size="small" className="wiki-section-card" title="已知范围内最近活动"><div className="knowledge-recent">
         {(['search', 'read', 'adopted'] as const).map(key => <div key={key}><strong>{{ search: '最近成功搜索', read: '最近正文读取', adopted: '最近采用' }[key]}</strong>
           <time>{date(data.recent_activity[key].at)}</time><small>{label(data.recent_activity[key].status)}</small></div>)}
-      </div><p className="muted">真实正文读取 {num(metrics.reads)} 次；执行失败 {num(metrics.failures)} 次。失败不计入零结果，也不更新最近成功搜索。</p></Card>
-      <Card size="small" className="wiki-section-card" title="检索层级与历史口径">
-        <p>含 canonical 结果 {num(metrics.canonical_searches)} 次 · 含 source 结果 {num(metrics.source_searches)} 次。二者可重叠，不是互斥占比。</p>
-        <p>已记录补充原因：{Object.entries(metrics.fallback_reasons).map(([reason, count]) => `${reason}（${count}）`).join('、') || '无已记录原因'}。显式 source 查询不意味着 canonical 失败。</p>
-        <p className="muted">{data.history.note} 全局历史未归因：{num(data.history.count)}；新契约但未识别来源：{data.unidentified_searches}。</p>
-      </Card>
-      <div className="wiki-two-columns knowledge-usage-grid"><Card size="small" title="日趋势 · UTC+8 日期">
+      </div><p className="muted">真实正文读取 {num(metrics.reads)} 次；执行失败 {num(metrics.failures)} 次</p></Card>
+      <Disclosure label="统计口径">
+        <p>{data.statistics_note}</p>
+        <p>有结果占比按去重文档和完成的搜索计算。采用按可信 Task 与资产分别去重，独立于搜索用途。</p>
+        <p>共享内容保留共享范围。项目使用按请求项目归因，未归因历史单列。</p>
+        <p>“—”表示数据未取得、覆盖未证实或比率没有样本。趋势按 UTC+8 划分日期，首尾可能不足整天。</p>
+        <p>含 canonical 结果 {num(metrics.canonical_searches)} 次 · 含 source 结果 {num(metrics.source_searches)} 次（可重叠）</p>
+        <p>补充原因：{Object.entries(metrics.fallback_reasons).map(([reason, count]) => `${reason}（${count}）`).join('、') || '未记录'}</p>
+        <p>{data.history.note} 全局历史未归因：{num(data.history.count)} · 未识别来源：{num(data.unidentified_searches)}</p>
+        <div className="wiki-two-columns"><Collection title="检索 / 读取日志" value={data.collection}/><Collection title="任务采用记录" value={data.adoption_collection}/></div>
+      </Disclosure>
+      <div className="wiki-two-columns knowledge-usage-grid"><Card size="small" title="每日趋势">
         <div className="knowledge-table-wrap knowledge-usage-table"><table><thead><tr><th>日期</th><th>完成搜索</th><th>有结果</th><th>采用任务</th></tr></thead><tbody>
           {data.trend.map(row => <tr key={row.date}><th><button type="button" className="knowledge-link" onClick={() => showRecords('all', row.date)}>{row.date}</button></th>
             <td>{num(row.searches)}</td><td>{num(row.hits)}</td><td>{num(row.adopted_tasks)}</td></tr>)}
-        </tbody></table></div><p className="muted">“—”为未证实覆盖或无样本，不补成零；时间窗首尾可能不足整天。</p>
-      </Card><Card size="small" title="项目使用 · 按请求项目归因">
+        </tbody></table></div>
+      </Card><Card size="small" title="项目使用">
         {data.project_usage.length ? <div className="knowledge-table-wrap knowledge-usage-table"><table><thead><tr><th>请求项目</th><th>搜索</th><th>正文读取</th><th>采用任务</th></tr></thead><tbody>
           {data.project_usage.map(row => <tr key={row.key}><th><button type="button" className="knowledge-link" onClick={() => chooseProject(row.key)}>{row.name}</button></th>
             <td>{num(row.searches)}</td><td>{num(row.reads)}</td><td>{num(row.adopted_tasks)}</td></tr>)}
         </tbody></table></div> : <Empty>所选范围没有可列出的业务项目。</Empty>}
-        <p className="muted">共享内容不冒充业务项目私有内容；未归因历史不分摊给项目。</p>
       </Card></div>
-      <Card size="small" className="wiki-section-card" title="常用条目">{data.popular.length ? <ul className="knowledge-document-list">{data.popular.map(doc => <DocumentRow key={doc.key} doc={doc} onOpen={open}/>)}</ul> : <Empty>尚无可关联的正文读取或采用条目；不代表知识无价值。</Empty>}</Card>
-      <Card size="small" className="wiki-section-card" title="待关注内容 · 仅已有事实">{data.attention.length ? <ul className="knowledge-attention">{data.attention.map((item, index) => <li key={`${item.document_key || item.query_hash}-${index}`}>
+      <Card size="small" className="wiki-section-card" title="常用条目">{data.popular.length ? <ul className="knowledge-document-list">{data.popular.map(doc => <DocumentRow key={doc.key} doc={doc} onOpen={open}/>)}</ul> : <Empty>当前范围未取得常用条目。</Empty>}</Card>
+      <Card size="small" className="wiki-section-card" title="待关注内容">{data.attention.length ? <ul className="knowledge-attention">{data.attention.map((item, index) => <li key={`${item.document_key || item.query_hash}-${index}`}>
         <Tag>{label(item.kind)}</Tag><button type="button" className="knowledge-link" onClick={() => item.document_key ? open(item.document_key) : showRecords('zero', '', item.query_hash)}>{item.title}</button>
-        {item.count && <span> · {item.count} 次；未保存搜索原文</span>}</li>)}</ul> : <Empty>当前已知范围没有这些事实，不代表所有内容都已校验。</Empty>}</Card>
-      <Card size="small" className="wiki-section-card" title="内容与维护摘要" extra={<Tag>{label(data.maintenance.status)}</Tag>}>
-        <p>canonical 条目 {num(data.maintenance.canonical_documents)} · source 文档 {num(data.maintenance.source_documents)} · 已注册来源文件 {num(data.maintenance.registered_sources)}</p>
+        {item.count && <span> · {item.count} 次；未保存搜索原文</span>}</li>)}</ul> : <Empty>当前范围没有关注项。</Empty>}</Card>
+      <Card size="small" className="wiki-section-card" title="内容与维护摘要" extra={<Tag>{label(sourceUnavailable && maintenance.status === 'available' ? 'partial' : maintenance.status)}</Tag>}>
+        <p>canonical 条目 {num(contentIncomplete ? null : maintenance.canonical_documents)} · source 文档 {num(contentIncomplete ? null : maintenance.source_documents)} · 已注册来源文件 {num(sourceUnavailable ? null : maintenance.registered_sources)}</p>
+        {contentIncomplete && <p className="warning">知识来源或索引未完整读取，条目总数未取得。</p>}
         {data.maintenance.sources.map(source => <details key={source.source_id}><summary>来源 {source.source_id} · {label(source.status)} · 索引更新 {date(source.indexed_at)}</summary>
           <p>当前质量结果绑定：{source.diagnostics?.verification_binding?.current === true ? '适用' : source.diagnostics?.verification_binding ? `未确认适用 · ${source.diagnostics.verification_binding.status}` : '本页未实时核验'}
             <br/>索引派生契约：{source.diagnostics?.projection?.contract_current === true ? '当前' : source.diagnostics?.projection?.contract_current === false ? '历史或过期' : '未取得契约结果'} · 索引内容：{source.diagnostics?.projection?.fresh === true ? '当前' : source.diagnostics?.projection ? '尚未确认新鲜' : '未读取'}</p>
           {source.diagnostics_error && <p className="warning">当前适用性读取失败：{source.diagnostics_error}</p>}
-          {source.reports.length ? source.reports.map(report => <p key={report.name}>{report.name} · 原报告 {printable(report.status)} · {report.current_binding === true ? '本次绑定适用' : '历史报告'} · 报告时间 {date(report.at)} · 文件更新时间 {date(report.file_updated_at)}<br/><small>{report.note}</small></p>) : <p className="muted">没有已记录维护报告；打开页面不会执行验证或维护。</p>}
+          {source.reports.length ? source.reports.map(report => <p key={report.name}>{report.name} · 原报告 {printable(report.status)} · {report.current_binding === true ? '本次绑定适用' : '历史报告'} · 报告时间 {date(report.at)} · 文件更新时间 {date(report.file_updated_at)}<br/><small>{report.note}</small></p>) : <p className="muted">未记录维护报告。</p>}
           {source.diagnostics && <Disclosure label="当前契约、正式可达性与已有审计依据"><Fields value={source.diagnostics}/></Disclosure>}
         </details>)}
       </Card>
@@ -228,16 +245,16 @@ function DocumentReader({ keys, scope, revision, close, back, open, restore }: {
                     return <span className="wiki-unregistered-link" title="非已注册知识文档或不支持的链接">{children}</span>;
                 },
             }}>{data.content}</ReactMarkdown> : <Empty>{data.document.metadata_only ? '仅已有来源元数据。' : '正文为空。'}</Empty>}
-          </div><p className="muted">页面显示当前完整正文；不受 CLI 预览预算限制，也不增加 AI 正文读取次数。</p>
+          </div>
           <section className="wiki-document-links"><h3>来源、证据与局部关联</h3>
             <ul>{data.links.map(link => <li key={link.href}><button type="button" onClick={() => open(link.key)}>{link.title || link.href}</button><code>{link.href}</code></li>)}
               {data.references.map((reference, index) => <li key={index}><span>{reference.kind}：{reference.key ? <button type="button" onClick={() => open(reference.key!)}>{reference.title || printable(reference.ref)}</button> : printable(reference.ref)}</span><small>{reference.key ? '已注册条目' : '未关联；不猜测链接'}</small></li>)}
               {data.document.evidence_refs.map((evidence, index) => <li key={`evidence-${index}`}><span>证据</span><code>{printable(evidence)}</code></li>)}
             </ul>{!data.links.length && !data.references.length && !data.document.evidence_refs.length && <p className="muted">未记录可展示的局部关联或来源证据。</p>}
           </section><section className="wiki-document-usage-section"><h3>关联使用记录 · 全部已知请求项目</h3>
-            <p className="muted">检索/读取日志：{label(data.collection.status)}；采用记录：{label(data.adoption_collection.status)}。采用无需历史回执也可作为独立事实。</p>
+            <p className="muted">检索/读取日志：{label(data.collection.status)}；采用记录：{label(data.adoption_collection.status)}。</p>
             {data.usage.length ? <ul className="wiki-document-usage">{data.usage.map((usage, index) => <li key={index}><Tag>{usage.stage === 'adopted' ? '已记录采用' : usage.stage === 'read' ? '正文读取' : usage.stage}</Tag>
-              <span>{usage.task_id || '未提供 Task'}<small>{usage.project_name} · {usage.actor_role || '角色未记录'}{usage.purpose ? ` · ${purposeLabel(usage.purpose)}` : ''}</small></span><time>{date(usage.created_at)}</time><code>{usage.receipt_id || '无历史回执关联'}</code></li>)}</ul> : <p className="muted">所选时间窗没有可关联记录；不可用范围不能视为零采用。</p>}
+              <span>{usage.task_id || '未提供 Task'}<small>{usage.project_name} · {usage.actor_role || '角色未记录'}{usage.purpose ? ` · ${purposeLabel(usage.purpose)}` : ''}</small></span><time>{date(usage.created_at)}</time><code>{usage.receipt_id || '无历史回执关联'}</code></li>)}</ul> : <p className="muted">所选时间范围未取得关联记录。</p>}
           </section></article></div></>}
     </Drawer>;
 }
@@ -278,9 +295,9 @@ export function KnowledgePage({ revision }: { revision: number }) {
         <label><span>类型</span><Select value={kind} onChange={value => { setKind(value); setPage(1); }} options={[{ value: '', label: '全部类型' }, ...(documentsData?.kinds || []).map(value => ({ value, label: value }))]}/></label>
         <label><span>已记录维护状态</span><Select value={maintenance} onChange={value => { setMaintenance(value); setPage(1); }} options={[{ value: '', label: '全部状态' }, ...(documentsData?.maintenance_states || []).map(value => ({ value, label: label(value) }))]}/></label>
         <Checkbox checked={adopted} onChange={event => { setAdopted(event.target.checked); setPage(1); }}>仅已记录采用</Checkbox><Button htmlType="submit" icon={<SearchOutlined/>}>查找</Button>
-      </form><p className="wiki-filter-note knowledge-filter-note">人工搜索只查所选内容范围，不新增 AI 使用次数。文档集合不按使用时间缩减；读取次数按用途，采用是独立事实。shared 以共享范围展示。</p>
+      </form>
     </Card><ReadStatus {...docs}/>{documentsData && <><Problems items={documentsData.problems}/>
-      {documentsData.status !== 'available' && <Alert type="warning" showIcon title={`${label(documentsData.status)}：不能把未取得的来源当作零结果。`}/>}
+      {documentsData.status !== 'available' && <Alert type="warning" showIcon title={`${label(documentsData.status)}：文档结果未完整取得。`}/>}
       {documentsData.items.length ? <ul className="knowledge-document-list">{documentsData.items.map(doc => <DocumentRow key={doc.key} doc={doc} onOpen={open}/>)}</ul> : documentsData.status === 'available' ? <Empty>所选范围与筛选条件下没有匹配的文档。</Empty> : null}
       <Pages total={documentsData.total} page={page} onChange={setPage}/></>}</div>;
     const recordTab = <div className="wiki-tab-body"><Card size="small" className="wiki-filter-card knowledge-filter-card">
@@ -289,17 +306,17 @@ export function KnowledgePage({ revision }: { revision: number }) {
         <label><span>Task 标识</span><Input value={taskInput} maxLength={128} allowClear onChange={event => setTaskInput(event.target.value)}/></label>
         <label><span>查询哈希前缀（至少 4 位）</span><Input value={hashInput} maxLength={64} pattern="[a-f0-9]{4,64}" allowClear onChange={event => setHashInput(event.target.value)}/></label>
         <label><span>执行日期（UTC+8）</span><Input type="date" value={dateInput} onChange={event => setDateInput(event.target.value)}/></label><Button htmlType="submit" icon={<FileSearchOutlined/>}>定位记录</Button>
-      </form><p className="wiki-filter-note knowledge-filter-note">只保存 query_hash，不保存原始搜索词；哈希不保证无法反推。旧记录缺失身份、文档数和结果版本时显示“历史未记录”。展开时才读取结果明细。</p>
+      </form>
     </Card><ReadStatus {...records}/>{recordsData && <><Problems items={recordsData.problems}/>
       <p className="muted">日志状态：{label(recordsData.collection.status)} · {purposeLabel(scope.purpose)}。{scope.purpose !== 'unknown' && scope.purpose !== 'all' && '旧记录请切换至“未知用途 / 旧记录”。'}</p>
-      {recordsData.items.length ? <ul className="wiki-record-list knowledge-record-list">{recordsData.items.map(row => <RecordItem key={row.key} row={row} scope={recordsQuery} revision={revision} open={open}/>)}</ul> : <Empty>{recordsData.collection.status === 'available' ? '已知采集范围内没有符合筛选的记录。' : '未取得符合筛选的记录；采集缺失不等于零使用。'}</Empty>}
+      {recordsData.items.length ? <ul className="wiki-record-list knowledge-record-list">{recordsData.items.map(row => <RecordItem key={row.key} row={row} scope={recordsQuery} revision={revision} open={open}/>)}</ul> : <Empty>{recordsData.collection.status === 'available' ? '已知采集范围内没有符合筛选的记录。' : '未取得符合筛选的记录。'}</Empty>}
       <Pages total={recordsData.total} page={recordPage} onChange={setRecordPage}/></>}</div>;
     return <section className="page wiki-page knowledge-page"><div className="page-heading wiki-page-heading"><div><h1 ref={heading} tabIndex={-1}><DatabaseOutlined/> 知识库</h1></div>
       <div className="wiki-page-controls"><Select className="wiki-project-select" aria-label="知识库项目范围" value={scope.project} onChange={project => changeScope({ project })} showSearch optionFilterProp="label"
         options={[{ value: '', label: '全部已注册项目' }, ...projects.map(project => ({ value: project.key, label: project.name }))]}/>
         <Segmented aria-label="知识统计时间范围" value={scope.days} options={[{ value: 7, label: '7 天' }, { value: 30, label: '30 天' }, { value: 90, label: '90 天' }]} onChange={value => changeScope({ days: value as KnowledgeDays })}/>
         <Select className="knowledge-purpose" aria-label="知识调用用途" value={scope.purpose} options={purposes} onChange={purpose => changeScope({ purpose })}/>
-      </div></div><p className="knowledge-scope-note">全局页面范围由你明确选择；不会改变 AI 默认“当前项目 + 已注册共享”。记录数是已知证据，不是价值评分。</p>
+      </div></div>
       <Tabs activeKey={tab} onChange={value => setTab(value as Tab)} items={[
         { key: 'overview', label: <span><DatabaseOutlined/> 使用概况</span>, children: <Overview read={overview} open={open} chooseProject={project => changeScope({ project })} showRecords={showRecords} showAdopted={() => { setAdopted(true); setPage(1); setTab('documents'); }}/> },
         { key: 'documents', label: <span><ReadOutlined/> 知识条目</span>, children: documentTab },

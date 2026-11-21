@@ -1,10 +1,11 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Alert, Button, Pagination, Select, Tag, Typography } from 'antd';
 import { record, records, stageLabel, stateLabel, text, timestampText, workflowNextResponsibility } from '../facts';
+import type { FactRecord, WorkItems } from '../types';
 import type { WorkflowHandle, WorkflowProps } from './WorkflowStrip';
 import { Disclosure, Fields } from './Facts';
 import { QuickWorkflowSummary } from './QuickWorkflowSummary';
-import { actions, currentDescription, filterEvents, groupParticipations, latestHandoff, newestEvents,
+import { actions, currentDescription, filterEvents, groupParticipations, newestEvents,
     participationLabel, roleLabel, statusNames, stepRoles, strings,
     type EventScope, type ExecutionEvent, type ExecutionStep, type Participation } from './executionView';
 
@@ -42,14 +43,13 @@ function ParticipationDetail({ selected, timeline, terminal, scope, setScope, on
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } }}>
       <div className="section-heading"><h5>{roleLabel(selected.role)} · {participationLabel(selected, terminal)}</h5><Button size="small" onClick={onClose}>关闭参与详情</Button></div>
       <dl className="participation-facts">
-        <div><dt>执行者</dt><dd>{text(selected.agent) || '未记录'} · {text(selected.work_item_id) || '父 Task'}</dd></div>
         <div><dt>本次范围</dt><dd>{text(selected.scope) || '未记录'}</dd></div>
         <div><dt>结果</dt><dd>{text(selected.result) || '尚无结果记录'}</dd></div>
         {!!text(selected.wait_reason) && <div><dt>等待原因</dt><dd>{text(selected.wait_reason)}</dd></div>}
         {!!text(selected.expected_next_actor) && <div><dt>交接 / 下一责任</dt><dd>{roleLabel(selected.expected_next_actor)}</dd></div>}
       </dl>
       <Disclosure label="发现、决定、证据与起止详情"><Fields value={{ findings: selected.findings, decisions: selected.decisions,
-        evidence_refs: selected.evidence_refs, started_at: selected.started_at, ended_at: selected.ended_at,
+        evidence_refs: selected.evidence_refs, actor_agent: selected.agent, work_item_id: selected.work_item_id, started_at: selected.started_at, ended_at: selected.ended_at,
         duration_seconds: selected.duration_seconds, participation_id: selected.participation_id, plan_version: selected.plan_version }}
         labels={{ findings: '发现', decisions: '决定记录（不是授权）', evidence_refs: '证据引用', started_at: '开始记录',
           ended_at: '结束记录', duration_seconds: '起止跨度（秒，包含等待）', plan_version: '开始时计划版本' }}/></Disclosure>
@@ -59,8 +59,9 @@ function ParticipationDetail({ selected, timeline, terminal, scope, setScope, on
       <EventList key={scope} rows={rows}/>
     </section>;
 }
-function RoleGroup({ role, participants, timeline, terminal }: {
-    role: string; participants: Participation[]; timeline: ExecutionEvent[]; terminal: boolean;
+function RoleGroup({ role, participants, timeline, terminal, current, workById, onWorkItem }: {
+    role: string; participants: Participation[]; timeline: ExecutionEvent[]; terminal: boolean; current: boolean;
+    workById: Map<string, FactRecord>; onWorkItem?: (id: string) => void;
 }) {
     const [selectedId, setSelectedId] = useState('');
     const [scope, setScope] = useState<EventScope>('participation');
@@ -69,77 +70,166 @@ function RoleGroup({ role, participants, timeline, terminal }: {
     const selected = participants.find(p => p.participation_id === selectedId);
     useEffect(() => { if (selectedId && !selected) setSelectedId(''); }, [selectedId, selected]);
     const group = groupParticipations(participants);
-    const selectedInHistory = group.history.some(p => p.participation_id === selectedId);
-    // 刷新后参与可能从最近记录移到历史；仍保持所选记录可见及其筛选条件。
+    const older = current ? [] : group.history;
+    const selectedInHistory = older.some(p => p.participation_id === selectedId);
+    // 刷新后所选参与可能转入历史，保留原详情及筛选。
     useEffect(() => { if (selectedInHistory && history.current) history.current.open = true; }, [selectedInHistory, selectedId]);
     const close = () => { setSelectedId(''); requestAnimationFrame(() => trigger.current?.focus()); };
     function participant(p: Participation) {
         const last = newestEvents(p.history)[0];
+        const workId = text(p.work_item_id), work = workById.get(workId);
+        const startOnly = !last || last.action === 'start';
+        const summary = startOnly ? '已登记范围' : text(last.summary);
+        const result = text(p.result);
+        const nextActor = text(p.expected_next_actor);
+        const open = p.participation_id === selectedId;
         return <div className="role-participation" key={text(p.participation_id)}>
-          <button type="button" className="role-participation-button" aria-expanded={p.participation_id === selectedId}
-            ref={element => { if (element && p.participation_id === selectedId) trigger.current = element; }}
-            onClick={event => { trigger.current = event.currentTarget; setScope('participation'); setSelectedId(p.participation_id === selectedId ? '' : text(p.participation_id)); }}>
-            <span className="role-participation-title"><strong>{roleLabel(role)}</strong><span>{participationLabel(p, terminal)}</span><span className="disclosure-caret" aria-hidden="true">{p.participation_id === selectedId ? '▾' : '▸'}</span></span>
-            <span className="muted">{text(p.agent) || '执行者未记录'} · {text(p.work_item_id) || '父 Task'} · 开始 <RecordedTime value={p.started_at}/></span>
-            <span className="participation-latest">{text(last?.summary) || text(p.result) || '暂无进展摘要'}</span>
-          </button>
-          {p.participation_id === selectedId && selected && <ParticipationDetail key={selectedId} selected={selected} timeline={timeline} terminal={terminal} scope={scope} setScope={setScope} onClose={close}/>}
+          <div className="role-participation-row">
+            <button type="button" className="role-participation-button" aria-expanded={open}
+              ref={element => { if (element && open) trigger.current = element; }}
+              onClick={event => { trigger.current = event.currentTarget; setScope('participation'); setSelectedId(open ? '' : text(p.participation_id)); }}>
+              <span className="role-participation-title"><strong>{roleLabel(role)}</strong><span className="disclosure-caret" aria-hidden="true">{open ? '▾' : '▸'}</span></span>
+              <span className="muted">{participationLabel(p, terminal)}</span>
+            </button>
+            <div className="role-work">{work && onWorkItem
+              ? <button type="button" className="knowledge-link" onClick={() => onWorkItem(workId)}>{text(work.title) || workId}</button>
+              : text(work?.title) || text(p.scope) || '范围未记录'}</div>
+            <div className="role-progress">
+              <div>{summary || result || '暂无进展记录'}{result && summary && result !== summary && <> · {result}</>}</div>
+              {!!text(p.wait_reason) && <div className="warning">{terminal ? '历史等待' : '等待'}：{text(p.wait_reason)}</div>}
+              {nextActor && (p.status === 'HANDED_OFF' || !!text(p.wait_reason)) && <div className="muted">
+                {p.status === 'HANDED_OFF' ? '交接给' : '等待责任方'}：{responsibilityLabel(nextActor)}
+              </div>}
+            </div>
+            <span className="role-recorded-at muted"><RecordedTime value={last?.created_at ?? (p.ended_at || p.started_at)}/></span>
+          </div>
+          {open && selected && <ParticipationDetail key={selectedId} selected={selected} timeline={timeline}
+            terminal={terminal} scope={scope} setScope={setScope} onClose={close}/>}
         </div>;
     }
     return <section className="step-role-group" aria-label={`${roleLabel(role)}的参与`}>
-      {!participants.length ? <p className="planned-role">{roleLabel(role)} · 计划角色，尚无实际参与记录</p> : <>
-        {group.visible.map(participant)}
-        {!!group.history.length && <details ref={history} className="role-history"><summary>该角色更早的参与 · {group.history.length} 次</summary>{group.history.map(participant)}</details>}
+      {!participants.length ? !terminal && <p className="planned-role">计划参与 · {roleLabel(role)}</p> : <>
+        {(current ? [...group.visible, ...group.history] : group.visible).map(participant)}
+        {!!older.length && <details ref={history} className="role-history"><summary>该角色更早的参与 · {older.length} 次</summary>{older.map(participant)}</details>}
       </>}
     </section>;
 }
-function StepContent({ step, steps, participants, timeline, terminal, onWorkItem }: {
+
+function StepContent({ step, steps, participants, timeline, terminal, current, workById, onWorkItem }: {
     step: ExecutionStep; steps: ExecutionStep[]; participants: Participation[]; timeline: ExecutionEvent[];
-    terminal: boolean; onWorkItem?: (id: string) => void;
+    terminal: boolean; current: boolean; workById: Map<string, FactRecord>; onWorkItem?: (id: string) => void;
 }) {
     const own = participants.filter(p => p.step_id === step.id);
-    const handoff = latestHandoff(timeline, text(step.id));
+    const events = timeline.filter(row => row.step_id === step.id);
     const dependencies = strings(step.depends_on);
+    const remaining = strings(step.linked_work_items).filter(id => !own.some(p => p.work_item_id === id));
     return <div className="execution-step-body">
+      {current && own.length > 0 && <h4>已登记参与</h4>}
+      {stepRoles(step, own).map(role => <RoleGroup key={role} role={role} participants={own.filter(p => text(p.role) === role)}
+        timeline={timeline} terminal={terminal} current={current} workById={workById} onWorkItem={onWorkItem}/>)}
+      {!stepRoles(step, own).length && <p className="muted">未登记角色。</p>}
+      {!!remaining.length && <div className="step-work-links"><span>关联工作</span>{remaining.map(id =>
+        <Button key={id} size="small" onClick={() => onWorkItem?.(id)}>{text(workById.get(id)?.title) || id}</Button>)}</div>}
       <dl className="step-facts">
         <div><dt>本步目标</dt><dd>{text(step.scope) || '未记录'}</dd></div>
         <div><dt>前置步骤及参与角色</dt><dd>{dependencies.length ? dependencies.map(id => {
             const dependency = steps.find(s => s.id === id);
             const roles = Array.from(new Set(participants.filter(p => p.step_id === id).map(p => roleLabel(p.role))));
-            return <p key={id}>{text(dependency?.title) || id} · {roles.length ? roles.join('、') : '暂无实际参与角色'}</p>;
+            return <p key={id}>{text(dependency?.title) || id}{roles.length > 0 && <> · {roles.join('、')}</>}</p>;
         }) : '无前置步骤'}</dd></div>
-        <div><dt>最近明确交接</dt><dd>{handoff ? <>{roleLabel(handoff.actor)} → {roleLabel(handoff.expected_next_actor)} · <RecordedTime value={handoff.created_at}/><p>{text(handoff.summary)}</p></> : '未记录交接'}</dd></div>
-        {!!text(step.wait_reason) && <div><dt>{terminal ? '历史等待' : '步骤等待'}</dt><dd>{text(step.wait_reason)}<p>下一责任：{text(step.expected_next_actor) ? roleLabel(step.expected_next_actor) : '未记录'} · <RecordedTime value={newestEvents(timeline).find(row => row.step_id === step.id && !row.participation_id)?.created_at}/></p></dd></div>}
+        {!current && !!text(step.wait_reason) && <div><dt>历史等待</dt><dd>{text(step.wait_reason)}</dd></div>}
       </dl>
-      <div className="section-heading"><h4>角色进展与事件</h4><span className="muted">点击参与记录展开事件</span></div>
-      {stepRoles(step, own).map(role => <RoleGroup key={role} role={role} participants={own.filter(p => text(p.role) === role)} timeline={timeline} terminal={terminal}/>)}
-      {!stepRoles(step, own).length && <p className="muted">未登记角色。</p>}
-      <Disclosure label={`本步骤全部事件 · ${timeline.filter(row => row.step_id === step.id).length} 条`}>
-        <EventList rows={newestEvents(timeline).filter(row => row.step_id === step.id)}/>
-      </Disclosure>
-      {!!strings(step.linked_work_items).length && <div className="step-work-links"><span>关联工作</span>{strings(step.linked_work_items).map(id =>
-        <Button key={id} size="small" onClick={() => onWorkItem?.(id)}>{strings(step.fix_work_items).includes(id) ? 'Fix' : 'Work'}：{id}</Button>)}</div>}
+      <Disclosure label={`本步骤全部事件 · ${events.length} 条`}><EventList rows={events}/></Disclosure>
       <Disclosure label="步骤来源与边界记录"><Fields value={step}/></Disclosure>
     </div>;
 }
-export const ExecutionWorkflow = forwardRef<WorkflowHandle, WorkflowProps>(({ workflow, task, blockers, onDocuments, onWorkItem }, ref) => {
+
+const routeStages: Record<string, string> = {
+    requirement: '需求确认', architecture: '架构设计', architecture_review: '架构审查', planning: '规划',
+    development: '开发', verification: '验证', review: '代码审查', delivery: '交付', complete: '结单',
+};
+export function responsibilityLabel(value: unknown): string {
+    return value === 'human_owner' ? '用户' : text(value) ? roleLabel(value) : '未记录';
+}
+
+export function CurrentBlockers({ workflow, task, blockers, workItems, onWorkItem, showNext }: {
+    workflow: FactRecord; task: FactRecord; blockers?: unknown; workItems?: WorkItems; onWorkItem?: (id: string) => void; showNext?: boolean;
+}) {
+    const execution = record(workflow.execution);
+    if (execution.terminal === true || workflow.retired === true || task.state === 'COMPLETED' || task.state === 'CANCELLED')
+        return null;
+    const current = record(execution.current_step), route = record(workflow.route), context = record(route.context);
+    const waiting = record(context.waiting ?? record(workflow.next_step).waiting), alignment = record(route.plan_route_alignment);
+    const action = text(route.recommended_action);
+    const blocked = task.state === 'BLOCKED';
+    const prerequisite = alignment.alignment_status === 'PREREQUISITE_REPAIR';
+    const repair = alignment.alignment_status === 'REWORK_FIX_REQUIRED';
+    const workPending = action === 'workitem_resolve';
+    const namedOwner = text(waiting.responsibility) || text(route.next_responsibility);
+    const needsUser = namedOwner === 'human_owner' || (!namedOwner && route.requires_human === true &&
+        (route.confirmation_required === true || ['await_security_decision', 'await_effect_approval'].includes(action)));
+    const operation = text(alignment.operation_stage) || text(waiting.source_stage);
+    const steps = records(execution.steps).filter(step => step.phase === operation);
+    const operationName = steps.length === 1 ? text(steps[0].title) : (routeStages[operation] || operation);
+    const operationDiffers = !!operation && operation !== text(current.phase);
+    const reasons = blocked ? records(blockers).map(item => text(item.reason)).filter(Boolean) : [];
+    const recordedReason = namedOwner || text(waiting.condition) ? reasons[0] : '';
+    const routeReason = text(waiting.reason) || text(route.blocker) || recordedReason ||
+        (needsUser ? '等待用户确认' : repair ? '需处理返修工作' : workPending ? '需处理关联 Work 的结果' : '');
+    const stepReason = current.status === 'WAITING' ? text(current.wait_reason) : '';
+    const stepOwner = text(current.expected_next_actor);
+    const sameReason = !!routeReason && routeReason === stepReason;
+    const routeBlocked = !!(routeReason || text(waiting.condition) || prerequisite);
+    const taskReasons = reasons.filter(reason => reason !== routeReason && reason !== stepReason);
+    if (!routeBlocked && !blocked && current.status !== 'WAITING')
+        return showNext ? <p>下一责任人：<strong>{responsibilityLabel(workflowNextResponsibility(workflow, false))}</strong></p> : null;
+    const condition = text(waiting.condition);
+    const recordedCondition = condition.startsWith('具体恢复条件尚未结构化记录') ? '' : condition;
+
+    const routeWork = records(context.work_items);
+    const received = new Set(workPending ? routeWork.filter(item => text(record(item.receipt).event_id)).map(item => text(item.item_id)) : []);
+    const waitWork = [...new Set([...strings(current.waiting_work_items), ...routeWork.map(item => text(item.item_id))])]
+        .filter(id => !received.has(id) && workItems?.items?.some(item => item.item_id === id));
+    const routeOwner = needsUser ? 'human_owner' : namedOwner ||
+        ((prerequisite || repair || workPending) ? text(alignment.responsible_role) || text(route.role_id) : '');
+    const stepTitle = text(current.title) || stageLabel(workflow.current_step);
+    return <section className="task-blocker" aria-label={blocked ? '任务阻塞' : '当前卡点'}>
+      <h4>{blocked ? '任务阻塞' : '当前卡点'}<span> · {stepTitle || '任务'}暂不能推进</span></h4>
+      {routeBlocked && <div className="blocker-reason">
+        {operationName && (operationDiffers || prerequisite) && <p>眼下需先处理<strong>{operationName}</strong></p>}
+        <p><strong>{routeReason || (operationName ? '前置工作尚未完成' : '原因未记录')}</strong></p>
+        <p className="blocker-owner">下一责任人：<strong>{responsibilityLabel(routeOwner)}</strong>{needsUser && <Tag color="warning">需要你处理</Tag>}</p>
+        <p className="muted">解除条件：{recordedCondition || '未记录'}</p>
+        {sameReason && stepOwner && stepOwner !== routeOwner && <p className="muted">步骤恢复责任方：{responsibilityLabel(stepOwner)}</p>}
+      </div>}
+      {taskReasons.map((reason, index) => <div className="blocker-reason" key={index}>
+        <p><strong>{reason}</strong></p><p>下一责任人：未记录</p><p className="muted">解除条件：未记录</p>
+      </div>)}
+      {!sameReason && (current.status === 'WAITING' || (blocked && !routeBlocked && !taskReasons.length)) &&
+        <div className="blocker-reason"><p><strong>{stepReason || '原因未记录'}</strong></p>
+          <p className="blocker-owner">下一责任人：<strong>{responsibilityLabel(stepOwner)}</strong>{stepOwner === 'human_owner' && <Tag color="warning">需要你处理</Tag>}</p>
+          <p className="muted">解除条件：未记录</p>
+        </div>}
+      {onWorkItem && !!waitWork.length && <div className="step-work-links">{waitWork.map(id =>
+        <Button key={id} size="small" onClick={() => onWorkItem(id)}>{text(workItems?.items.find(item => item.item_id === id)?.title) || id}</Button>)}</div>}
+    </section>;
+}
+
+export const ExecutionWorkflow = forwardRef<WorkflowHandle, WorkflowProps>(({ workflow, task, blockers, workItems, onConditions, onDocuments, onWorkItem }, ref) => {
     const facts = record(workflow.execution), plan = record(facts.plan), assessment = record(plan.assessment);
     const steps = records(facts.steps) as ExecutionStep[], participants = records(facts.participations) as Participation[], timeline = newestEvents(facts.timeline);
-    const terminal = facts.terminal === true || workflow.retired === true || task.state === 'COMPLETED' || task.state === 'CANCELLED';
+    const workById = new Map(records(workItems?.items).map(item => [text(item.item_id), item]));
+    const retired = workflow.retired === true;
+    const terminal = facts.terminal === true || retired || task.state === 'COMPLETED' || task.state === 'CANCELLED';
     const current = terminal ? {} : record(facts.current_step), next = terminal ? {} : record(facts.next_step);
     const currentId = text(current.id), heading = useRef<HTMLHeadingElement>(null), list = useRef<HTMLOListElement>(null);
     const [expanded, setExpanded] = useState<string[]>(currentId ? [currentId] : []);
-    const currentRoles = terminal || !currentId ? [] : strings(facts.current_roles);
     const issues = strings(facts.issues);
     const noPlan = !facts.status || facts.status === 'NOT_RECORDED';
     const quick = workflow.workflow_mode === 'quick';
     const video = workflow.domain === 'video';
-    const retired = workflow.retired === true;
-    const retirementNotice = retired && <Alert type="info" showIcon title="已退休 · 历史只读"
-      description={`行政退休与流程完成分别记录；最后正式工作流状态：${stateLabel('task', task.state)}。未验项与历史证据保持原记录。`}/>;
-    const coordination = { coordinator: facts.coordinator || '历史未记录', coordinator_source: facts.coordinator_source || '历史未记录' };
-    const nextResponsibility = workflowNextResponsibility(workflow, terminal);
-    const latestBlockers = task.state === 'BLOCKED' ? records(blockers) : [];
+    const recordedStage = record(workflow.current_step).stage ? workflow.current_step
+        : records(workflow.steps).find(step => step.stage === task.phase);
     useEffect(() => { setExpanded(old => old.filter(id => steps.some(step => step.id === id))); }, [facts.steps]);
     function locate() {
         if (currentId) setExpanded(old => old.includes(currentId) ? old : [...old, currentId]);
@@ -150,59 +240,61 @@ export const ExecutionWorkflow = forwardRef<WorkflowHandle, WorkflowProps>(({ wo
         });
     }
     useImperativeHandle(ref, () => ({ locateCurrent: locate }));
-    if (noPlan) {
-        const recordedStage = record(workflow.current_step).stage ? record(workflow.current_step)
-            : records(workflow.steps).find(step => step.stage === task.phase);
-        return <section className="workflow-strip execution-workflow" aria-label="任务评估与流程进展">
-          {retirementNotice}
-          {quick ? <QuickWorkflowSummary workflow={workflow} terminal={terminal} onDocuments={onDocuments}/>
-            : <div className="task-assessment"><div><span className="eyebrow">{video ? '任务领域' : '任务评估'}</span><strong className="assessment-level">{video ? '视频制作' : text(workflow.effective_level) || '等级未解析'}</strong></div>
-            <p>阶段推进、角色工作和事件明细见下方工作关系。</p></div>}
-          <div className="execution-summary">
-            <p><span>当前记录阶段</span><strong>{retired ? '已退休，历史只读' : terminal ? '任务已结束' : stageLabel(recordedStage) || text(task.phase) || '尚未记录'}</strong></p>
-            <p><span>下一步</span><strong>{terminal ? '无后续执行' : stageLabel(workflow.next_step) || '尚未解析'}</strong><small>流程建议不代表已开始执行</small></p>
-          </div>
-          <Fields value={{ ...coordination, current_roles: retired ? '无（已退休，历史只读）' : terminal ? '无（任务已结束）' : currentRoles.length ? currentRoles : '未登记', next_responsibility: nextResponsibility }}/>
-          {!!latestBlockers.length && <div className="task-blocker" role="status"><strong>任务阻塞</strong>{latestBlockers.map((blocker, index) => <p key={index}>{text(blocker.reason) || '原因未记录'}</p>)}</div>}
-          {!!text(workflow.error) && <Alert type="warning" showIcon title="流程路由未解析" description={text(workflow.error)}/>}
-          <Disclosure label="流程与评估来源"><p>当前展示已有事件；此任务未登记独立执行计划，不补造步骤起止或角色参与记录。</p><Fields value={quick || video ? { phase: task.phase, route: workflow.route } : { risk_level: task.risk_level, flow_level: task.flow_level, effective_level: workflow.effective_level, phase: task.phase, route: workflow.route }}/></Disclosure>
-        </section>;
-    }
+    const assessmentDetails = { risk_level: task.risk_level, flow_level: task.flow_level, effective_level: workflow.effective_level,
+        registered_level: plan.effective_level, source_refs: assessment.source_refs, omissions: assessment.omissions };
     return <section className="workflow-strip execution-workflow" aria-label="任务评估与执行步骤">
-      {retirementNotice}
+      {retired && <Alert type="info" showIcon title="已退休 · 历史只读"
+        description={`最后正式工作流状态：${stateLabel('task', task.state)}。`}/>}
+      <div className="execution-summary">
+        <p><span>{noPlan ? '当前记录阶段' : '当前步骤'}</span><strong>{retired ? '已退休，历史只读' : terminal ? '任务已结束'
+          : noPlan ? stageLabel(recordedStage) || text(task.phase) || '尚未记录' : currentDescription(facts, terminal)}</strong>
+          {!!next.id && <small>计划下一步：{text(next.title)}</small>}
+          {noPlan && !terminal && stageLabel(workflow.next_step) && <small>Runtime 建议：{stageLabel(workflow.next_step)}</small>}</p>
+        <div className="step-list-actions">
+          <Button size="small" onClick={onConditions}>{currentId ? '查看本步条件' : '阻塞详情'}</Button>
+        </div>
+      </div>
+      <CurrentBlockers workflow={workflow} task={task} blockers={blockers} workItems={workItems} onWorkItem={onWorkItem} showNext/>
+      {(issues.length > 0 || facts.status === 'INVALID') && <Alert type="warning" showIcon title="部分执行事实无法可靠读取" description={issues.join('；') || '执行计划记录异常，当前步骤待核实。'}/>}
+      {!!text(workflow.error) && <Alert type="warning" showIcon title="流程路由未解析" description={text(workflow.error)}/>}
+      {noPlan ? <div className="execution-empty"><strong>执行计划尚未登记</strong></div> : <>
+        <div className="section-heading execution-list-heading"><h3 ref={heading} tabIndex={-1}>执行步骤</h3><div className="step-list-actions">
+          <span className="muted">已记录完成 {steps.filter(step => step.status === 'COMPLETED').length} / 共 {steps.length} 步</span>
+          {currentId && <Button size="small" onClick={locate}>定位当前步骤</Button>}
+        </div></div>
+        <ol className="execution-step-list" ref={list} aria-label="正式记录的步骤顺序">
+          {steps.map((step, index) => {
+              const id = text(step.id), own = participants.filter(p => p.step_id === id);
+              const currentStep = currentId === id, open = expanded.includes(id);
+              const recent = timeline.find(row => row.step_id === id && !row.participation_id);
+              const planned = !terminal && step.status === 'PLANNED';
+              return <li key={id}><details className={`execution-step${currentStep ? ' current-step' : ''}`}
+                data-step-id={id} data-state={text(step.status)} open={open}
+                onToggle={event => { const toggled = event.currentTarget.open; setExpanded(old => toggled ? old.includes(id) ? old : [...old, id] : old.filter(value => value !== id)); }}>
+                <summary aria-current={currentStep ? 'step' : undefined}><span className="step-number">{index + 1}</span><span className="step-summary-content">
+                  <span className="execution-step-title"><strong>{text(step.title) || id}</strong><Tag>{terminal && step.status !== 'COMPLETED' ? '历史 · ' : ''}{planned ? '待开始' : statusNames[text(step.status)] || text(step.status) || '状态未记录'}</Tag>{currentStep && <Tag color="blue">当前</Tag>}</span>
+                  {own.length > 0 && !open && <span className="muted">已参与：{Array.from(new Set(own.map(p => roleLabel(p.role)))).join('、')}</span>}
+                  {planned && !open && !!step.roles?.length && <span className="muted">计划参与：{strings(step.roles).map(roleLabel).join('、')}</span>}
+                  {!open && !!text(recent?.result || recent?.summary) && <span className="step-recent">{text(recent?.result || recent?.summary)}</span>}
+                </span><span className="disclosure-caret" aria-hidden="true">{open ? '▾' : '▸'}</span></summary>
+                <StepContent step={step} steps={steps} participants={participants} timeline={timeline}
+                  terminal={terminal} current={currentStep} workById={workById} onWorkItem={onWorkItem}/>
+              </details></li>;
+          })}
+        </ol>
+      </>}
       {quick ? <QuickWorkflowSummary workflow={workflow} terminal={terminal} onDocuments={onDocuments}/>
         : <><div className="task-assessment"><div><span className="eyebrow">{video ? '任务领域' : '任务评估'}</span><strong className="assessment-level">{video ? '视频制作' : text(workflow.effective_level) || '等级未解析'}</strong></div>
-        <div className="assessment-reason">{text(assessment.summary) ? <><span className="muted">计划登记时的评估依据</span><Typography.Paragraph ellipsis={{ rows: 2, expandable: 'collapsible', symbol: expanded => expanded ? '收起' : '展开依据' }}>{text(assessment.summary)}</Typography.Paragraph></> : <><p>未登记结构化评估依据</p><Button size="small" type="link" onClick={onDocuments}>查看当前任务文档</Button></>}
-          {!video && !text(workflow.effective_level) && <p>已记录风险等级：{text(task.risk_level) || '未记录'} · 流程等级：{text(task.flow_level) || '未记录'}</p>}
-        </div></div>
-      {!video && <Disclosure label="等级含义与评估来源"><p>L0–L3 表达风险与流程义务，不等同于独立技术难度或工作量评分。</p><Fields value={{ risk_level: task.risk_level, flow_level: task.flow_level,
-        effective_level: workflow.effective_level, registered_level: plan.effective_level, source_refs: assessment.source_refs,
-        omissions: assessment.omissions }} labels={{ registered_level: '计划登记等级', source_refs: '评估来源', omissions: '省略步骤的评估依据' }}/></Disclosure>}
-      {!!text(plan.effective_level) && !!text(workflow.effective_level) && plan.effective_level !== workflow.effective_level && <Alert type="warning" showIcon title="当前等级与计划登记等级不同，需复核计划义务" description={`计划登记 ${text(plan.effective_level)}；当前 ${text(workflow.effective_level)}。`}/>}
-      </>}
-      {(issues.length > 0 || facts.status === 'INVALID') && <Alert type="warning" showIcon title="部分执行事实无法可靠读取" description={issues.join('；') || '执行计划记录异常，不能按正常记录解释。'}/>}
-      {!!text(workflow.error) && <Alert type="warning" showIcon title="门禁路由未解析" description={text(workflow.error)}/>}
-      <div className="execution-summary">
-        <p><span>当前步骤</span><strong>{retired ? '已退休，历史只读' : currentDescription(facts, terminal)}</strong>{!!next.id && <small>下一计划步骤：{text(next.title)}</small>}</p>
-        <p><span>当前参与角色</span><strong>{terminal ? '无，以下为历史记录' : currentRoles.length ? currentRoles.map(roleLabel).join('、') : '暂无已登记的当前参与'}</strong><small>未结束参与不代表执行者在线</small></p>
-      </div>
-      <Fields value={{ ...coordination, next_responsibility: nextResponsibility }}/>
-      {!!latestBlockers.length && <div className="task-blocker" role="status"><strong>任务阻塞</strong>{latestBlockers.map((blocker, i) => <div key={i}><p>{text(blocker.reason) || '原因未记录'}</p><small>来源：Task 阻塞记录 · <RecordedTime value={blocker.created_at}/> · 结构化下一责任：未记录</small></div>)}</div>}
-      {!!text(current.wait_reason) && <div className="step-wait-summary"><strong>步骤等待：</strong>{text(current.wait_reason)}<small>下一责任：{text(current.expected_next_actor) ? roleLabel(current.expected_next_actor) : '未记录'} · 来源：步骤记录 · <RecordedTime value={timeline.find(row => row.step_id === currentId && !row.participation_id)?.created_at}/></small></div>}
-      <div className="section-heading execution-list-heading"><h3 ref={heading} tabIndex={-1}>执行步骤</h3><div className="step-list-actions"><span className="muted">{noPlan ? '尚未登记' : `已记录完成 ${steps.filter(step => step.status === 'COMPLETED').length} / 共 ${steps.length} 步`}</span><Button size="small" onClick={locate}>定位当前步骤</Button></div></div>
-      {noPlan ? <div className="execution-empty"><strong>执行计划尚未登记</strong><p>暂无已绑定的步骤与角色参与记录。既有通用阶段可在下方“任务历史与诊断”中查看。</p></div> : <ol className="execution-step-list" ref={list} aria-label="正式记录的步骤顺序">
-        {steps.map((step, index) => {
-            const id = text(step.id), own = participants.filter(p => p.step_id === id), recent = timeline.find(row => row.step_id === id);
-            return <li key={id}><details className={`execution-step${currentId === id ? ' current-step' : ''}`} data-step-id={id} data-state={text(step.status)}
-              open={expanded.includes(id)} onToggle={event => { const open = event.currentTarget.open; setExpanded(old => open ? old.includes(id) ? old : [...old, id] : old.filter(value => value !== id)); }}>
-              <summary aria-current={currentId === id ? 'step' : undefined}><span className="step-number">{index + 1}</span><span className="step-summary-content"><span className="execution-step-title"><strong>{text(step.title) || id}</strong><Tag>{terminal && step.status !== 'COMPLETED' ? '历史 · ' : ''}{statusNames[text(step.status)] || text(step.status) || '状态未记录'}</Tag>{currentId === id && <Tag color="blue">当前</Tag>}</span><span className="muted">{own.length ? `已参与：${Array.from(new Set(own.map(p => roleLabel(p.role)))).join('、')}` : `计划角色：${strings(step.roles).map(roleLabel).join('、') || '未记录'}`}</span><span className="step-recent">{text(recent?.summary) || '尚无步骤执行事件'}</span></span><span className="disclosure-caret" aria-hidden="true">{expanded.includes(id) ? '▾' : '▸'}</span></summary>
-              <StepContent step={step} steps={steps} participants={participants} timeline={timeline} terminal={terminal} onWorkItem={onWorkItem}/>
-            </details></li>;
-        })}
-      </ol>}
-      {!noPlan && !steps.length && <p>没有可可靠展示的执行步骤，请查看上方读取提示。</p>}
-      <Disclosure label={`计划调整与协调记录 · ${records(facts.plan_history).length} 版`}><Fields value={{ ...coordination, history: facts.plan_history,
-        scope_refs: plan.scope_refs, source: facts.source, last_recorded_at: facts.last_recorded_at, legacy_event_ids: facts.legacy_event_ids, legacy_issues: facts.legacy_issues }}/></Disclosure>
-      <p className="muted execution-note">步骤完成、角色参与结束与验证通过分别记录。专业验证与验收见任务详情。</p>
+          {!noPlan && <div className="assessment-reason">{text(assessment.summary) ? <><span className="muted">计划登记时的评估依据</span><Typography.Paragraph ellipsis={{ rows: 2, expandable: 'collapsible', symbol: expanded => expanded ? '收起' : '展开依据' }}>{text(assessment.summary)}</Typography.Paragraph></>
+            : <><p>未登记结构化评估依据</p><Button size="small" type="link" onClick={onDocuments}>查看当前任务文档</Button></>}
+          </div>}</div>
+          {!video && <Disclosure label="等级与评估来源"><Fields value={assessmentDetails}
+            labels={{ registered_level: '计划登记等级', source_refs: '评估来源', omissions: '省略步骤的评估依据' }}/></Disclosure>}
+          {!!text(plan.effective_level) && !!text(workflow.effective_level) && plan.effective_level !== workflow.effective_level && <Alert type="warning" showIcon title="当前等级与计划登记等级不同，需复核计划义务" description={`计划登记 ${text(plan.effective_level)}；当前 ${text(workflow.effective_level)}。`}/>}
+        </>}
+      <Disclosure label="计划调整与协调记录"><Fields value={{ coordinator: facts.coordinator, coordinator_source: facts.coordinator_source,
+        current_roles: facts.current_roles, history: facts.plan_history, scope_refs: plan.scope_refs, source: facts.source,
+        last_recorded_at: facts.last_recorded_at, legacy_event_ids: facts.legacy_event_ids, legacy_issues: facts.legacy_issues,
+        current_step_source: workflow.current_step_source, next_step_source: workflow.next_step_source, route: workflow.route }}/></Disclosure>
     </section>;
 });

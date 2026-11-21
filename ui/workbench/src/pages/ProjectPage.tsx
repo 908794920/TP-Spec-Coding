@@ -1,4 +1,5 @@
-import { Card, Tag } from 'antd';
+import { useRef } from 'react';
+import { Alert, Button, Card, Tag } from 'antd';
 import { Fields, Empty, Problems, ReadStatus } from '../components/Facts';
 import { TaskIndex } from '../components/TaskIndex';
 import { record, text } from '../facts';
@@ -46,6 +47,17 @@ function uniqueContextFields(context: Context | null | undefined, project: Recor
     return result;
 }
 
+const environmentImpact: Record<string, string> = {
+    REGISTRY_INVALID: '项目注册信息不可读取。',
+    RUNTIME_UNAVAILABLE: 'Runtime 不可用，任务列表未取得。',
+    RUNTIME_READ_ERROR: 'Runtime 读取失败，任务列表未取得。',
+    RUNTIME_UNREGISTERED: '当前项目未确认 Runtime，任务列表未取得。',
+    PROJECT_VERSION_MISMATCH: '项目 Base 与当前工作台的版本不一致。',
+    WIKI_RESOLVER_ERROR: 'Wiki 项目归属未取得。',
+    KNOWLEDGE_RESOLVER_ERROR: '知识库项目范围未取得。',
+    CONTENT_RESOLVER_ERROR: 'Wiki 与知识库的项目范围未取得。',
+};
+
 export function ProjectPage({ context, read, notesWritable, onSelectTask, onNoteSaved }: {
     context?: Context;
     read: ReadState<Envelope<ProjectData>>;
@@ -53,15 +65,26 @@ export function ProjectPage({ context, read, notesWritable, onSelectTask, onNote
     onSelectTask: (id: string) => void;
     onNoteSaved: () => void;
 }) {
+    const environment = useRef<HTMLDetailsElement>(null);
     if (!context)
         return <div className="page project-page"><div className="page-heading"><div><span className="eyebrow">项目总览</span><h2>尚未选择项目</h2></div></div>
-        <Empty title="先选择项目与工作区">从左侧项目列表展开一个项目，或点它的「项目总览」。只展示已注册的真实上下文；工作台不会创建项目、任务或 Runtime。</Empty></div>;
+        <Empty title="先选择项目与工作区">从左侧项目列表打开项目总览。</Empty></div>;
     const data = read.data?.data;
     const project = record(data?.project);
     const projectId = text(project.project_id) || context.project_id;
     const runtime = runtimePresentation(project.runtime_status);
     const version = versionPresentation(project);
     const taskIndexAvailable = !!data && runtime.raw === 'available' && Array.isArray(data.task_index);
+    const issues = data?.problems ?? [];
+    const environmentIssues = issues.filter(problem => environmentImpact[problem.code]);
+    function showEnvironment() {
+        const details = environment.current;
+        if (!details) return;
+        details.open = true;
+        const summary = details.querySelector('summary');
+        summary?.focus({ preventScroll: true });
+        summary?.scrollIntoView({ block: 'center' });
+    }
     return <div className="page project-page">
       <div className="page-heading project-overview-heading">
         <div><span className="eyebrow">项目总览</span><h2>{text(project.name) || context.name} {projectId && <small className="project-id"><code>{projectId}</code></small>}</h2>
@@ -73,12 +96,16 @@ export function ProjectPage({ context, read, notesWritable, onSelectTask, onNote
         <ReadStatus {...read} showDetails={false}/>
       </div>
       {data && <>
-        <Problems items={data.problems}/>
+        {environmentIssues.length > 0 && <Alert type="warning" showIcon title="项目环境异常"
+          description={<ul>{environmentIssues.map(({ code }) => <li key={code}>{environmentImpact[code]} <Button size="small" type="link" onClick={showEnvironment}>查看环境详情</Button></li>)}</ul>}/>}
+        <Problems items={issues.filter(problem => !environmentImpact[problem.code])}/>
         <Card className="project-task-progress" size="small" title="任务进展">
           <TaskIndex key={context.context_key} contextKey={context.context_key} rows={taskIndexAvailable ? data.task_index : []}
             available={taskIndexAvailable} notesWritable={notesWritable} onSelect={onSelectTask} onNoteSaved={onNoteSaved}/>
         </Card>
-        <Card className="project-details" size="small" title="项目资料与环境详情">
+        <details className="project-details" key={context.context_key} ref={environment}>
+          <summary>环境详情</summary>
+          {environmentIssues.length > 0 && <Problems items={environmentIssues}/>}
           <Fields value={{ ...project, registry: data.registry, wiki: systemAvailability(data.wiki), knowledge: systemAvailability(data.knowledge),
             ...uniqueContextFields(read.data?.context, project, data.registry),
             ...(read.data?.read.note ? { read_note: read.data.read.note } : {}),
@@ -87,7 +114,7 @@ export function ProjectPage({ context, read, notesWritable, onSelectTask, onNote
             labels={{ context_project_id: '上下文项目 ID', context_name: '上下文名称', context_project_root: '上下文项目根',
               context_workspace_root: '上下文工作区', context_db_path: '上下文 Runtime', context_registry_path: '上下文注册表',
               context_source: '上下文来源', read_note: '读取说明', read_consistency: '一致性边界', read_task_revision: '账本观察标识' }}/>
-        </Card>
+        </details>
       </>}
     </div>;
 }

@@ -96,7 +96,7 @@ function TaskWorkspace({ context, snapshot, revision }: {
     const [closeoutRequested, requestCloseout] = useState(false), [closeoutRevision, refreshCloseout] = useState(0);
     const identity = JSON.stringify([context.context_key, taskId]);
     const details = useRead(detailsRequested ? identity + '/details' : '', `${revision}:${detailRevision}`, signal => api.details(context.context_key, taskId, signal));
-    const closeout = useRead(closeoutRequested ? identity + '/closeout' : '', `${revision}:${closeoutRevision}`, signal => api.closeout(context.context_key, taskId, signal));
+    const closeout = useRead(closeoutRequested ? identity + '/closeout' : '', closeoutRevision, signal => api.closeout(context.context_key, taskId, signal));
     const model = useMemo(() => buildGraph(context.context_key, data), [context.context_key, data]);
     const [selectedId, setSelectedId] = useState(''), [detailOpen, setDetailOpen] = useState(false);
     const [detailTab, setDetailTab] = useState<TaskDetailTab>('overview');
@@ -201,13 +201,14 @@ function TaskWorkspace({ context, snapshot, revision }: {
     return <div className="task-workspace-shell">
     <div className="task-quick-actions" aria-label="Task 详情入口">
       <Button size="small" onClick={() => openTaskDetail('overview')}>Task 概况</Button>
-      <Button size="small" onClick={() => openTaskDetail('blockers')}>阻塞详情</Button>
       <Button size="small" onClick={() => openTaskDetail('verification')}>验证验收</Button>
     </div>
     <section className="task-main" aria-label="Task 当前流程">
       <WorkflowStrip workflow={record(data.workflow)} task={task} ref={workflow} blockers={data.blockers}
+        workItems={data.work_items} onConditions={() => openTaskDetail('blockers')}
         onDocuments={openDocuments} onWorkItem={openWorkItem}/>
     </section>
+    <Problems items={data.problems}/>
     <Tabs className="task-support-tabs" activeKey={supportTab} destroyOnHidden={false}
       onChange={key => { setSupportTab(key); setMaterialTarget(undefined); }} items={[
       { key: 'relations', label: '工作关系', children: <>
@@ -215,7 +216,6 @@ function TaskWorkspace({ context, snapshot, revision }: {
           <Button size="small" onClick={() => graph.current?.locateCurrent()}>定位当前步骤</Button>
           <Button size="small" disabled={task.state !== 'BLOCKED'} onClick={() => locateGraph(model.taskNodeId)}>定位阻塞 Task</Button>
         </div></div>
-        <p className="support-note">沿阶段查看参与角色、工作摘要和事件记录。点击阶段卡片展开明细，或用上方按钮定位当前阶段。</p>
         <Suspense fallback={<div className="graph-canvas graph-loading" role="status">正在加载关系图…</div>}>
           <TaskGraph ref={graph} model={model} selectedId={selectedId} onOpen={onOpen}/>
         </Suspense>
@@ -249,6 +249,6 @@ export function TaskPage({ context, taskId, read, revision, onOpenProject }: {
     return <div className="page task-page"><div className="page-heading"><div>
       <span className="eyebrow">任务工作区 · <button type="button" className="knowledge-link" title="返回项目总览" onClick={() => onOpenProject(context.context_key)}>{context.name}</button></span>
       <h2>{text(task.title) || '任务'} {taskId && <small className="task-id"><code>{taskId}</code></small>}</h2>{displayState && <p>{displayState}</p>}</div></div>
-    <ReadStatus {...read}/>{data && <><Problems items={data.problems}/><TaskWorkspace key={JSON.stringify([context.context_key, taskId])} context={context} snapshot={read.data!} revision={revision}/></>}
+    <ReadStatus {...read}/>{data && <TaskWorkspace key={JSON.stringify([context.context_key, taskId])} context={context} snapshot={read.data!} revision={revision}/>}
   </div>;
 }

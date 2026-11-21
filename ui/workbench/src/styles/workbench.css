@@ -296,12 +296,16 @@ main { min-width: 0; }
 .assessment-reason { min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .assessment-reason p,.assessment-reason .ant-typography { margin: 2px 0; }
 .assessment-reason .ant-btn { padding-left: 0; }
-.execution-summary { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px 24px; padding: 14px 0; margin-top: 12px; border-block: 1px solid var(--border); }
+.execution-summary { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px 24px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+.execution-summary>.step-list-actions { justify-content: flex-end; }
 .execution-summary p { display: flex; flex-direction: column; min-width: 0; margin: 0; gap: 4px; overflow-wrap: anywhere; }
 .execution-summary p>span:first-child,.execution-summary small { color: var(--muted); font-size: 12px; }
-.task-blocker,.step-wait-summary { margin: 12px 0; padding: 10px 12px; background: var(--warning-bg); border-left: 3px solid var(--warning); overflow-wrap: anywhere; }
+.task-blocker { margin: 12px 0; padding: 10px 12px; background: var(--warning-bg); border-left: 3px solid var(--warning); overflow-wrap: anywhere; }
+.task-blocker h4 { margin: 0 0 6px; }
+.task-blocker h4 span { font-weight: 400; }
 .task-blocker p { margin: 4px 0; }
-.task-blocker small,.step-wait-summary small { display: block; color: var(--muted); }
+.blocker-reason+.blocker-reason { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 4px; }
+.blocker-owner .ant-tag { margin-inline-start: 8px; }
 .execution-workflow .execution-list-heading { margin-top: 18px; }
 .step-list-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .execution-empty { padding: 16px; background: var(--muted-surface); border: 1px dashed var(--border); border-radius: var(--radius); }
@@ -318,10 +322,9 @@ main { min-width: 0; }
 .step-summary-content { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .execution-step-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .execution-step-title .ant-tag { margin-inline-end: 0; }
-.step-recent,.participation-latest { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.step-recent { font-size: 12px; }
+.step-recent { font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .disclosure-caret { margin-left: auto; flex: none; color: var(--muted); }
-.execution-step-body { padding: 0 16px 14px; border-top: 1px solid var(--border); min-width: 0; }
+.execution-step-body { padding: 10px 16px 14px; border-top: 1px solid var(--border); min-width: 0; }
 .step-facts,.participation-facts { margin: 12px 0; }
 .step-facts>div,.participation-facts>div { display: grid; grid-template-columns: 150px minmax(0,1fr); gap: 12px; margin: 8px 0; }
 .step-facts dt,.participation-facts dt { color: var(--muted); }
@@ -329,7 +332,10 @@ main { min-width: 0; }
 .step-facts dd p { margin: 0; }
 .step-role-group { margin: 8px 0; }
 .role-participation { border: 1px solid var(--border); border-radius: var(--radius); margin: 6px 0; overflow: hidden; }
-.role-participation-button { appearance: none; border: 0; background: var(--muted-surface); color: var(--text); width: 100%; display: flex; flex-direction: column; gap: 5px; text-align: left; padding: 10px 12px; cursor: pointer; font: inherit; overflow-wrap: anywhere; }
+.role-participation-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.2fr) minmax(0,1.6fr) auto; align-items: start; gap: 8px 12px; padding: 8px 12px; background: var(--muted-surface); overflow-wrap: anywhere; }
+.role-participation-button { appearance: none; border: 0; border-radius: var(--radius); background: transparent; color: var(--text); display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 0 4px; cursor: pointer; font: inherit; overflow-wrap: anywhere; }
+.role-work button { text-align: left; }
+.role-recorded-at { font-size: 12px; }
 .role-participation-button:hover { background: var(--accent-soft); }
 .role-participation-title { display: flex; flex-wrap: wrap; width: 100%; gap: 8px; align-items: center; }
 .role-participation-button>.muted { font-size: 12px; }
@@ -347,10 +353,10 @@ main { min-width: 0; }
 .role-history>summary { padding: 8px 0; cursor: pointer; color: var(--accent); }
 .planned-role { border: 1px dashed var(--border); padding: 10px; color: var(--muted); }
 .step-work-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
-.step-work-links button,.work-results .record-block>summary { scroll-margin-top: calc(var(--header-h) + 12px); }
-.execution-note { margin: 12px 0 0; font-size: 12px; }
+.role-work button,.step-work-links button,.work-results .record-block>summary { scroll-margin-top: calc(var(--header-h) + 12px); }
 .execution-workflow>.ant-alert { margin: 10px 0; }
 .execution-workflow .fields { overflow-wrap: anywhere; }
+main:has(> .task-page) { scroll-margin-top: var(--header-h); }
 .task-page .read-status { margin-block: 8px 12px; }
 .task-page .page-heading { margin-bottom: 8px; }
 .task-quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
@@ -360,8 +366,12 @@ main { min-width: 0; }
 @media(max-width:600px) {
   .task-assessment { gap: 16px; align-items: flex-start; }
   .execution-summary { grid-template-columns: minmax(0,1fr); }
+  .execution-summary>.step-list-actions { justify-content: space-between; }
   .execution-step>summary { padding: 10px 8px; gap: 8px; }
-  .execution-step-body { padding: 0 10px 12px; }
+  .execution-step-body { padding: 10px 10px 12px; }
+  .role-participation-row { grid-template-columns: minmax(0,1fr) auto; }
+  .role-recorded-at { grid-area: 1 / 2; }
+  .role-work,.role-progress { grid-column: 1 / -1; }
   .step-facts>div,.participation-facts>div { grid-template-columns: minmax(0,1fr); gap: 3px; }
   .role-participation-detail { padding: 10px; }
   .role-event-controls label { flex-direction: column; align-items: flex-start; width: 100%; }

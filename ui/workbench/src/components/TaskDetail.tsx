@@ -7,6 +7,7 @@ import { CopyText, Disclosure, Fields, Problems, ReadStatus } from './Facts';
 import { VerificationDetail, Outcome } from './VerificationDetail';
 import { EvidenceList } from './EvidenceList';
 import { CloseoutPanel } from './CloseoutPanel';
+import { CurrentBlockers, responsibilityLabel } from './ExecutionWorkflow';
 import { QuickWorkflowSummary } from './QuickWorkflowSummary';
 const tabs = [['overview', '概况'], ['blockers', '阻塞'], ['verification', '验证与验收'], ['evidence', '证据与交付']] as const;
 export type TaskDetailTab = typeof tabs[number][0];
@@ -55,64 +56,57 @@ export function TaskDetail({ object, snapshot, initialTab, defaultTab, details, 
   const video = task.domain === 'video';
   const retired = workflow.retired === true;
   const mismatch = !!details.data && details.data.read.task_revision !== snapshot.read.task_revision;
+  const preflight = <CloseoutPanel read={closeout} requested={closeoutRequested} onRequest={onCloseout}
+    taskRevision={snapshot.read.task_revision} currentStep={record(execution.current_step)}/>;
   return <dialog className="task-detail task-detail-modal" ref={dialog} aria-labelledby="detail-heading" onCancel={e => { e.preventDefault(); onClose(); }} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}>
     <header className="detail-heading"><div><span className="eyebrow">{object.kind === 'task' ? 'Task' : 'WorkItem'} 详情</span><h3 id="detail-heading">{object.title || '标题未记录'}</h3></div><Button size="small" ref={close} onClick={onClose} aria-label="关闭详情并返回节点">关闭</Button></header>
     {/* Ant Design's Tabs owns the tablist/tab/tabpanel roles and the arrow/Home/End keys that the
         previous roving tabindex implemented; `destroyOnHidden` keeps exactly one pane mounted. */}
     <Tabs className="detail-tabs" activeKey={tab} onChange={key => selectTab(key as Tab)} destroyOnHidden
       items={tabs.map(([key, label]) => ({ key, label, children: key === tab ? <div className="detail-body nowheel nopan">
-      <CopyText value={object.objectId}/><p>{stateLabel(object.kind, object.status)}</p>
       {retired && <Alert type="info" showIcon title="已退休 · 历史只读"
-        description={`行政退休与流程完成分别记录；最后正式工作流状态：${stateLabel('task', task.state)}。未验项与历史证据保持原记录。`}/>}
+        description={`最后正式工作流状态：${stateLabel('task', task.state)}。`}/>}
       {tab === 'overview' ? <>
-        <Fields value={{ object_type: object.kind, owner: object.owner, parent_task: object.parentTaskId,
-          relationship: object.kind === 'task' ? '当前 Task' : object.belongs ? '由正式 task_id 确认' : '归属未确认', issues: object.issues }}
-          labels={{ object_type: '对象类型', owner: object.kind === 'task' && terminal ? 'Task 责任记录（历史，不是当前执行者）' : '对象负责人', parent_task: '父 Task', relationship: '归属依据', issues: '数据问题' }}/>
-        <section className="detail-section"><h4>{retired ? 'Task 历史工作流' : '当前 Task 的实际流程'}</h4>
+        <CopyText value={object.objectId}/><p>{stateLabel(object.kind, object.status)}</p>
+        {object.kind !== 'task' && <p>归属 Task：{object.parentTaskId || '未确认'}{!object.belongs && ' · 归属未核实'}</p>}
+        {!!object.issues.length && <ul className="blocker-list">{object.issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>}
+        {object.kind === 'task' && <>
           {quick && <QuickWorkflowSummary workflow={workflow} terminal={terminal}/>}
-          <Fields value={{ task_state: stateLabel('task', task.state), ...(retired ? { retirement_state: '已退休（历史只读）' } : {}),
-            current: retired ? '无（已退休，历史只读）' : terminal ? '无（任务已结束）' : stageLabel(workflow.current_step) || '当前步骤未解析',
-            next: retired ? '无（已退休，历史只读）' : terminal ? '无（任务已结束）' : stageLabel(workflow.next_step) || '下一步未解析',
-            current_source: workflow.current_step_source, next_source: workflow.next_step_source,
-            ...(video ? { domain: '视频制作' } : !quick ? { effective_level: workflow.effective_level } : {}),
-            coordinator: execution.coordinator || '历史未记录', coordinator_source: execution.coordinator_source || '历史未记录',
-            current_roles: retired ? '无（已退休，历史只读）' : terminal ? '无（任务已结束）' : execution.current_roles,
-            next_responsibility: workflowNextResponsibility(workflow, terminal),
-            completed_at: task.completed_at, read_at: snapshot.read.completed_at }} labels={{ task_state: retired ? '最后正式工作流状态' : 'Task 正式状态', retirement_state: '行政退休记录', current: '当前步骤', next: '下一步', current_source: '当前步骤来源', next_source: '下一步来源', effective_level: '有效流程等级', coordinator: 'Task 协调责任（独立于本步角色）', completed_at: '正式结束时间', read_at: '读取时间' }}/>
-          <Disclosure label="路由与来源字段"><Fields value={{ current: workflow.current_step, next: workflow.next_step, route: workflow.route }}/></Disclosure>
-        </section>
+          <Fields value={{ current: terminal ? '任务已结束' : stageLabel(workflow.current_step) || '未记录',
+            next: terminal ? '无后续执行' : stageLabel(workflow.next_step) || '未记录',
+            ...(!terminal ? { next_responsibility: responsibilityLabel(workflowNextResponsibility(workflow, false)) } : {}),
+            ...(terminal ? { completed_at: task.completed_at } : {}) }}
+            labels={{ current: '当前步骤', next: '下一步', completed_at: '正式结束时间' }}/>
+        </>}
         {video && <section className="detail-section"><h4>媒体导出与检查</h4>
           <Fields value={record(workflow.media)} labels={{ version: '导出版本', main: '主文件', status: '记录状态',
             event_id: '导出事件', recorded_at: '登记时间', hashes_rechecked: '本次重查文件哈希',
             qc: '当前导出的检查记录', delivery_status: '交付记录', issues: '当前待处理事项' }}/></section>}
-        <Disclosure label="Task 最近记录与工作段（只读）">
-          <p className="muted">以下属于父 Task {String(task.task_id ?? '')}，不是所选 WorkItem 的独立结论；摘要不决定 PASS，工作段不证明执行者在线。</p>
-          <Fields value={{ latest_checkpoint: snapshot.data.latest_checkpoint, summary: snapshot.data.summary,
-            summary_source: snapshot.data.summary_source, work_sessions: snapshot.data.work_sessions }}
-            labels={{ latest_checkpoint: '最近 checkpoint 记录', summary: 'Task 摘要', summary_source: '摘要来源', work_sessions: '已记录工作段' }}/>
+        <Disclosure label="对象与任务来源">
+          <Fields value={{ owner: object.owner, latest_checkpoint: snapshot.data.latest_checkpoint, summary: snapshot.data.summary,
+            summary_source: snapshot.data.summary_source, work_sessions: snapshot.data.work_sessions, records: object.records }}
+            labels={{ owner: '登记负责人', latest_checkpoint: '最近 checkpoint 记录', summary: 'Task 摘要', work_sessions: '已记录工作段', records: '所选对象原始记录' }}/>
         </Disclosure>
-        <Disclosure label={<>本次对象原始字段{object.records.length > 1 ? ` · ${object.records.length} 条歧义记录` : ''}</>}>{object.records.map((row, i) => <div className="record-block" key={i}><Fields value={row}/></div>)}</Disclosure>
-        <p className="muted">WorkItem 完成不代表 Task 已结单；没有可信执行器观察时，负责人也不代表正在运行。</p>
       </> : <>
-        {object.kind !== 'task' && <p className="detail-scope">以下是 <strong>Task {String(task.task_id ?? '')}</strong> 的读取结果{object.kind === 'work_item' ? '，不是所选 WorkItem 的独立验收或交付结论' : ''}。</p>}
+        {object.kind !== 'task' && <p className="detail-scope">所属 Task：<strong>{String(task.task_id ?? '')}</strong></p>}
+        {tab === 'blockers' && <CurrentBlockers workflow={workflow} task={task} blockers={snapshot.data.blockers}/>}
         <Button onClick={onRefreshDetails} disabled={details.loading}>重新读取详情</Button>
-        <ReadStatus {...details}/>
-        {mismatch && <p className="warning" role="status">详情与画布的账本版本不同，不能合并为同一次快照。请重新读取页面，以下保留各自读取时间。</p>}
+        <ReadStatus {...details} showDetails={false}/>
+        {mismatch && <p className="warning" role="status">详情与当前任务的读取版本不同。请关闭详情，重新读取任务。</p>}
         {data && <Problems items={data.problems}/>}
-        {data && record(data.acceptance).visual_evidence_pending === true && <Alert type="info" showIcon
-          title="页面视觉验收待完成" description="证据清单尚未登记。当前数据已读取，验收通过和结单时仍需检查必需证据。"/>}
+        {data && tab === 'verification' && record(data.acceptance).visual_evidence_pending === true &&
+          <Alert type="info" showIcon title="页面视觉验收待完成" description="证据清单尚未登记。"/>}
         {tab === 'blockers' && <>
-          {data && <><Fields value={data.blockers} labels={{ waiting: '当前结构化等待', legacy_blocker: '历史自由文本阻塞', source: '来源', note: '解释边界' }}/>
-            <Disclosure label="Verification / Review / Delivery 的原始阻塞字段"><Fields value={{ verification: record(record(data.verification).recorded).detail, review: record(record(data.review).recorded).detail, delivery: record(record(data.delivery).recorded).detail }}/></Disclosure></>}
-          <CloseoutPanel read={closeout} requested={closeoutRequested} onRequest={onCloseout} taskRevision={snapshot.read.task_revision}/>
+          {preflight}
+          {data && <Disclosure label="阻塞来源与专业记录"><Fields value={{ ...data.blockers,
+            verification: record(record(data.verification).recorded).detail, review: record(record(data.review).recorded).detail,
+            delivery: record(record(data.delivery).recorded).detail }}/></Disclosure>}
         </>}
         {tab === 'verification' && data && <VerificationDetail data={data}/>}
         {tab === 'evidence' && data && <>
-          <EvidenceList value={data.evidence}/><Outcome title={video ? '媒体交付记录' : 'Delivery（不等于正式结单或已上线）'} value={data.delivery}/>
-          {/* `stateLabel` needs the object kind, which `Fields` cannot know, so the kind is applied here. */}
-          <Fields value={{ ...record(data.task), state: stateLabel('task', record(data.task).state) }} labels={{ task_id: '正式 Task', state: '正式状态', phase: '阶段', owner: terminal ? 'Task 责任记录（历史）' : 'Task 负责人', completed_at: '正式结束时间' }}/>
-          <p className="muted">未取得单独的“用户接收交付”事实时保持未记录，不从 Owner accept、Delivery READY 或 WorkItem 完成推断。</p>
-          <CloseoutPanel read={closeout} requested={closeoutRequested} onRequest={onCloseout} taskRevision={snapshot.read.task_revision}/>
+          <EvidenceList value={data.evidence}/><Outcome title={video ? '媒体交付记录' : '交付记录'} value={data.delivery}/>
+          <p>用户接收：未记录</p>
+          {preflight}
         </>}
       </>}
     </div> : null, }))}/>

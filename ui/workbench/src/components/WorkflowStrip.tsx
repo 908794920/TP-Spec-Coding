@@ -1,11 +1,13 @@
 import { forwardRef } from 'react';
-import type { FactRecord } from '../types';
+import type { FactRecord, WorkItems } from '../types';
 import { ExecutionWorkflow } from './ExecutionWorkflow';
 export interface WorkflowHandle { locateCurrent: () => void }
 export interface WorkflowProps {
     workflow: FactRecord;
     task: FactRecord;
     blockers?: unknown;
+    workItems: WorkItems;
+    onConditions: () => void;
     onDocuments?: () => void;
     onWorkItem?: (id: string) => void;
 }

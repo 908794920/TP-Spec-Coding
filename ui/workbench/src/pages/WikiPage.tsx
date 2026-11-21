@@ -4,7 +4,7 @@ import { ArrowLeftOutlined, BookOutlined, ClockCircleOutlined, FileSearchOutline
 import ReactMarkdown from 'react-markdown';
 import rehypeSlug from 'rehype-slug';
 import remarkGfm from 'remark-gfm';
-import { Empty, Problems, ReadStatus } from '../components/Facts';
+import { Disclosure, Empty, Problems, ReadStatus } from '../components/Facts';
 import { timestampText, text } from '../facts';
 import { useRead } from '../useRead';
 import { wikiApi } from '../wikiApi';
@@ -79,16 +79,15 @@ function DaysSelector({ value, onChange }: { value: WikiDays; onChange: (value: 
         value={value} onChange={next => onChange(Number(next) as WikiDays)}/>;
 }
 
-function WikiMetric({ label, value, detail, icon, onClick }: {
+function WikiMetric({ label, value, icon, onClick }: {
     label: string;
     value: string;
-    detail: string;
     icon: ReactNode;
     onClick: () => void;
 }) {
     return <button type="button" className="wiki-metric" onClick={onClick}>
       <span className="wiki-metric-icon" aria-hidden="true">{icon}</span>
-      <span className="wiki-metric-copy"><span className="wiki-metric-label">{label}</span><strong>{value}</strong><small>{detail}</small></span>
+      <span className="wiki-metric-copy"><span className="wiki-metric-label">{label}</span><strong>{value}</strong></span>
     </button>;
 }
 
@@ -124,6 +123,8 @@ function sourceLabel(document: WikiDocumentMetadata | undefined): string {
     return parts.length ? parts.join(' / ') : '—';
 }
 
+const unavailableManifest = new Set(['missing', 'invalid']);
+
 function OverviewTab({ data, onMetric, onTrend, onProject, onDocument, onAttention }: {
     data?: WikiOverviewData;
     onMetric: (action: 'records' | 'hit-records' | 'documents' | 'adopted') => void;
@@ -138,32 +139,35 @@ function OverviewTab({ data, onMetric, onTrend, onProject, onDocument, onAttenti
     useEffect(() => { if (trendElement.current) trendElement.current.scrollLeft = trendElement.current.scrollWidth; }, [data]);
     const hasActivity = trend.some(item => (item.searches ?? 0) > 0 || (item.adopted_tasks ?? 0) > 0);
     const maxActivity = Math.max(1, ...trend.flatMap(item => [item.searches ?? 0, item.hits ?? 0, item.adopted_tasks ?? 0]));
-    const collection = collectionLabel(data?.collection);
-    const maintenance = data?.maintenance;
-    const adoption = data?.adoption_collection;
-    const adoptionLabel = adoption?.status === 'available' ? { label: '已读取', color: 'success' }
-        : adoption?.status === 'partial' ? { label: '部分可读', color: 'warning' }
-        : adoption?.status === 'unavailable' ? { label: '读取失败', color: 'error' }
-        : { label: '尚无可读取范围', color: 'default' };
+    const collection = data?.collection, maintenance = data?.maintenance, adoption = data?.adoption_collection;
+    const shortCoverage = collection?.status === 'available' && trend.some(item => item.searches == null);
+    const sourceMissing = !!collection?.unresolved_contexts;
+    const missingManifest = maintenance?.repositories?.some(repo => unavailableManifest.has(repo.status ?? ''));
     return <div className="wiki-overview">
-      <div className="wiki-collection-note">
-        <strong>检索日志</strong><Tag color={collection.color}>{collection.label}</Tag>
-        <span>{data?.collection?.note || '统计数据来自已记录的 Wiki 读取与采用证据。'}</span>
-        <span className="muted">保留 {numberOrDash(data?.collection?.retention_days)} 天 · 可访问项目 {numberOrDash(data?.collection?.accessible_projects)} / {numberOrDash(data?.collection?.total_projects)} · 采集开始 {dateOrDash(data?.collection?.started_at)}</span>
-        {!!data?.collection?.missing_projects?.length && <span className="wiki-coverage-note">未完整采集：{data.collection.missing_projects.join('、')}</span>}
-        {!!data?.collection?.unresolved_contexts && <span className="wiki-coverage-note">另有 {data.collection.unresolved_contexts} 个注册上下文无法解析，详见读取提示。</span>}
-      </div>
-      <div className="wiki-collection-note">
-        <strong>采用记录</strong><Tag color={adoptionLabel.color}>{adoptionLabel.label}</Tag>
-        <span>{adoption?.note || '正在读取任务采用记录…'}</span>
-        {!!adoption?.missing_projects?.length && <span className="wiki-coverage-note">不可完整读取：{adoption.missing_projects.join('、')}</span>}
-      </div>
+      {collection && (collection.status !== 'available' || shortCoverage) && <div className="wiki-collection-note">
+        <strong>检索日志</strong><Tag color={collectionLabel(collection).color}>{collectionLabel(collection).label}</Tag>
+        <span>{shortCoverage ? '所选时间范围内部分日期缺少检索采集。' : '检索指标未完整取得。'}</span>
+        {!!collection.missing_projects?.length && <span className="wiki-coverage-note">缺少：{collection.missing_projects.join('、')}</span>}
+        {sourceMissing && <span className="wiki-coverage-note">另有 {collection.unresolved_contexts} 个项目上下文不可读。</span>}
+      </div>}
+      {adoption && adoption.status !== 'available' && <div className="wiki-collection-note">
+        <strong>采用记录未完整取得</strong>
+        {!!adoption.missing_projects?.length && <span>{adoption.missing_projects.join('、')}</span>}
+      </div>}
       <div className="wiki-metrics-grid" aria-label="Wiki 使用指标">
-        <WikiMetric label="AI 搜索次数" value={numberOrDash(metrics?.searches)} detail="打开全部检索记录" icon={<SearchOutlined/>} onClick={() => onMetric('records')}/>
-        <WikiMetric label="命中率" value={ratioOrDash(metrics?.hit_rate)} detail="查看命中记录" icon={<FileSearchOutlined/>} onClick={() => onMetric('hit-records')}/>
-        <WikiMetric label="已记录采用任务数" value={numberOrDash(metrics?.adopted_tasks)} detail="浏览采用文档" icon={<BookOutlined/>} onClick={() => onMetric('adopted')}/>
-        <WikiMetric label="已记录采用文档数" value={numberOrDash(metrics?.adopted_documents)} detail="浏览采用文档" icon={<ReadOutlined/>} onClick={() => onMetric('adopted')}/>
+        <WikiMetric label="AI 搜索次数" value={numberOrDash(metrics?.searches)} icon={<SearchOutlined/>} onClick={() => onMetric('records')}/>
+        <WikiMetric label="命中率" value={ratioOrDash(metrics?.hit_rate)} icon={<FileSearchOutlined/>} onClick={() => onMetric('hit-records')}/>
+        <WikiMetric label="已记录采用任务数" value={numberOrDash(metrics?.adopted_tasks)} icon={<BookOutlined/>} onClick={() => onMetric('adopted')}/>
+        <WikiMetric label="已记录采用文档数" value={numberOrDash(metrics?.adopted_documents)} icon={<ReadOutlined/>} onClick={() => onMetric('adopted')}/>
       </div>
+      {data && <Disclosure label="统计口径">
+        <p>{collection?.note}</p>
+        <p>检索日志保留 {numberOrDash(collection?.retention_days)} 天 · 采集开始 {dateOrDash(collection?.started_at)}</p>
+        <p>可读取检索日志的项目 {numberOrDash(collection?.accessible_projects)} / {numberOrDash(collection?.total_projects)}
+          {' · '}可读取采用记录的项目 {numberOrDash(adoption?.accessible_projects)} / {numberOrDash(adoption?.total_projects)}</p>
+        <p>采用任务按 Task 去重，文档按项目及文档标识去重。项目使用归到记录中的请求项目。</p>
+        <p>“—”表示数据未取得或比率没有样本。</p>
+      </Disclosure>}
       <Card size="small" className="wiki-section-card" title="当前筛选范围内最近已记录活动">
         <div className="wiki-recent-activity">{(['search', 'read', 'adopted'] as const).map(kind => {
             const item = data?.recent_activity?.[kind];
@@ -177,7 +181,7 @@ function OverviewTab({ data, onMetric, onTrend, onProject, onDocument, onAttenti
             </div>;
         })}</div>
       </Card>
-      <Card size="small" className="wiki-section-card" title={<span><ClockCircleOutlined/> 每日趋势</span>} extra={<span className="muted">点击日期查看该日记录</span>}>
+      <Card size="small" className="wiki-section-card" title={<span><ClockCircleOutlined/> 每日趋势</span>}>
         {hasActivity ? <>
           <div className="wiki-trend-legend"><span>搜索</span><span>命中</span><span>采用任务</span></div>
           <div ref={trendElement} className="wiki-trend" aria-label="每日使用趋势">{trend.map(item => {
@@ -187,30 +191,32 @@ function OverviewTab({ data, onMetric, onTrend, onProject, onDocument, onAttenti
               <small>{item.date.slice(5)}</small>
             </button>;
           })}</div>
-        </> : <Empty title={data?.collection?.status === 'not_collected' ? '尚未开始采集检索使用' : '当前范围暂无使用趋势'}>后续真实搜索与已记录采用会显示在这里；历史未记录不代表未使用。</Empty>}
+        </> : <Empty title={data?.collection?.status === 'not_collected' ? '尚未开始采集检索使用' : '当前范围暂无使用趋势'}/>}
 
       </Card>
       <Card size="small" className="wiki-section-card" title="项目使用">
         {(data?.project_usage ?? []).length ? <ul className="wiki-usage-list">{(data?.project_usage ?? []).map((row: WikiProjectUsageRow) => <li key={row.key}>
           <button type="button" onClick={() => onProject(row.key)}><span className="wiki-usage-name">{row.name || row.key}</span><span>搜索 {numberOrDash(row.searches)}</span><span>命中率 {ratioOrDash(row.hit_rate)}</span><span>阅读 {numberOrDash(row.reads)}</span><span>采用 {numberOrDash(row.adopted_tasks)}</span><time>{dateOrDash(row.last_used)}</time></button>
-        </li>)}</ul> : <Empty title="暂无项目使用记录">项目使用数据尚未采集或当前范围没有记录。</Empty>}
+        </li>)}</ul> : <Empty title="当前范围未取得项目使用记录"/>}
       </Card>
       <div className="wiki-two-columns">
         <Card size="small" className="wiki-section-card" title="需要关注">
           {(data?.attention ?? []).length ? <ul className="wiki-attention-list">{(data?.attention ?? []).map((item: WikiAttentionRow, index) => <li key={`${item.kind}:${item.title}:${index}`}>
             <button type="button" onClick={() => onAttention(item)}><Tag color={statusColor(item.kind)}>{attentionLabel(item.kind)}</Tag><span>{item.title}</span><strong>{numberOrDash(item.count)}</strong></button>
-          </li>)}</ul> : <Empty title="暂无关注项">当前没有已记录的重复零命中、过期或反复读取但未记录采用的情况。</Empty>}
+          </li>)}</ul> : <Empty title="当前范围没有关注项"/>}
         </Card>
         <Card size="small" className="wiki-section-card" title="热门文档">
-          {(data?.popular ?? []).length ? <ul className="wiki-popular-list">{(data?.popular ?? []).map(document => <li key={document.key}><button type="button" onClick={() => onDocument(document.key)}><span>{document.title || document.path || document.key}</span><small>{sourceLabel(document)}</small><em>阅读 {numberOrDash(document.reads)} · 采用 {numberOrDash(document.adopted_tasks)} · {dateOrDash(document.last_used)}</em></button></li>)}</ul> : <Empty title="暂无热门文档">当前时间范围内没有文档阅读记录。</Empty>}
+          {(data?.popular ?? []).length ? <ul className="wiki-popular-list">{(data?.popular ?? []).map(document => <li key={document.key}><button type="button" onClick={() => onDocument(document.key)}><span>{document.title || document.path || document.key}</span><small>{sourceLabel(document)}</small><em>阅读 {numberOrDash(document.reads)} · 采用 {numberOrDash(document.adopted_tasks)} · {dateOrDash(document.last_used)}</em></button></li>)}</ul> : <Empty title="当前范围未取得热门文档"/>}
         </Card>
       </div>
       <Card size="small" className="wiki-section-card" title="维护概况">
-        <div className="wiki-maintenance-summary"><span><small>文档</small><strong>{numberOrDash(maintenance?.document_count)}</strong></span><span><small>仓库</small><strong>{numberOrDash(maintenance?.repo_count)}</strong></span><span><small>最近更新</small><strong>{dateOrDash(maintenance?.updated_at)}</strong></span></div>
+        <div className="wiki-maintenance-summary"><span><small>文档</small><strong>{numberOrDash(sourceMissing || missingManifest ? null : maintenance?.document_count)}</strong></span><span><small>仓库</small><strong>{numberOrDash(sourceMissing ? null : maintenance?.repo_count)}</strong></span><span><small>最近更新</small><strong>{dateOrDash(maintenance?.updated_at)}</strong></span></div>
+        {sourceMissing && <p className="warning">部分 Wiki 来源不可读，文档和仓库总数未取得。</p>}
+        {!sourceMissing && missingManifest && <p className="warning">有仓库的 Wiki 清单不可读，文档总数未取得。</p>}
         {(maintenance?.repositories ?? []).length || (data?.indexes ?? []).length ? <Collapse className="wiki-maintenance-repositories" size="small" items={[{ key: 'details', label: `查看仓库维护明细 · ${(maintenance?.repositories ?? []).length || 0} 个仓库`, children: <div className="wiki-maintenance-details">
             {(maintenance?.repositories ?? []).length ? <Collapse ghost size="small" items={(maintenance?.repositories ?? []).map((repo, index) => ({
                 key: `${repo.repo_id || repo.project_key || 'repo'}:${index}`,
-                label: <span className="wiki-repo-label"><span>{repo.project_name || repo.project_key || '项目未记录'} · {repo.repo_id || '仓库未记录'}</span><Tag color={statusColor(repo.status)}>{statusText(repo.status)}</Tag><small>{numberOrDash(repo.document_count)} 篇</small></span>,
+                label: <span className="wiki-repo-label"><span>{repo.project_name || repo.project_key || '项目未记录'} · {repo.repo_id || '仓库未记录'}</span><Tag color={statusColor(repo.status)}>{statusText(repo.status)}</Tag><small>{numberOrDash(unavailableManifest.has(repo.status ?? '') ? null : repo.document_count)} 篇</small></span>,
                 children: <div className="wiki-repo-detail"><p>更新时间：{dateOrDash(repo.updated_at)}</p>{repo.report && Object.keys(repo.report).length ? <pre>{JSON.stringify(repo.report, null, 2)}</pre> : <p className="muted">维护报告未记录。</p>}</div>,
             }))}/> : <p className="muted">仓库维护明细未记录。</p>}
             {!!(data?.indexes ?? []).length && <div className="wiki-maintenance-indexes"><h4>索引状态</h4><ul className="wiki-index-list">{(data?.indexes ?? []).map((item, index) => <li key={`${item.source_id || 'source'}:${index}`}><code>{item.source_id || '来源未记录'}</code><Tag color={statusColor(item.status)}>{statusText(item.status)}</Tag><time>{dateOrDash(item.indexed_at)}</time>{['missing', 'not_indexed', 'pending', 'failed_index'].includes(String(item.status || '').toLowerCase()) && <small>需要通过 CLI 维护建立索引</small>}</li>)}</ul></div>}
@@ -258,7 +264,6 @@ function DocumentsTab({ project, days, revision, adoptedOnly, onAdoptedChange, o
           <Button type="primary" htmlType="submit" icon={<SearchOutlined/>}>检索</Button>
           <Checkbox checked={adoptedOnly} onChange={event => { onAdoptedChange(event.target.checked); setPage(1); }}>仅显示已采用文档</Checkbox>
         </form>
-        <p className="muted wiki-filter-note">检索只读取已登记的文档，不会写入检索记录或手动增加统计。</p>
       </Card>
       <WikiReadStatus read={read}/>
       {data && <><Problems items={problemItems(data.problems)}/>

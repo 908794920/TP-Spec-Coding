@@ -135,6 +135,17 @@ export interface CloseoutCheck extends FactRecord {
     issues: unknown[];
     facts: FactRecord;
 }
+export interface CloseoutCondition {
+    node: string;
+    status: string;
+    issues: string[];
+    responsibility: string | null;
+}
+export interface CloseoutNode extends Omit<CloseoutCondition, 'node'> {
+    id: string;
+    title: string;
+    facts: FactRecord;
+}
 export interface CloseoutData extends WorkflowData {
     task_id: string;
     state: string;
@@ -143,6 +154,9 @@ export interface CloseoutData extends WorkflowData {
     acceptance_issues: unknown[];
     route: FactRecord | null;
     checks?: CloseoutCheck[];
+    current_stage_blockers?: CloseoutCondition[];
+    downstream_closeout_pending?: CloseoutCondition[];
+    nodes?: CloseoutNode[];
     unknowns?: string[];
     next_actions?: FactRecord[];
     already_terminal?: boolean;
