@@ -114,13 +114,6 @@ def _query_hash(value: Any) -> str:
     return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
 
 
-def _portable_receipt(value: Any) -> Optional[str]:
-    text = str(value or "").strip()
-    if not text or len(text) > 128 or not _RECEIPT_RE.fullmatch(text):
-        return None
-    return text
-
-
 def _storage_root() -> Path:
     return _canonical(environment.user_tp_spec_root()) / "wiki"
 

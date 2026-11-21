@@ -374,20 +374,6 @@ def validate_staged_source(wiki_repo_root: Path, repo_root: Path, source_cfg: Di
     return changeset, pending
 
 
-def discard_staged(wiki_repo_root: Path) -> None:
-    """Discard transient run state while preserving the committed baseline."""
-    paths = snapshot_paths(wiki_repo_root)
-    for name in ("pending", "changeset", "plan", "verification", "audit_plan", "audit"):
-        p = paths[name]
-        if p.exists():
-            p.unlink()
-
-
-def read_staged(wiki_repo_root: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    paths = snapshot_paths(wiki_repo_root)
-    return _read_json(paths["changeset"]), _read_json(paths["pending"])
-
-
 def commit_baseline(wiki_repo_root: Path, *, repo_id: str | None = None, repo_root: Path | None = None, source_cfg: Dict[str, Any] | None = None, require_verification: bool = True) -> Dict[str, Any]:
     paths = snapshot_paths(wiki_repo_root)
     changeset = _read_json(paths["changeset"])

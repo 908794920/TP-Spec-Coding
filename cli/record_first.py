@@ -601,7 +601,7 @@ def _latest_development_change_set(conn, task_id: str) -> Optional[Dict[str, Any
             continue
         try:
             detail = json.loads(row["detail_json"] or "{}")
-        except Exception:
+        except (ValueError, TypeError, RecursionError):
             continue
         if not isinstance(detail, dict):
             continue
@@ -639,7 +639,7 @@ def _latest_verification(conn, task_id: str, task_dir: Optional[Path] = None) ->
         detail = {}
         try:
             detail = json.loads(row["detail_json"] or "{}")
-        except Exception:
+        except (ValueError, TypeError, RecursionError):
             pass
         recorded = str(detail.get("decision") or "").upper()
         if recorded:

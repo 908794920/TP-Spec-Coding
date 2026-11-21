@@ -1,24 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Current five-state artifact validation helpers for TP-Spec-Coding v5.2.6.
-
-This module contains only artifact/evidence validation and trusted current-role
-checks. Retired pre-Record-first transition helpers are not imported here.
-"""
+"""Artifact and evidence validation helpers for the current workflow."""
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from . import db as dbmod
-from . import event_policies
 from . import frontmatter
-from . import projection_cmd
 from .digest import compute_architecture_subject_digest_for_detail
-from .version import active_version
 
 # 稳定错误码（ValidationIssue.code）
 REQUIREMENT_KNOWLEDGE_MISSING = "REQUIREMENT_KNOWLEDGE_MISSING"
@@ -63,15 +54,6 @@ class ValidationIssue:
             "field": self.field,
             "severity": self.severity,
         }
-
-
-@dataclass
-class ValidationResult:
-    ok: bool
-    issues: List[ValidationIssue] = field(default_factory=list)
-
-    def error_codes(self) -> List[str]:
-        return [i.code for i in self.issues]
 
 
 @dataclass
@@ -259,41 +241,6 @@ def _frontmatter_dict(task_dir: Path, name: str) -> Optional[Dict[str, Any]]:
     return parse_frontmatter_yaml(_read(path), name)
 
 
-def _file_exists(task_dir: Path, name: str) -> bool:
-    return (task_dir / name).is_file()
-
-
-def _trusted_arch_pass(conn, task_id: str, *,
-                       artifact_path=None, expected_subject_digest=None,
-                       evidence_dir=None):
-    """门禁统一入口：tp-software-architect 的 ARCHITECTURE PASS 可信事件。
-
-    Final Hardening（INV-03）：不再信任 event_type/actor_role/summary 三元组，
-    通过 event_policies.load_trusted_governance_event 完成 producer/schema/
-    transaction_id/digest/evidence 全链校验；缺失返回 None。
-    Third Hardening（P0-1/P0-2/P1-1）：可传入 artifact_path（校验事件
-    artifact_digest == 当前评审文件）、expected_subject_digest（校验受评审内容
-    绑定）与 review_kind=ARCHITECTURE。
-    Fourth Hardening（P0-2）：可传入 evidence_dir 校验结构化证据链
-    （path + sha256，任一删除/替换使 PASS 失效）。
-    """
-    return event_policies.load_trusted_governance_event(
-        conn, task_id,
-        event_type="REVIEW_COMPLETED",
-        actor="tp-software-architect",
-        decision="PASS",
-        review_kind="ARCHITECTURE",
-        artifact_path=artifact_path,
-        expected_subject_digest=expected_subject_digest,
-        evidence_dir=evidence_dir,
-    )
-
-
-def _has_arch_review_event(conn, task_id: str) -> bool:
-    """是否存在受信架构评审 PASS（完整身份链，非三元组）。"""
-    return _trusted_arch_pass(conn, task_id) is not None
-
-
 def _design_digest(task_dir: Path, detail=None) -> str:
     """当前设计 digest（受评审内容指纹）。
 
@@ -302,59 +249,12 @@ def _design_digest(task_dir: Path, detail=None) -> str:
     return compute_architecture_subject_digest_for_detail(task_dir, detail)
 
 
-def _latest_arch_pass_digest(conn, task_id: str) -> Optional[str]:
-    """最近一次受信架构评审 PASS 事件 detail 中的 subject/design digest。"""
-    trusted = _trusted_arch_pass(conn, task_id)
-    if trusted is None:
-        return None
-    detail = trusted.detail
-    nested = detail.get("detail")
-    if isinstance(nested, dict):
-        digest = nested.get("subject_digest") or nested.get("design_digest")
-    else:
-        digest = None
-    if not digest:
-        digest = detail.get("subject_digest") or detail.get("design_digest")
-    return digest or None
-
-
-def _risk_levels(task) -> Tuple[str, str]:
-    return str(task["risk_level"] or ""), str(task["flow_level"] or "")
-
-
 def _effective_level(risk: str, flow: str) -> str:
     """取两者较高等级。"""
     order = {"L0": 0, "L1": 1, "L2": 2, "L3": 3}
     r = order.get(risk, 0)
     f = order.get(flow, 0)
     return risk if r >= f else flow
-
-
-def _check_blocking_clarifications(task_dir: Path, issues: List[ValidationIssue]) -> None:
-    data = _frontmatter_dict(task_dir, "requirement-clarifications.md")
-    if data is None:
-        return  # L1 起在工件存在性检查中处理
-    blocking_open = data.get("blocking_open")
-    if blocking_open is not None:
-        # Final Hardening（P1-4）：强类型——非整数值（如字符串 "false"/"0"）视为非法，
-        # 禁止把 "false" 当 0 放行。
-        try:
-            n = int(blocking_open)
-        except (TypeError, ValueError):
-            issues.append(ValidationIssue(
-                code=BLOCKING_CLARIFICATION_INVALID,
-                message=f"blocking_open must be an integer, got {blocking_open!r}",
-                artifact="requirement-clarifications.md",
-                field="blocking_open",
-            ))
-            return
-        if n > 0:
-            issues.append(ValidationIssue(
-                code=BLOCKING_CLARIFICATION_OPEN,
-                message="blocking clarifications must all be closed before proceeding",
-                artifact="requirement-clarifications.md",
-                field="blocking_open",
-            ))
 
 
 def _check_decisions(task_dir: Path, issues: List[ValidationIssue], require_decisions: bool) -> None:
@@ -431,154 +331,6 @@ def _check_decisions(task_dir: Path, issues: List[ValidationIssue], require_deci
     # *actual* decisions are blockers.
 
 
-def _l1_risk_signals(task_dir: Path) -> List[str]:
-    """L1 真实风险触发（P1-3）：扫描 task.md 风险区，命中高风险信号要求架构评审。
-
-    至少覆盖：权限、DDL、数据删除、跨模块、外部系统、并发、高风险用户确认、scope change。
-    """
-    path = task_dir / "task.md"
-    if not path.is_file():
-        return []
-    try:
-        text = _read(path)
-    except OSError:
-        return []
-    m = re.search(r"##[^\n]*风险[^\n]*\n(.*?)(?=\n## |\Z)", text, re.DOTALL)
-    risk_section = m.group(1) if m else ""
-    signals: List[str] = []
-    for kw in ("权限", "DDL", "数据删除", "跨模块", "外部系统", "并发", "高风险用户确认", "scope change"):
-        if re.search(re.escape(kw), risk_section, re.IGNORECASE):
-            signals.append(kw)
-    return signals
-
-
-def _check_knowledge(task_dir: Path, issues: List[ValidationIssue], require_complete: bool) -> None:
-    data = _frontmatter_dict(task_dir, "requirement-knowledge.md")
-    if data is None:
-        issues.append(ValidationIssue(
-            code=REQUIREMENT_KNOWLEDGE_MISSING,
-            message="requirement-knowledge.md is required for this risk level",
-            artifact="requirement-knowledge.md",
-        ))
-        return
-    complete = data.get("retrieval", {}).get("complete", False) if isinstance(data.get("retrieval"), dict) else data.get("retrieval_complete")
-    if require_complete and not complete:
-        issues.append(ValidationIssue(
-            code=REQUIREMENT_KNOWLEDGE_INCOMPLETE,
-            message="requirement-knowledge retrieval must be complete (or explicitly approved incomplete)",
-            artifact="requirement-knowledge.md",
-            field="retrieval.complete",
-        ))
-
-
-def _arch_review_event_row(conn, task_id: str):
-    """最近一条架构评审事件原始行（不受信校验，供差异诊断）。"""
-    return conn.execute(
-        "SELECT * FROM task_event WHERE task_id=? AND event_type='REVIEW_COMPLETED' "
-        "AND actor_role='tp-software-architect' ORDER BY id DESC LIMIT 1",
-        (task_id,),
-    ).fetchone()
-
-
-def _check_architecture_review(task_dir: Path, conn, task_id: str, issues: List[ValidationIssue],
-                               require_pass: bool) -> None:
-    """L2/L3 DEVELOPING 前架构评审门禁（含 PASS 失效与可信事件链）。
-
-    Third Hardening（P0-1/P0-2/P1-1）逐级诊断：
-    1. artifact/事件缺失 → ARCHITECTURE_REVIEW_REQUIRED
-    2. 事件受信链（producer/schema/transaction_id/decision）缺失 → TRUSTED_EVENT_SCHEMA_INVALID
-    3. 事件 artifact_digest != 当前 architecture-review.md → ARCHITECTURE_REVIEW_ARTIFACT_MISMATCH
-    4. 事件 subject_digest != 当前设计 digest → ARCHITECTURE_REVIEW_STALE
-    5. 事件 review_kind != ARCHITECTURE → ARCHITECTURE_REVIEW_KIND_MISMATCH
-    """
-    if not require_pass:
-        return
-    data = _frontmatter_dict(task_dir, "architecture-review.md")
-    row = _arch_review_event_row(conn, task_id)
-    if data is None or row is None:
-        issues.append(ValidationIssue(
-            code=ARCHITECTURE_REVIEW_REQUIRED,
-            message="L2/L3 requires a formal ARCHITECTURE REVIEW_COMPLETED PASS (event + artifact)",
-            artifact="architecture-review.md",
-        ))
-        return
-    decision = (data.get("review") or {}).get("decision", "DRAFT") if isinstance(data.get("review"), dict) else data.get("decision", "DRAFT")
-    if str(decision).upper() != "PASS":
-        issues.append(ValidationIssue(
-            code=ARCHITECTURE_REVIEW_REQUIRED,
-            message=f"architecture-review decision must be PASS, got {decision!r}",
-            artifact="architecture-review.md",
-            field="review.decision",
-        ))
-        return
-    # 完整受信链：producer/schema/transaction_id + artifact digest + subject digest
-    # + kind + 结构化 evidence（Fourth Hardening P0-2：证据删除/替换使 PASS 失效）
-    detail = {}
-    if row["detail_json"]:
-        try:
-            parsed = json.loads(row["detail_json"])
-            detail = parsed if isinstance(parsed, dict) else {}
-        except json.JSONDecodeError:
-            pass
-    try:
-        current_subject = _design_digest(task_dir, detail)
-    except (OSError, UnicodeError, ValueError, TypeError) as exc:
-        issues.append(ValidationIssue(code=ARCHITECTURE_REVIEW_STALE,
-            message=f"architecture review inputs unavailable: {exc}",
-            artifact="architecture-review.md", field="design_inputs"))
-        return
-    trusted = _trusted_arch_pass(
-        conn, task_id,
-        artifact_path=task_dir / "architecture-review.md",
-        expected_subject_digest=current_subject,
-        evidence_dir=task_dir,
-    )
-    if trusted is not None:
-        return
-    # ---- 差异诊断（P0-1/P0-2/P1-1） ----
-    producer = detail.get("producer") or detail.get("source_command") or ""
-    tx_id = detail.get("transaction_id")
-    kind_ok = str(detail.get("review_kind") or "").upper() == "ARCHITECTURE"
-    declared_artifact = detail.get("artifact_digest") or ""
-    from .digest import compute_text_artifact_file_digest
-    current_artifact = compute_text_artifact_file_digest(task_dir / "architecture-review.md")
-    declared_subject = detail.get("subject_digest") or detail.get("design_digest") or ""
-    if not producer or not tx_id:
-        issues.append(ValidationIssue(
-            code=event_policies.TRUSTED_EVENT_SCHEMA_INVALID,
-            message="architecture review PASS event is untrusted: producer/transaction_id identity chain missing",
-            artifact="architecture-review.md",
-            field="transaction_id",
-        ))
-    elif not declared_artifact or declared_artifact != current_artifact:
-        issues.append(ValidationIssue(
-            code=event_policies.ARCHITECTURE_REVIEW_ARTIFACT_MISMATCH,
-            message="architecture review PASS is not bound to the current review artifact digest",
-            artifact="architecture-review.md",
-            field="artifact_digest",
-        ))
-    elif not declared_subject or declared_subject != current_subject:
-        issues.append(ValidationIssue(
-            code=ARCHITECTURE_REVIEW_STALE,
-            message="architecture review PASS is stale: design artifacts changed after the PASS event",
-            artifact="architecture-review.md",
-            field="design_digest",
-        ))
-    elif not kind_ok:
-        issues.append(ValidationIssue(
-            code=event_policies.ARCHITECTURE_REVIEW_KIND_MISMATCH,
-            message="architecture review PASS event review_kind is not ARCHITECTURE",
-            artifact="architecture-review.md",
-            field="review_kind",
-        ))
-    else:
-        issues.append(ValidationIssue(
-            code=event_policies.TRUSTED_EVENT_SCHEMA_INVALID,
-            message="architecture review PASS event is untrusted: schema validation failed",
-            artifact="architecture-review.md",
-        ))
-
-
 def _check_test_guide(task_dir: Path, issues: List[ValidationIssue],
                       require_skeleton: bool = False, require_development: bool = False,
                       require_verification: bool = False, to_state: str = "") -> None:
@@ -590,9 +342,7 @@ def _check_test_guide(task_dir: Path, issues: List[ValidationIssue],
     SQLite/task_event, while acceptance.md + codex-review.md carry verification outcomes.
 
     Therefore the guide is now a *human execution aid*: for L2/L3 transitions its presence
-    and parseable front matter are sufficient.  Runtime-owned lifecycle metadata is updated
-    atomically on successful transitions by ``_runtime_test_guide_update`` and is never a
-    role-entered gate.
+    and parseable front matter are sufficient.
     """
     data = _frontmatter_dict(task_dir, "requirement-test-guide.md")
     if data is None:
@@ -602,40 +352,6 @@ def _check_test_guide(task_dir: Path, issues: List[ValidationIssue],
             artifact="requirement-test-guide.md",
         ))
         return
-
-
-def _runtime_test_guide_update(task_dir: Path, to_state: str, owner: str) -> Optional[str]:
-    """Return a test-guide text with runtime-managed lifecycle metadata advanced.
-
-    This is intentionally best-effort and metadata-only.  Roles own tester-facing prose;
-    the Runtime owns lifecycle/current_owner so no role has to edit bookkeeping fields.
-    The returned text is committed in the same durable transaction as the state change.
-    """
-    path = task_dir / "requirement-test-guide.md"
-    if not path.is_file():
-        return None
-    try:
-        text = _read(path)
-    except OSError:
-        return None
-    field_by_state = {
-        "DEVELOPING": "architecture_outline",
-        "VERIFYING": "development_details",
-        "CLOSING": "verification_results",
-        "COMPLETED": "delivery_finalized",
-    }
-    field = field_by_state.get(to_state)
-    if field:
-        text = re.sub(
-            rf"(?m)^(\s{{2}}{re.escape(field)}:\s*)(pending|draft|in_progress|done|completed|complete)\s*$",
-            rf"\1done",
-            text,
-            count=1,
-        )
-    if owner:
-        text = re.sub(r"(?m)^current_owner:\s*.*$", f"current_owner: {owner}", text, count=1)
-    return text
-
 
 
 def _check_acceptance(task_dir: Path, issues: List[ValidationIssue], enforce_no_pending: bool,
@@ -982,70 +698,3 @@ def _check_text_integrity(task_dir: Path, issues: List[ValidationIssue], *, incl
                 message=f"{name} has high-confidence text corruption: {'; '.join(hits[:4])}",
                 artifact=name,
             ))
-
-
-
-def _check_trusted_verification_pass(task_dir: Path, conn, task_id: str, issues: List[ValidationIssue]) -> None:
-    """Require the canonical verification PASS at every CLOSING-capable entry point."""
-    from . import event_policies
-    from .digest import compute_verification_subject_digest
-    review_path = task_dir / "codex-review.md"
-    if not review_path.is_file():
-        return  # body checker emits the concrete missing-artifact issue
-    latest_row = conn.execute("SELECT detail_json FROM task_event WHERE task_id=? "
-        "AND event_type='REVIEW_COMPLETED' AND actor_role='tp-test-engineer' "
-        "ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
-    try:
-        subject_mode = json.loads(latest_row["detail_json"] or "{}").get("subject_mode", "legacy") if latest_row else "legacy"
-    except (ValueError, TypeError, AttributeError):
-        subject_mode = "legacy"
-    expected_subject = (compute_verification_subject_digest(task_dir, subject_mode=subject_mode)
-                        if subject_mode in {"legacy", "criteria_only_v1"} else "__invalid_subject_mode__")
-    trusted = event_policies.load_trusted_governance_event(
-        conn, task_id,
-        event_type="REVIEW_COMPLETED",
-        actor="tp-test-engineer",
-        decision="PASS",
-        review_kind="VERIFICATION",
-        artifact_path=review_path,
-        expected_subject_digest=expected_subject,
-        evidence_dir=task_dir,
-    )
-    if trusted is None:
-        issues.append(ValidationIssue(
-            code="TRUSTED_VERIFICATION_PASS_MISSING",
-            message="CLOSING requires a trusted tp-test-engineer REVIEW_COMPLETED PASS bound to the current codex-review, subject digest and evidence",
-            artifact="codex-review.md",
-        ))
-
-
-def _check_completed_gates(task_dir: Path, conn, task_id: str, issues: List[ValidationIssue]) -> None:
-    """COMPLETED 前：无 PENDING/BLOCKED/journal/drift，自动质量门禁通过。"""
-    _check_acceptance(task_dir, issues, enforce_no_pending=True, enforce_yaml=True, conn=conn, task_id=task_id)
-    _check_codex_review_body(task_dir, issues)
-    _check_trusted_verification_pass(task_dir, conn, task_id, issues)
-    _check_test_guide(task_dir, issues, require_verification=True, to_state="COMPLETED")
-    _check_scope_change(task_dir, issues)
-    _check_text_integrity(task_dir, issues, include_quality=True)
-    # 无未完成 transaction journal
-    for j in transaction_journal.list_journals(task_dir):
-        if j.get("phase") != "COMPLETED":
-            issues.append(ValidationIssue(
-                code=BASELINE_BLOCKED_ACTIVE,
-                message=f"unfinished transaction journal present: {j.get('transaction_id')}",
-            ))
-            break
-
-
-def _check_closing_gates(task_dir: Path, conn, task_id: str, issues: List[ValidationIssue]) -> None:
-    _check_acceptance(task_dir, issues, enforce_no_pending=True, enforce_yaml=True, conn=conn, task_id=task_id)
-    _check_codex_review_body(task_dir, issues)
-    _check_trusted_verification_pass(task_dir, conn, task_id, issues)
-    _check_test_guide(task_dir, issues, require_verification=True, to_state="CLOSING")
-    _check_scope_change(task_dir, issues)
-    _check_text_integrity(task_dir, issues, include_quality=False)
-
-
-# =============================================================================
-# validate_transition（阶段 preflight 主入口）
-# =============================================================================

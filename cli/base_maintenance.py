@@ -18,6 +18,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 import yaml
 
 from cli import db as dbmod
+from cli.config_loader import ConfigLoadError
 from cli.content_systems import load_content_systems, same_path
 from cli.path_identity import canonical_path, path_identity_key, expand_path_text, path_config_text
 from cli.environment import (
@@ -422,7 +423,7 @@ def _read_registry_workspace_roots(installation_config: Optional[str]) -> List[D
                 for ws in data.get("workspaces") or []:
                     if isinstance(ws,dict) and ws.get("workspace_root"):
                         rows.append({"id":str(ws.get("id") or ""),"root":str(ws["workspace_root"]),"enabled":True,"source":"wiki-registry"})
-            except Exception:
+            except (OSError, yaml.YAMLError, ValueError, OverflowError, TypeError, AttributeError, LookupError, RecursionError):
                 pass
     if installation.knowledge_root:
         p=installation.knowledge_root/"00-system"/"project-registry.yaml"
@@ -433,7 +434,7 @@ def _read_registry_workspace_roots(installation_config: Optional[str]) -> List[D
                     if not isinstance(project,dict): continue
                     for raw in project.get("workspace_roots") or []:
                         rows.append({"id":str(project.get("id") or ""),"root":str(raw),"enabled":str(project.get("status") or "active")!="archived","source":"knowledge-registry"})
-            except Exception:
+            except (OSError, yaml.YAMLError, ValueError, OverflowError, TypeError, AttributeError, LookupError, RecursionError):
                 pass
     for p in dbmod.list_projects():
         root=p.get("root_path")
@@ -462,7 +463,7 @@ def _binding_id_for_root(root: Path) -> str:
     try:
         binding = load_project_binding(root)
         return binding.project_id if binding.exists else ""
-    except Exception:
+    except (OSError, ConfigLoadError, ValueError, OverflowError, AttributeError, LookupError, RuntimeError):
         return ""
 
 

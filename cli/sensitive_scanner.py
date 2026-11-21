@@ -551,10 +551,3 @@ def escalate_sensitivity(current: str, scan_result: dict[str, Any]) -> str:
     if scan_result["scan_status"] == _SCAN_STATUS_ERROR:
         return "secret"
     return current  # 保持当前值
-
-
-def is_higher_sensitivity(new: str, current: str) -> bool:
-    """判断 new 是否比 current 更高（或同级）。"""
-    if new not in _SENSITIVITY_ORDER or current not in _SENSITIVITY_ORDER:
-        return False
-    return _SENSITIVITY_ORDER.index(new) >= _SENSITIVITY_ORDER.index(current)

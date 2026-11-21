@@ -285,22 +285,6 @@ def _registry_canonical_json(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, sort_keys=True)
 
 
-def compute_command_content_sha256(entry: dict[str, Any]) -> str:
-    """单命令定义锚点：id+args_schema+output_evidence_required 规范化序列化后 SHA-256。
-
-    与 governance/verifiable-commands.yaml 中 content_sha256 同算法；
-    R3 校验时 ref.evidence_hash 必须与之一致（L253-257）。
-    """
-    payload = {
-        "id": entry.get("id", ""),
-        "args_schema": entry.get("args_schema", []),
-        "output_evidence_required": entry.get("output_evidence_required", False),
-    }
-    return "sha256:" + hashlib.sha256(
-        _registry_canonical_json(payload).encode("utf-8")
-    ).hexdigest()
-
-
 def compute_registry_content_sha256(registry: dict[str, Any]) -> str:
     """注册表内容锚点：commands 规范化序列化后 SHA-256（双锚点，防篡改）。"""
     payload = {"commands": registry.get("commands", [])}

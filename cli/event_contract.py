@@ -173,7 +173,3 @@ def add_event_semantics(detail: Dict[str, Any] | None, *, event_type: str, opera
     if errors:
         raise ValueError("invalid event semantics: " + "; ".join(errors))
     return out
-
-
-def event_result_status(event_type: str, detail: Dict[str, Any] | None) -> str:
-    return normalize_event_semantics(event_type, detail)["result_status"]

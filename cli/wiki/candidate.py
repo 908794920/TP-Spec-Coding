@@ -422,10 +422,6 @@ def published_generation(canonical: Path) -> str:
     return generation
 
 
-def assert_published_readable(canonical: Path) -> None:
-    published_generation(canonical)
-
-
 def publish_candidate(canonical: Path, *, expected_candidate: Path) -> dict[str, Any]:
     paths = candidate_paths(canonical)
     with _operation(paths):

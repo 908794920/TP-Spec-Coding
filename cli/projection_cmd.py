@@ -101,11 +101,6 @@ def projection_source_names() -> List[str]:
     return list(_V511_SOURCE_NAMES)
 
 
-def projection_source_files(task_dir: Path) -> List[Path]:
-    """解析后的 source 文件路径（仅返回实际存在的文件）。"""
-    return [task_dir / name for name in projection_source_names() if (task_dir / name).is_file()]
-
-
 def _resolve_task_dir(args_task_dir: Optional[str], task_id: str, conn) -> Path:
     """解析任务目录。
 

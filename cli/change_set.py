@@ -241,10 +241,6 @@ def capture_bound_product(detail: dict[str, Any], task_dir: str | Path | None, *
     return capture_change_set((detail.get("repo_roots") or []) if repo_roots is None else repo_roots)
 
 
-def current_content_digest(repo_roots: Iterable[str | Path]) -> str:
-    return str(capture_change_set(repo_roots)["content_digest"])
-
-
 def same_product_content(expected_id: str, current: dict[str, Any]) -> bool:
     return bool(expected_id) and str(current.get("content_digest") or "") == str(expected_id)
 

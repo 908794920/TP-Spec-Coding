@@ -53,7 +53,7 @@ export function GlobalConfigPage({ read, health }: {
     const baseFacts = Object.fromEntries(Object.entries({ ...record(data?.base), ...workspaceFacts, ...resolverFacts, ...registryFacts,
         user_root: data?.user_root, python_executable: health.data?.python_executable }).sort(([a], [b]) => rank(a) - rank(b)));
     const baseSectionsData = splitBaseFacts(baseFacts);
-    return <div className="page config-page"><div className="page-heading"><div><span className="eyebrow">全局配置</span><h2>配置值与来源</h2><p>只读查看。未声明不等于开启；这里不修改安装、项目或执行策略。</p></div></div><ReadStatus {...read}/>
+    return <div className="page config-page"><div className="page-heading"><div><span className="eyebrow">全局配置</span><h2>配置值与来源</h2><p>未声明不等于开启。</p></div></div><ReadStatus {...read}/>
     {data && <><Problems items={data.problems}/>
       {/* One group at a time, picked from a tab bar at the top: the groups used to be stacked as
           sections under a side anchor list, so a visit rendered the whole configuration to answer one

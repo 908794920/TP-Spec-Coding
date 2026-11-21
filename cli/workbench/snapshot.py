@@ -65,7 +65,7 @@ def _registered_db_path(entry: Dict[str, Any]) -> Optional[Path]:
     if callable(resolver):
         try:
             return canonical_path(Path(resolver(raw)))
-        except Exception:
+        except (OSError, ValueError, RuntimeError):
             pass
     path = Path(raw)
     if path.is_absolute():
@@ -288,7 +288,7 @@ def _resolve_project_identity(workspace: Path, entries: List[Dict[str, Any]]) ->
         try:
             if same_path(Path(root_text), workspace):
                 exact_matches.append(row)
-        except Exception:
+        except (OSError, ValueError, RuntimeError):
             continue
     if len(exact_matches) > 1:
         problems.append(_problem("PROJECT_ROOT_AMBIGUOUS", f"Registry 中有多个工程指向当前根目录：{workspace}", severity="error"))
@@ -625,7 +625,7 @@ def _parse_detail(raw: Any) -> Dict[str, Any]:
     try:
         data = json.loads(raw or "{}")
         return data if isinstance(data, dict) else {}
-    except Exception:
+    except (ValueError, TypeError, RecursionError):
         return {}
 
 

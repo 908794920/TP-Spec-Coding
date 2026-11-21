@@ -502,10 +502,3 @@ def status(cfg) -> Dict[str, Any]:
         "projection":projection_status(cfg),
         "source_accountability":source_accountability(cfg),
     }
-
-
-def task_scoped_convergence(handoff: Dict[str, Any]) -> Dict[str, Any]:
-    """拒绝旧 compact handoff 快路径；Task Knowledge 必须使用 typed request/result。"""
-    raise ValueError(
-        "legacy task-scoped Knowledge handoff is retired; use knowledge task-converge --request-event-id"
-    )

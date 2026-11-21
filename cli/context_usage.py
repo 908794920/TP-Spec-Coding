@@ -4,7 +4,7 @@ import json
 import re
 import sys
 from pathlib import PurePosixPath
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Iterable, Optional
 
 SOURCE_TYPES = {"wiki", "knowledge", "memory_project", "memory_skill"}
 USAGE_STAGES = {"retrieved", "adopted"}
@@ -190,65 +190,6 @@ def emit_warnings(warnings: Iterable[str]) -> None:
         except Exception:
             # A failed optional warning sink must not abort the Runtime operation.
             return
-
-
-def merge_context_usage(*groups: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    combined: list[dict[str, Any]] = []
-    for group in groups:
-        combined.extend(list(group or []))
-    items, _warnings = normalize_context_usage(combined)
-    return items
-
-
-def knowledge_usage_from_delivery(
-    search_receipts: Iterable[dict[str, Any]],
-    resolved_knowledge_refs: Iterable[dict[str, str]],
-) -> list[dict[str, Any]]:
-    usage: list[dict[str, Any]] = []
-    for receipt in search_receipts or []:
-        if not isinstance(receipt, dict):
-            continue
-        query_hash = str(receipt.get("query_hash") or "").strip().lower()
-        for result in receipt.get("results") or []:
-            if not isinstance(result, dict):
-                continue
-            stable_id = str(result.get("id") or "").strip()
-            if not stable_id:
-                continue
-            layer = str(result.get("layer") or "").strip().lower()
-            item: Dict[str, Any] = {
-                "source_type": "knowledge",
-                "asset_id": f"knowledge:{stable_id}",
-                "stage": "retrieved",
-                # telemetry convention: a source-layer hit is represented as
-                # fallback, even though an explicit source-layer query can also cause it.
-                "outcome": "fallback" if layer == "source" else "success",
-                "confidence": "high",
-                "source_followup": "unknown",
-                "evidence": [],
-            }
-            if SHA256_RE.fullmatch(query_hash):
-                item["query_hash"] = query_hash
-            receipt_id = str(receipt.get("receipt_id") or "").strip()
-            if _valid_receipt_id(receipt_id):
-                item["receipt_id"] = receipt_id
-            usage.append(item)
-    for ref in resolved_knowledge_refs or []:
-        if not isinstance(ref, dict):
-            continue
-        stable_id = str(ref.get("id") or "").strip()
-        if not stable_id:
-            continue
-        usage.append({
-            "source_type": "knowledge",
-            "asset_id": f"knowledge:{stable_id}",
-            "stage": "adopted",
-            "outcome": "success",
-            "confidence": "high",
-            "source_followup": "unknown",
-            "evidence": [],
-        })
-    return merge_context_usage(usage)
 
 
 def extract_context_usage(detail_json: str | None) -> list[dict[str, Any]]:

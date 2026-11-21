@@ -157,12 +157,6 @@ def delivery_result_matches_verification(detail: Dict[str, Any], event_id: int, 
     return True
 
 
-def disposition_allows_pipeline_completion(detail: Dict[str, Any], *, deferred_accepted: bool = False) -> bool:
-    # Compatibility function name retained inside the current module; the
-    # semantics are now delivery readiness, not Knowledge disposition.
-    return not validate_delivery_result(detail) and str(detail.get("delivery_status") or "").upper() == "READY"
-
-
 def delivery_evidence_matches(detail: Dict[str, Any], task_dir) -> bool:
     """Recheck the original optional delivery attachments, never just their receipt."""
     from .evidence import validate_evidence_path

@@ -294,7 +294,7 @@ export function KnowledgePage({ revision }: { revision: number }) {
       <p className="muted">日志状态：{label(recordsData.collection.status)} · {purposeLabel(scope.purpose)}。{scope.purpose !== 'unknown' && scope.purpose !== 'all' && '旧记录请切换至“未知用途 / 旧记录”。'}</p>
       {recordsData.items.length ? <ul className="wiki-record-list knowledge-record-list">{recordsData.items.map(row => <RecordItem key={row.key} row={row} scope={recordsQuery} revision={revision} open={open}/>)}</ul> : <Empty>{recordsData.collection.status === 'available' ? '已知采集范围内没有符合筛选的记录。' : '未取得符合筛选的记录；采集缺失不等于零使用。'}</Empty>}
       <Pages total={recordsData.total} page={recordPage} onChange={setRecordPage}/></>}</div>;
-    return <section className="page wiki-page knowledge-page"><div className="page-heading wiki-page-heading"><div><h1 ref={heading} tabIndex={-1}><DatabaseOutlined/> 知识库</h1><p>长期知识与使用记录</p></div>
+    return <section className="page wiki-page knowledge-page"><div className="page-heading wiki-page-heading"><div><h1 ref={heading} tabIndex={-1}><DatabaseOutlined/> 知识库</h1></div>
       <div className="wiki-page-controls"><Select className="wiki-project-select" aria-label="知识库项目范围" value={scope.project} onChange={project => changeScope({ project })} showSearch optionFilterProp="label"
         options={[{ value: '', label: '全部已注册项目' }, ...projects.map(project => ({ value: project.key, label: project.name }))]}/>
         <Segmented aria-label="知识统计时间范围" value={scope.days} options={[{ value: 7, label: '7 天' }, { value: 30, label: '30 天' }, { value: 90, label: '90 天' }]} onChange={value => changeScope({ days: value as KnowledgeDays })}/>

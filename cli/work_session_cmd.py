@@ -167,14 +167,6 @@ def _open_sessions(conn, task_id: str):
     return pair_work_sessions(rows)["unmatched_starts"]
 
 
-def _open_session_for_role(conn, task_id: str, actor_role: str):
-    # Kept for legacy callers. Multiple explicit participations must be selected by ID.
-    opened = [row for row in _open_sessions(conn, task_id) if row.get("actor_role") == actor_role]
-    if len(opened) > 1 or any(_event_detail(row) is None for row in opened):
-        raise ValueError("WORK_SESSION_AMBIGUOUS: select --session; history was not changed")
-    return ((_event_detail(opened[0]).get("session_id", ""), opened[0]) if opened else None)
-
-
 def _selected_start(conn, task, args):
     opened = _open_sessions(conn, task["task_id"])
     sid = getattr(args, "session", None)

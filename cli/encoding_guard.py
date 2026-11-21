@@ -145,16 +145,3 @@ def validate_input(text: str, field: str = "input") -> None:
             sample=text[:40],
             recovered_preview=preview,
         )
-
-
-def validate_list(items, field: str) -> None:
-    """校验字符串列表的每个元素。"""
-    for item in items or []:
-        validate_input(str(item), field)
-
-
-def validate_texts(plain: str, lists: dict) -> None:
-    """组合校验：单个字段 + 若干列表字段。plain 为 summary 等必填文本。"""
-    validate_input(plain, "summary")
-    for field, items in (lists or {}).items():
-        validate_list(items, field)

@@ -14,11 +14,10 @@ export function CloseoutPanel({ read, requested, onRequest, taskRevision }: {
   return <Section title="只读结单预检">
     <p className="muted">读取 Runtime 的缺口、未知项、处理依赖与责任方，不执行验证、修复、清理或结单。检查通过不是业务验收。</p>
     <Button onClick={onRequest} disabled={read.loading}>{requested ? '重新读取预检' : '读取结单预检'}</Button>
-    {!requested && <p className="muted">未取得结单预检结果。</p>}
     <ReadStatus {...read}/>
     {data && <>
       {historical && <Alert type="warning" showIcon title="以下是上次预检，不作为当前就绪结论"
-        description={mismatch ? '预检与任务的账本观察版本不同，请刷新任务并重新读取预检。' : '刷新尚未完成或读取失败；保留上次结果与原读取时间。'}/>}
+        description={mismatch ? '预检与任务的账本观察版本不同，请刷新任务并重新读取预检。' : undefined}/>}
       <Problems items={data.problems}/>
       {(data.workflow_mode === 'quick' || route.workflow_mode === 'quick') && <QuickWorkflowSummary workflow={data.quick_status ? data : route} terminal={data.already_terminal === true}/>}
       <p className="muted">{stateLabel('task', data.state)}</p>

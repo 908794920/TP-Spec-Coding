@@ -21,6 +21,25 @@ async function request(path: string, options: RequestInit): Promise<unknown> {
 }
 const get = (path: string, signal?: AbortSignal) => request(path, { method: 'GET', signal });
 
+export async function getGlobalEnvelope<T>(
+  path: string, values: Record<string, string | number | undefined>, signal?: AbortSignal,
+): Promise<Envelope<T> & { context: null }> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined) query.set(key, String(value));
+  }
+  const value = await get(`${path}?${query}`, signal);
+  const payload = record(value), read = record(payload.read);
+  if (payload.context !== null) throw new Error('全局接口返回了项目上下文，已拒绝显示');
+  if (typeof read.started_at !== 'string' || typeof read.completed_at !== 'string') {
+    throw new Error('接口响应缺少读取信息，已拒绝显示');
+  }
+  if (!payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) {
+    throw new Error('接口响应缺少数据，保留上次成功结果');
+  }
+  return value as Envelope<T> & { context: null };
+}
+
 /** Reject mismatched identities before any response can become page state. */
 export function validateEnvelope<T>(value: unknown, key?: string, taskId?: string): Envelope<T> {
   const payload = record(value), read = record(payload.read), context = record(payload.context), data = record(payload.data);

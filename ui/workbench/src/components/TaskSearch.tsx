@@ -63,6 +63,7 @@ export function TaskSearch({ contexts, revision, onOpenTask }: {
     const [activeIndex, setActiveIndex] = useState(0);
     const box = useRef<HTMLDivElement>(null);
     const trigger = useRef<HTMLButtonElement | HTMLAnchorElement>(null);
+    const shortcut = navigator.platform.startsWith('Mac') ? '⌘K' : 'Ctrl+K';
     const panelId = useId(), listId = `${panelId}-hits`;
     const { rows, loading, error } = useAllTasks(contexts, revision, open);
     /* The query is the only filter. A task search that silently hid retired or completed work would
@@ -147,8 +148,8 @@ export function TaskSearch({ contexts, revision, onOpenTask }: {
     }, [open]);
     return <div className="task-search" ref={box}>
       <Button ref={trigger} type="text" className="task-search-toggle" icon={<SearchOutlined/>} aria-expanded={open} aria-controls={panelId}
-        aria-label={open ? '收起任务查询' : '按 TASK ID 或标题查询任务'} title="查询任务（TASK ID / 标题）"
-        onClick={() => (open ? close() : setOpen(true))}/>
+        aria-label={open ? '收起任务查询' : '按 TASK ID 或标题查询任务'} aria-keyshortcuts="Control+K Meta+K" title={`查询任务（${shortcut}）`}
+        onClick={() => (open ? close() : setOpen(true))}><kbd aria-hidden="true">{shortcut}</kbd></Button>
       {open && <div className="task-search-panel" id={panelId} onKeyDown={handlePanelKeyDown}>
         <Input className="task-search-input" autoFocus allowClear value={query} prefix={<SearchOutlined/>}
           aria-label="按 TASK ID 或标题查询任务" placeholder="按 TASK ID 或标题查询"

@@ -297,9 +297,7 @@ def _lookup_db_in_registry(reg_path: Path, project_id: str) -> Optional[str]:
         if proj.get("project_id") == project_id:
             db_path = proj.get("db_path")
             if db_path:
-                if os.path.isabs(db_path):
-                    return db_path
-                return str((_BASE_ROOT / db_path).resolve())
+                return _resolve_project_db_abs(db_path)
     return None
 
 
@@ -314,8 +312,7 @@ def _lookup_db_for_task(reg_path: Path, task_id: str) -> Optional[str]:
         db_path = proj.get("db_path")
         if not db_path:
             continue
-        if not os.path.isabs(db_path):
-            db_path = str((_BASE_ROOT / db_path).resolve())
+        db_path = _resolve_project_db_abs(db_path)
         if not os.path.exists(db_path):
             continue
         try:
@@ -384,14 +381,8 @@ def update_registered_project_contract(
     Returns False when the project is not registered or the registry is unavailable.
     """
     read_path, write_path, remove_legacy = _registry_mutation_paths(registry_path)
-    if not read_path.exists():
-        return False
-    try:
-        with open(read_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return False
-    if not isinstance(data, dict) or not isinstance(data.get("projects"), list):
+    data = _read_registry_for_mutation(read_path)
+    if data is None:
         return False
     found = False
     for proj in data["projects"]:
@@ -440,6 +431,17 @@ def _read_registry_payload(path: Path) -> Dict[str, Any]:
     if not isinstance(data, dict) or not isinstance(data.get("projects"), list):
         raise ValueError(f"invalid runtime registry shape: {path}")
     return data
+
+
+def _read_registry_for_mutation(path: Path) -> Optional[Dict[str, Any]]:
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as stream:
+            data = json.load(stream)
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if isinstance(data, dict) and isinstance(data.get("projects"), list) else None
 
 
 def migrate_legacy_registry_to_user(
@@ -502,11 +504,8 @@ def migrate_legacy_registry_to_user(
     actions.append({"action": "REMOVE_LEGACY_BASE_REGISTRY_AFTER_COPY", "path": str(legacy)})
     if not apply:
         return {"status": "MIGRATION_AVAILABLE", "legacy_path": str(legacy), "target_path": str(target), "actions": actions, "conflicts": []}
-    target.parent.mkdir(parents=True, exist_ok=True)
     payload = {"projects": sorted(merged.values(), key=lambda x: str(x.get("project_id") or ""))}
-    tmp = target.with_suffix(target.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
-    os.replace(tmp, target)
+    _write_registry_payload(target, payload)
     legacy.unlink()
     return {"status": "MIGRATED", "legacy_path": str(legacy), "target_path": str(target), "actions": actions, "conflicts": []}
 
@@ -517,14 +516,8 @@ def remove_project(project_id: str, registry_path: Optional[str] = None) -> bool
     仅操作 registry.local.json；db 文件保留由调用方决定是否物理删除。
     """
     read_path, write_path, remove_legacy = _registry_mutation_paths(registry_path)
-    if not read_path.exists():
-        return False
-    try:
-        with open(read_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return False
-    if not isinstance(data, dict) or not isinstance(data.get("projects"), list):
+    data = _read_registry_for_mutation(read_path)
+    if data is None:
         return False
     before = len(data["projects"])
     data["projects"] = [p for p in data["projects"] if p.get("project_id") != project_id]
@@ -543,14 +536,8 @@ def prune_projects(registry_path: Optional[str] = None) -> Tuple[List[str], List
     若文件不存在则移除该条目。db 存在但 schema 不兼容的不删（由 db verify 报告）。
     """
     read_path, write_path, remove_legacy = _registry_mutation_paths(registry_path)
-    if not read_path.exists():
-        return ([], [])
-    try:
-        with open(read_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return ([], [])
-    if not isinstance(data, dict) or not isinstance(data.get("projects"), list):
+    data = _read_registry_for_mutation(read_path)
+    if data is None:
         return ([], [])
     removed: List[str] = []
     kept: List[str] = []

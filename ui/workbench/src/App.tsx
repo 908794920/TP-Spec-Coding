@@ -3,6 +3,7 @@ import type { CSSProperties, KeyboardEvent, PointerEvent } from 'react';
 import { Alert, Button, Space, Tag, Typography } from 'antd';
 import { DatabaseOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ReadOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { api } from './api';
+import { records } from './facts';
 import { useRead } from './useRead';
 import { ProjectPage } from './pages/ProjectPage';
 import { GlobalConfigPage } from './pages/GlobalConfigPage';
@@ -16,6 +17,7 @@ type Page = 'project' | 'task' | 'global' | 'wiki' | 'knowledge';
 /* Sidebar width and collapse are presentation preferences, so they live in local storage — never in
    Runtime facts. Both are clamped on read: a stored value must not be able to break the layout. */
 const NAV_KEY = 'tp-spec.workbench.nav', NAV_DEFAULT = 260, NAV_MIN = 180, NAV_MAX = 420;
+const PROJECT_KEY = 'tp-spec.workbench.last-project';
 type NavPrefs = { width: number; collapsed: boolean };
 const clampNav = (width: number) => Math.min(NAV_MAX, Math.max(NAV_MIN, Math.round(width)));
 function readNavPrefs(): NavPrefs {
@@ -32,9 +34,8 @@ function readNavPrefs(): NavPrefs {
 }
 export default function App() {
     const [revision, refresh] = useState(0), [contextKey, selectContext] = useState(''), [selectedTask, selectTask] = useState('');
-    /* Opens on 全局配置: it is the only page that needs no selected project, so the read-only
-       values are visible immediately instead of an empty "pick a project" state. */
     const [page, setPage] = useState<Page>('global'), [nav, setNav] = useState<NavPrefs>(readNavPrefs);
+    const landingPending = useRef(true);
     const drag = useRef<{ x: number; width: number } | null>(null);
     const [resizing, setResizing] = useState(false);
     const [narrow, setNarrow] = useState(() => matchMedia('(max-width: 800px)').matches);
@@ -75,11 +76,41 @@ export default function App() {
     const notesWritable = health.data?.runtime_read_only === true && health.data.task_notes_writable === true;
     const contexts = global.data?.data.contexts ?? [];
     const context = contexts.find(c => c.context_key === contextKey);
+    useLayoutEffect(() => {
+        if (!landingPending.current || !global.data) return;
+        landingPending.current = false;
+        const index = global.data.data;
+        const projects = records(index.registered_projects);
+        const available = index.contexts.filter(candidate => {
+            const registration = projects.find(project => project.project_id === candidate.project_id && project.db_path === candidate.db_path);
+            return registration?.runtime_status === undefined || registration.runtime_status === 'available';
+        });
+        let preferred: string | null = null;
+        try { preferred = window.localStorage.getItem(PROJECT_KEY); }
+        catch { /* An unavailable preference store uses the first project. */ }
+        const landing = available.find(candidate => candidate.context_key === preferred) ?? available[0];
+        if (landing) {
+            selectContext(landing.context_key);
+            setPage('project');
+        }
+    }, [global.data]);
+    useEffect(() => {
+        if (!context) return;
+        try { window.localStorage.setItem(PROJECT_KEY, context.context_key); }
+        catch { /* Project navigation still works without preference storage. */ }
+    }, [context]);
     const [noteRevision, refreshNotes] = useState(0);
     const project = useRead(contextKey, `${revision}:${noteRevision}`, signal => api.project(contextKey, signal, true));
     const task = useRead(page === 'task' && contextKey && selectedTask ? JSON.stringify([contextKey, selectedTask]) : '', revision, signal => api.task(contextKey, selectedTask, signal));
     // 窄屏选中目标后关闭覆盖式导航，并将焦点交给目标页面。
-    function switchPage(next: Page) { setPage(next); if (narrow) { setNav(prev => ({ ...prev, collapsed: true })); requestAnimationFrame(() => document.getElementById('main-content')?.focus()); } }
+    function switchPage(next: Page) {
+        landingPending.current = false;
+        setPage(next);
+        if (narrow) {
+            setNav(prev => ({ ...prev, collapsed: true }));
+            requestAnimationFrame(() => document.getElementById('main-content')?.focus());
+        }
+    }
     function resizeBy(delta: number) { setNav(prev => ({ ...prev, width: clampNav(prev.width + delta) })); }
     function startResize(event: PointerEvent<HTMLDivElement>) {
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -129,9 +160,9 @@ export default function App() {
             if (narrow && event.target === event.currentTarget && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) closeNavigation();
         }}>
         {narrow && <div className="mobile-nav-heading"><strong>项目导航</strong><Button type="text" onClick={closeNavigation}>关闭导航</Button></div>}
-        {global.loading && <Typography.Text type="secondary" role="status">正在读取注册表…</Typography.Text>}
-        {global.error && <Alert role="alert" type="error" showIcon title={global.error}/>}
-        {!global.loading && global.data && !contexts.length && <Typography.Text type="secondary">没有已注册项目。工作台不会自动初始化。</Typography.Text>}
+        {page !== 'global' && global.loading && <Typography.Text type="secondary" role="status">正在读取注册表…</Typography.Text>}
+        {page !== 'global' && global.error && <Alert role="alert" type="error" showIcon title={global.error}/>}
+        {!global.loading && global.data && !contexts.length && <Typography.Text type="secondary">没有已注册项目。</Typography.Text>}
         {contextKey && !context && global.data && <Alert role="alert" type="error" showIcon title="原选中上下文已不在注册表，请重新选择。"/>}
         <nav className="wiki-global-nav" aria-label="全局页面">
           <Button type="text" icon={<ReadOutlined/>} aria-current={page === 'wiki' ? 'page' : undefined} onClick={() => { selectContext(''); selectTask(''); switchPage('wiki'); }}>Wiki</Button>
@@ -143,7 +174,7 @@ export default function App() {
           onOpenTask={openTaskInProject}/>
         {/* The task index now lives under each project; the selected project's read error stays here
             as well because it is otherwise invisible while the task or config page is open. */}
-        {context && project.error && <Alert role="alert" type="error" showIcon title={project.error}/>}
+        {page !== 'project' && context && project.error && <Alert role="alert" type="error" showIcon title={project.error}/>}
         {/* Global read problems (Base/contract mismatch, missing Wiki, …) belong to the 全局配置 page, not to every page's sidebar. */}
       </dialog>
       {/* The divider is its own grid column: the sidebar scrolls, so a handle positioned inside it

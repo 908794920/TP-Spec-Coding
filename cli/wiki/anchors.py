@@ -16,14 +16,13 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 import hashlib
-import json
-import os
 import re
 import unicodedata
 
 import yaml
 
 from .source import decode_text, normalize_text, read_source_bytes, source_is_file
+from .snapshot import _read_json, _write_json
 from .stable_source import source_view
 
 ANCHOR_SCHEMA = "tp-spec.wiki-cite-anchors/v1"
@@ -39,19 +38,6 @@ def _meta(wiki_repo_root: Path, name: str) -> Path:
 
 def anchor_path(wiki_repo_root: Path) -> Path:
     return _meta(wiki_repo_root, "wiki-cite-anchors.json")
-
-
-def _read_json(path: Path) -> Dict[str, Any]:
-    if not path.is_file():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _write_json(path: Path, data: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
-    os.replace(tmp, path)
 
 
 def _manifest(wiki_repo_root: Path) -> Dict[str, Any]:

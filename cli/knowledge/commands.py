@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -23,6 +24,15 @@ from .state import commit_snapshot, create_audit_plan, maintain, record_audit, s
 
 def _emit(data: Any) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True))
+
+
+def _run(schema: str, fn: Callable[[], Any]) -> int:
+    try:
+        _emit(fn())
+        return 0
+    except Exception as exc:
+        _emit({"schema": schema, "status": "FAIL", "error": f"{type(exc).__name__}: {exc}"})
+        return 1
 
 
 def _cfg(args):
@@ -81,13 +91,11 @@ def cmd_init(args) -> int:
 
 
 def cmd_scan(args) -> int:
-    try: _emit(stage_scan(_cfg(args))); return 0
-    except Exception as exc: _emit({"schema":"tp-spec.knowledge-change-set/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    return _run("tp-spec.knowledge-change-set/v1", lambda: stage_scan(_cfg(args)))
 
 
 def cmd_maintain(args) -> int:
-    try: _emit(maintain(_cfg(args))); return 0
-    except Exception as exc: _emit({"schema":"tp-spec.knowledge-maintain/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    return _run("tp-spec.knowledge-maintain/v1", lambda: maintain(_cfg(args)))
 
 
 def cmd_verify(args) -> int:
@@ -103,13 +111,11 @@ def cmd_lint(args) -> int:
 
 
 def cmd_index_build(args) -> int:
-    try: _emit(build_projection(_cfg(args),clean=True)); return 0
-    except Exception as exc: _emit({"schema":"tp-spec.knowledge-index/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    return _run("tp-spec.knowledge-index/v1", lambda: build_projection(_cfg(args), clean=True))
 
 
 def cmd_index_update(args) -> int:
-    try: _emit(update_projection(_cfg(args))); return 0
-    except Exception as exc: _emit({"schema":"tp-spec.knowledge-index/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    return _run("tp-spec.knowledge-index/v1", lambda: update_projection(_cfg(args)))
 
 
 def cmd_index_status(args) -> int:
@@ -154,8 +160,10 @@ def cmd_read(args) -> int:
 
 
 def cmd_telemetry(args) -> int:
-    try: _emit({"schema":"tp-spec.knowledge-retrieval-telemetry/v1",**telemetry_summary(_cfg(args),days=args.days)}); return 0
-    except Exception as exc: _emit({"schema":"tp-spec.knowledge-retrieval-telemetry/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    return _run(
+        "tp-spec.knowledge-retrieval-telemetry/v1",
+        lambda: {"schema": "tp-spec.knowledge-retrieval-telemetry/v1", **telemetry_summary(_cfg(args), days=args.days)},
+    )
 
 
 def cmd_eval(args) -> int:
@@ -167,8 +175,7 @@ def cmd_eval(args) -> int:
 
 
 def cmd_migrate_plan(args) -> int:
-    try: _emit(migration_plan(_cfg(args))); return 0
-    except Exception as exc: _emit({"schema":"tp-spec.knowledge-migration-plan/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    return _run("tp-spec.knowledge-migration-plan/v1", lambda: migration_plan(_cfg(args)))
 
 
 
@@ -182,8 +189,7 @@ def cmd_migrate_normalize(args) -> int:
         _emit({"schema":"tp-spec.knowledge-normalization/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
 
 def cmd_audit(args) -> int:
-    try: _emit(create_audit_plan(_cfg(args),full=bool(args.full))); return 0
-    except Exception as exc: _emit({"schema":"tp-spec.knowledge-semantic-audit-plan/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    return _run("tp-spec.knowledge-semantic-audit-plan/v1", lambda: create_audit_plan(_cfg(args), full=bool(args.full)))
 
 
 def cmd_audit_record(args) -> int:
@@ -204,8 +210,7 @@ def cmd_snapshot_commit(args) -> int:
 
 
 def cmd_status(args) -> int:
-    try: _emit(knowledge_status(_cfg(args))); return 0
-    except Exception as exc: _emit({"schema":"tp-spec.knowledge-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    return _run("tp-spec.knowledge-status/v1", lambda: knowledge_status(_cfg(args)))
 
 
 def _task_convergence_request(conn, task_id: str, request_event_id: int):
@@ -482,27 +487,31 @@ def cmd_task_converge(args) -> int:
 
 
 def cmd_ingest_register(args) -> int:
-    try: _emit(register_batch(_cfg(args),project=args.project,batch=args.batch,source_root=Path(args.source_root))); return 0
-    except Exception as exc: _emit({"schema":"tp-spec.knowledge-ingest-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    return _run(
+        "tp-spec.knowledge-ingest-status/v1",
+        lambda: register_batch(_cfg(args), project=args.project, batch=args.batch, source_root=Path(args.source_root)),
+    )
 
 
 def cmd_ingest_status(args) -> int:
-    try: _emit(ingest_status(_cfg(args),args.batch)); return 0
-    except Exception as exc: _emit({"schema":"tp-spec.knowledge-ingest-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    return _run("tp-spec.knowledge-ingest-status/v1", lambda: ingest_status(_cfg(args), args.batch))
 
 
 def cmd_ingest_convert(args) -> int:
-    try:
-        _emit(convert_batch(_cfg(args), batch=args.batch, source_id=args.source_id, origin_path=args.origin_path))
-        return 0
-    except Exception as exc:
-        _emit({"schema":"tp-spec.knowledge-ingest-convert/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"})
-        return 1
+    return _run(
+        "tp-spec.knowledge-ingest-convert/v1",
+        lambda: convert_batch(_cfg(args), batch=args.batch, source_id=args.source_id, origin_path=args.origin_path),
+    )
 
 
 def cmd_ingest_disposition(args) -> int:
-    try: _emit(disposition(_cfg(args),batch=args.batch,source_id=args.source_id,disposition_name=args.disposition,canonical_ids=args.canonical_id or [],reason=args.reason or "",origin_path=args.origin_path)); return 0
-    except Exception as exc: _emit({"schema":"tp-spec.knowledge-ingest-status/v1","status":"FAIL","error":f"{type(exc).__name__}: {exc}"}); return 1
+    return _run(
+        "tp-spec.knowledge-ingest-status/v1",
+        lambda: disposition(
+            _cfg(args), batch=args.batch, source_id=args.source_id, disposition_name=args.disposition,
+            canonical_ids=args.canonical_id or [], reason=args.reason or "", origin_path=args.origin_path,
+        ),
+    )
 
 
 def cmd_ingest_finalize(args) -> int:

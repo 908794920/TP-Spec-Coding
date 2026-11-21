@@ -370,12 +370,6 @@ def is_governance_event(event_type: str) -> bool:
     return bool(policy and policy["authority"] == "governance")
 
 
-def is_public_fact_event(event_type: str) -> bool:
-    """事件是否安全事实类（authority=public_fact）。"""
-    policy = EVENT_POLICIES.get(event_type)
-    return bool(policy and policy["authority"] == "public_fact")
-
-
 def affects_gate(event_type: str) -> bool:
     """事件是否会影响状态机门禁。未知类型按 True 处理（fail-closed）。"""
     policy = EVENT_POLICIES.get(event_type)
@@ -387,14 +381,6 @@ def allowed_event_add_types() -> list:
     return sorted(
         t for t, p in EVENT_POLICIES.items()
         if "event_add" in p["allowed_producers"]
-    )
-
-
-def allowed_event_sync_types() -> list:
-    """event sync 允许的类型（allowed_producers 含 event_sync）。默认仅 FACT。"""
-    return sorted(
-        t for t, p in EVENT_POLICIES.items()
-        if "event_sync" in p["allowed_producers"]
     )
 
 
@@ -574,20 +560,6 @@ def load_trusted_governance_event(
         latest_only=latest_only,
     )
     return events[0] if events else None
-
-
-def has_trusted_governance_event(
-    conn,
-    task_id: str,
-    *,
-    event_type: str,
-    actor: Optional[str] = None,
-    decision: Optional[str] = None,
-) -> bool:
-    """门禁便捷入口：可信治理事件是否存在。"""
-    return load_trusted_governance_event(
-        conn, task_id, event_type=event_type, actor=actor, decision=decision,
-    ) is not None
 
 
 def load_task_retirement(conn, task_id: str) -> Optional[TrustedEvent]:

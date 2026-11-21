@@ -428,7 +428,7 @@ export function WikiPage({ revision }: { revision: number }) {
     }
     function openProject(key: string) { setProject(key); setTab('overview'); }
     const tabItems = [{ key: 'overview', label: '使用概况' }, { key: 'documents', label: '文档' }, { key: 'records', label: '检索记录' }];
-    return <div className="page wiki-page"><div className="page-heading wiki-page-heading"><div><span className="eyebrow">Wiki</span><h2>文档与检索使用</h2><p>查看已登记 Wiki 文档、历史检索与任务采用证据。所有数据为只读读取。</p></div><div className="wiki-page-controls"><ProjectSelector projects={projects} value={project} onChange={value => { setProject(value); setTab('overview'); }}/><DaysSelector value={days} onChange={value => setDays(value)}/></div></div>
+    return <div className="page wiki-page"><div className="page-heading wiki-page-heading"><div><span className="eyebrow">Wiki</span><h2>文档与检索使用</h2></div><div className="wiki-page-controls"><ProjectSelector projects={projects} value={project} onChange={value => { setProject(value); setTab('overview'); }}/><DaysSelector value={days} onChange={value => setDays(value)}/></div></div>
        <WikiReadStatus read={overviewRead}/><Tabs className="wiki-tabs" activeKey={tab} onChange={key => setTab(key as WikiTab)} items={tabItems}/>
       {tab === 'overview' && <OverviewTab data={overview} onMetric={openMetric} onTrend={openTrend} onProject={openProject} onDocument={openDocument} onAttention={openAttention}/>}
       {tab === 'documents' && <DocumentsTab key={`documents:${project}:${days}:${adoptedOnly}`} project={project} days={days} revision={revision} adoptedOnly={adoptedOnly} onAdoptedChange={setAdoptedOnly} onOpenDocument={openDocument}/>}

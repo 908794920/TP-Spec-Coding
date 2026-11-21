@@ -94,7 +94,7 @@ export function TaskDetail({ object, snapshot, initialTab, defaultTab, details, 
         <Disclosure label={<>本次对象原始字段{object.records.length > 1 ? ` · ${object.records.length} 条歧义记录` : ''}</>}>{object.records.map((row, i) => <div className="record-block" key={i}><Fields value={row}/></div>)}</Disclosure>
         <p className="muted">WorkItem 完成不代表 Task 已结单；没有可信执行器观察时，负责人也不代表正在运行。</p>
       </> : <>
-        <p className="detail-scope">以下是 <strong>Task {String(task.task_id ?? '')}</strong> 的读取结果{object.kind === 'work_item' ? '，不是所选 WorkItem 的独立验收或交付结论' : ''}。</p>
+        {object.kind !== 'task' && <p className="detail-scope">以下是 <strong>Task {String(task.task_id ?? '')}</strong> 的读取结果{object.kind === 'work_item' ? '，不是所选 WorkItem 的独立验收或交付结论' : ''}。</p>}
         <Button onClick={onRefreshDetails} disabled={details.loading}>重新读取详情</Button>
         <ReadStatus {...details}/>
         {mismatch && <p className="warning" role="status">详情与画布的账本版本不同，不能合并为同一次快照。请重新读取页面，以下保留各自读取时间。</p>}

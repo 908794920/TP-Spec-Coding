@@ -169,19 +169,3 @@ def workflow_consistency_diagnostics(task_dir: Path, context: dict, *, state: st
                            "declared_state": declared, "formal_state": state, "state_source": state_source,
                            "message": "当前状态文字与正式记录不一致；仅提示定位，保留历史与实际验收边界。"})
     return issues
-
-
-def render_current(context: dict[str, Any]) -> str:
-    """Render the same slice, never another model-written summary."""
-    status = context["status"]
-    if status == "ABSENT":
-        return ""
-    if status in UNUSABLE:
-        paths = ", ".join(item["path"] for item in context["issues"])
-        return f"\n## 当前有效范围与决策\n\n待核对（{status}）：{paths}。{RECOVERY}\n"
-    return (
-        f"\n## 当前有效范围与决策（来源：{context['source']}）\n\n"
-        "> 以下为 canonical 业务声明；来源尚需按需核实，不授予操作权限或验收 PASS。\n\n"
-        + context["content"]
-        + "\n\n历史/替代依据按需读取来源工件的历史区或已有 requirement-decisions.md；不从旧记录恢复已替代决定。\n"
-    )

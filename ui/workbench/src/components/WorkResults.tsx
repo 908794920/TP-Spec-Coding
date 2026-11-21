@@ -1,4 +1,5 @@
 import { Alert, Tag } from 'antd';
+import type { Ref } from 'react';
 import { record, records, text } from '../facts';
 import { CopyText, Disclosure, Fields } from './Facts';
 
@@ -7,7 +8,13 @@ const actions: Record<string, string> = { create: '登记范围', claim: '认领
   retry: '同一问题重试', result: '提交结果', receive: '协调者接收', supersede: '登记替代依据' };
 
 /** Existing ledger facts only: no agent liveness, automatic merging or approval controls. */
-export function WorkResults({ value }: { value: unknown }) {
+export function WorkResults({ value, expandedIds, onToggle, focusId, focusRef }: {
+  value: unknown;
+  expandedIds: string[];
+  onToggle: (id: string, open: boolean) => void;
+  focusId?: string;
+  focusRef: Ref<HTMLElement>;
+}) {
   const facts = record(value), items = records(facts.items), integration = record(facts.integration);
   const candidate = record(integration.candidate);
   return <section className="detail-section work-results" aria-label="子工作与集成候选">
@@ -19,8 +26,9 @@ export function WorkResults({ value }: { value: unknown }) {
       items.map(item => {
         const unit = record(item.work_unit), spec = record(unit.spec), result = record(unit.result), receipt = record(unit.receipt);
         const output = record(result.result), wid = text(item.item_id);
-        return <details className="record-block" id={`work-unit-${wid}`} key={wid}>
-          <summary><Tag>{spec.kind === 'FIX' ? 'Fix' : 'Work'}</Tag><strong>{wid}</strong> · {text(item.title)} · {item.current === false ? '历史：' : ''}{states[text(item.status)] || text(item.status)}{receipt.event_id ? ' · 已接收' : unit.spec && item.status === 'COMPLETED' ? ' · 待接收' : ''}</summary>
+        return <details className="record-block" id={`work-unit-${wid}`} key={wid} open={expandedIds.includes(wid)}
+          onToggle={event => onToggle(wid, event.currentTarget.open)}>
+          <summary ref={focusId === wid ? focusRef : undefined}><Tag>{spec.kind === 'FIX' ? 'Fix' : 'Work'}</Tag><strong>{wid}</strong> · {text(item.title)} · {item.current === false ? '历史：' : ''}{states[text(item.status)] || text(item.status)}{receipt.event_id ? ' · 已接收' : unit.spec && item.status === 'COMPLETED' ? ' · 待接收' : ''}</summary>
           <CopyText value={wid} label="复制 Work ID"/>
           {!unit.spec ? <p>历史 WorkItem 未记录范围结果契约；不补造隔离、结果或验收证据。</p> : <>
             <Fields value={{ scope: spec.scope, scope_refs: spec.scope_refs, issue: spec.issue_key,

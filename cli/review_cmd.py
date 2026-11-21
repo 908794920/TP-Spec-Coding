@@ -160,19 +160,6 @@ def _build_review_artifact_text(text: str, decision: str, round_no: int,
     return new_text
 
 
-def _update_review_artifact(task_dir: Path, decision: str, round_no: int,
-                            reviewed_at: str, evidence: List[str],
-                            findings_count: int) -> None:
-    """改写 architecture-review.md front matter（review 嵌套块）。"""
-    path = task_dir / "architecture-review.md"
-    text = _read(path)
-    new_text = _build_review_artifact_text(text, decision, round_no, reviewed_at, evidence, findings_count)
-    with open(path, "w", encoding="utf-8", newline="") as handle:
-        handle.write(new_text)
-
-
-
-
 def _validate_review_isolation(*, design_context_id: str, review_context_id: str,
                                context_policy: str, subject_digest: str) -> Optional[str]:
     """Validate the formal architecture-review isolation proof.

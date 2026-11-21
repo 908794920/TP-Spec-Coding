@@ -159,16 +159,6 @@ def workflow_confirmation_matches(event: Dict[str, Any], binding: Dict[str, Any]
     return all(detail.get(key) == expected for key, expected in binding.items())
 
 
-def build_wake_prompt(*, task_id: str, workspace: str, source_stage: str, source_role: str,
-                      target_stage: str, target_role: str, execution_mode: str) -> str:
-    workspace_part = f' 工作区：`{workspace}`。' if str(workspace or '').strip() else ' '
-    return (
-        f'继续 Task `{task_id}`。{workspace_part}'
-        f'已完成 `{source_stage} / {source_role}`；下一步 `{target_stage} / {target_role} / {execution_mode}`。'
-        '先读取该 Task Runtime 并运行 `workflow next` 核验；一致后仅加载返回 Skill。'
-    )
-
-
 def trusted_event_detail(event: Dict[str, Any], *, event_type: str, producer: str,
                          actor: str) -> Optional[Dict[str, Any]]:
     if str(event.get('event_type') or '') != event_type or str(event.get('actor_role') or '') != actor:

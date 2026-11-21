@@ -4,8 +4,7 @@
 业务角色遇到本模块定义的错误码时不得继续业务工作：不得修改数据库、
 不得修改基座、不得删除事件、不得绕过检查；只能停止任务并交给基座修复方。
 
-AI-A 在 commit preflight / reconcile 中抛出并输出这些语义；
-manifest/validator 侧的错误码由 AI-C 的 C-06 门禁复用同一常量接入。
+commit preflight / reconcile 中抛出并输出这些语义。
 
 设计依据：AI-A 任务书 §九（BASELINE_BLOCKED）与 A-06。
 """
@@ -36,24 +35,6 @@ class BaselineBlockedError(Exception):
         if self.detail:
             return f"{self.code}: {self.detail}"
         return self.code
-
-
-class ManifestMismatchError(BaselineBlockedError):
-    """manifest 与工作区不一致（由 AI-C 门禁复用）。"""
-
-    code = BASELINE_MANIFEST_MISMATCH
-
-
-class ValidatorBrokenError(BaselineBlockedError):
-    """校验器不可用或解析失败（由 AI-C 门禁复用）。"""
-
-    code = BASELINE_VALIDATOR_BROKEN
-
-
-class RootUnresolvedError(BaselineBlockedError):
-    """TP-Spec-Coding 根目录无法可靠解析。"""
-
-    code = BASELINE_ROOT_UNRESOLVED
 
 
 class ReconciliationRequiredError(BaselineBlockedError):

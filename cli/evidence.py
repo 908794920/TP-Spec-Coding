@@ -32,7 +32,7 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, Optional, Union
 
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 
@@ -164,11 +164,3 @@ def validate_evidence_path(task_dir: Union[str, Path], evidence_path: Optional[s
                               error=f"evidence file is empty: {raw}")
     return EvidenceResult(ok=True, sha256=digest, path=raw, type="local_file",
                           item={"type": "local_file", "path": raw, "sha256": digest})
-
-
-def validate_evidence_list(task_dir: Union[str, Path], items: Optional[List[Union[str, Dict]]]) -> List[EvidenceResult]:
-    """校验证据列表，返回逐项结果（调用方决定 PASS 至少一项真实证据）。"""
-    results: List[EvidenceResult] = []
-    for item in items or []:
-        results.append(validate_evidence_path(task_dir, item))
-    return results

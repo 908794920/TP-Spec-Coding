@@ -108,13 +108,6 @@ def set_value(text: str, key: str, value: str) -> str:
     return bom + "---" + open_eol + front + pre_close_eol + "---" + close_eol + rest
 
 
-def set_values(text: str, values: Dict[str, str]) -> str:
-    """批量设置多个 key=value（见 set_value）。"""
-    for key, value in values.items():
-        text = set_value(text, key, value)
-    return text
-
-
 def _escape_yaml_quote(value: str) -> str:
     """YAML 双引号字符串内转义（与旧实现一致的最小转义）。"""
     return value.replace("\\", "\\\\").replace('"', '\\"')
@@ -128,11 +121,3 @@ def read(path: str) -> str:
     """
     with open(path, "r", encoding="utf-8", newline="") as handle:
         return handle.read()
-
-
-def rewrite_file(path: str, values: Dict[str, str]) -> None:
-    """读取文件、改写 front matter、原格式写回（不改正文）。"""
-    text = read(path)
-    new_text = set_values(text, values)
-    with open(path, "w", encoding="utf-8", newline="") as handle:
-        handle.write(new_text)

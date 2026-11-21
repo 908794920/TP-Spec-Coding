@@ -184,11 +184,6 @@ GOVERNANCE_FILES: Dict[str, str] = {
 }
 
 
-def register_schema(name: str, schema: Dict[str, Any]) -> None:
-    """Register (or replace) a schema definition."""
-    SCHEMAS[name] = schema
-
-
 def get_schema(name: str) -> Dict[str, Any]:
     if name not in SCHEMAS:
         raise KeyError(f"unknown schema: {name}")

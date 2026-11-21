@@ -27,7 +27,7 @@ import hashlib
 from . import command_context
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import yaml
 
@@ -389,23 +389,6 @@ def get_state_owner(
     )
     owner = catalog["state_owner_map"].get(state)
     return owner if isinstance(owner, str) else None
-
-
-def get_workflow_transitions(
-    base_root: "Optional[str | Path]" = None,
-) -> Dict[str, List[str]]:
-    """state -> next-state list from workflow.yaml (replaces
-    $ShdWorkflowTransitions mirror table)."""
-    wf = load_config(
-        config_schemas.GOVERNANCE_FILES["workflow"],
-        schema_name="workflow",
-        base_root=base_root,
-    )
-    out: Dict[str, List[str]] = {}
-    for state, spec in wf["transitions"].items():
-        nxt = spec.get("next", []) if isinstance(spec, dict) else []
-        out[state] = list(nxt) if isinstance(nxt, list) else []
-    return out
 
 
 def read_base_version(base_root: "Optional[str | Path]" = None) -> str:

@@ -85,40 +85,6 @@ def load_role_topology(base_root: Optional["str | Path"] = None) -> Dict[str, An
     return topology
 
 
-def get_role_topology_node(node_id: str, *, base_root: Optional["str | Path"] = None) -> Optional[Dict[str, Any]]:
-    topology = load_role_topology(base_root)
-    node = (topology.get("nodes") or {}).get(str(node_id or ""))
-    return dict(node) if isinstance(node, dict) else None
-
-
-def search_role_topology(query: str, *, base_root: Optional["str | Path"] = None, kind: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Search topology nodes by stable id or display name.
-
-    Exact id/name matches win; otherwise a case-insensitive substring match is
-    used. The search only reads the generated catalog projection.
-    """
-    needle = str(query or "").strip().casefold()
-    if not needle:
-        return []
-    nodes = load_role_topology(base_root).get("nodes") or {}
-    rows = [
-        dict(node) for node in nodes.values()
-        if isinstance(node, dict) and (kind is None or str(node.get("kind") or "") == kind)
-    ]
-
-    def exact(row: Dict[str, Any]) -> bool:
-        return needle in {str(row.get("id") or "").casefold(), str(row.get("name") or "").casefold()}
-
-    exact_rows = [row for row in rows if exact(row)]
-    if exact_rows:
-        return exact_rows
-    return [
-        row for row in rows
-        if needle in str(row.get("id") or "").casefold()
-        or needle in str(row.get("name") or "").casefold()
-    ]
-
-
 def _display_entry(mapping: Any, key: str) -> Dict[str, Any]:
     if not key:
         return {"label": "", "description": "", "configured": True}
@@ -590,13 +556,6 @@ def requirement_role_for_task(task: dict, events: list[dict]) -> str:
     if _latest_checkpoint_activity(events, actor=current, phase="requirement", trusted=True):
         return current
     return legacy
-
-
-def _latest_checkpoint(events: Iterable[Dict[str, Any]], *, actor: str, phase: str) -> Optional[Dict[str, Any]]:
-    activity = _latest_checkpoint_activity(events, actor=actor, phase=phase)
-    if activity and activity["semantics"]["result_status"] == "COMPLETED":
-        return activity["event"]
-    return None
 
 
 def _development_change_set_binding(events: Iterable[Dict[str, Any]], task=None) -> Optional[Dict[str, Any]]:
