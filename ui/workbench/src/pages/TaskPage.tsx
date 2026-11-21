@@ -203,14 +203,6 @@ function TaskWorkspace({ context, snapshot, revision }: {
     <details ref={documentsDetails} className="task-support-section task-auxiliary task-materials">
       <summary>任务资料与验收</summary>
       <div className="task-auxiliary-body">
-        <section className="task-detail-entry" aria-label="任务详情入口">
-          <div className="section-heading"><h3>任务详情</h3><div className="graph-actions">
-            <Button size="small" onClick={() => openTaskDetail('overview')}>Task 概况</Button>
-            <Button size="small" onClick={() => openTaskDetail('blockers')}>阻塞详情</Button>
-            <Button size="small" onClick={() => openTaskDetail('verification')}>验证验收</Button>
-          </div></div>
-          <p className="muted">详情入口直接读取当前 Task；打开阻塞或验收页时才请求对应详情，不依赖关系图先加载。</p>
-        </section>
         <div ref={documentsFocus} className="task-documents-focus task-auxiliary-focus" tabIndex={-1}>
           <TaskDocuments value={data.documents}/>
         </div>
@@ -230,11 +222,12 @@ function TaskWorkspace({ context, snapshot, revision }: {
   </div>;
 }
 
-export function TaskPage({ context, taskId, read, revision }: {
+export function TaskPage({ context, taskId, read, revision, onOpenProject }: {
     context?: Context;
     taskId: string;
     revision: number;
     read: ReadState<Envelope<TaskData>>;
+    onOpenProject: (key: string) => void;
 }) {
     useEffect(() => {
         // 与任务数据并行加载默认展开的关系图，避免数据返回后才开始下载代码。
@@ -245,7 +238,9 @@ export function TaskPage({ context, taskId, read, revision }: {
         <Empty title="选择一个 Task 查看工作关系">从项目总览或左侧任务索引进入；不会自动选取“最近任务”。</Empty></div>;
     const data = read.data?.data, task = record(data?.task);
     const displayState = data ? stateLabel('task', task.state).split(' · ')[0] : '状态未读取';
-    return <div className="page task-page"><div className="page-heading"><div><span className="eyebrow">任务工作区 · {context.name}</span><h2>{text(task.title) || '任务'} {taskId && <small className="task-id"><code>{taskId}</code></small>}</h2><p>{displayState}</p></div></div>
+    return <div className="page task-page"><div className="page-heading"><div>
+      <span className="eyebrow">任务工作区 · <button type="button" className="knowledge-link" title="返回项目总览" onClick={() => onOpenProject(context.context_key)}>{context.name}</button></span>
+      <h2>{text(task.title) || '任务'} {taskId && <small className="task-id"><code>{taskId}</code></small>}</h2><p>{displayState}</p></div></div>
     <ReadStatus {...read}/>{data && <><Problems items={data.problems}/><TaskWorkspace key={JSON.stringify([context.context_key, taskId])} context={context} snapshot={read.data!} revision={revision}/></>}
   </div>;
 }

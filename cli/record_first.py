@@ -620,8 +620,6 @@ def _latest_development_change_set(conn, task_id: str) -> Optional[Dict[str, Any
             for repo in ((detail.get("change_set") or {}).get("repositories") or []):
                 if isinstance(repo, dict) and str(repo.get("root_locator") or "").strip():
                     roots.append(str(repo["root_locator"]).strip())
-        if not change_set_id or not roots:
-            return {"event_id": int(row["id"]), "change_set_id": change_set_id, "repo_roots": roots, "detail": detail}
         return {"event_id": int(row["id"]), "change_set_id": change_set_id, "repo_roots": roots, "detail": detail}
     return None
 

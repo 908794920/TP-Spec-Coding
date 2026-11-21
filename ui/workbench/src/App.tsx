@@ -108,6 +108,7 @@ export default function App() {
         event.preventDefault();
         resizeBy(delta);
     }
+    function openProject(key: string) { selectContext(key); selectTask(''); switchPage('project'); }
     function openTask(id: string) { selectTask(id); switchPage('task'); }
     /* The sidebar can open a task from any project, so the context travels with the click; the
        project page only ever opens tasks of the project it is already showing. */
@@ -138,7 +139,7 @@ export default function App() {
         </nav>
         {/* The project tree opens project and task pages; global configuration remains in the header. */}
         <SidebarProjects contexts={contexts} selectedKey={page === 'global' || page === 'wiki' || page === 'knowledge' ? '' : contextKey} selectedTask={page === 'task' ? selectedTask : ''} revision={revision}
-          onOpenProject={key => { selectContext(key); selectTask(''); switchPage('project'); }}
+          onOpenProject={openProject}
           onOpenTask={openTaskInProject}/>
         {/* The task index now lives under each project; the selected project's read error stays here
             as well because it is otherwise invisible while the task or config page is open. */}
@@ -149,7 +150,7 @@ export default function App() {
           would be clipped by its own overflow. */}
       <div className="nav-resizer" role="separator" aria-orientation="vertical" aria-label="调整导航宽度" aria-valuenow={nav.width} aria-valuemin={NAV_MIN} aria-valuemax={NAV_MAX} tabIndex={0} title="拖动调整宽度，双击恢复默认，方向键微调"
         onPointerDown={startResize} onPointerMove={dragResize} onPointerUp={stopResize} onPointerCancel={stopResize} onKeyDown={keyResize} onDoubleClick={() => setNav(prev => ({ ...prev, width: NAV_DEFAULT }))}/>
-      <main id="main-content" tabIndex={-1}>{page === 'global' ? <GlobalConfigPage read={global} health={health}/> : page === 'wiki' ? <WikiPage revision={revision}/> : page === 'knowledge' ? <KnowledgePage revision={revision}/> : page === 'task' ? <TaskPage context={context} taskId={selectedTask} read={task} revision={revision}/> : <ProjectPage context={context} read={project} notesWritable={notesWritable} onSelectTask={openTask} onNoteSaved={() => refreshNotes(n => n + 1)}/>}</main>
+      <main id="main-content" tabIndex={-1}>{page === 'global' ? <GlobalConfigPage read={global} health={health}/> : page === 'wiki' ? <WikiPage revision={revision}/> : page === 'knowledge' ? <KnowledgePage revision={revision}/> : page === 'task' ? <TaskPage context={context} taskId={selectedTask} read={task} revision={revision} onOpenProject={openProject}/> : <ProjectPage context={context} read={project} notesWritable={notesWritable} onSelectTask={openTask} onNoteSaved={() => refreshNotes(n => n + 1)}/>}</main>
     </div>
   </div>;
 }

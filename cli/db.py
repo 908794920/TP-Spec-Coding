@@ -319,7 +319,7 @@ def _lookup_db_for_task(reg_path: Path, task_id: str) -> Optional[str]:
         if not os.path.exists(db_path):
             continue
         try:
-            conn = connect(db_path)
+            conn = connect_readonly(db_path)
             try:
                 row = conn.execute(
                     "SELECT task_id FROM task WHERE task_id = ?", (task_id,)

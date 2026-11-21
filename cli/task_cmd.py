@@ -22,11 +22,10 @@ import sys
 import uuid
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from . import db as dbmod
 from . import workflow_loader
-from .frontmatter import FRONTMATTER_RE
 from .environment import EnvironmentConfigError, load_project_binding
 from .path_identity import same_path
 from .version import active_version
@@ -39,59 +38,6 @@ _TASK_ID_RE = re.compile(r"^TASK-[A-Za-z0-9][A-Za-z0-9._-]*$")
 # risk/flow 等级
 _RISK_LEVELS = ("L0", "L1", "L2", "L3")
 
-# Frozen long-state SHD compatibility table. Active Record-first tasks return through the fast path and do not use this table.
-_SHD_TRANSITIONS: Dict[str, List[str]] = {
-    "NEW": ["RISK_ANALYZING", "TECH_DESIGNING", "DEVELOPING", "CANCELLED"],
-    "RISK_ANALYZING": ["REQUIREMENT_CLARIFYING", "PRODUCT_DESIGNING", "TECH_DESIGNING", "DEVELOPING", "TECHNICAL_DISCOVERY"],
-    "REQUIREMENT_CLARIFYING": ["PRODUCT_DESIGNING", "TECH_DESIGNING", "TECHNICAL_DISCOVERY", "CHANGE_CONFIRMING", "BLOCKED"],
-    "TECHNICAL_DISCOVERY": ["REQUIREMENT_CLARIFYING", "TECH_DESIGNING", "DISCOVERY_REVIEW_REQUIRED", "BLOCKED"],
-    "PRODUCT_DESIGNING": ["PRODUCT_CONFIRMING"],
-    "PRODUCT_CONFIRMING": ["TECH_DESIGNING", "CANCELLED"],
-    "TECH_DESIGNING": ["DEVELOPING", "CHANGE_CONFIRMING", "BLOCKED"],
-    "DISCOVERY_REVIEW_REQUIRED": ["REQUIREMENT_CLARIFYING", "TECH_DESIGNING", "CHANGE_CONFIRMING", "DEVELOPING", "BLOCKED"],
-    "CHANGE_CONFIRMING": ["REQUIREMENT_CLARIFYING", "PRODUCT_DESIGNING", "TECH_DESIGNING", "CANCELLED"],
-    "BLOCKED": ["REQUIREMENT_CLARIFYING", "TECHNICAL_DISCOVERY", "TECH_DESIGNING", "DEVELOPING", "VERIFYING", "CANCELLED"],
-    "DEVELOPING": ["ASSISTING", "VERIFYING", "DISCOVERY_REVIEW_REQUIRED", "BLOCKED"],
-    "ASSISTING": ["VERIFYING", "DISCOVERY_REVIEW_REQUIRED", "BLOCKED"],
-    "VERIFYING": ["DEVELOPING", "BROWSER_VERIFYING", "REVIEWING", "CLOSING", "DISCOVERY_REVIEW_REQUIRED", "BLOCKED"],
-    "BROWSER_VERIFYING": ["REVIEWING", "CLOSING", "DISCOVERY_REVIEW_REQUIRED", "BLOCKED"],
-    "REVIEWING": ["CLOSING", "DEVELOPING", "DISCOVERY_REVIEW_REQUIRED", "BLOCKED"],
-    "CLOSING": ["COMPLETED", "BLOCKED"],
-}
-
-# Frozen SHD compatibility driver: from_state -> (artifact, is_verification)
-_SHD_DRIVER: Dict[str, Tuple[str, bool]] = {
-    "TECH_DESIGNING": ("task.md", False),
-    "DEVELOPING": ("implementation.md", False),
-    "ASSISTING": ("implementation.md", False),
-    "VERIFYING": ("codex-review.md", True),
-}
-
-# Frozen SHD compatibility forward-consumer set
-_SHD_FORWARD_CONSUMERS: Dict[str, List[str]] = {
-    "TECH_DESIGNING": ["DEVELOPING", "ASSISTING", "VERIFYING", "BROWSER_VERIFYING", "REVIEWING", "CLOSING", "COMPLETED"],
-    "DEVELOPING": ["VERIFYING", "BROWSER_VERIFYING", "REVIEWING", "CLOSING", "COMPLETED"],
-    "ASSISTING": ["VERIFYING", "BROWSER_VERIFYING", "REVIEWING", "CLOSING", "COMPLETED"],
-    "VERIFYING": ["REVIEWING", "CLOSING", "COMPLETED"],
-}
-
-# A-01：front matter 解析统一走 cli/frontmatter.py（LF/CRLF/BOM 兼容）
-_FM_RE = FRONTMATTER_RE
-
-# HPB: next_prompt 必须完整的 12 字段
-_HPB_REQUIRED_FIELDS = (
-    "target_role", "target_state", "invocation", "task_id",
-    "risk_level", "page_verification", "entry", "reading_order",
-    "actions", "constraints", "exit_expectation", "fact_source_disclaimer",
-)
-
-
-def _resolve_owner(wf, state: str, risk_level: str, flow_level: str) -> Optional[str]:
-    """解析目标态的规范 owner；COMPLETED 用 risk/flow 分支。"""
-    if state == "COMPLETED":
-        return wf.get_completion_owner(risk_level, flow_level)
-    return wf.get_state_owner(state)
-
 
 def _yaml_scalar(text: str, name: str) -> Optional[str]:
     m = re.search(
@@ -101,130 +47,6 @@ def _yaml_scalar(text: str, name: str) -> Optional[str]:
     if not m:
         return None
     return m.group("value").strip().strip('"').strip("'")
-
-
-def _yaml_nested_scalar(text: str, parent: str, name: str) -> Optional[str]:
-    m = re.match(
-        r"(?ms)^" + re.escape(parent) + r":[ \t]*\r?\n(?P<body>(?:^[ \t]+.*(?:\r?\n|$))*)",
-        text,
-    )
-    if not m:
-        return None
-    return _yaml_scalar(m.group("body"), name)
-
-
-def _parse_shd(artifact_path: str, is_review: bool) -> Optional[Dict[str, str]]:
-    """解析工件 front-matter 中的 stage_handoff 或 review 块。"""
-    if not os.path.isfile(artifact_path):
-        return None
-    with open(artifact_path, "r", encoding="utf-8") as f:
-        text = f.read()
-    m = _FM_RE.match(text)
-    if not m:
-        return None
-    body = m.group("body")
-    if is_review:
-        decision = _yaml_nested_scalar(body, "review", "decision")
-        intended = _yaml_nested_scalar(body, "review", "next_state")
-        return {
-            "ready": "true" if decision == "PASS" else "false",
-            "status": decision or "",
-            "intended_next": intended or "",
-            "from_state": "VERIFYING",
-        }
-    status = _yaml_nested_scalar(body, "stage_handoff", "status")
-    intended = _yaml_nested_scalar(body, "stage_handoff", "intended_next")
-    from_state = _yaml_nested_scalar(body, "stage_handoff", "from_state")
-    return {
-        "ready": "true" if status == "ready" else "false",
-        "status": status or "",
-        "intended_next": intended or "",
-        "from_state": from_state or "",
-    }
-
-
-def _check_shd_closure(
-    task_dir: str,
-    current_state: str,
-    visited_states: set,
-    wf: Optional[Any] = None,
-    risk_level: str = "",
-    flow_level: str = "",
-) -> List[str]:
-    """SHD M1/M2 + HPB 校验，返回错误消息列表。"""
-    errors: List[str] = []
-    # M1 反向一致性
-    if current_state in _SHD_DRIVER:
-        artifact, is_review = _SHD_DRIVER[current_state]
-        decl = _parse_shd(os.path.join(task_dir, artifact), is_review)
-        if decl and decl["from_state"] == current_state:
-            if decl["ready"] == "true":
-                errors.append(
-                    f"HANDOFF_PENDING: stage {current_state} 已声明就绪但状态未推进，请执行 flush / task transition。"
-                )
-                # HPB: 交接提示词绑定
-                ho_path = os.path.join(task_dir, "handoff.json")
-                np = None
-                try:
-                    with open(ho_path, "r", encoding="utf-8") as f:
-                        ho = json.load(f)
-                    if isinstance(ho, dict) and "next_prompt" in ho:
-                        np = ho["next_prompt"]
-                except (OSError, json.JSONDecodeError, TypeError):
-                    pass
-                if not isinstance(np, dict):
-                    errors.append(
-                        f"HANDOFF_PROMPT_MISSING: stage {current_state} 已声明就绪，但缺少面向下一角色的可复制接续提示词，交接前必须补齐。"
-                    )
-                else:
-                    missing = [
-                        f for f in _HPB_REQUIRED_FIELDS
-                        if not np.get(f) or (isinstance(np.get(f), (list, str)) and len(np.get(f)) == 0)
-                    ]
-                    if missing:
-                        errors.append(
-                            f"HANDOFF_PROMPT_MISSING: stage {current_state} 已声明就绪，但 next_prompt 缺少字段：{', '.join(missing)}。"
-                        )
-                    else:
-                        intended = decl["intended_next"]
-                        if str(np.get("target_state", "")) != intended:
-                            errors.append(
-                                f"HANDOFF_PROMPT_TARGET_MISMATCH: next_prompt.target_state '{np.get('target_state')}' 必须等于 intended_next '{intended}'。"
-                            )
-                        if wf is not None and intended:
-                            expected_role = _resolve_owner(wf, intended, risk_level, flow_level)
-                            if expected_role and str(np.get("target_role", "")) != expected_role:
-                                errors.append(
-                                    f"HANDOFF_PROMPT_TARGET_MISMATCH: next_prompt.target_role '{np.get('target_role')}' 必须是目标态 '{intended}' 的规范 owner '{expected_role}'。"
-                                )
-            intended = decl["intended_next"]
-            if intended and current_state in _SHD_TRANSITIONS and intended not in _SHD_TRANSITIONS[current_state]:
-                errors.append(
-                    f"HANDOFF_NEXT_ILLEGAL: stage {current_state} 的 intended_next '{intended}' 不是合法后继。"
-                )
-    # M2 前向完整性
-    for from_state, (artifact, is_review) in _SHD_DRIVER.items():
-        if from_state not in visited_states:
-            continue
-        consumers = _SHD_FORWARD_CONSUMERS.get(from_state, [])
-        if current_state not in consumers:
-            continue
-        decl = _parse_shd(os.path.join(task_dir, artifact), is_review)
-        if not decl or not decl["from_state"] or decl["from_state"] != from_state:
-            continue
-        if decl["ready"] != "true":
-            errors.append(
-                f"HANDOFF_DECL_MISSING: 状态 '{current_state}' 需要 '{artifact}' 的就绪声明（from_state={from_state}），但 status 仍为 draft/未声明 ready。"
-            )
-        else:
-            intended = decl["intended_next"]
-            if intended and from_state in _SHD_TRANSITIONS and intended not in _SHD_TRANSITIONS[from_state]:
-                errors.append(
-                    f"HANDOFF_NEXT_ILLEGAL: stage {from_state} 的 intended_next '{intended}' 不是合法后继。"
-                )
-    return errors
-
-
 
 
 _INTAKE_ARTIFACTS = (
