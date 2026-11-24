@@ -258,8 +258,9 @@ def resolve_knowledge_project(cfg: ResolvedConfig, *, require: bool = False) -> 
         if len(rows) > 1:
             raise ValueError(f"duplicate Knowledge project id in registry: {requested}")
         match = rows[0] if rows else None
-        if match is None and projects:
+        if match is None and (binding.knowledge_id or (require and projects)):
             raise ValueError(f"project-binding knowledge id not registered: {requested}")
+    source = "project-binding" if match is not None else ""
     if match is None:
         matches = []
         for project in projects:
@@ -272,8 +273,9 @@ def resolve_knowledge_project(cfg: ResolvedConfig, *, require: bool = False) -> 
         if len(matches) > 1:
             raise ValueError(f"multiple Knowledge projects match workspace: {cfg.paths.workspace_root}")
         match = matches[0] if matches else None
+        if match is not None:
+            source = "knowledge-registry-workspace"
     projects_dir = str(cfg.knowledge_canonical.get("projects_dir") or "10-projects")
-    source = "project-binding" if requested and match is not None else ("knowledge-registry-workspace" if match is not None else "")
 
     # Compatibility-only migration fallback: an existing project-side Knowledge
     # Junction/symlink may prove the old project mapping.  Accept it only when

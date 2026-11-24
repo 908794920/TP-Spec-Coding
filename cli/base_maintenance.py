@@ -189,12 +189,13 @@ def resolve_workspace(workspace_root: "str | Path", *, installation_config: "str
     )
 
     wiki_identity: Dict[str, Any]
-    wiki_workspace_root: Optional[Path]
+    wiki_workspace_root: Optional[Path] = None
     wiki_targets: List[Dict[str, Any]] = []
     try:
         wiki_identity = resolve_workspace_identity(cfg)
-        wiki_workspace_root = resolve_workspace_wiki_root(cfg)
-        wiki_targets = [t.as_dict() for t in resolve_targets(cfg)]
+        if wiki_identity["source"] != "unmapped":
+            wiki_workspace_root = resolve_workspace_wiki_root(cfg)
+            wiki_targets = [t.as_dict() for t in resolve_targets(cfg)]
     except Exception as exc:
         wiki_identity = {"resolved": False, "workspace_id": "", "source": "error", "error": f"{type(exc).__name__}: {exc}"}
         wiki_workspace_root = None
@@ -202,12 +203,19 @@ def resolve_workspace(workspace_root: "str | Path", *, installation_config: "str
     try:
         knowledge = resolve_knowledge_project(cfg, require=False)
     except Exception as exc:
-        knowledge = {"resolved": False, "project_id": "", "project_root": None, "shared_ids": [], "error": f"{type(exc).__name__}: {exc}"}
+        knowledge = {"resolved": False, "project_id": "", "project_root": None, "shared_ids": [], "source": "error", "error": f"{type(exc).__name__}: {exc}"}
 
     expected: Dict[str, Optional[Path]] = {name: base_root / name for name in BASE_LINK_DIRS}
     expected["wiki"] = wiki_workspace_root
     expected["knowledge"] = Path(knowledge["project_root"]) if knowledge.get("project_root") else None
     legacy = {name: _candidate_link(workspace / ".tp-spec" / name, target) for name, target in expected.items()}
+    if (wiki_identity["source"] in {"unmapped", "zero-config"} and not legacy["wiki"]["exists"]
+            and (wiki_workspace_root is None or not wiki_workspace_root.is_dir())):
+        wiki_identity["source"] = "unconfigured"
+        wiki_workspace_root = None
+        wiki_targets = []
+    if knowledge.get("source") == "unmapped" and not legacy["knowledge"]["exists"]:
+        knowledge["source"] = "unconfigured"
 
     project_id = binding.project_id or str(knowledge.get("project_id") or "") or str(wiki_identity.get("workspace_id") or "")
     if not project_id:
@@ -298,12 +306,14 @@ def workspace_doctor(workspace_root: "str | Path", *, installation_config: "str 
     active_task_portability = r.get("active_task_portability") or {}
     if active_task_portability.get("status") == "REVIEW_REQUIRED":
         warnings.append(f"active task artifacts contain {len(active_task_portability.get('findings') or [])} actionable legacy Junction reference(s)")
-    if not r["wiki"]["workspace_root"]:
-        issues.append("Wiki workspace root unresolved")
-    elif not Path(r["wiki"]["workspace_root"]).is_dir():
-        issues.append("resolved Wiki workspace root does not exist")
+    if r["wiki"]["identity"]["source"] != "unconfigured":
+        if not r["wiki"]["workspace_root"]:
+            issues.append("Wiki workspace root unresolved")
+        elif not Path(r["wiki"]["workspace_root"]).is_dir():
+            issues.append("resolved Wiki workspace root does not exist")
     if not r["knowledge"]["resolved"]:
-        warnings.append("Knowledge project scope unresolved; project-scoped search requires binding/registry mapping")
+        if r["knowledge"]["source"] != "unconfigured":
+            warnings.append("Knowledge project scope unresolved; project-scoped search requires binding/registry mapping")
     elif not Path(r["knowledge"]["project_root"]).is_dir():
         issues.append("resolved Knowledge project root does not exist")
     if r["binding"]["exists"] and r["binding"]["base_version"] and r["binding"]["base_version"] != active_version():
@@ -357,7 +367,7 @@ def migration_plan_for_workspace(workspace_root: "str | Path", *, installation_c
         blockers.append("Base root invalid")
     if not r["installation"]["exists"]:
         blockers.append("installation config missing; configure global Base/Wiki/Knowledge roots first")
-    if not r["wiki"]["workspace_root"]:
+    if not r["wiki"]["workspace_root"] and r["wiki"]["identity"]["source"] != "unconfigured":
         blockers.append("Wiki workspace root unresolved")
     if not r["knowledge"]["resolved"] and r["legacy_paths"]["knowledge"]["exists"]:
         blockers.append("Knowledge project root unresolved while a legacy knowledge link exists")
@@ -637,7 +647,8 @@ def _migrate_one(workspace: Path, args) -> Dict[str, Any]:
         changes.append({"action":"WRITE_PROJECT_BINDING","path":str(binding_path)})
     # Re-resolve after binding write; this is the safety boundary before link removal.
     after=resolve_workspace(workspace,installation_config=args.installation_config)
-    if not after["base"]["valid"] or not after["wiki"]["workspace_root"]:
+    if not after["base"]["valid"] or (not after["wiki"]["workspace_root"]
+                                      and after["wiki"]["identity"]["source"] != "unconfigured"):
         return {"workspace_root":str(workspace),"status":"BLOCKED_AFTER_BINDING","blockers":["post-binding resolver verification failed"],"changes":changes}
     runtime_rebind = apply_runtime_rebind(workspace, project_id)
     if runtime_rebind.get("status") == "BLOCKED":

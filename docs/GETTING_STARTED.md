@@ -68,6 +68,8 @@ python -m cli.main base resolve --workspace-root "<project-root>"
 
 Portable project binding 只保存稳定 identity，不重复保存 Wiki/Knowledge 的机器绝对路径。
 
+项目可按需接入 Wiki 和 Knowledge。未接入的内容系统不阻塞基座诊断或契约升级；已声明的接入及旧链接仍按真实目标核对。
+
 ### 项目规则和状态目录
 
 需要 TP-Spec 时调用统一入口 `tp-spec-coding`，由入口按需读取当前 Base 的规则和方法。项目根 `AGENTS.md` 与 `README.md` 归项目自行维护。
@@ -83,7 +85,7 @@ Portable project binding 只保存稳定 identity，不重复保存 Wiki/Knowled
 
 ### 首次准备当前项目的 Knowledge
 
-`installation-doctor` 确认安装路径，不代表 Knowledge 的项目登记和检索投影已经就绪。首次安装还需显式登记已经绑定的项目，再建立投影：
+项目需要使用 Knowledge 时，先显式登记已经绑定的项目，再建立检索投影。`installation-doctor` 只确认安装路径：
 
 ```bash
 python -m cli.main knowledge init --workspace-root "<project-root>" --register-project
