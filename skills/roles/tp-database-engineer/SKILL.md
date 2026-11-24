@@ -1,7 +1,7 @@
 ---
 id: tp-database-engineer
 name: tp-数据库工程师
-version: 5.4.0
+version: 5.4.1
 status: active
 type: workflow-role
 role: tp-database-engineer

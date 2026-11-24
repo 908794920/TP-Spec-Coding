@@ -12,7 +12,7 @@ import sys
 from urllib.parse import parse_qs, unquote, urlsplit
 import uuid
 
-from cli import command_context, change_set
+from cli import command_context
 from .service import BASE_ROOT, ReadError, SCHEMA, WorkbenchService, timestamp
 
 
@@ -92,6 +92,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     result = service.project_view(path[2], include_notes=include_notes)
                 elif len(path) == 5 and path[3] == "tasks":
                     result = service.task_view(path[2], path[4])
+                elif len(path) == 6 and path[3] == "tasks" and path[5] == "route":
+                    result = service.task_route_view(path[2], path[4])
                 elif len(path) == 6 and path[3] == "tasks" and path[5] == "details":
                     result = service.details_view(path[2], path[4])
                 elif len(path) == 6 and path[3] == "tasks" and path[5] == "closeout":
@@ -103,10 +105,6 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     raise ReadError("NOT_FOUND", "接口不存在", 404)
             else:
                 raise ReadError("NOT_FOUND", "接口不存在", 404)
-            try:
-                change_set.verify_read_snapshot()
-            except change_set.ChangeSetError as exc:
-                raise ReadError("PRODUCT_CHANGED_DURING_READ", str(exc), 409) from exc
             if isinstance(result.get("read"), dict):
                 result["read"]["completed_at"] = timestamp()
             self._send(200, result)

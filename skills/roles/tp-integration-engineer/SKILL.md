@@ -1,7 +1,7 @@
 ---
 id: tp-integration-engineer
 name: tp-集成交付工程师
-version: 5.4.0
+version: 5.4.1
 status: active
 type: workflow-role
 role: tp-integration-engineer
@@ -19,7 +19,6 @@ description: tp-集成交付工程师：TP-Spec-Coding 正式软件工程角色�
 读取当前完整需求、工程/Work 结果、冲突依据、真实授权及适用验证；输出实际集成内容、最终主体与交付核对、遗留问题。standard Task 另整理当前有效需求和实际步骤材料的知识/记忆候选与覆盖；无 signals 也实际评估，评估不要求每次新增条目。quick 不自动增加这项义务。定向检索、判重、canonical 和正式收敛 Result 交知识领域。
 
 ## 何时读取
-- 最终客户 Word/Excel/PPT 的格式整理或交付核对，以及共用格式方法维护 → [Office 文档格式化](../../capabilities/office-document-formatting/SKILL.md)；内容作者在其他阶段也可直接条件调用，不代签专业结论或人验。
 - 最终范围、Work、候选、验收、数据库、临时工件与预检收敛 → [交付收敛](../../capabilities/delivery-convergence/SKILL.md)。
 - standard Task 最终输入提炼及候选整理 → [知识提炼](../../capabilities/knowledge-capture/SKILL.md)，canonical/检索/最终 Result 交 tp-knowledge。
 - standard Task 各步骤规则/经验归位、去重及 AGENTS 入口可发现性 → [项目记忆捕获](../../capabilities/tp-memory-capture/SKILL.md)；核对正文与入口的各自处置，必评估不等于必写入。

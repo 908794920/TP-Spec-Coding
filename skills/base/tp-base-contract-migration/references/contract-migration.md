@@ -3,7 +3,7 @@
 
 软件 `VERSION`、当前解析到的 Base 路径、项目绑定、Runtime Project/Task contract 是不同事实。`base resolve` 返回 `base.source`、`executing_base` 与 **Project 级** `runtime_contract`；后者不扫描并认证全部 Task。路径优先级仍是 `TP_SPEC_BASE_ROOT` → project binding → Installation → 当前执行 Base，非法来源不静默换成宽松默认。用 `task migration-plan` 核对具体 Task，而不是凭同步成功推断旧任务已适配。
 
-**无需契约变化的更新**只替换 Base 程序/模板，再按既有授权对选定项目执行 `base sync-project --apply`。根 AGENTS/README 托管区之外的内容保留原字节，Memory/项目 Skill/测试及基线不重建，已登记 Task 和 Evidence 不因同步改变。绑定中的现有合法覆盖、显式空列表/false 和等于默认值的语义选项保持；只有已识别的空路径/重复机器根可以清理。无变化不写文件；确需修改 YAML 时可能规范化该文件的排版/注释，不能宣称任意 YAML 都逐字节保留。
+**无需契约变化的更新**只替换 Base 程序/模板。选定项目需要同步本机 Runtime 定位、规范化配置或补齐 Memory 初始文件时，再按既有授权执行 `base sync-project --apply`。只清理已识别的空路径和重复机器根，保留绑定中的合法覆盖、显式空列表、`false` 和等于默认值的语义选项。确需修改 YAML 时，写入可能规范化排版与注释。
 
 ### 只读核对
 

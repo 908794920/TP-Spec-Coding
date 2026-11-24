@@ -1,7 +1,7 @@
 ---
 id: tp-security-engineer
 name: tp-安全工程师
-version: 5.4.0
+version: 5.4.1
 status: active
 type: workflow-role
 role: tp-security-engineer

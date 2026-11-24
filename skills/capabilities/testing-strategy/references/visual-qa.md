@@ -12,65 +12,25 @@ Controller/Router 对应入口，模板/组件对应消费页面，CSS 对应实
 
 ## 2. 稳定路径由上游执行，不另造平台
 
-优先复用项目现有浏览器脚本和可用工具；采用 Playwright Test（TypeScript）或按需使用 Midscene 时，沿用其官方集成。不因 Java 业务栈另造跨语言桥，不并行重写已有 Python/JS 测试。包、浏览器、模型与调用条件在获准环境验证后锁定到项目已有锁文件，保留可回退基线；本能力不安装/升级依赖，不运行 `latest` 或自动下载浏览器。
+优先复用项目现有浏览器脚本和可用工具；按项目实际工具的公开接口使用。不因 Java 业务栈另造跨语言桥，不并行重写已有 Python/JS 测试。包、浏览器、模型与调用条件在获准环境验证后锁定到项目已有锁文件，保留可回退基线；本能力不安装/升级依赖，不运行 `latest` 或自动下载浏览器。
 
-在**已经配置好且获准**的业务测试项目内，用本地安装的公开 CLI 运行选定文件/用例，例如：
-
-```text
-node ./node_modules/@playwright/test/cli.js test <已选测试文件> --grep <已选场景>
-```
-
-文件选择和 `--grep` 按上游匹配语义使用，核对实际匹配范围；此命令不代替执行范围审核。配置中的 setup、依赖项目、globalSetup、hooks、webServer 也可能产生额外动作，运行前核对其实际影响；未批准不得让测试启动应用、创建单据或改基线。有业务副作用的测试不盲目自动重试/并发；超时后先按本次业务标识核对是否已提交，不因采集失败重做业务。
-
-复用原配置增加内置 JSON reporter，不重写项目配置。下面仅是最小接入参考，路径/并发策略需与已有获准布局合并，不会由 Base 同步生成：
-
-```ts
-import { defineConfig } from '@playwright/test';
-
-export default defineConfig({
-  retries: 0, // 有副作用时先确认实际结果，不自动再提交。
-  workers: 1,
-  outputDir: './test-results',
-  reporter: [['line'], ['json', { outputFile: './test-results/playwright.json' }]],
-  use: { trace: 'retain-on-failure', video: 'retain-on-failure' },
-});
-```
+运行前核对测试准备和回调的实际作用，启动应用、产生业务写入或更新基线须在授权范围内。会写入的用例失败或超时时，先核对本次业务标识及实际结果，再决定能否重试。
 
 稳定填写/点击使用 `getByRole`、label、稳定 id/name 等公开定位与真实对应事件；需要逐字输入、blur 或键盘事件时按实际交互执行。保留可见/启用/遮挡检查，不默认 `force`，不改隐藏值、内部变量或直接调用提交函数绕过被测路径。等待可观察状态，不靠固定长 sleep 或无限重试。
 
 ## 3. 画面、动画与真实流转
 
-按当前验收要求和影响范围，为适用的关键正常、失败状态留实际截图及对应判读。已有 Playwright 用例可用 `page.screenshot()` 和 `testInfo.attach()` 关联。图像只是原始材料，生成成功和行为测试通过都不授予视觉 PASS。适用时保存 reference/actual/diff，基线来自获准设计或版本，不自动接受当前图片，也不 mask 被测字段掩盖差异。
+按当前验收要求和影响范围，为适用的关键正常、失败状态留实际截图及对应判读。图像只是原始材料，生成成功和行为测试通过都不授予视觉 PASS。适用时保存 reference/actual/diff，基线来自获准设计或版本，不自动接受当前图片，也不 mask 被测字段掩盖差异。
+
+借助模型判读画面时，先核对实际模型端点是否获准接收本次画面，并用代表性的正确和错误画面验证所用判读。服务不可用或结果不确定时，用其他获准方式判读，仍无法判读的检查点记为待验。
 
 静态终态可等待字体、图片及动画稳定；动效专项必须保留真实动画，以短视频/关键帧检查展开收起、连续点击、中途返回等实际过程。相关用例使用上游录制配置保留通过过程，不能只设置失败留视频，不能关闭动画后声称动效通过。无动效要求不全程录制、不让模型通读所有录像。
 
-验收要求涉及新建并验证后续流转，且已获准写入时，通过页面实际提交和获准角色操作，关联**本次创建的业务标识**与要求核验的状态、待办或下一节点。HTTP 200、成功提示、旧单据或确认后取消不足以证明本次完整流转。只读查看、历史回溯或展示核对使用获准的已有记录，按实际覆盖留证。需要真实写入而未获准时，仅将依赖该写入的检查标为待验。接口/DB 只在获准时用于隔离数据准备、结果核对和本次自有数据清理，不取代被测页面动作。浏览器移动模拟不代表微信相机、扫码、OAuth、软键盘或 JS-SDK 已实测；真机缺口单列，Airtest 仅在缺口确实需要时再选。
+验收要求涉及新建并验证后续流转，且已获准写入时，通过页面实际提交和获准角色操作，关联**本次创建的业务标识**与要求核验的状态、待办或下一节点。HTTP 200、成功提示、旧单据或确认后取消不足以证明本次完整流转。只读查看、历史回溯或展示核对使用获准的已有记录，按实际覆盖留证。需要真实写入而未获准时，仅将依赖该写入的检查标为待验。接口/DB 只在获准时用于隔离数据准备、结果核对和本次自有数据清理，不取代被测页面动作。浏览器移动模拟不代表微信相机、扫码、OAuth、软键盘或 JS-SDK 已实测；真机缺口单列。
 
 正式 Task 的视觉门禁适用时，每个 Visual Manifest case 仍绑定真实 AC、route、viewport、actual、report 及当前 `change_set_id`；reference/diff 声明后必须是真实 evidence 内文件。代码变化后旧视觉 PASS 失效，technical-only 不能代替必要视觉/人验。实际 Owner 已按声明范围核验时，human_owner 可通过既有 `task acceptance-override --mode accept --scope visual --ac ...` 留证；该范围必须绑定当前 Subject/ChangeSet，不生成或伪造 Visual Manifest，也不消解无关 blocker。完整门禁、human_owner 的合法 defer/waive 不变，不从报告文本自动编造 Visual Manifest 或 human witness。
 
-## 4. 按需接入 Midscene
-
-只在选定视觉检查点或确有必要的定位/探索处使用官方 `PlaywrightAiFixture`／`PlaywrightAgent`，不是将稳定脚本全部改成 `aiAct`。已有本地工具会看图不证明它有兼容模型 API；先核对接口、模型来源及正确/错误代表画面。没有获准服务时跳过 Midscene；可用获准方式直接判读实际画面，并按实际覆盖记录，仅将仍无法判读的检查点列为待验。不得回退演示/云端默认模型或建立通用模型网关。
-
-已确认安装、模型及数据发送授权后，项目专用视觉 fixture 可以使用以下公开类型/工厂；不要让普通行为用例导入此文件或自动开启模型：
-
-```ts
-import { test as base } from '@playwright/test';
-import type { PlayWrightAiFixtureType } from '@midscene/web/playwright';
-import { PlaywrightAiFixture } from '@midscene/web/playwright';
-
-export const test = base.extend<PlayWrightAiFixtureType>(
-  PlaywrightAiFixture(),
-);
-```
-
-具体模型配置只保留在受控环境，使用前核实有效配置/端点，不能因未填配置让库默认服务获得授权。公共 Base 不存模型密钥、机器地址或项目身份。所用 API 的探索/重试边界应有实际依据；无法判读保持未知，不删除断言或接受 healer 的 skip 作为成功。
-
-复用官方 `@midscene/web/playwright-reporter` 保存原 HTML；正式 Task 的独立文件通过 `checkpoint --collect` 引用，若已在 Playwright attachments 中声明则可用下节受限采集。Base 不解析 HTML 得出 AI 判定，不渲染或自动打开报告，也不创建报告站。外置图片模式需按上游要求另行保全其依赖，不能只复制 HTML 就宣称完整；不自动启动 HTTP 服务。
-
-缓存仅复用上游支持的计划/定位，不代替当前画面判断。`read-only` 仅约束自动缓存写入，不是零模型调用、无副作用或离线执行承诺；cache miss 仍可能调用服务，手动 flush 仍可能写缓存。模型不可用、无法判断、定位失效、认证/环境问题、真实行为失败分开报告，不从一句失败文字自动裁决产品有错。
-
-## 5. 报告、附件与既有 Evidence
+## 4. 报告、附件与既有 Evidence
 
 正式 Task 需要接收报告时，使用现有 `checkpoint --result-report <Playwright原生JSON>`，保留原件并自动映射汇总、各项目/重试结果与有限失败定位；可与 JUnit、已登记专业结果引用同批接收。不让模型抄写报告大 JSON。命令、进程退出码、浏览器/视口、模型、真实 actor 和部署主体未被该入口实际观察时保持未知；报告版本是上游声明，不是安装认证。
 
@@ -82,7 +42,7 @@ export const test = base.extend<PlayWrightAiFixtureType>(
 
 Playwright `expected` 可能包含预期失败，`flaky` 代表重试后结果不同，`skipped`/无执行仍是不完整；接收结果不会压成全通过。多项目的 spec.ok 只是上游合并提示，不代替各项目结果。场景标题、完整错误和 trace 按返回的原件路径/JSON定位定向读取，不能为节省输出丢掉改变结论的失败。
 
-## 6. 项目资产与受控升级
+## 5. 项目资产与受控升级
 
 可复用交互脚本保存到对应项目 `.tp-spec/memory/testing/interaction/`，已有 Memory 同类目录优先沿用；适用于业务项目及 TP-Spec 项目自身。项目外已有测试继续原位复用，不为统一目录批量搬迁或复制。公共 Skill 承载方法，AGENTS 与 Memory 索引仅保留短触发和目标链接。Base 同步不创建业务脚本或空测试目录。
 
@@ -99,14 +59,7 @@ Playwright `expected` 可能包含预期失败，`flaky` 代表重试后结果�
 
 升级只作为显式维护批次：核对 Release Notes 与依赖/浏览器版本，在隔离环境验证所用登录、条件切换、上传、报告和视觉 API；成功才更新既有锁文件与验证记录，失败保留旧锁及用例。不能用一段配置示例、合成报告或字符串测试宣布工具组合、模型准确性或三流程已验收。
 
-公开接口核验入口（2026-09-08读取；不是已安装/兼容验证证明）：
-- [Playwright v1.63.0 JSON reporter](https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright/src/reporters/json.ts) 与 [公开结果类型](https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright/types/testReporter.d.ts)。
-- [Midscene v1.12.3 包/导出](https://github.com/web-infra-dev/midscene/blob/v1.12.3/packages/web-integration/package.json)、[官方集成](https://midscenejs.com/integrate-with-playwright)、[缓存边界](https://midscenejs.com/caching)。
-
-以上版本仅固定本次源码/文档核验依据；实际运行组合、配套浏览器、模型和项目锁文件仍须在获准环境确认，不宣称所有版本兼容。现有实现没有自研驱动、图像比较、视觉定位、测试 DSL、模型网关或报告引擎。
-
-
-## 7. 原型 / 交互 / 动效专项
+## 6. 原型 / 交互 / 动效专项
 有原型交接时，按当前有效验收要求和实际影响范围读取 [原型交接](../../ui-prototype-design/SKILL.md#交接与完成边界) 中的批准范围/版本、受影响三类清单，以及同一有效设计工件中的相关基线、变量/组件约定、实现/预览位置、页面到组件消费映射、适配/批准例外和代表路径验证状态。不重复产品设计；局部返修只读和核对受影响内容，没有独立基线文件也不要求补全七类信息或重做完整原型，不固定三轮审批。
 
 涉及标签、辅助说明或显隐调整时，按 [信息何时呈现](../../ui-prototype-design/SKILL.md#信息何时呈现) 核对必要性与呈现时机，适用于原型交接和直接页面返修。

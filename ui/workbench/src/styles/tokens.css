@@ -5,21 +5,21 @@
   --muted-surface: #f3f5f8; --text: #202b3a; --muted: #5d6a7a; --border: #dfe5ed;
   --accent: #365bc6; --accent-soft: #edf1fc; --accent-tint: #f6f8ff; --accent-ring: #365bc624;
   --warning: #8c5510; --warning-bg: #fff7e8; --danger: #ae343b; --danger-bg: #fff0f0; --good: #246b50; --good-bg: #edf7f1;
-  --tag-bg: #eef0f3; --graph-bg: #f7f8fa; --node-border: #c5ccd7;
-  --node-shadow: 0 1px 2px #20232908; --panel-shadow: 0 10px 32px #20232914;
-  --group-border: #b8c6d4; --group-bg: #edf1f550; --overlay: #15161966;
+  --tag-bg: #eef0f3; --node-border: #c5ccd7;
+  --panel-shadow: 0 10px 32px #20232914;
+  --overlay: #15161966;
   --radius: 8px; --control-radius: 6px; --header-h: 52px;
-  --motion-fast: 120ms; --motion-panel: 180ms; --motion-ease: cubic-bezier(.2,.8,.2,1);
+  --motion-fast: 140ms; --motion-panel: 200ms; --motion-ease: cubic-bezier(.2,.8,.2,1);
   color: var(--text); background: var(--bg); color-scheme: light;
 }
 :root[data-theme='dark'] {
-  --bg: #151a21; --surface: #1e252e; --sidebar: #192029; --elevated: #24262b;
-  --muted-surface: #27313c; --text: #e8edf4; --muted: #aab7c7; --border: #36424f;
-  --accent: #88a6ff; --accent-soft: #28334e; --accent-tint: #222b40; --accent-ring: #88a6ff30;
-  --warning: #e6b86b; --warning-bg: #332a1f; --danger: #ff9096; --danger-bg: #372328; --good: #7bceac; --good-bg: #20372d;
-  --tag-bg: #2a2d33; --graph-bg: #17191d; --node-border: #4c5360;
-  --node-shadow: 0 1px 2px #00000030; --panel-shadow: 0 12px 36px #00000055;
-  --group-border: #566078; --group-bg: #29314250; --overlay: #00000088;
+  --bg: #0b0e14; --surface: #111620; --sidebar: #0e131c; --elevated: #171d2b;
+  --muted-surface: #1e2638; --text: #e6ebf5; --muted: #8f9bb3; --border: #242d3f;
+  --accent: #6ea8fe; --accent-soft: #1b2842; --accent-tint: #151f33; --accent-ring: #6ea8fe33;
+  --warning: #eab354; --warning-bg: #292114; --danger: #f07d85; --danger-bg: #2d191e; --good: #4cc38a; --good-bg: #132920;
+  --tag-bg: #1e2533; --node-border: #334057;
+  --panel-shadow: 0 14px 40px #00000066;
+  --overlay: #00000088;
   color-scheme: dark;
 }
 @media(prefers-reduced-motion:reduce) {

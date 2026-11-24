@@ -1,7 +1,7 @@
 ---
 id: tp-video-director
 name: tp-视频编导
-version: 5.4.0
+version: 5.4.1
 status: active
 type: workflow-role
 role: tp-video-director

@@ -1,7 +1,7 @@
 ---
 name: video-shot-production
 display_name: 视频镜头制作
-version: 5.4.0
+version: 5.4.1
 description: 用获准素材和实际可用工具制作、选择或修补具体视频镜头，交接选片及生成来源。
 ---
 

@@ -91,11 +91,14 @@ function Collection({ title, value }: { title: string; value: KnowledgeCollectio
 function CollectionNotice({ title, value }: { title: string; value: KnowledgeCollection }) {
     if (value.status === 'available' && value.window_complete !== false) return null;
     const missing = [...new Set([...value.missing_projects, ...(value.unresolved_contexts ?? [])])];
-    return <div className="wiki-collection-note">
-      <strong>{title}</strong>
-      <span>{value.status === 'available' ? '所选时间范围内采集覆盖不完整。' : label(value.status)}</span>
-      {missing.length > 0 && <span className="wiki-coverage-note">缺少：{missing.join('、')}</span>}
-    </div>;
+    return <details className="wiki-collection-note">
+      <summary>
+        <strong>{title}</strong>
+        <span>{value.status === 'available' ? '所选时间范围内采集覆盖不完整' : label(value.status)}</span>
+        {missing.length > 0 && <span className="wiki-coverage-note"> · 缺少 {missing.length} 个来源（点击查看影响范围）</span>}
+      </summary>
+      {missing.length > 0 && <p className="muted" style={{ marginTop: 6, marginBottom: 0 }}>缺失来源：{missing.join('、')}</p>}
+    </details>;
 }
 
 function DocumentRow({ doc, onOpen }: { doc: KnowledgeDocument; onOpen: (key: string) => void }) {
@@ -296,8 +299,8 @@ export function KnowledgePage({ revision }: { revision: number }) {
         <label><span>已记录维护状态</span><Select value={maintenance} onChange={value => { setMaintenance(value); setPage(1); }} options={[{ value: '', label: '全部状态' }, ...(documentsData?.maintenance_states || []).map(value => ({ value, label: label(value) }))]}/></label>
         <Checkbox checked={adopted} onChange={event => { setAdopted(event.target.checked); setPage(1); }}>仅已记录采用</Checkbox><Button htmlType="submit" icon={<SearchOutlined/>}>查找</Button>
       </form>
-    </Card><ReadStatus {...docs}/>{documentsData && <><Problems items={documentsData.problems}/>
-      {documentsData.status !== 'available' && <Alert type="warning" showIcon title={`${label(documentsData.status)}：文档结果未完整取得。`}/>}
+    </Card>{docs.error && <Alert type="error" showIcon title={docs.error}/>}{documentsData && <><Problems items={documentsData.problems}/>
+      {documentsData.status !== 'available' && !documentsData.problems.length && <Alert type="warning" showIcon title={`${label(documentsData.status)}：文档结果未完整取得。`}/>}
       {documentsData.items.length ? <ul className="knowledge-document-list">{documentsData.items.map(doc => <DocumentRow key={doc.key} doc={doc} onOpen={open}/>)}</ul> : documentsData.status === 'available' ? <Empty>所选范围与筛选条件下没有匹配的文档。</Empty> : null}
       <Pages total={documentsData.total} page={page} onChange={setPage}/></>}</div>;
     const recordTab = <div className="wiki-tab-body"><Card size="small" className="wiki-filter-card knowledge-filter-card">
@@ -307,11 +310,11 @@ export function KnowledgePage({ revision }: { revision: number }) {
         <label><span>查询哈希前缀（至少 4 位）</span><Input value={hashInput} maxLength={64} pattern="[a-f0-9]{4,64}" allowClear onChange={event => setHashInput(event.target.value)}/></label>
         <label><span>执行日期（UTC+8）</span><Input type="date" value={dateInput} onChange={event => setDateInput(event.target.value)}/></label><Button htmlType="submit" icon={<FileSearchOutlined/>}>定位记录</Button>
       </form>
-    </Card><ReadStatus {...records}/>{recordsData && <><Problems items={recordsData.problems}/>
+    </Card>{records.error && <Alert type="error" showIcon title={records.error}/>}{recordsData && <><Problems items={recordsData.problems}/>
       <p className="muted">日志状态：{label(recordsData.collection.status)} · {purposeLabel(scope.purpose)}。{scope.purpose !== 'unknown' && scope.purpose !== 'all' && '旧记录请切换至“未知用途 / 旧记录”。'}</p>
       {recordsData.items.length ? <ul className="wiki-record-list knowledge-record-list">{recordsData.items.map(row => <RecordItem key={row.key} row={row} scope={recordsQuery} revision={revision} open={open}/>)}</ul> : <Empty>{recordsData.collection.status === 'available' ? '已知采集范围内没有符合筛选的记录。' : '未取得符合筛选的记录。'}</Empty>}
       <Pages total={recordsData.total} page={recordPage} onChange={setRecordPage}/></>}</div>;
-    return <section className="page wiki-page knowledge-page"><div className="page-heading wiki-page-heading"><div><h1 ref={heading} tabIndex={-1}><DatabaseOutlined/> 知识库</h1></div>
+    return <section className="page wiki-page knowledge-page"><div className="page-heading wiki-page-heading"><div><h2 ref={heading} tabIndex={-1}>知识库</h2><p className="muted">汇聚跨项目复盘与工程经验，严格区分「未取得（—）」与「真实的 0（有效空结果）」。</p></div>
       <div className="wiki-page-controls"><Select className="wiki-project-select" aria-label="知识库项目范围" value={scope.project} onChange={project => changeScope({ project })} showSearch optionFilterProp="label"
         options={[{ value: '', label: '全部已注册项目' }, ...projects.map(project => ({ value: project.key, label: project.name }))]}/>
         <Segmented aria-label="知识统计时间范围" value={scope.days} options={[{ value: 7, label: '7 天' }, { value: 30, label: '30 天' }, { value: 90, label: '90 天' }]} onChange={value => changeScope({ days: value as KnowledgeDays })}/>

@@ -1,7 +1,7 @@
 ---
 id: tp-base-maintenance
 name: tp-基座维护
-version: 5.4.0
+version: 5.4.1
 status: active
 type: human-owner-skill
 tool_agnostic: Base 与用户根来自 Installation/Resolver；能力按需读取，不依赖特定 IDE。

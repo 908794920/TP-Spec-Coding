@@ -4,9 +4,9 @@
 
 | 任务版本 | 模板目录 | 状态 | 说明 |
 |---|---|---|---|
-| `5.4.0` | `5.4.0/` | **唯一活动契约** | 视频制作域、Office 文档格式化能力与 Base 旧兼容实现退役；沿用既有 Runtime 状态、事件和显式迁移机制。历史终态保持只读，在途任务按授权显式迁移。受控 YAML（`cli/config_loader.py`）仍按当前契约全量精确匹配。 |
+| `5.4.1` | `5.4.1/` | **唯一活动契约** | 新增视频制作域；文档保真纳入通用交付标准，具体 Office 格式化方法由外部能力提供。退役 Base 旧兼容实现；沿用既有 Runtime 状态、事件和显式迁移机制。历史终态保持只读，在途任务按授权显式迁移。受控 YAML（`cli/config_loader.py`）仍按当前契约全量精确匹配。 |
 
-创建新任务时必须写入 `base_version: 5.4.0` 与 `artifact_contract.version: 5.4.0`。模板目录迁移不改变已创建任务的工件路径。`Test-TpSpecTask.ps1` 的活动契约检查拒绝旧版本，不等于删除旧任务或否定历史证据；在途任务按 [Getting Started](../docs/GETTING_STARTED.md#跨版本更新至当前契约) 的项目/任务显式迁移步骤处理，终态及已退役任务不迁移。
+创建新任务时必须写入 `base_version: 5.4.1` 与 `artifact_contract.version: 5.4.1`。模板目录迁移不改变已创建任务的工件路径。`Test-TpSpecTask.ps1` 的活动契约检查拒绝旧版本，不等于删除旧任务或否定历史证据；在途任务按 [Getting Started](../docs/GETTING_STARTED.md#跨版本更新至当前契约) 的项目/任务显式迁移步骤处理，终态及已退役任务不迁移。
 
 ## Pre-task intake 使用
 

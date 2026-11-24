@@ -41,7 +41,7 @@ CLI / Runtime
 
 Role Catalog 的 `topology` 是内置 catalog + Skill metadata 的生成投影，不是第二事实源。用户级外部方法独立存放，CLI 与工作台后端通过共享加载器把内置投影和外部描述合成只读能力目录；不回写内置 Catalog。外部 ID 带来源前缀，未关联方法不虚构角色关系。存放、选择、正文定位与来源异常见 [外部 SKILL](EXTERNAL_SKILLS.md)。
 
-节点同时保留稳定 `id` 和用户可读 `name`。内置关系读取生成投影，外部方法只读取用户级限定目录；不为了查询关系扫描整个 Skills 目录，也不增加新的数据库或后台服务。拓扑图以统一入口为中心，无正式角色层的领域及其专属 SKILL 向左展开，含角色的分支按领域、角色、SKILL 向右展开；内置跨侧共享和未连通 SKILL 留在右侧能力列。外部 SKILL 在图和树中统一展示于自定义 SKILL 管理之下，分组不改用途关联或执行规则。每个图节点只画一次，布局不新增中间角色；树中的内置分支仍按目录声明展开。图中的“使用”及节点的 ×N 统计原目录声明，不包含仅展示的管理分组，也不是调用次数；实际执行仍以相应任务记录为准。
+节点同时保留稳定 `id` 和用户可读 `name`。内置关系读取生成投影，外部方法只读取用户级限定目录；不为了查询关系扫描整个 Skills 目录，也不增加新的数据库或后台服务。本地工作台在全局配置以可搜索、可筛选的父子展开表展示声明路径：从统一入口展开领域、正式角色和能力 SKILL，外部 SKILL 按 `applies_to` 挂在目录声明的角色或领域下，独立自定义 SKILL 可归入“自定义 SKILL 管理”（保留其用途关联），未归属外部条目单独列出。父子表统计的声明关系仅来自目录定义；实际执行以相应任务记录为准。
 
 ## 5. Runtime 与 Governance
 
@@ -67,7 +67,5 @@ Runtime 的核心职责是自动记录真实执行事实。原则：
 Role 只留职责、边界和准确触发指针，方法由 Capability/其按需 reference 维护。Catalog 的 `default` 是角色默认适用能力，不表示启动时预读全文；`conditional` 的实际触发条件以对应 Role 为准。同一稳定 ID 只计一个节点；显示名相同但来源／ID 不同是不同能力，多个使用关系不是多份能力。
 
 角色默认/条件能力由 Catalog 及对应 Role 的触发指针维护；共享方法不在导航中复制正文。历史方法抽取、原使用者与引用处置见 [CHANGELOG](../CHANGELOG.md#history-capability-extraction)，该记录不作为当前安装或宿主缓存已同步的证明。
-
-客户 Office 成品的新建、按模板制作及增量编辑可用 [Office 文档格式化](../skills/capabilities/office-document-formatting/SKILL.md)，由已有内容角色按需读取一份介质参考与唯一默认样式片段；需求期和 pre-task 即可使用，不要求切到交付阶段、不自动创建 Task 或把治理 Markdown 转为 Office。客户模板/有效既有格式优先，真实公文与普通参照排版分开，内容、结构、运行/重算、真实渲染与人验分别说明。内置准确发现/读取可用 `tp-spec skill list --query office-document-formatting --json` 与 `tp-spec skill read --id office-document-formatting --json`；纯文档无领域上下文仍受已有入口的 unknown/最小澄清边界约束，不代表增加了路由关键词。
 
 软件工程共享 Capability 方法路径以 `skills/capabilities/` 为根，领域专项方法位于 `skills/base/`、`skills/knowledge/` 或 `skills/wiki/`；具体可点击路径从生命周期导航或对应领域/Role 进入。Knowledge 与 Wiki 的领域入口只保留职责、意图路由、共享边界和结果汇总；具体方法按命中意图读取，不预载全部能力。共用的 Task 收敛契约保留原路径，拆分不改变 Runtime、CLI 或既有数据边界。Runtime 的[执行事实](EXECUTION_FACTS.md)、[Work/Fix 与集成候选](WORK_UNITS.md)、[来源审批](security-change-authority.md)和[结单/提炼](agents/tp-software-lifecycle.md)分别承载实际行为；本章与拓扑只负责导航，不能代替运行验证或真实验收。新旧事实按各自标记解释，不由角色关系推断过去已执行。

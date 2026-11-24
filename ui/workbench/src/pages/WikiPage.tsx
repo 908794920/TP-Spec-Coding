@@ -117,6 +117,19 @@ function statusText(value: string | null | undefined): string {
     return labels[normalized] || (value ? String(value) : '未记录');
 }
 
+function docTypeText(value: string | null | undefined): string {
+    const normalized = String(value || '').toLowerCase();
+    const map: Record<string, string> = {
+        'module-index': '模块索引',
+        'content-doc': '内容文档',
+        'concept-card': '概念卡片',
+        guide: '指南',
+        overview: '总览文档',
+        architecture: '架构文档',
+    };
+    return map[normalized] || valueOrDash(value);
+}
+
 function sourceLabel(document: WikiDocumentMetadata | undefined): string {
     if (!document) return '—';
     const parts = [document.project_name || document.project_key, document.repo_id, document.path].filter(Boolean);
@@ -230,7 +243,7 @@ function DocumentRow({ document, onOpen }: { document: WikiDocumentMetadata; onO
     return <li className="wiki-document-row"><button type="button" onClick={() => onOpen(document.key)}>
       <span className="wiki-document-title"><strong>{document.title || document.path || document.key}</strong><small>{document.path || '来源路径未记录'}</small>{document.snippet && <small className="wiki-document-snippet">{document.snippet}</small>}</span>
       <span className="wiki-document-project">{document.project_name || document.project_key || '项目未记录'}<small>{document.repo_id || '仓库未记录'}</small></span>
-      <span><Tag color={statusColor(document.type)}>{valueOrDash(document.type)}</Tag><Tag color={statusColor(document.status)}>{statusText(document.status)}</Tag></span>
+      <span><Tag color={statusColor(document.type)} title={document.type || undefined}>{docTypeText(document.type)}</Tag><Tag color={statusColor(document.status)}>{statusText(document.status)}</Tag></span>
       <span className="wiki-document-numbers">阅读 {numberOrDash(document.reads)}<br/>采用 {numberOrDash(document.adopted_tasks)}</span>
       <time>{dateOrDash(document.updated_at)}</time>
     </button></li>;
@@ -265,7 +278,8 @@ function DocumentsTab({ project, days, revision, adoptedOnly, onAdoptedChange, o
           <Checkbox checked={adoptedOnly} onChange={event => { onAdoptedChange(event.target.checked); setPage(1); }}>仅显示已采用文档</Checkbox>
         </form>
       </Card>
-      <WikiReadStatus read={read}/>
+      {read.error && <Alert role="alert" type="error" showIcon title={`读取失败：${read.error}`}/>}
+      {!data && read.loading && <p className="muted">正在检索文档…</p>}
       {data && <><Problems items={problemItems(data.problems)}/>
         {(data.items ?? []).length ? <><ul className="wiki-document-list" aria-label="Wiki 文档列表">{(data.items ?? []).map(document => <DocumentRow key={document.key} document={document} onOpen={onOpenDocument}/>)}</ul><div className="wiki-pagination"><span className="muted">共 {numberOrDash(data.total)} 篇</span><Pagination current={data.page || page} pageSize={pageSize} total={data.total || 0} showSizeChanger={false} onChange={next => setPage(next)}/></div></> : <Empty title="没有符合条件的文档">调整项目、仓库、类型或关键词后重新检索。</Empty>}
       </>}
@@ -328,7 +342,8 @@ function RecordsTab({ project, days, revision, initialStatus, initialDate, initi
         </form>
         <p className="muted wiki-filter-note">记录状态：<Tag color={collection.color}>{collection.label}</Tag> {data?.collection?.note || '历史检索记录只读展示。'}</p>
       </Card>
-      <WikiReadStatus read={read}/>
+      {read.error && <Alert role="alert" type="error" showIcon title={`读取失败：${read.error}`}/>}
+      {!data && read.loading && <p className="muted">正在检索文档…</p>}
       {data && <><Problems items={problemItems(data.problems)}/>{(data.items ?? []).length ? <><ul className="wiki-record-list" aria-label="Wiki 检索记录">{(data.items ?? []).map((item, index) => <RecordRow key={`${item.key}:${index}`} record={item} onOpenDocument={onOpenDocument}/>)}</ul><div className="wiki-pagination"><span className="muted">共 {numberOrDash(data.total)} 条</span><Pagination current={data.page || page} pageSize={pageSize} total={data.total || 0} showSizeChanger={false} onChange={next => setPage(next)}/></div></> : <Empty title="没有符合条件的检索记录">调整状态、日期或关键词后重新筛选。</Empty>}</>}
     </section>;
 }
@@ -373,11 +388,11 @@ function DocumentDrawer({ documentKey, days, revision, canGoBack, onBack, onClos
     }, [content]);
     const links = data?.links ?? [];
     const linkByHref = useMemo(() => new Map(links.map(link => [link.href, link])), [links]);
-    return <Drawer className="wiki-document-drawer" open={!!documentKey} onClose={onClose} size={720} title={<span>{document?.title || document?.path || 'Wiki 文档'}</span>} extra={<Button type="text" icon={<ArrowLeftOutlined/>} disabled={!canGoBack} onClick={onBack}>返回</Button>}>
+    return <Drawer className="wiki-document-drawer" open={!!documentKey} onClose={onClose} size={720} title={<span>{document?.title || document?.path || 'Wiki 文档'}</span>} extra={<Button type="text" icon={<ArrowLeftOutlined/>} onClick={canGoBack ? onBack : onClose}>{canGoBack ? '返回上篇' : '返回原检索结果'}</Button>}>
       <WikiReadStatus read={read}/>
-      {data && <><Problems items={problemItems(data.problems)}/><div className="wiki-document-heading"><div><span className="eyebrow">Wiki 文档</span><h2>{document?.title || document?.path || documentKey}</h2><p className="path">{sourceLabel(document)}</p></div><Space wrap><Tag color={statusColor(document?.status)}>{statusText(document?.status)}</Tag><Tag>{valueOrDash(document?.type)}</Tag></Space></div>
+      {data && <><Problems items={problemItems(data.problems)}/><div className="wiki-document-heading"><div><span className="eyebrow">Wiki 文档</span><h2>{document?.title || document?.path || documentKey}</h2><p className="path">{sourceLabel(document)}</p></div><Space wrap><Tag color={statusColor(document?.status)}>{statusText(document?.status)}</Tag><Tag title={document?.type || undefined}>{docTypeText(document?.type)}</Tag></Space></div>
         <div className="wiki-document-layout">
-          <aside className="wiki-toc" aria-label="文档目录"><strong><UnorderedListOutlined/> 目录</strong>{headings.length ? <ol>{headings.map(heading => <li key={heading.id} className={`wiki-toc-level-${heading.level}`}><a href={`#${heading.id}`}>{heading.title}</a></li>)}</ol> : <span className="muted">没有标题</span>}<div className="wiki-source-box"><strong>来源</strong><span>{document?.path || '路径未记录'}</span><span>更新：{dateOrDash(document?.updated_at)}</span><code>{document?.content_hash || '哈希未记录'}</code></div></aside>
+          <aside className="wiki-toc" aria-label="文档目录"><strong><UnorderedListOutlined/> 目录</strong>{headings.length ? <ol>{headings.map(heading => <li key={heading.id} className={`wiki-toc-level-${heading.level}`}><a href={`#${heading.id}`}>{heading.title}</a></li>)}</ol> : <span className="muted">没有标题</span>}<div className="wiki-source-box"><strong>来源与指纹</strong><span>{document?.path || '路径未记录'}</span><span>更新：{dateOrDash(document?.updated_at)}</span><code title={document?.content_hash || undefined}>{document?.content_hash ? `指纹 ${document.content_hash.slice(0, 12)}` : '指纹未记录'}</code></div></aside>
           <article ref={article} className="wiki-markdown"><ReactMarkdown skipHtml remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSlug]} components={{
               a: ({ href, children }) => {
                   const local = href ? linkByHref.get(href) : undefined;
@@ -432,9 +447,10 @@ export function WikiPage({ revision }: { revision: number }) {
         setTab('records');
     }
     function openProject(key: string) { setProject(key); setTab('overview'); }
-    const tabItems = [{ key: 'overview', label: '使用概况' }, { key: 'documents', label: '文档' }, { key: 'records', label: '检索记录' }];
-    return <div className="page wiki-page"><div className="page-heading wiki-page-heading"><div><span className="eyebrow">Wiki</span><h2>文档与检索使用</h2></div><div className="wiki-page-controls"><ProjectSelector projects={projects} value={project} onChange={value => { setProject(value); setTab('overview'); }}/><DaysSelector value={days} onChange={value => setDays(value)}/></div></div>
-       <WikiReadStatus read={overviewRead}/><Tabs className="wiki-tabs" activeKey={tab} onChange={key => setTab(key as WikiTab)} items={tabItems}/>
+    const tabItems = [{ key: 'overview', label: '使用概况' }, { key: 'documents', label: '文档检索' }, { key: 'records', label: '检索记录' }];
+    return <div className="page wiki-page"><div className="page-heading wiki-page-heading"><div><h2>Wiki</h2><p className="muted">按项目与仓库筛选，核对可用文档与不可读仓库来源，支持右侧正文阅读与短指纹核对。</p></div><div className="wiki-page-controls"><ProjectSelector projects={projects} value={project} onChange={value => { setProject(value); setTab('overview'); }}/><DaysSelector value={days} onChange={value => setDays(value)}/></div></div>
+      {overviewRead.error && <Alert type="error" showIcon title={overviewRead.error}/>}
+      <Tabs className="wiki-tabs" activeKey={tab} onChange={key => setTab(key as WikiTab)} items={tabItems}/>
       {tab === 'overview' && <OverviewTab data={overview} onMetric={openMetric} onTrend={openTrend} onProject={openProject} onDocument={openDocument} onAttention={openAttention}/>}
       {tab === 'documents' && <DocumentsTab key={`documents:${project}:${days}:${adoptedOnly}`} project={project} days={days} revision={revision} adoptedOnly={adoptedOnly} onAdoptedChange={setAdoptedOnly} onOpenDocument={openDocument}/>}
       {tab === 'records' && <RecordsTab key={`records:${recordsIntent.nonce}:${project}:${days}`} project={project} days={days} revision={revision} initialStatus={recordsIntent.status} initialDate={recordsIntent.date} initialQuery={recordsIntent.query} onOpenDocument={openDocument}/>}

@@ -1,7 +1,7 @@
 ---
 id: tp-tech-lead
 name: tp-技术主管
-version: 5.4.0
+version: 5.4.1
 status: active
 type: workflow-role
 role: tp-tech-lead
@@ -19,7 +19,6 @@ description: tp-技术主管：TP-Spec-Coding 正式软件工程角色，按需�
 读取唯一当前需求/AC、适用架构、源码约束和已有授权；输出可实施的工程计划、Work 边界、技术依赖与验证范围，供项目经理统筹和开发执行。确定性小改不为角色齐全增加第二轮规划。
 
 ## 何时读取
-- 实施计划、排期/估算表或技术交付材料的 Word/Excel/PPT 新建、按模板制作或增量编辑 → [Office 文档格式化](../../capabilities/office-document-formatting/SKILL.md)；计划阶段可用，不生成未经确认的估算口径。
 - 需实施方案、影响/成本及验证计划 → [交付计划](../../capabilities/delivery-planning/SKILL.md)。
 - 需拆批次、依赖、并行或返修 Work → [任务拆解](../../capabilities/task-decomposition/SKILL.md)。
 - 需独立技术符合性审查 → [独立技术审查](../../capabilities/technical-review/SKILL.md)。

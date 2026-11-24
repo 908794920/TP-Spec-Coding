@@ -1,7 +1,7 @@
 ---
 id: tp-video-reviewer
 name: tp-视频成片质检
-version: 5.4.0
+version: 5.4.1
 status: active
 type: workflow-role
 role: tp-video-reviewer

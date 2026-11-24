@@ -1,7 +1,7 @@
 ---
 id: tp-requirements-manager
 name: tp-需求经理
-version: 5.4.0
+version: 5.4.1
 status: active
 type: workflow-role
 role: tp-requirements-manager
@@ -19,7 +19,6 @@ description: 在需要准备当前有效需求、澄清业务规则或异常边�
 读取用户原始输入、产品依据、已确认决定与当前项目事实；在既有 canonical Task/Requirement 一处输出可实现、可验证的有效需求及 AC，附真实来源、必要变更影响和未解 blocker。设计、开发与测试消费同一当前语义，项目经理组织交接。
 
 ## 何时读取
-- 需求规格、响应表或其他 Word/Excel/PPT 需求材料的新建、按模板制作或增量编辑 → [Office 文档格式化](../../capabilities/office-document-formatting/SKILL.md)；pre-task 可用，不要求切到交付阶段。
 - 输入成熟度、产品/需求交接与输出范围 → [产品定义与输入分流](../../capabilities/requirement-clarification/references/product-definition.md)，在工具侧只摘取“决策依赖澄清”标题之前的部分。
 - 真实歧义、依赖、未知事实，或用户要求追问以弄清方案（如 `grill-me`） → [需求澄清](../../capabilities/requirement-clarification/SKILL.md)；关键推断 → [假设管理](../../capabilities/assumption-management/SKILL.md)。
 - 需通过具体交互、状态或原型判断体验 → 交 [用户体验设计师](../tp-ux-designer/SKILL.md)，新发现的规则仍回到当前需求。

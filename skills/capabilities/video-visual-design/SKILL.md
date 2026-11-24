@@ -1,7 +1,7 @@
 ---
 name: video-visual-design
 display_name: 视频视觉设定
-version: 5.4.0
+version: 5.4.1
 description: 为需要视觉一致性、精确图示或品牌还原的视频确定参考资产与实现方法。
 ---
 

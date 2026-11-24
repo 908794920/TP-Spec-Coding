@@ -1,7 +1,7 @@
 ---
 id: tp-video-production
 name: tp-视频制作
-version: 5.4.0
+version: 5.4.1
 status: active
 type: control-role
 role: tp-video-production

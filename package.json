@@ -1,6 +1,6 @@
 {
   "name": "tp-spec-workbench",
-  "version": "5.4.0",
+  "version": "5.4.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@ant-design/icons": "6.3.4",
-    "@xyflow/react": "12.10.1",
     "antd": "6.6.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",

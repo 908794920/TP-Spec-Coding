@@ -15,7 +15,7 @@ import tempfile
 from typing import Any, Iterator
 import uuid
 
-from cli import db as dbmod, environment, event_policies, record_first
+from cli import db as dbmod, environment, event_policies, orchestration, record_first
 from cli.path_identity import canonical_path, path_identity_key, same_path, expand_path_text
 from cli.project_surface import project_path_issue
 from cli.skill_catalog import SkillCatalogError, read_skill_document
@@ -442,7 +442,7 @@ class WorkbenchService:
             task_dir = self._task_dir(context, task_id)
             retirement = event_policies.load_task_retirement(conn, task_id)
             data = snapshot.build_task_snapshot(task_id, db_path=context.db_path, base_root=BASE_ROOT,
-                                                connection=conn, task_dir=task_dir)
+                                                connection=conn)
             if data.get("health") == "unavailable":
                 raise ReadError("TASK_READ_FAILED", "Task 快照读取失败")
             # Evidence View and this top-level summary are historical projections,
@@ -450,15 +450,26 @@ class WorkbenchService:
             data["verification"] = {**data.get("verification", {}), "current_applicability": "not_evaluated",
                                     "source": "historical_task_event"}
             from cli.task_views import inspect_task_views
-            from cli.execution import read_execution
             rows = conn.execute("SELECT * FROM task_event WHERE task_id=? ORDER BY id", (task_id,)).fetchall()
             data["documents"] = inspect_task_views(task_dir, task, events=rows,
-                                                   execution=read_execution(conn, task, rows=rows),
+                                                   execution=data["workflow"]["execution"],
                                                    retirement=retirement, project_root=Path(context.project_root))
             data["problems"] = [*data.get("problems", []), *data["documents"]["problems"]]
             data["timeline_scope"] = {"limit": 50, "returned": len(data.get("timeline", [])),
                 "total": conn.execute("SELECT count(*) FROM task_event WHERE task_id=?", (task_id,)).fetchone()[0]}
         return self._response(data, context, started, database=True, task_revision=revision)
+
+    def task_route_view(self, key: str, task_id: str) -> dict[str, Any]:
+        started, context = timestamp(), self._context(key)
+        with self._database(context) as conn:
+            task = self._task(conn, context, task_id)
+            revision = self._task_revision(conn, task)
+            progress = orchestration.resolve_progress(task_id, db_path=context.db_path, base_root=BASE_ROOT,
+                                                      connection=conn, task_dir=self._task_dir(context, task_id),
+                                                      include_validation_advice=False)
+        workflow = {k: v for k, v in progress.items() if k not in {"execution", "work_items", "work_sessions"}}
+        return self._response({"task_id": task_id, "workflow": workflow}, context, started,
+                              database=True, task_revision=revision)
 
     def details_view(self, key: str, task_id: str) -> dict[str, Any]:
         started, context = timestamp(), self._context(key)

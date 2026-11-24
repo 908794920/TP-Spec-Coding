@@ -1,22 +1,16 @@
-import { Button, Tabs } from 'antd';
+import { Button, Drawer, Skeleton } from 'antd';
+import { ArrowLeftOutlined, FileTextOutlined, HistoryOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import { useRead } from '../useRead';
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { Context, Envelope, ReadState, TaskData } from '../types';
 import { record, stateLabel, text } from '../facts';
-import { buildGraph, type GraphObject } from '../graph/model';
-import type { GraphHandle } from '../graph/TaskGraph';
 import { TaskDetail, type TaskDetailTab } from '../components/TaskDetail';
 import { WorkflowStrip, type WorkflowHandle } from '../components/WorkflowStrip';
 import { WorkResults } from '../components/WorkResults';
 import { TaskDocuments } from '../components/TaskDocuments';
 import { EventTimeline } from '../components/EventTimeline';
 import { Disclosure, Empty, Fields, Problems, ReadStatus } from '../components/Facts';
-
-/* 关系图依赖 @xyflow/react 及其样式，进入任务时默认显示，保留独立 lazy 分块。
-   加载占位沿用 graph-canvas，图出现时保持区域尺寸，避免布局跳动。 */
-const loadTaskGraph = () => import('../graph/TaskGraph').then(module => ({ default: module.TaskGraph }));
-const TaskGraph = lazy(loadTaskGraph);
 
 function focusAfterReveal(element: HTMLElement | null) {
     if (!element)
@@ -41,7 +35,6 @@ function TaskMaterials({ data, expandedWork, materialTarget, onWorkToggle }: {
             focusAfterReveal(target);
             return;
         }
-        // AntD may still hide a retained pane during its activation commit.
         const observer = new ResizeObserver(() => {
             if (!target.getClientRects().length) return;
             observer.disconnect();
@@ -60,15 +53,14 @@ function TaskMaterials({ data, expandedWork, materialTarget, onWorkToggle }: {
     </>;
 }
 
-function WorkflowDiagnostics({ context, taskId, data, workItemId }: {
+function WorkflowDiagnostics({ context, taskId, data }: {
     context: Context;
     taskId: string;
     data: TaskData;
-    workItemId?: string;
 }) {
     const workflow = record(data.workflow), support = record(data.data_support);
     return <div className="task-diagnostics">
-      <EventTimeline events={data.timeline} scope={data.timeline_scope} workItemId={workItemId}/>
+      <EventTimeline events={data.timeline} scope={data.timeline_scope}/>
       <Disclosure className="route-diagnostics" label="路由与来源字段">
         <Fields value={{ current_step: workflow.current_step, current_step_source: workflow.current_step_source,
           next_step: workflow.next_step, next_step_source: workflow.next_step_source, route: workflow.route,
@@ -85,30 +77,52 @@ function WorkflowDiagnostics({ context, taskId, data, workItemId }: {
     </div>;
 }
 
-function TaskWorkspace({ context, snapshot, revision }: {
+function TaskLoadingSkeleton() {
+    return <div className="task-skeleton-shell" role="status" aria-label="正在加载任务工作区">
+      <div className="task-skeleton-banner"><Skeleton active paragraph={{ rows: 2 }}/></div>
+      <div className="task-skeleton-stepper">{[1, 2, 3, 4, 5].map(i => <div className="task-skeleton-step" key={i}><Skeleton active title={false} paragraph={{ rows: 2 }}/></div>)}</div>
+      <div className="task-skeleton-cards">{[1, 2, 3].map(i => <div className="task-skeleton-card" key={i}><Skeleton active paragraph={{ rows: 3 }}/></div>)}</div>
+    </div>;
+}
+
+function TaskWorkspace({ context, snapshot, read, revision, sideDrawer, onCloseSideDrawer }: {
     context: Context;
     snapshot: Envelope<TaskData>;
+    read: ReadState<Envelope<TaskData>>;
     revision: number;
+    sideDrawer: 'materials' | 'history' | null;
+    onCloseSideDrawer: () => void;
 }) {
     const data = snapshot.data;
     const taskId = text(record(data.task).task_id);
     const [detailsRequested, requestDetails] = useState(false), [detailRevision, refreshDetails] = useState(0);
     const [closeoutRequested, requestCloseout] = useState(false), [closeoutRevision, refreshCloseout] = useState(0);
     const identity = JSON.stringify([context.context_key, taskId]);
+    const shouldReadRoute = ['NEW', 'ACTIVE'].includes(text(data.task.state)) && data.workflow.retired !== true;
+    const route = useRead(shouldReadRoute && !read.loading && !read.error ? identity + '/route' : '', revision,
+        signal => api.taskRoute(context.context_key, taskId, signal));
+    const routeMatches = !!route.data && route.data.read.task_revision === snapshot.read.task_revision;
+    const routeWorkflow = routeMatches && !route.loading && !route.error ? route.data?.data.workflow : undefined;
+    const routeStatus = !shouldReadRoute ? '' : read.error || route.error || routeWorkflow?.error ? '当前流转未取得'
+        : route.data && !route.loading && !routeMatches ? '任务记录已更新，请重新读取'
+        : routeWorkflow ? '' : '正在读取当前流转';
+    const displayedWorkflow = { ...data.workflow, ...routeWorkflow, error: route.error || routeWorkflow?.error,
+        route_read_status: routeStatus };
     const details = useRead(detailsRequested ? identity + '/details' : '', `${revision}:${detailRevision}`, signal => api.details(context.context_key, taskId, signal));
     const closeout = useRead(closeoutRequested ? identity + '/closeout' : '', closeoutRevision, signal => api.closeout(context.context_key, taskId, signal));
-    const model = useMemo(() => buildGraph(context.context_key, data), [context.context_key, data]);
-    const [selectedId, setSelectedId] = useState(''), [detailOpen, setDetailOpen] = useState(false);
+    const [detailOpen, setDetailOpen] = useState(false);
     const [detailTab, setDetailTab] = useState<TaskDetailTab>('overview');
-    const [supportTab, setSupportTab] = useState('relations');
+    const [localSideDrawer, setLocalSideDrawer] = useState<'materials' | 'history' | null>(null);
+    const activeDrawer = sideDrawer ?? localSideDrawer;
+    const closeDrawer = useCallback(() => {
+        setLocalSideDrawer(null);
+        onCloseSideDrawer();
+    }, [onCloseSideDrawer]);
     const [expandedWork, setExpandedWork] = useState<string[]>([]);
     const [materialTarget, setMaterialTarget] = useState<{ workId?: string }>();
-    const [pendingGraphLocate, setPendingGraphLocate] = useState('');
-    const graph = useRef<GraphHandle>(null), workflow = useRef<WorkflowHandle>(null);
+    const workflow = useRef<WorkflowHandle>(null);
     const workReturnFocus = useRef<{ id: string; trigger: HTMLElement | null } | null>(null);
     const returnFocus = useRef<HTMLElement | null>(null);
-    const selected = model.nodes.find(n => n.id === selectedId);
-    const taskObject = model.nodes.find(n => n.id === model.taskNodeId);
     const task = record(data.task);
 
     const onDetails = useCallback(() => requestDetails(true), []);
@@ -119,17 +133,8 @@ function TaskWorkspace({ context, snapshot, revision }: {
         returnFocus.current = active instanceof HTMLElement ? active : null;
     }, []);
     const openTaskDetail = useCallback((tab: TaskDetailTab) => {
-        if (!taskObject)
-            return;
         rememberFocus();
-        setSelectedId(taskObject.id);
         setDetailTab(tab);
-        setDetailOpen(true);
-    }, [rememberFocus, taskObject]);
-    const onOpen = useCallback((object: GraphObject) => {
-        rememberFocus();
-        setSelectedId(object.id);
-        setDetailTab('overview');
         setDetailOpen(true);
     }, [rememberFocus]);
     const close = useCallback(() => {
@@ -139,35 +144,8 @@ function TaskWorkspace({ context, snapshot, revision }: {
         requestAnimationFrame(() => {
             if (target && document.contains(target))
                 target.focus();
-            else
-                graph.current?.focusNode(selectedId);
         });
-    }, [selectedId]);
-    useEffect(() => {
-        if (selectedId && !selected) {
-            setSelectedId('');
-            setDetailOpen(false);
-            setDetailTab('overview');
-        }
-    }, [selectedId, selected]);
-    useEffect(() => {
-        if (!pendingGraphLocate || supportTab !== 'relations')
-            return;
-        let frame = 0, attempts = 0;
-        const locate = () => {
-            if (graph.current) {
-                graph.current.locate(pendingGraphLocate);
-                setPendingGraphLocate('');
-                return;
-            }
-            if (attempts++ < 60)
-                frame = requestAnimationFrame(locate);
-            else
-                setPendingGraphLocate('');
-        };
-        frame = requestAnimationFrame(locate);
-        return () => cancelAnimationFrame(frame);
-    }, [supportTab, pendingGraphLocate]);
+    }, []);
 
     const setWorkOpen = useCallback((id: string, open: boolean) => {
         setExpandedWork(previous => {
@@ -176,12 +154,12 @@ function TaskWorkspace({ context, snapshot, revision }: {
         });
     }, []);
     const openDocuments = useCallback(() => {
-        setSupportTab('materials');
+        setLocalSideDrawer('materials');
         setMaterialTarget({});
     }, []);
     const openWorkItem = useCallback((id: string) => {
         workReturnFocus.current = { id, trigger: document.activeElement instanceof HTMLElement ? document.activeElement : null };
-        setSupportTab('materials');
+        setLocalSideDrawer('materials');
         setWorkOpen(id, true);
         setMaterialTarget({ workId: id });
     }, [setWorkOpen]);
@@ -193,39 +171,33 @@ function TaskWorkspace({ context, snapshot, revision }: {
             if (origin.trigger?.isConnected) focusAfterReveal(origin.trigger);
         }
     }, [setWorkOpen]);
-    const locateGraph = useCallback((id: string) => {
-        setSupportTab('relations');
-        setPendingGraphLocate(id);
-    }, []);
 
     return <div className="task-workspace-shell">
-    <div className="task-quick-actions" aria-label="Task 详情入口">
-      <Button size="small" onClick={() => openTaskDetail('overview')}>Task 概况</Button>
-      <Button size="small" onClick={() => openTaskDetail('verification')}>验证验收</Button>
-    </div>
     <section className="task-main" aria-label="Task 当前流程">
-      <WorkflowStrip workflow={record(data.workflow)} task={task} ref={workflow} blockers={data.blockers}
+      <WorkflowStrip workflow={displayedWorkflow} task={task} ref={workflow} blockers={data.blockers}
+        lifecycleActivity={data.lifecycle_activity}
         workItems={data.work_items} onConditions={() => openTaskDetail('blockers')}
         onDocuments={openDocuments} onWorkItem={openWorkItem}/>
     </section>
-    <Problems items={data.problems}/>
-    <Tabs className="task-support-tabs" activeKey={supportTab} destroyOnHidden={false}
-      onChange={key => { setSupportTab(key); setMaterialTarget(undefined); }} items={[
-      { key: 'relations', label: '工作关系', children: <>
-        <div className="section-heading"><div className="graph-actions">
-          <Button size="small" onClick={() => graph.current?.locateCurrent()}>定位当前步骤</Button>
-          <Button size="small" disabled={task.state !== 'BLOCKED'} onClick={() => locateGraph(model.taskNodeId)}>定位阻塞 Task</Button>
-        </div></div>
-        <Suspense fallback={<div className="graph-canvas graph-loading" role="status">正在加载关系图…</div>}>
-          <TaskGraph ref={graph} model={model} selectedId={selectedId} onOpen={onOpen}/>
-        </Suspense>
-      </> },
-      { key: 'materials', label: '资料与 Work', children: <TaskMaterials data={data} expandedWork={expandedWork}
-        materialTarget={materialTarget} onWorkToggle={onWorkToggle}/> },
-      { key: 'history', label: '历史与诊断', children: <WorkflowDiagnostics context={context} taskId={taskId} data={data}
-        workItemId={selected?.kind === 'work_item' ? selected.objectId : undefined}/> },
-    ]}/>
-    {detailOpen && selected && <TaskDetail object={selected} snapshot={snapshot} initialTab={detailTab} defaultTab="overview" onClose={close} details={details}
+
+    <Drawer open={activeDrawer === 'materials'} size={580} onClose={closeDrawer} title="资料与 Work">
+      <TaskMaterials data={data} expandedWork={expandedWork} materialTarget={materialTarget} onWorkToggle={onWorkToggle}/>
+    </Drawer>
+
+    <Drawer open={activeDrawer === 'history'} size={580} onClose={closeDrawer} title="历史与证据">
+      <div className="task-history-drawer">
+        <div className="task-history-actions">
+          <Button size="small" onClick={() => openTaskDetail('overview')}>Task 概况</Button>
+          <Button size="small" onClick={() => openTaskDetail('verification')}>验证验收</Button>
+          <Button size="small" onClick={() => openTaskDetail('evidence')}>证据与交付</Button>
+        </div>
+        <ReadStatus {...read}/>
+        <Problems items={data.problems}/>
+        <WorkflowDiagnostics context={context} taskId={taskId} data={{ ...data, workflow: displayedWorkflow }}/>
+      </div>
+    </Drawer>
+
+    {detailOpen && <TaskDetail snapshot={{ ...snapshot, data: { ...data, workflow: displayedWorkflow } }} initialTab={detailTab} defaultTab="overview" onClose={close} details={details}
       onDetails={onDetails} onRefreshDetails={onRefreshDetails} closeout={closeout} closeoutRequested={closeoutRequested} onCloseout={onCloseout}/>}
   </div>;
 }
@@ -237,18 +209,32 @@ export function TaskPage({ context, taskId, read, revision, onOpenProject }: {
     read: ReadState<Envelope<TaskData>>;
     onOpenProject: (key: string) => void;
 }) {
-    useEffect(() => {
-        // 与任务数据并行加载默认页签的关系图，避免数据返回后才开始下载代码。
-        if (context && taskId) void loadTaskGraph().catch(() => undefined);
-    }, [context?.context_key, taskId]);
+    const [sideDrawer, setSideDrawer] = useState<'materials' | 'history' | null>(null);
     if (!context || !taskId)
         return <div className="page task-page"><div className="page-heading"><div><span className="eyebrow">任务工作区</span><h2>尚未选择 Task</h2></div></div>
-        <Empty title="选择一个 Task 查看工作关系">从项目总览或左侧任务索引进入。</Empty></div>;
+        <Empty title="选择一个 Task 查看工作进展">从项目总览或左侧任务索引进入。</Empty></div>;
     const data = read.data?.data, task = record(data?.task);
     const displayState = data ? stateLabel('task', task.state).split(' · ')[0] : '';
-    return <div className="page task-page"><div className="page-heading"><div>
-      <span className="eyebrow">任务工作区 · <button type="button" className="knowledge-link" title="返回项目总览" onClick={() => onOpenProject(context.context_key)}>{context.name}</button></span>
-      <h2>{text(task.title) || '任务'} {taskId && <small className="task-id"><code>{taskId}</code></small>}</h2>{displayState && <p>{displayState}</p>}</div></div>
-    <ReadStatus {...read}/>{data && <TaskWorkspace key={JSON.stringify([context.context_key, taskId])} context={context} snapshot={read.data!} revision={revision}/>}
-  </div>;
+    const issueCount = data?.problems?.length ?? 0;
+    return <div className="page task-page">
+      <div className="task-flat-header">
+        <div className="task-flat-left">
+          <Button size="small" className="task-back-btn" icon={<ArrowLeftOutlined/>} onClick={() => onOpenProject(context.context_key)}>返回 {context.name}</Button>
+          <div className="task-title-line">
+            <h2>{text(task.title) || taskId}</h2>
+            {taskId && <code className="task-id-inline">{taskId}</code>}
+            {displayState && <span className="task-state-pill">{displayState}</span>}
+          </div>
+        </div>
+        {data && <div className="task-flat-actions">
+          <Button size="small" icon={<FileTextOutlined/>} onClick={() => setSideDrawer('materials')}>资料与 Work</Button>
+          <Button size="small" icon={<HistoryOutlined/>} onClick={() => setSideDrawer('history')}>
+            历史与证据{issueCount > 0 ? ` (${issueCount})` : ''}
+          </Button>
+        </div>}
+      </div>
+      {read.loading && !data && <TaskLoadingSkeleton/>}
+      {data && <TaskWorkspace key={JSON.stringify([context.context_key, taskId])} context={context} snapshot={read.data!} read={read} revision={revision}
+        sideDrawer={sideDrawer} onCloseSideDrawer={() => setSideDrawer(null)}/>}
+    </div>;
 }

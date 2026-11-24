@@ -1,8 +1,10 @@
-import { useRef } from 'react';
-import { Alert, Button, Card, Tag } from 'antd';
-import { Fields, Empty, Problems, ReadStatus } from '../components/Facts';
+import { useMemo, useState } from 'react';
+import { Button, Drawer } from 'antd';
+import { RightOutlined, WarningOutlined } from '@ant-design/icons';
+import { Fields, Empty, Problems } from '../components/Facts';
 import { TaskIndex } from '../components/TaskIndex';
-import { record, text } from '../facts';
+import { countProjectTasks } from '../components/projectTaskView';
+import { record, text, timestampText } from '../facts';
 import type { Context, Envelope, ProjectData, ReadState } from '../types';
 
 function runtimePresentation(value: unknown): { label: string; color: string; raw: string } {
@@ -65,11 +67,13 @@ export function ProjectPage({ context, read, notesWritable, onSelectTask, onNote
     onSelectTask: (id: string) => void;
     onNoteSaved: () => void;
 }) {
-    const environment = useRef<HTMLDetailsElement>(null);
+    const [envOpen, setEnvOpen] = useState(false);
+    const data = read.data?.data;
+    const rows = data?.task_index ?? [];
+    const counts = useMemo(() => countProjectTasks(rows), [rows]);
     if (!context)
         return <div className="page project-page"><div className="page-heading"><div><span className="eyebrow">项目总览</span><h2>尚未选择项目</h2></div></div>
         <Empty title="先选择项目与工作区">从左侧项目列表打开项目总览。</Empty></div>;
-    const data = read.data?.data;
     const project = record(data?.project);
     const projectId = text(project.project_id) || context.project_id;
     const runtime = runtimePresentation(project.runtime_status);
@@ -77,35 +81,50 @@ export function ProjectPage({ context, read, notesWritable, onSelectTask, onNote
     const taskIndexAvailable = !!data && runtime.raw === 'available' && Array.isArray(data.task_index);
     const issues = data?.problems ?? [];
     const environmentIssues = issues.filter(problem => environmentImpact[problem.code]);
-    function showEnvironment() {
-        const details = environment.current;
-        if (!details) return;
-        details.open = true;
-        const summary = details.querySelector('summary');
-        summary?.focus({ preventScroll: true });
-        summary?.scrollIntoView({ block: 'center' });
-    }
+    const otherIssues = issues.filter(problem => !environmentImpact[problem.code]);
+    const projectName = text(project.name) || context.name;
+    const showProjectId = !!projectId && projectId.toLowerCase() !== projectName.toLowerCase();
+    const workspaceRoot = text(project.root_path) || context.workspace_root || context.project_root || '';
+    const syncedAt = read.data?.read.completed_at ? timestampText(read.data.read.completed_at) : '';
+    const totalIssues = environmentIssues.length + otherIssues.length;
+
     return <div className="page project-page">
-      <div className="page-heading project-overview-heading">
-        <div><span className="eyebrow">项目总览</span><h2>{text(project.name) || context.name} {projectId && <small className="project-id"><code>{projectId}</code></small>}</h2>
-          <div className="project-overview-status" aria-label="项目状态">
-            <span>Runtime <Tag color={runtime.color} title={runtime.raw || '未记录'}>{runtime.label}</Tag></span>
-            <span>版本 <Tag color={version.color}>{version.label}</Tag></span>
-          </div>
+      <div className="project-flat-header">
+        <div className="project-flat-title-row">
+          <h2>{projectName} {showProjectId && <small className="project-id"><code>{projectId}</code></small>}</h2>
+          <span className={`project-inline-status is-${runtime.color}`}>{runtime.label} · {version.label}</span>
         </div>
-        <ReadStatus {...read} showDetails={false}/>
+        <div className="project-flat-meta-row">
+          <span className="project-flat-path">
+            {workspaceRoot && <code>{workspaceRoot}</code>}
+            {workspaceRoot && syncedAt && ' · '}
+            {syncedAt && <span>最近同步 {syncedAt}</span>}
+          </span>
+          {data && <span className="project-flat-counts">
+            共 <strong>{taskIndexAvailable ? counts.all : '—'}</strong> 单 / 在途 <strong>{taskIndexAvailable ? counts.in_progress : '—'}</strong> / 待归类 <strong>{taskIndexAvailable ? counts.other : '—'}</strong>
+          </span>}
+        </div>
       </div>
+
       {data && <>
-        {environmentIssues.length > 0 && <Alert type="warning" showIcon title="项目环境异常"
-          description={<ul>{environmentIssues.map(({ code }) => <li key={code}>{environmentImpact[code]} <Button size="small" type="link" onClick={showEnvironment}>查看环境详情</Button></li>)}</ul>}/>}
-        <Problems items={issues.filter(problem => !environmentImpact[problem.code])}/>
-        <Card className="project-task-progress" size="small" title="任务进展">
-          <TaskIndex key={context.context_key} contextKey={context.context_key} rows={taskIndexAvailable ? data.task_index : []}
-            available={taskIndexAvailable} notesWritable={notesWritable} onSelect={onSelectTask} onNoteSaved={onNoteSaved}/>
-        </Card>
-        <details className="project-details" key={context.context_key} ref={environment}>
-          <summary>环境详情</summary>
-          {environmentIssues.length > 0 && <Problems items={environmentIssues}/>}
+        {(totalIssues > 0 || read.error) && (
+          <div className="slim-amber-bar" role="status">
+            <span className="slim-amber-copy">
+              <WarningOutlined/>
+              <strong>环境异常提示</strong>
+              <span>· {totalIssues} 项待核实{environmentIssues[0] ? `：${environmentImpact[environmentIssues[0].code]}` : ''}</span>
+            </span>
+            <Button type="link" size="small" className="slim-amber-action" onClick={() => setEnvOpen(true)}>
+              查看详情 <RightOutlined/>
+            </Button>
+          </div>
+        )}
+
+        <TaskIndex key={context.context_key} contextKey={context.context_key} rows={taskIndexAvailable ? data.task_index : []}
+          available={taskIndexAvailable} notesWritable={notesWritable} onSelect={onSelectTask} onNoteSaved={onNoteSaved}/>
+
+        <Drawer title={`${projectName} · 环境与读取详情`} placement="right" size={520} open={envOpen} onClose={() => setEnvOpen(false)}>
+          {issues.length > 0 && <Problems items={issues}/>}
           <Fields value={{ ...project, registry: data.registry, wiki: systemAvailability(data.wiki), knowledge: systemAvailability(data.knowledge),
             ...uniqueContextFields(read.data?.context, project, data.registry),
             ...(read.data?.read.note ? { read_note: read.data.read.note } : {}),
@@ -114,7 +133,7 @@ export function ProjectPage({ context, read, notesWritable, onSelectTask, onNote
             labels={{ context_project_id: '上下文项目 ID', context_name: '上下文名称', context_project_root: '上下文项目根',
               context_workspace_root: '上下文工作区', context_db_path: '上下文 Runtime', context_registry_path: '上下文注册表',
               context_source: '上下文来源', read_note: '读取说明', read_consistency: '一致性边界', read_task_revision: '账本观察标识' }}/>
-        </details>
+        </Drawer>
       </>}
     </div>;
 }

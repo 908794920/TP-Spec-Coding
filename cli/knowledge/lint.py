@@ -54,14 +54,17 @@ def load_relation_types() -> Dict[str, Dict[str, Any]]:
     return {str(r.get("name")): r for r in data.get("relations", []) or [] if isinstance(r, dict) and r.get("name")}
 
 
-def _schema_errors(fm: Dict[str, Any]) -> List[Tuple[str, str]]:
+def _schema_validator(schema_name: str):
     try:
-        import jsonschema
-    except ImportError:
-        # The rest of the linter still runs. Base CI environments normally have jsonschema.
-        return []
-    schema = json.loads(base_schema_path("canonical-note.schema.json").read_text(encoding="utf-8"))
-    validator = jsonschema.Draft202012Validator(schema)
+        from jsonschema import Draft202012Validator
+    except ImportError as exc:
+        raise RuntimeError("Knowledge validation requires jsonschema from the Base Python requirements") from exc
+    schema = json.loads(base_schema_path(schema_name).read_text(encoding="utf-8"))
+    return Draft202012Validator(schema)
+
+
+def _schema_errors(fm: Dict[str, Any]) -> List[Tuple[str, str]]:
+    validator = _schema_validator("canonical-note.schema.json")
     out = []
     for err in sorted(validator.iter_errors(fm), key=lambda e: str(list(e.path))):
         loc = "/".join(str(p) for p in err.path) or "<root>"
@@ -203,24 +206,20 @@ def lint_knowledge(cfg) -> Dict[str, Any]:
     # Registry contracts are data-owned but Base-schema validated. Legacy source
     # catalogs remain compatibility evidence and are not retroactively forced through
     # the new Source Registry schema.
-    try:
-        import jsonschema
-        project_schema = json.loads(base_schema_path("project-registry.schema.json").read_text(encoding="utf-8"))
-        for err in sorted(jsonschema.Draft202012Validator(project_schema).iter_errors(registry_data), key=lambda e: str(list(e.path))):
-            loc = "/".join(str(x) for x in err.path) or "<root>"
-            add(violations, {"rel_path": str(cfg.paths.knowledge_registry)}, "K019", loc, err.message)
-        source_schema = json.loads(base_schema_path("source-registry-record.schema.json").read_text(encoding="utf-8"))
-        source_registry_path = cfg.paths.knowledge_meta_root / "source-registry.jsonl"
-        if source_registry_path.is_file():
-            for idx, row in enumerate(read_jsonl(source_registry_path)):
-                for err in jsonschema.Draft202012Validator(source_schema).iter_errors(row):
-                    loc = f"{idx}/" + ("/".join(str(x) for x in err.path) or "<root>")
-                    add(violations, {"rel_path": ".ai-kb/meta/source-registry.jsonl"}, "K020", loc, err.message)
-                content_path = str(row.get("content_path") or "").strip()
-                if content_path and not (root / content_path.replace("\\", "/")).is_file():
-                    add(violations, {"rel_path": ".ai-kb/meta/source-registry.jsonl"}, "K021", f"{idx}/content_path", f"registered content_path does not exist: {content_path}")
-    except ImportError:
-        pass
+    project_validator = _schema_validator("project-registry.schema.json")
+    for err in sorted(project_validator.iter_errors(registry_data), key=lambda e: str(list(e.path))):
+        loc = "/".join(str(x) for x in err.path) or "<root>"
+        add(violations, {"rel_path": str(cfg.paths.knowledge_registry)}, "K019", loc, err.message)
+    source_validator = _schema_validator("source-registry-record.schema.json")
+    source_registry_path = cfg.paths.knowledge_meta_root / "source-registry.jsonl"
+    if source_registry_path.is_file():
+        for idx, row in enumerate(read_jsonl(source_registry_path)):
+            for err in source_validator.iter_errors(row):
+                loc = f"{idx}/" + ("/".join(str(x) for x in err.path) or "<root>")
+                add(violations, {"rel_path": ".ai-kb/meta/source-registry.jsonl"}, "K020", loc, err.message)
+            content_path = str(row.get("content_path") or "").strip()
+            if content_path and not (root / content_path.replace("\\", "/")).is_file():
+                add(violations, {"rel_path": ".ai-kb/meta/source-registry.jsonl"}, "K021", f"{idx}/content_path", f"registered content_path does not exist: {content_path}")
 
     id_map: Dict[str, Dict[str, Any]] = {}
     id_counts: Dict[str, List[str]] = {}

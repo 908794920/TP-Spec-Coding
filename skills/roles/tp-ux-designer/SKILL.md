@@ -1,7 +1,7 @@
 ---
 id: tp-ux-designer
 name: tp-用户体验设计师
-version: 5.4.0
+version: 5.4.1
 status: active
 type: workflow-role
 role: tp-ux-designer

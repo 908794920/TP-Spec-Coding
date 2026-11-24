@@ -8,7 +8,6 @@ This protocol is invoked explicitly for a named external-document/source batch. 
 REGISTER
 → MANIFEST/HASH
 → DEDUP
-→ CONVERT or QUARANTINE
 → GROUP/TRIAGE
 → SEARCH CANONICAL
 → AI READ / UPDATE / CREATE / MERGE
@@ -24,7 +23,6 @@ REGISTER
 
 ```text
 tp-spec knowledge ingest register --workspace-root <workspace> --project <id> --batch <name> --source-root <path>
-tp-spec knowledge ingest convert  --workspace-root <workspace> --batch <name>
 tp-spec knowledge ingest status   --workspace-root <workspace> --batch <name>
 ```
 
@@ -36,7 +34,6 @@ Registration writes only machine-owned manifest/progress under the configured in
 - Hash/deduplicate before spending model tokens.
 - Search canonical before creating new knowledge.
 - Prefer update/merge over duplicate canonical creation.
-- Default local conversion uses the pinned Microsoft MarkItDown runtime through `convert_local`; Base does not reimplement Office/PDF parsing. Failure becomes `quarantined`, not silent loss.
 - `pending` means not yet adjudicated; finalization requires every registered source to have a terminal disposition.
 - `source_only`, `duplicate`, `superseded`, `quarantined`, `excluded` are valid outcomes and do not lower source accountability.
 - Deleting originals, moving external archives, ambiguous merge/split, or conflicting evidence is forbidden in unattended mode.
@@ -65,4 +62,4 @@ knowledge scan
 → knowledge snapshot-commit
 ```
 
-Do not reuse the change set created before AI UPDATE/disposition changes. A batch with `pending` sources cannot finalize. “100%” here means every registered source is accounted for, not every source was converted to canonical.
+Do not reuse the change set created before AI UPDATE/disposition changes. A batch with `pending` sources cannot finalize. “100%” here means every registered source has a disposition.

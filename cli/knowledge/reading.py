@@ -117,8 +117,7 @@ def _text(cfg, row):
         if (after.st_size, after.st_mtime_ns) != (opened.st_size, opened.st_mtime_ns):
             raise telemetry.KnowledgeError("KNOWLEDGE_DOCUMENT_CHANGED_DURING_READ")
     fm, _, _, _ = parse_frontmatter(content)
-    registered = metadata(row).get("registered_conversion") or {}
-    declared_project = (fm or {}).get("project") or (registered.get("project") if row["rel_path"].startswith("@converted/") else "")
+    declared_project = (fm or {}).get("project")
     identity = effective_project_identity(cfg, str(declared_project or ""),
                                           relative=row["rel_path"], scope=row["scope"])
     if not identity["project"] or identity["project"] != row["project"]:
@@ -149,13 +148,13 @@ def read_document(cfg, document_id: str, *, project=None, scope=None, start_line
         if indexed_meta.get("metadata_only"):
             document["metadata_source"] = "registered_source"
             result = {**budget(""), "read_mode": "metadata", "body_returned": False,
-                      "note": "原件非受支持的知识 Markdown；仅展示注册元数据与已登记转换件，不自动转换或读取外部原件。"}
+                      "note": "仅展示外部原件的登记信息。"}
         else:
             text = _text(cfg, row)
             parsed = parse_frontmatter(text)
             version = hashlib.sha256(text.encode("utf-8")).hexdigest()
             fm = parsed[0] or {}
-            # 正文与当前生命周期事实来自同次读取；登记身份和转换来源仍沿用索引的受控记录。
+            # 正文与当前生命周期事实来自同次读取；来源关联仍使用索引的登记记录。
             current_meta = {name: fm[name] for name in
                             ("status", "superseded", "replaced_by", "relations", "evidence_refs") if name in fm}
             unsupported_metadata = False
@@ -165,7 +164,7 @@ def read_document(cfg, document_id: str, *, project=None, scope=None, start_line
                 except (TypeError, ValueError):
                     del current_meta[name]
                     unsupported_metadata = True
-            current_meta.update({name: indexed_meta[name] for name in ("origin", "conversion") if name in indexed_meta})
+            current_meta.update({name: indexed_meta[name] for name in ("origin", "content_path") if name in indexed_meta})
             source_refs = fm.get("source_refs") if isinstance(fm.get("source_refs"), list) else []
             current_row = {**row, "title": str(fm.get("title") or ""),
                            "kind": str(fm.get("kind") or ("source" if row["scope"] == "source" else "")),

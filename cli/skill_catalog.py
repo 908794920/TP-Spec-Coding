@@ -130,11 +130,12 @@ def _descriptor_values(values: dict[str, Any], name: str) -> dict[str, Any]:
     return {"name": _text_field(values, "name", name) or name,
             "description": _text_field(values, "description"),
             "upstream": _text_field(values, "upstream"), "version": str(version),
-            "enabled": enabled, "applies_to": list(dict.fromkeys(x.strip() for x in targets))}
+            "enabled": enabled, "applies_to": list(dict.fromkeys(x.strip() for x in targets)),
+            "management_group": values.get("management_group") is True}
 
 
 def _external_node(name: str, overrides: Any, library: Path, blocked: str,
-                   problems: list[dict[str, str]]) -> dict[str, Any]:
+                   association_targets: set[str], problems: list[dict[str, str]]) -> dict[str, Any] | None:
     node_id = f"external:local:{name}"
     node: dict[str, Any] = {
         "id": node_id, "name": name, "kind": "capability-skill", "path": "SKILL.md",
@@ -151,7 +152,8 @@ def _external_node(name: str, overrides: Any, library: Path, blocked: str,
     if not _valid_package_name(name):
         return fail("EXTERNAL_PACKAGE_INVALID", "来源包键必须是单个有效目录名")
     try:
-        source = (library / name).resolve()
+        package = library / name
+        source = package.resolve()
         if source == library or not source.is_relative_to(library):
             return fail("EXTERNAL_PACKAGE_INVALID", "来源包必须位于用户级 external-skills 目录内")
         node["source_root"] = str(source)
@@ -170,6 +172,16 @@ def _external_node(name: str, overrides: Any, library: Path, blocked: str,
         try:
             path.stat()
         except (FileNotFoundError, NotADirectoryError):
+            # An absent package is uninstalled. A dangling locator or a
+            # permission failure still needs a diagnostic.
+            try:
+                package.lstat()
+            except FileNotFoundError:
+                if association_targets.issuperset(node["applies_to"]):
+                    return None
+                # Retain an invalid registration so the catalog can report its targets.
+                node["reason"] = "来源包登记包含未知领域或角色"
+                return node
             return fail("EXTERNAL_ENTRY_MISSING", f"入口文档缺失：{node['path']}", "missing")
         text, digest = _read_document(path)
         metadata = _metadata(text, name)
@@ -200,6 +212,8 @@ def load_skill_catalog(*, base_root: Path | None = None,
     nodes = catalog["nodes"]
     for node in nodes.values():
         node.update(source_kind="builtin", source_root=str(base), status="available", enabled=True)
+    association_targets = {node_id for node_id, node in nodes.items()
+                           if node["kind"] in {"formal-role", "domain-agent"}}
     problems = catalog["problems"]
     entries, blocked = _configuration(config)
     if blocked:
@@ -231,20 +245,23 @@ def load_skill_catalog(*, base_root: Path | None = None,
             pass
         if path_identity_key(child) not in identities:
             candidates.setdefault(child.name, {})
+    has_external_nodes = False
     for name, overrides in candidates.items():
         aliases = identities.get(path_identity_key(library / name), []) if _valid_package_name(name) else []
         conflict = "多个登记键指向同一来源包：" + ", ".join(aliases) if len(aliases) > 1 else ""
-        node = _external_node(name, overrides, library, blocked or conflict, problems)
+        node = _external_node(name, overrides, library, blocked or conflict, association_targets, problems)
+        if node is None:
+            continue
+        has_external_nodes = True
         nodes[node["id"]] = node
         for target in node["applies_to"]:
-            parent = nodes.get(target)
-            if not parent or parent.get("kind") not in {"formal-role", "domain-agent"} or parent.get("source_kind") != "builtin":
+            if target not in association_targets:
                 problems.append(_problem("EXTERNAL_ASSOCIATION_INVALID", f"关联不是已知领域/角色：{target}", node["id"]))
                 continue
             catalog["edges"].append({"from": target, "to": node["id"], "relation": "uses", "mode": "declared"})
     catalog["external"] = {
         "root": str(library), "config_path": str(config),
-        "status": "invalid" if blocked else "partial" if problems else "available" if candidates else "empty",
+        "status": "invalid" if blocked else "partial" if problems else "available" if has_external_nodes else "empty",
     }
     return catalog
 

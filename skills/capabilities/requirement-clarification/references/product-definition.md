@@ -8,8 +8,6 @@
 3. **Requirement Ready**：确认关键语义已经足够后交给 Software Lifecycle 按已有授权继续，并判断是否需要正式 Task，不重复做产品分析。
 4. **明确 Bug / Code Task**：目标和范围明确的普通局部修改直接处理，不把产品经理、需求经理或建 Task 变成固定前置步骤。
 
-本地需求材料若是 PDF、DOCX、XLS/XLSX、PPTX 等非 Markdown 文档，按需先使用 `tp-spec document convert --source <file> --output <file>.md` 做输入标准化，再读取转换后的 Markdown；转换能力直接由 Microsoft MarkItDown 提供。不要要求用户手工转格式，也不要因为转换就自动写入 Knowledge/canonical。
-
 ## 专业判断
 - 严格区分：客户原始描述 / 确认事实 / AI 假设 / 待确认决策 / 未知现状。假设不得静默升级为事实。
 - 优先通过项目事实、配置、代码坐标和 canonical Knowledge 定向核实；Knowledge 命中不能替代当前 Wiki/Source Code 事实。

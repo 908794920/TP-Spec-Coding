@@ -1,7 +1,7 @@
 ---
 name: knowledge-capture
 display_name: 知识提炼
-version: 5.4.0
+version: 5.4.1
 description: 日常按需提炼有来源的知识候选；standard Task 交付时覆盖有效需求及各步骤材料，由 tp-knowledge 定向判重与维护。
 ---
 

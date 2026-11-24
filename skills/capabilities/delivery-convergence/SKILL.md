@@ -1,7 +1,7 @@
 ---
 name: delivery-convergence
 display_name: 交付收敛
-version: 5.4.0
+version: 5.4.1
 description: standard Task 最终交付时核对范围、候选、验收与知识记忆；复用有效结果，不代签或补造事实。
 ---
 
@@ -18,6 +18,8 @@ standard Task（L0–L3）最终交付时读取；L0/L1 可紧凑核对，不复
 所有必要 Work 的结果/依赖、仓库、最终集成候选、适用 Verification/Review、AC/Owner Acceptance、数据库/迁移/操作处置和遗留风险一起核对。Work PASS 的相加不是 Task 集成通过。实际接收、冲突处置、中间/最终候选按 [Work 结果契约](../../../docs/WORK_UNITS.md)登记；中间候选不取消剩余 Work 与最终验收义务。Git branch/commit 适用时记录；否则保留明确的工作区 snapshot/Patch 与内容身份，不强求 Work commit。apply/merge/rebase/push/清理/发布/重启均依当次授权，不从计划推断权限。
 
 发生实际集成时，由集成交付角色提交本角色/实际执行者归属的输出及冲突处置依据；项目经理按精确结果事件接收，由已记录 coordinator 登记 record-only candidate。候选权限仍校验原 coordinator，不因集成角色身份默认开放。Work 提交、接收、候选、步骤完成、专业 PASS、业务验收与 Task complete 不是同一事实；步骤完成保留适用参与者/coordinator 规则，不增项目经理独占门禁。
+
+文档交付采用适用模板和原生结构，保留原件及未获授权修改的内容。分别记录实际使用的渲染器及结果，缺少工具时将受影响的检查记为未验证。人工验收由有权用户确认，执行者只记录已发生的事实。
 
 ## 稳定收敛顺序
 1. 先调用现有只读 `task complete --check --compact`，一次查看全部检查、阻塞、未知项及下一责任，而非反复正式 complete 探路。紧凑输出不跳检查；只在具体缺口需要详细 facts 时去掉 `--compact`，不反复展开完整路由/历史。已发生的人验/授权核验来源，未发生仍按适用流程完成。

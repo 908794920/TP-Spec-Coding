@@ -208,50 +208,28 @@ def _note_metadata(note):
 
 
 def _registered_sources(conn, cfg, notes):
-    """Index metadata for registered, unconverted originals, without opening them.
-
-    Converted Markdown already has its own source document. A source_id can name
-    several files; the synthetic relative locator includes batch + origin path.
-    """
-    from .documents import registered_conversion_path
-    from .common import read_note
+    """Attach original metadata to indexed content or list the registration alone."""
     known = {note["rel_path"]: note for note in notes}
-    conn.execute("DELETE FROM fts_chunks WHERE rowid IN (SELECT c.id FROM chunks c JOIN documents d ON c.doc_id=d.id WHERE substr(d.rel_path,1,11)='@converted/')")
-    conn.execute("DELETE FROM documents WHERE substr(rel_path,1,12)='@registered/' OR substr(rel_path,1,11)='@converted/'")
+    virtual_sources = "scope='source' AND substr(rel_path,1,1)='@'"
+    conn.execute(f"DELETE FROM fts_chunks WHERE rowid IN (SELECT id FROM chunks WHERE doc_id IN (SELECT id FROM documents WHERE {virtual_sources}))")
+    conn.execute(f"DELETE FROM documents WHERE {virtual_sources}")
     for record in read_jsonl(meta_paths(cfg)["source_registry"]):
         raw_project, origin = str(record.get("project") or ""), str(record.get("origin_path") or "")
-        converted = str(record.get("conversion_path") or record.get("content_path") or "").replace("\\", "/")
-        identity = effective_project_identity(cfg, raw_project, relative=converted if converted in known else "", scope="source")
+        content_path = str(record.get("content_path") or "").replace("\\", "/")
+        identity = effective_project_identity(cfg, raw_project, relative=content_path if content_path in known else "", scope="source")
         project = identity["project"]
         if not origin:
             continue
         origin_meta = {k: record[k] for k in ("source_id", "origin_path", "batch", "sha256", "disposition") if k in record}
-        if converted in known and project and project == known[converted]["project"]:
-            note = known[converted]
-            metadata = {**_note_metadata(note), "origin": origin_meta, "conversion": converted}
-            conn.execute("UPDATE documents SET metadata_json=? WHERE rel_path=?", (json.dumps(metadata, ensure_ascii=False), converted))
+        if content_path in known and project and project == known[content_path]["project"]:
+            note = known[content_path]
+            metadata = {**_note_metadata(note), "origin": origin_meta, "content_path": content_path}
+            conn.execute("UPDATE documents SET metadata_json=? WHERE rel_path=?", (json.dumps(metadata, ensure_ascii=False), content_path))
             continue
-        # Ingest conversions are already registered outputs, not a request for
-        # conversion. Keep them in the existing source/chunk index with a stable
-        # virtual locator; reading rechecks the live registration and boundary.
-        if project and record.get("conversion_status") == "converted" and record.get("disposition") not in {"quarantined", "excluded"}:
-            try:
-                path = registered_conversion_path(cfg, record)
-                note = read_note(path, root=path.parent, scope="source")
-                relative = "@converted/" + stable_hash([record.get("batch"), origin, raw_project])
-                note.update(rel_path=relative, project=project, raw_project=raw_project, project_identity=identity, kind="source", id=str(record.get("source_id") or ""),
-                            title=note.get("title") or Path(origin).name)
-                _insert_doc(conn, note, {}, cfg)
-                metadata = {**_note_metadata(note), "origin": origin_meta, "conversion": converted,
-                            "registered_conversion": {name: record.get(name) for name in ("project", "batch", "origin_path")}}
-                conn.execute("UPDATE documents SET metadata_json=? WHERE rel_path=?", (json.dumps(metadata, ensure_ascii=False), relative))
-                continue
-            except (ValueError, OSError, RuntimeError):
-                pass  # Preserve registered original metadata when its output is unavailable.
         relative = "@registered/" + stable_hash([record.get("batch"), origin, raw_project])
         metadata = {"metadata_only": True, "origin": origin_meta,
                     "raw_project": raw_project, "project_identity": identity,
-                    "conversion": converted or None, "status": record.get("disposition"),
+                    "content_path": content_path or None, "status": record.get("disposition"),
                     "updated_at": record.get("updated_at") or record.get("registered_at")}
         conn.execute("""INSERT OR REPLACE INTO documents(rel_path,scope,project,kind,source_id,title,sha256,indexed_at,document_key,metadata_json)
                         VALUES(?,'source',?,'source',?,?,?,?,?,?)""",
@@ -585,9 +563,9 @@ def projection_reachability(cfg, conn, *, current_notes=None) -> Dict[str, Any]:
         meta = metadata(row)
         note = notes_by_path.get(row["rel_path"])
         relative = row["rel_path"]
-        conversion = str(meta.get("conversion") or "").replace("\\", "/")
-        if relative.startswith("@") and conversion.startswith(str(cfg.knowledge_canonical.get("projects_dir") or "10-projects") + "/"):
-            relative = conversion
+        content_path = str(meta.get("content_path") or "")
+        if relative.startswith("@") and content_path.startswith(str(cfg.knowledge_canonical.get("projects_dir") or "10-projects") + "/"):
+            relative = content_path
         identity = (note or {}).get("project_identity") or effective_project_identity(cfg,
             meta.get("raw_project", row["project"]), relative=relative, scope=row["scope"])
         if row["id"] in visible and identity["project"] == row["project"]:

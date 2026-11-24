@@ -1,7 +1,7 @@
 ---
 name: video-sound-production
 display_name: 视频声音制作
-version: 5.4.0
+version: 5.4.1
 description: 为视频制作或选用配音、音乐及音效，交付可替换音轨、实际时序和来源。
 ---
 

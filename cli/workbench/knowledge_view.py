@@ -261,7 +261,7 @@ class KnowledgeView:
                 scope_where, values = documents.scope_condition(cfg, choices)
                 legacy = asset.removeprefix("knowledge:")
                 rows = conn.execute(f"SELECT d.*, {meta_expr} AS public_metadata FROM documents d WHERE {scope_where} "
-                    f"AND ({key_expr}=? OR d.canonical_id=? OR d.source_id=? OR d.rel_path=? OR json_extract({meta_expr},'$.conversion')=?) LIMIT 3",
+                    f"AND ({key_expr}=? OR d.canonical_id=? OR d.source_id=? OR d.rel_path=? OR json_extract({meta_expr},'$.content_path')=?) LIMIT 3",
                     [*values, asset, legacy, legacy, legacy, legacy]).fetchall()
                 for row in rows:
                     item = documents.public_document(cfg, dict(row))
@@ -627,10 +627,10 @@ class KnowledgeView:
             raise ReadError(exc.code, "文档无法安全读取；注册、路径或版本状态可能已变化", 404) from None
         doc = self._decorate({**current, **result["document"]})
         links = self._links(cfg, doc, result["content"])
-        # A converted file, source ID or replacement only links when it resolves uniquely.
+        # A content path, source ID or replacement only links when it resolves uniquely.
         references = []
         for kind, values in (("source", doc.get("source_refs") or []), ("replaced_by", [doc.get("replaced_by")]),
-                             ("superseded", [doc.get("superseded")]), ("conversion", [doc.get("conversion")])):
+                             ("superseded", [doc.get("superseded")]), ("content_path", [doc.get("content_path")])):
             for value in values:
                 if not isinstance(value, str) or not value: continue
                 target = self._asset(source, doc["project"], value if value.startswith("knowledge:") else "knowledge:" + value)

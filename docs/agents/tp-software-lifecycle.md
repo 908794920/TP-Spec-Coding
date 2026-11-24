@@ -291,7 +291,7 @@ tp-spec task run-pytest --task <TASK> --task-dir <TASK_DIR> --db <DB> --test tes
 tp-spec task checkpoint --task <TASK> --task-dir <TASK_DIR> --db <DB> --actor tp-test-engineer --phase verification --summary "选定场景实际结果、未验边界和下一步" --request-id <本次登记ID> --result-report <本次原生JSON> --report-artifact-root <已批准输出目录>
 ```
 
-`--report-artifact-root` 必须与 `--result-report` 合用，且至少有一份 Playwright报告；相对附件路径以该目录为基准，绝对路径必须仍在其中。只复制报告实际声明的受限媒体，不递归扫目录、不访问网络、不解压/渲染。拒绝越界、链接/重解析点、缺失、扩展名与媒体类型不符和变化中的文件；不因HTML/MIME名称就宣称内容安全或视觉正确。原生JSON上限4MiB，整个批次沿用既有采集数量/单文件大小限制；大报告或其他格式可显式 `--collect` 保留原件，但不返回解析汇总。独立 Midscene HTML 同样用 `--collect`，不将 HTML 文本签成视觉判定。
+`--report-artifact-root` 必须与 `--result-report` 合用，且至少有一份 Playwright报告；相对附件路径以该目录为基准，绝对路径必须仍在其中。只复制报告实际声明的受限媒体，不递归扫目录、不访问网络、不解压/渲染。拒绝越界、链接/重解析点、缺失、扩展名与媒体类型不符和变化中的文件；不因HTML/MIME名称就宣称内容安全或视觉正确。原生JSON上限4MiB，整个批次沿用既有采集数量/单文件大小限制；大报告或其他格式可显式 `--collect` 保留原件，但不返回解析汇总。独立 HTML 报告同样用 `--collect`，只保留原件。
 
 同请求复用原始报告和已采媒体绑定，源目录被移走也不再读取；已采证据损坏明确拒绝，不重新执行浏览器/模型。未选择媒体采集的旧请求保持原契约；为原请求新增 root 是载荷冲突，不静默补写旧事实。无法入账不撤回外部测试已产生的单据或通知，恢复原产物后仅重试登记。
 

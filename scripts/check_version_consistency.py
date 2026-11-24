@@ -61,12 +61,6 @@ _ALLOWED_HISTORY_GLOBS = (
     "db/registry.local.json",
     "db/registry.local.json.example",
 )
-# 活动规范参考资料可含外部标准条款号（例如 GB/T 9704 的页面/正文分条编号），
-# 这些不是 Base 契约版本。仅放行精确文件，避免放宽整个 skills/ 发布面。
-_STANDARDS_CLAUSE_GLOBS = (
-    "skills/capabilities/office-document-formatting/references/word.md",
-)
-
 # 旧基座版本 token（拼接声明，避免扫描器扫描自身时自报）。
 # 三类规则：
 #   1) dotted 版本字面量：带词边界，防 IP 子串误报（(?i) 全局开关在拼接最外层）
@@ -196,7 +190,7 @@ def _is_allowed_history(rel: str) -> bool:
     if rel.startswith(_ALLOWED_HISTORY_PREFIXES):
         return True
     import fnmatch
-    for pat in _ALLOWED_HISTORY_GLOBS + _STANDARDS_CLAUSE_GLOBS:
+    for pat in _ALLOWED_HISTORY_GLOBS:
         if fnmatch.fnmatch(rel, pat):
             return True
     return False

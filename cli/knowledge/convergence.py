@@ -116,7 +116,7 @@ def _historical_input_ids(events, locator_fields):
         if row["event_type"] == execution.PLAN and plan_field in locator_fields.get(row["id"], ()):
             refs = detail_of(row)["plan"]["assessment"]["source_refs"]
             target_kind = "DELIVERY_RESULT"
-        elif (row["event_type"] == "WORK_SESSION_ENDED"
+        elif (row["event_type"] in {"WORK_SESSION_UPDATED", "WORK_SESSION_ENDED"}
               and ("detail", "evidence_refs") in locator_fields.get(row["id"], ())):
             refs = detail_of(row).get("evidence_refs", [])
             target_kind = "FACT"
@@ -287,6 +287,25 @@ def _historical_control_event(ref: str, events: dict) -> dict | None:
             "reason": "trusted historical control event checked; not a learning input, current PASS or authorization"}
 
 
+def _historical_takeover_event(ref: str, events: list[dict], events_by_id: dict[int, dict], *, before_id: int) -> dict | None:
+    """Resolve an earlier validated same-Task takeover as provenance, never learning input or authority."""
+    from cli import work_takeover
+
+    if not re.fullmatch(r"event:[1-9][0-9]*", ref):
+        return None
+    target_id = int(ref[6:])
+    if target_id >= before_id:
+        return None
+    row = events_by_id.get(target_id)
+    if row is None or row.get("event_type") != work_takeover.EVENT:
+        return None
+    prior = [item for item in events if item["id"] < target_id]
+    if work_takeover.trusted(row, prior) is None:
+        return None
+    return {"event_id": row["id"], "event_type": work_takeover.EVENT, "sha256": _source_event_digest(row),
+            "reason": "trusted historical takeover checked; not a learning input, current PASS or authorization"}
+
+
 def _source_event_digest(row):
     # Bind source facts, not optional telemetry columns omitted by orchestration.
     return digest({key: row.get(key) for key in (
@@ -302,6 +321,7 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
     Exact duplicate event content shares its first ID; arbitrary new notes/decisions
     remain inputs, but neither their text nor role labels create authority.
     """
+    from cli import work_units
     from cli.digest import _normalize_subject_part, compute_text_artifact_digest
     from cli.evidence import validate_evidence_path
     from .source_paths import resolve_locator_file
@@ -314,7 +334,7 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
     items, issues, contents = [], [], {}
     refs = {name for name in FILES if (task_dir / name).exists()}
     strict_refs = set(refs)
-    locator_refs, locator_events, event_items = {}, {}, {}
+    locator_refs, locator_events, event_items, takeover_provenance_refs = {}, {}, {}, {}
     if "task.md" not in refs:
         issues.append("TASK_SOURCE_MISSING: task.md")
 
@@ -342,6 +362,8 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
             qualified_sources[source] = allowed_fields
         else:
             allowed_fields = qualified_sources.get(source, ())
+        work_create = work_units.trusted(row) if row.get("event_type") == work_units.EVENT else None
+        is_work_create = bool(work_create and work_create.get("action") == "create")
         locators = []
         for ref, field in _reference_entries(content):
             normalized = ref.replace("\\", "/").strip()
@@ -352,7 +374,13 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
                     "reason": "outside Task-relative input contract; target was not accessed"})
             else:
                 refs.add(ref)
-                if field in allowed_fields and not normalized.startswith(("https://", "http://")):
+                takeover = (_historical_takeover_event(normalized, events, events_by_id, before_id=int(row["id"]))
+                            if is_work_create and field == ("detail", "work_payload", "spec", "scope_refs") else None)
+                if takeover is not None:
+                    locator_refs.setdefault(ref, []).append((fingerprint, field))
+                    locator_events.setdefault((ref, fingerprint, field), set()).add(int(row["id"]))
+                    takeover_provenance_refs[(ref, fingerprint, field)] = takeover
+                elif field in allowed_fields and not normalized.startswith(("https://", "http://")):
                     locator_refs.setdefault(ref, []).append((fingerprint, field))
                     locator_events.setdefault((ref, fingerprint, field), set()).add(int(row["id"]))
                 else:
@@ -411,15 +439,30 @@ def build_index(task, events, work_items, task_dir: Path, delivery: dict) -> dic
                         historical = {"event_type": "KNOWLEDGE_CONVERGENCE_RESULT",
                             "request_event_id": result["request_event_id"],
                             "reason": "trusted historical result binding checked; not a learning input or current PASS"}
-                if historical is None:
-                    issues.append(f"UNRESOLVED_EVENT_SOURCE: {ref}")
-                else:
+                if historical is not None:
                     for fingerprint, field in locator_refs[raw]:
                         navigation = event_items[fingerprint].setdefault("source_locators", [])
                         locator = {"ref": raw, "field": ".".join(field), "status": "EXCLUDED_FROM_LEARNING",
                                    **historical}
                         if locator not in navigation:
                             navigation.append(locator)
+                elif (raw in locator_refs and ref not in strict_event_refs
+                      and any((raw, fp, fld) in takeover_provenance_refs for fp, fld in locator_refs[raw])):
+                    unresolved_takeover = False
+                    for fingerprint, field in locator_refs[raw]:
+                        takeover = takeover_provenance_refs.get((raw, fingerprint, field))
+                        if takeover is not None:
+                            navigation = event_items[fingerprint].setdefault("source_locators", [])
+                            locator = {"ref": raw, "field": ".".join(field), "status": "EXCLUDED_FROM_LEARNING",
+                                       **takeover}
+                            if locator not in navigation:
+                                navigation.append(locator)
+                        else:
+                            unresolved_takeover = True
+                    if unresolved_takeover:
+                        issues.append(f"UNRESOLVED_EVENT_SOURCE: {ref}")
+                else:
+                    issues.append(f"UNRESOLVED_EVENT_SOURCE: {ref}")
             continue
         # A remote citation is navigable provenance, never evidence of a fetch.
         if ref.startswith(("https://", "http://")):

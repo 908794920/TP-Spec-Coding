@@ -70,8 +70,7 @@ The following must not be hard-coded in Base:
 - project IDs, aliases and workspace mappings;
 - external source roots;
 - user dictionaries;
-- Golden query set;
-- project-specific conversion adapters.
+- Golden query set.
 
 ## 4. Retrieval authority
 

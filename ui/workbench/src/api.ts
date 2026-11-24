@@ -1,5 +1,5 @@
 import { record } from './facts';
-import type { CloseoutData, DetailData, Envelope, GlobalData, Health, ProjectData, SkillDocumentData, TaskData, TaskNote } from './types';
+import type { CloseoutData, DetailData, Envelope, GlobalData, Health, ProjectData, SkillDocumentData, TaskData, TaskNote, WorkflowData } from './types';
 
 export class WorkbenchApiError extends Error {
   constructor(public readonly status: number, public readonly code: string | undefined, message: string) { super(message); }
@@ -95,6 +95,8 @@ export const api = {
   },
   task: async (key: string, id: string, signal?: AbortSignal) =>
     validateEnvelope<TaskData>(await get(`${projectPath(key)}/tasks/${encodeURIComponent(id)}`, signal), key, id),
+  taskRoute: async (key: string, id: string, signal?: AbortSignal) =>
+    validateEnvelope<{ task_id: string; workflow: WorkflowData }>(await get(`${projectPath(key)}/tasks/${encodeURIComponent(id)}/route`, signal), key, id),
   taskNote: async (key: string, id: string, signal?: AbortSignal) =>
     validateTaskNote(await get(taskNotePath(key, id), signal), key, id),
   saveTaskNote: async (key: string, id: string, note: string, revision: string) =>

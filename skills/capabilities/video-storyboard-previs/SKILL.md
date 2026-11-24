@@ -1,7 +1,7 @@
 ---
 name: video-storyboard-previs
 display_name: 视频分镜与预演
-version: 5.4.0
+version: 5.4.1
 description: 将视频脚本转成带稳定镜头标识的制作交接，按实际连续性、节奏或技术难度安排必要预演。
 ---
 

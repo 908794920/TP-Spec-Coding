@@ -1,7 +1,7 @@
 ---
 name: video-brief
 display_name: 视频制作简报
-version: 5.4.0
+version: 5.4.1
 description: 将视频委托或变更整理成可执行简报、交付口径和实际决定，供制作分工及成片审看使用。
 ---
 

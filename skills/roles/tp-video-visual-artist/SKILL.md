@@ -1,7 +1,7 @@
 ---
 id: tp-video-visual-artist
 name: tp-视觉设计与镜头制作
-version: 5.4.0
+version: 5.4.1
 status: active
 type: workflow-role
 role: tp-video-visual-artist

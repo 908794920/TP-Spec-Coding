@@ -1,7 +1,7 @@
 ---
 name: video-quality-review
 display_name: 视频成片审看
-version: 5.4.0
+version: 5.4.1
 description: 按有效简报与规格审看具体视频导出，分别记录技术检查、播放、听音、实际身份及受影响复验。
 ---
 

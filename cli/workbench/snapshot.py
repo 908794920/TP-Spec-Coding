@@ -701,6 +701,23 @@ def _event_view(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _recorded_lifecycle_phase(event: Dict[str, Any], detail: Dict[str, Any]) -> str:
+    event_type = event.get("event_type")
+    operation = detail.get("operation")
+    if event_type == "REVIEW_COMPLETED" or operation == "REVIEW":
+        kind = str(detail.get("review_kind") or "").upper()
+        return {"ARCHITECTURE": "architecture_review", "CODE": "review", "IMPLEMENTATION": "review",
+                "ULTRA_REVIEW": "review", "VERIFICATION": "verification"}.get(kind, "")
+    if event_type == "VERIFICATION_COMPLETED":
+        return "verification"
+    phase = detail.get("stage") or detail.get("source_stage")
+    if not phase and (operation == "CHECKPOINT" or event_type in {
+        "STATE", "BLOCKER", "VIDEO_EXPORT_RECORDED", "VIDEO_QC_RECORDED", "VIDEO_DELIVERY_RECORDED",
+    }):
+        phase = detail.get("phase") or event.get("to_stage")
+    return phase.strip() if isinstance(phase, str) else ""
+
+
 def build_task_snapshot(
     task_id: Optional[str],
     *,
@@ -708,7 +725,6 @@ def build_task_snapshot(
     registry_path: Optional[str] = None,
     base_root: "str | Path | None" = None,
     connection: Optional[sqlite3.Connection] = None,
-    task_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     task_id0 = str(task_id or "").strip()
     if not task_id0:
@@ -758,22 +774,21 @@ def build_task_snapshot(
             for issue in mode_facts["issues"]:
                 problems.append(_problem("TASK_MODE_INVALID", issue))
             from cli.report_cmd import task_progress_facts
+            from cli.execution import progress_view
+            from cli.waiting import active_wait
             retired = event_policies.is_task_retired(conn, task_id0)
             progress_facts = task_progress_facts(conn, task_row, events=event_rows,
                                                  retired=retired)
+            waiting = {}
             try:
-                workflow = orchestration.resolve_progress(task_id0, db_path=str(resolved_db), base_root=base_root,
-                                                           connection=conn, task_dir=task_dir)
-            except Exception as exc:
-                workflow = {
-                    "completed_steps": [], "current_step": {}, "next_step": {}, "steps": [],
-                    "reference_steps": [] if mode_facts["workflow_mode"] in ("quick", None) else ["需求确认", "方案/规划", "实现", "验证", "交付", "Knowledge/Wiki 收敛", "完成"],
-                    **{key: value for key, value in mode_facts.items() if key != "issues"},
-                    "retired": retired, "route": {}, "error": str(exc),
-                }
-                problems.append(_problem("WORKFLOW_UNRESOLVED", f"工作流无法可靠解析：{exc}"))
-            if workflow.get("error") and not any(p["code"] == "WORKFLOW_UNRESOLVED" for p in problems):
-                problems.append(_problem("WORKFLOW_UNRESOLVED", str(workflow["error"])))
+                waiting = active_wait(event_rows, task_row["current_state"])
+            except ValueError as exc:
+                problems.append(_problem("WAIT_FACT_INVALID", str(exc)))
+            recorded_route = {"current_state": "BLOCKED", "context": {"waiting": waiting}} if waiting else None
+            workflow = {**progress_view(progress_facts["execution"], effective_level=None, role_map={}, route=recorded_route),
+                        **{key: value for key, value in mode_facts.items() if key != "issues"}, "retired": retired}
+            if progress_facts["execution"]["terminal"] and mode_facts["workflow_mode"] == "quick":
+                workflow["quick_status"] = orchestration._quick_result_status(task_row, event_rows)
             for issue in progress_facts["execution"]["issues"]:
                 problems.append(_problem("EXECUTION_FACTS_INVALID", issue))
         finally:
@@ -809,8 +824,21 @@ def build_task_snapshot(
                            if mode_facts["workflow_mode"] == "quick" else {"tp-test-engineer"})
     verification: Dict[str, Any] = {"status": "NOT_RECORDED", "summary": "", "created_at": ""}
     current_blocker: Dict[str, Any] = {}
+    lifecycle: Dict[str, Dict[str, Any]] = {}
     for event in event_rows:
         detail = _parse_detail(event.get("detail_json"))
+        phase = _recorded_lifecycle_phase(event, detail)
+        if phase:
+            # Events are in Runtime order. Keep the first-seen order and a bounded preview per actor.
+            actor = str(event.get("actor_role") or "")
+            roles = lifecycle.setdefault(phase, {})
+            activity = roles.setdefault(actor, {"role": actor, "event_count": 0, "events": []})
+            activity["event_count"] += 1
+            activity["events"] = [{
+                "event_id": event["id"], "actor": actor, "created_at": event.get("created_at"),
+                "event_type": event.get("event_type"), "action": detail.get("operation"),
+                "summary": str(event.get("summary") or ""), "evidence_path": event.get("evidence_path"),
+            }, *activity["events"][:2]]
         if event.get("event_type") == "FACT" and detail.get("operation") == "CHECKPOINT":
             latest_checkpoint = {
                 "summary": str(event.get("summary") or ""),
@@ -890,6 +918,7 @@ def build_task_snapshot(
         "verification": verification,
         "evidence": evidence,
         "timeline": timeline,
+        "lifecycle_activity": [{"phase": phase, "roles": list(roles.values())} for phase, roles in lifecycle.items()],
         "summary": summary,
         "summary_source": summary_source,
         "problems": problems,

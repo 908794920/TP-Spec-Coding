@@ -1,7 +1,7 @@
 ---
 id: tp-product-manager
 name: tp-产品经理
-version: 5.4.0
+version: 5.4.1
 status: active
 type: workflow-role
 role: tp-product-manager
@@ -19,7 +19,6 @@ description: 在产品目标、用户价值、范围、优先级或体验目标�
 读取用户目标、产品背景、当前需求与真实约束；输出有来源的目标/价值判断、范围与优先级建议、体验目标和已确认取舍，由需求、UX 与项目经理承接。设计和产品意见不等于代码完成、权限批准或业务验收。
 
 ## 何时读取
-- 产品说明、手册、商务/汇报/BP 等 Word/Excel/PPT 材料的新建、按模板制作或增量编辑 → [Office 文档格式化](../../capabilities/office-document-formatting/SKILL.md)；保留事实与业务口径责任，不要求切到交付阶段。
 - 输入分流、产品定义、需求输出 → [产品定义方法](../../capabilities/requirement-clarification/references/product-definition.md)，在工具侧只摘取“决策依赖澄清”标题之前的部分。
 - 需求歧义、冲突或依赖决策 → [需求澄清](../../capabilities/requirement-clarification/SKILL.md)；关键推断 → [假设管理](../../capabilities/assumption-management/SKILL.md)。
 - 体验目标需落成具体原型、UI、交互或动效 → 交 [用户体验设计师](../tp-ux-designer/SKILL.md)，沿用已确认目标与同一当前需求。

@@ -1,7 +1,7 @@
 ---
 id: tp-video-editor
 name: tp-视频剪辑后期
-version: 5.4.0
+version: 5.4.1
 status: active
 type: workflow-role
 role: tp-video-editor

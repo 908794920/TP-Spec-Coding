@@ -8,13 +8,13 @@
 # the existing explicit project/task migration path. See docs/GETTING_STARTED.md.
 version: "1.0.0"
 contracts:
-  "5.4.0":
-    base_version: "5.4.0"
+  "5.4.1":
+    base_version: "5.4.1"
     governance_ranges:
-      workflow: "[5.4.0, 5.5.0)"
-      ai-role: "[5.4.0, 5.5.0)"
+      workflow: "[5.4.1, 5.5.0)"
+      ai-role: "[5.4.1, 5.5.0)"
       risk-rule: "[2.0.0, 3.0.0)"
       knowledge-rule: "[2.1.0, 3.0.0)"
-      role-catalog: "[5.4.0, 5.5.0)"
-      orchestration: "[5.4.0, 5.5.0)"
-    status_contract: "5.4.0"
+      role-catalog: "[5.4.1, 5.5.0)"
+      orchestration: "[5.4.1, 5.5.0)"
+    status_contract: "5.4.1"

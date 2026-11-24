@@ -118,12 +118,7 @@ def _canonical_sha(payload: Any) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
-def _capture_repo(root: Path) -> tuple[dict[str, Any], str]:
-    head = str(_run_git(root, "rev-parse", "HEAD")).strip()
-    head_tree = str(_run_git(root, "rev-parse", "HEAD^{tree}")).strip()
-    if not head or not head_tree:
-        raise ChangeSetError(f"repository has no valid HEAD baseline: {root}")
-
+def _capture_repo(root: Path, head: str, head_tree: str) -> tuple[dict[str, Any], str]:
     tracked_raw = _run_git(root, "ls-files", "-z", text=False)
     untracked_raw = _run_git(root, "ls-files", "--others", "--exclude-standard", "-z", text=False)
     assert isinstance(tracked_raw, bytes) and isinstance(untracked_raw, bytes)
@@ -183,32 +178,28 @@ def capture_change_set(repo_roots: Iterable[str | Path]) -> dict[str, Any]:
     context = command_context.current()
     if context is None or not context.read_only_request:
         return _capture_change_set(repo_roots)
-    # 只读页面按同一组显式输入复用；返回前必须重新捕获并核对实际字节。
+    # 只读页面在单次请求内复用同一组显式输入；下一请求重新读取。
     key = tuple(sorted({str(Path(value).expanduser().absolute()) for value in repo_roots}))
     if key not in context.change_set_cache:
         context.change_set_cache[key] = _capture_change_set(key)
     return copy.deepcopy(context.change_set_cache[key])
 
 
-def verify_read_snapshot() -> None:
-    """重新读文件内容，mtime/size 相同也不能使旧的适用性结论通过。"""
-    context = command_context.current()
-    if context is None or not context.read_only_request:
-        return
-    for roots, expected in context.change_set_cache.items():
-        if _capture_change_set(roots)["snapshot_digest"] != expected["snapshot_digest"]:
-            raise ChangeSetError("读取期间产品文件发生变化，请重新读取。")
-
-
 def _capture_change_set(repo_roots: Iterable[str | Path]) -> dict[str, Any]:
-    roots = sorted({_git_root(value) for value in repo_roots}, key=lambda value: str(value))
-    if not roots:
+    identities: dict[Path, tuple[str, str]] = {}
+    for value in repo_roots:
+        path = Path(value).expanduser().resolve()
+        if not path.exists():
+            raise ChangeSetError(f"repo root does not exist: {path}")
+        root, head, head_tree = str(_run_git(path, "rev-parse", "--show-toplevel", "HEAD", "HEAD^{tree}")).strip().rsplit("\n", 2)
+        identities.setdefault(Path(root).resolve(), (head, head_tree))
+    if not identities:
         raise ChangeSetError("at least one explicit repo root is required")
 
     repositories: list[dict[str, Any]] = []
     product_digests: list[str] = []
-    for root in roots:
-        repo, product_digest = _capture_repo(root)
+    for root, (head, head_tree) in sorted(identities.items(), key=lambda item: str(item[0])):
+        repo, product_digest = _capture_repo(root, head, head_tree)
         repositories.append(repo)
         product_digests.append(product_digest)
 

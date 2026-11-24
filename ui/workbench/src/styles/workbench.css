@@ -2,9 +2,7 @@
 body { margin: 0; background: var(--bg); color: var(--text); }
 html { scrollbar-color: var(--node-border) var(--bg); }
 /* The element-level fallback for buttons/inputs/selects is gone: every interactive element is an Ant
-   Design component now, and the only native <button> left (the graph's object-search results) sets
-   its own base styling at `.graph-results button` below. `ul`/`li` keep a guard because content
-   lists are still plain markup. */
+   Design component now. `ul`/`li` keep a guard because content lists are still plain markup. */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 a { color: var(--accent); }
 code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
@@ -133,45 +131,14 @@ main { min-width: 0; }
    cards without a title — the selected tab already names the group. */
 .config-tabs .ant-tabs-nav { margin-bottom: 12px; }
 .config-tabs .ant-tabs-tab { font-size: 13px; }
-/* Skill topology: a three-level outline from the entry node, rendered in the order the edges
-   arrived (the sequence lives in that order, so nothing is re-sorted). The list selectors are two
-   classes deep because the bare `ul:not([class*="ant-"])` fallback outranks a single class. */
 .skill-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0 12px; }
 .skill-summary .ant-tag { margin: 0; }
-.config-page .skill-tree,.config-page .skill-tree .skill-children { list-style: none; margin: 0; padding: 0; }
-.config-page .skill-tree .skill-children { padding-left: 16px; margin-left: 6px; border-left: 1px solid var(--border); }
-.skill-node { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 3px 0; }
-.skill-order { flex: none; min-width: 14px; font-size: 11px; color: var(--muted); text-align: right; }
-.skill-relation { flex: none; font-size: 11px; color: var(--muted); }
-.skill-id { font-size: 12px; }
-.skill-mode,.skill-shared { font-size: 11px; }
 .skill-orphans { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border); }
-/* Skill topology, graph view. Fixed node size keeps the computed laid-out positions readable
-   (level → x, order inside the level → y); dim/emphasis follow the task graph's convention. Edge
-   colours reach the SVG through inline `var()`, so the arrow markers inherit them as well. */
-.skill-view-switch { margin: 10px 0 0; }
-.skill-view-switch .ant-typography { font-size: 12px; }
-.skill-graph-node { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 4px 10px; border: 1px solid var(--node-border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--node-shadow); }
-.skill-graph-node.is-emphasized { border-color: var(--accent); background: var(--accent-tint); }
-.skill-graph-node.is-dim { opacity: .4; }
-.skill-graph-node.is-entry { border: 2px solid var(--accent); border-left-width: 6px; background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-ring), var(--node-shadow); }
-.skill-graph-node.is-entry.is-dim { opacity: .75; }
-.skill-graph-node.is-entry .skill-node-select { color: var(--accent); font-size: 13px; font-weight: 700; }
-.skill-graph-node.is-entry .skill-entry-badge { background: var(--accent); color: var(--surface); font-weight: 700; }
-.skill-entry-hint { color: var(--accent); font-weight: 700; }
-.skill-graph-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.skill-graph-head .ant-typography { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.skill-graph-head .ant-tag { flex: none; margin: 0; font-size: 11px; line-height: 16px; }
-.skill-graph-head .skill-shared { flex: none; }
-.skill-graph-node .skill-id { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.skill-graph-node .react-flow__handle { width: 4px; height: 4px; border: 0; background: var(--node-border); }
-.topology-graph .graph-summary { margin-left: auto; font-size: 12px; }
 .section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 8px; }
 .section-heading h3 { margin: 0; }
 .read-status { margin: 8px 0 16px; overflow-wrap: anywhere; }
-.graph-issues { padding: 10px 12px; border-left: 3px solid var(--warning); background: var(--warning-bg); margin-bottom: 12px; }
 .problems { margin-bottom: 12px; }
-.problems ul,.graph-issues ul { margin: 8px 0 0; max-height: 240px; overflow: auto; }
+.problems ul { margin: 8px 0 0; max-height: 240px; overflow: auto; }
 .error { color: var(--danger); background: var(--danger-bg); padding: 8px; overflow-wrap: anywhere; }
 .warning { color: var(--warning); }
 .fields { margin: 0; }
@@ -205,41 +172,6 @@ main { min-width: 0; }
 .workflow-strip { border: 1px solid var(--border); background: var(--surface); padding: 14px 16px; border-radius: var(--radius); }
 .workflow-strip h3 small { margin-left: 10px; font-weight: normal; }
 .support-note { font-size: 12px; color: var(--muted); padding-bottom: 4px; }
-.task-graph { min-width: 0; }
-.graph-toolbar { display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 10px; border: 1px solid var(--border); border-bottom: 0; background: var(--surface); }
-.graph-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.graph-actions button,.graph-toolbar button,.graph-toolbar select { font-size: 12px; }
-.graph-toolbar .direction { flex-direction: row; align-items: center; gap: 6px; }
-.graph-toolbar .direction .ant-select { width: 132px; }
-.graph-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); background: var(--surface); }
-.graph-search .graph-query { flex: 1; min-width: 180px; max-width: 480px; }
-.graph-search>span { width: 100%; }
-.graph-results { background: var(--surface); padding: 8px 12px; border: 1px solid var(--border); border-top: 0; }
-.graph-results p { margin-bottom: 4px; font-size: 12px; }
-.graph-results ul { list-style: none; margin: 0; padding: 0; max-height: 180px; overflow: auto; }
-.graph-results button { font: inherit; cursor: pointer; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; border: 0; border-radius: var(--radius); background: var(--surface); color: var(--text); min-height: 32px; padding: 5px 10px; text-align: left; width: 100%; }
-.graph-results button:hover { color: var(--accent); }
-.graph-results button span { max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.graph-canvas { height: clamp(380px, 60vh, 660px); width: 100%; border: 1px solid var(--border); border-top: 0; background: var(--graph-bg); }
-/* Placeholder while the graph's own chunk loads: same box as the canvas, so nothing shifts. */
-.graph-loading { display: grid; place-items: center; font-size: 12px; color: var(--muted); }
-.graph-legend { margin: 8px 2px; color: var(--muted); font-size: 12px; }
-.work-node { height: 116px; padding: 8px 12px; border: 1px solid var(--node-border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--node-shadow); font-size: 12px; }
-.work-node.is-selected { border: 2px solid var(--accent); padding: 7px 11px; box-shadow: 0 0 0 3px var(--accent-ring); }
-.work-node.is-emphasized:not(.is-selected) { border-color: var(--accent); background: var(--accent-tint); }
-.work-node.is-dim { opacity: .45; }
-.node-kind { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--muted); }
-.node-kind span:nth-child(2) { color: var(--warning); }
-.node-id,.node-title,.node-state,.node-owner { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.node-id { font-size: 10px; color: var(--muted); }
-.node-title { font-size: 13px; margin: 2px 0; }
-.node-state,.node-owner { font-size: 11px; }
-.node-owner { color: var(--muted); }
-.tone-blocked { color: var(--danger); }.tone-completed { color: var(--good); }.tone-active { color: var(--accent); }.tone-unknown { color: var(--warning); }
-.react-flow__node-workGroup { border: 1px dashed var(--group-border); border-radius: 8px; background: var(--group-bg); }
-.work-group-label { display: grid; gap: 4px; padding: 12px 20px; font-size: 12px; color: var(--muted); pointer-events: none; }
-.react-flow__edge-text { font-size: 9px; fill: var(--muted); }
-.react-flow__node:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .task-detail { position: static; width: 100%; max-width: none; margin: 0; padding: 0; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: var(--radius); max-height: min(850px,90vh); }
 .task-detail[open] { display: flex; flex-direction: column; }
 .detail-heading { padding: 14px 12px; display: flex; gap: 8px; align-items: flex-start; border-bottom: 1px solid var(--border); }
@@ -261,7 +193,7 @@ main { min-width: 0; }
 /* Touch and narrow screens have no hover, so every hover-revealed control is pinned on instead —
    otherwise the fold carets and the action icons would be unreachable there. */
 @media(max-width:800px){ .navigation {position:static;max-height:60vh;} .project-actions,.project-toggle .caret,.nav-section-toggle .caret {opacity:1;pointer-events:auto;} .header-meta {font-size:12px;} .brand {font-size:12px;} }
-@media(max-width:520px){ .refresh-button {font-size:12px;} .field {grid-template-columns:minmax(85px,30%) minmax(0,1fr);gap:8px;} .filters {flex-direction:column;} .filters label:last-child {min-width:0;} .workflow-strip {padding:12px;} .graph-search .graph-query {min-width:130px;} .graph-canvas {height:460px;} .task-detail {inset:8px;width:calc(100vw - 16px);height:calc(100vh - 16px);max-height:calc(100vh - 16px);} .graph-actions button {padding:5px 7px;} }
+@media(max-width:520px){ .refresh-button {font-size:12px;} .field {grid-template-columns:minmax(85px,30%) minmax(0,1fr);gap:8px;} .filters {flex-direction:column;} .filters label:last-child {min-width:0;} .workflow-strip {padding:12px;} .task-detail {inset:8px;width:calc(100vw - 16px);height:calc(100vh - 16px);max-height:calc(100vh - 16px);} }
 /* W04 details: text-first facts, no outcome inferred from green containers. */
 /* The detail panel stays a full-height flex column with only the body scrolling, so every wrapper
    Ant Design's Tabs inserts between the nav and the body has to stay shrinkable while the nav must
@@ -275,7 +207,6 @@ main { min-width: 0; }
 .task-detail .ant-tabs-body-holder,.task-detail .ant-tabs-body,.task-detail .ant-tabs-content { display: flex; flex-direction: column; min-height: 0; }
 .task-detail .ant-tabs-content { flex: 1 1 auto; }
 .task-detail .detail-body { flex: 1 1 auto; }
-.detail-scope { padding: 8px; border-left: 2px solid var(--accent); background: var(--muted-surface); font-size: 12px; }
 .detail-section { padding: 12px 0; border-top: 1px solid var(--border); }
 .detail-section h4 { margin: 0 0 8px; font-size: 14px; }
 .detail-section h5 { margin: 12px 0 6px; font-size: 12px; }
@@ -426,9 +357,6 @@ main:has(> .task-page) { scroll-margin-top: var(--header-h); }
 .fields .fields .ant-descriptions-view { background: var(--surface); }
 .execution-workflow .execution-step.current-step { border-color: var(--node-border); border-left-color: var(--accent); }
 .task-detail .detail-body { background: var(--surface); }
-.react-flow { --xy-background-color: var(--graph-bg); --xy-background-pattern-dots-color: var(--node-border); --xy-edge-stroke: var(--node-border); --xy-edge-label-background-color: var(--surface); }
-.react-flow__attribution { background: var(--surface) !important; }
-.react-flow__attribution a { color: var(--muted) !important; }
 .skill-markdown pre,.skill-markdown code { color: var(--text); }
 button,a,summary { -webkit-tap-highlight-color: transparent; }
 .project-toggle,.task-link,.task-hit,.nav-section-toggle,.role-participation-button,.see-more {
@@ -524,25 +452,12 @@ button,a,summary { -webkit-tap-highlight-color: transparent; }
   .task-index-note.ant-btn > span { -webkit-line-clamp: unset; }
 }
 
-.skill-usage { flex: none; color: var(--accent); font-size: 10px; line-height: 16px; white-space: nowrap; }
-.skill-node-meta { display: flex; align-items: center; gap: 6px; min-width: 0; } .skill-node-meta .skill-id { flex: 1; min-width: 0; }
-
-/* External skill source presentation stays within the existing graph/tree and theme. */
-.skill-node .skill-id { overflow-wrap: anywhere; min-width: 0; }
-.skill-node-select { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 12px; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-.skill-node-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
-.skill-graph-node.is-external { border-style: dashed; }
-.skill-node-state { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted); }
-.skill-node-state .ant-tag { margin: 0; font-size: 10px; line-height: 15px; }
 .skill-source-status { font-size: 11px; color: var(--muted); }
 .skill-source-status[data-status="invalid"],.skill-source-status[data-status="missing"] { color: var(--warning); }
 .skill-source-location { margin: 8px 0; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .skill-source-location p { margin: 4px 0; }
-.skill-management-entry { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
-.skill-management-entry .ant-btn { padding-inline: 0; font-size: 12px; }
 .skill-source-problems { margin: 10px 0; overflow-wrap: anywhere; }
 .skill-source-problems ul { margin: 0; padding-left: 16px; max-height: 220px; overflow: auto; }
-.skill-detached-note { margin: 0; padding: 8px 10px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12px; }
 .skill-document { max-height: 76vh; overflow: auto; overflow-wrap: anywhere; padding-right: 8px; }
 .skill-document .ant-alert { margin: 10px 0; }
 .skill-document-toolbar { margin-bottom: 10px; }
@@ -557,7 +472,195 @@ button,a,summary { -webkit-tap-highlight-color: transparent; }
 .skill-document-loading { padding: 20px; text-align: center; }
 @media (max-width: 520px) {
   .skill-source-details > div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
-  .config-page .skill-tree .skill-children { padding-left: 10px; margin-left: 3px; }
-  .skill-node { gap: 5px; }
-  .topology-graph .graph-summary { width: 100%; margin-left: 0; }
+}
+
+/* Workbench: 4-tier dark/light surface hierarchy, horizontal stepper + role cards, flat config & skill table */
+.project-task-progress { border-top: 1px solid var(--border) !important; }
+.task-index-note.is-unavailable { color: var(--muted); }
+.task-page-heading { align-items: flex-start; gap: 12px; }
+.task-back-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.task-state-pill { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.execution-summary-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; padding: 10px 14px; background: var(--elevated); border: 1px solid var(--border); border-radius: var(--radius); }
+.execution-summary-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.task-blocker-banner { margin-bottom: 14px; padding: 14px 16px; background: var(--elevated); border: 1px solid var(--border); border-radius: var(--radius); transition: border-color var(--motion-fast) var(--motion-ease); }
+.task-blocker-banner.is-blocked { border-color: var(--danger); }
+.task-blocker-banner.is-waiting { border-color: var(--warning); }
+.blocker-banner-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.blocker-banner-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.blocker-cell { display: grid; gap: 4px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--control-radius); }
+.blocker-cell > span { font-size: 12px; color: var(--muted); }
+.blocker-cell > strong { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.blocker-cell.is-highlight { border-color: var(--warning); background: var(--warning-bg); }
+.blocker-cell .tone-good { color: var(--good); }
+.execution-stepper-wrap { margin-bottom: 16px; }
+.execution-stepper { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
+.stepper-item-wrap { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.stepper-node { font: inherit; cursor: pointer; min-width: 168px; max-width: 220px; display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); text-align: left; transition: background-color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease); }
+.stepper-node:hover { background: var(--muted-surface); border-color: var(--node-border); }
+.stepper-node.is-selected { border-color: var(--accent); background: var(--accent-tint); box-shadow: 0 0 0 2px var(--accent-ring); }
+.stepper-node.is-completed { border-color: var(--good); }
+.stepper-node.is-waiting { border-color: var(--warning); }
+.stepper-node-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.stepper-index { flex: none; width: 20px; height: 20px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; background: var(--tag-bg); color: var(--muted); }
+.stepper-node.is-current .stepper-index,.stepper-node.is-selected .stepper-index { background: var(--accent-soft); color: var(--accent); }
+.stepper-title { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stepper-role-count { flex: none; font-size: 11px; color: var(--muted); }
+.stepper-node-foot { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.stepper-node.is-completed .stepper-status { color: var(--good); }
+.stepper-node.is-current .stepper-status { color: var(--accent); font-weight: 600; }
+.stepper-node.is-waiting .stepper-status { color: var(--warning); }
+.stepper-viewing { color: var(--accent); font-weight: 600; }
+.stepper-arrow { color: var(--muted); font-size: 13px; flex: none; }
+.step-roles-section { display: grid; gap: 10px; margin-bottom: 14px; }
+.role-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.role-work-card { font: inherit; cursor: pointer; display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--elevated); color: var(--text); text-align: left; transition: background-color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease); }
+.role-work-card:hover { background: var(--muted-surface); border-color: var(--node-border); transform: translateY(-1px); }
+.role-work-card.is-waiting { border-color: var(--warning); }
+.role-work-card.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); }
+.role-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.role-card-head .ant-tag { margin: 0; }
+.role-card-body { display: grid; gap: 4px; }
+.role-card-body > span { font-size: 12px; }
+.role-card-summary { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
+.role-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--accent); padding-top: 8px; border-top: 1px solid var(--border); }
+.task-assessment-compact { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 10px 14px; margin-bottom: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; }
+.task-skeleton-shell { display: grid; gap: 14px; }
+.task-skeleton-banner,.task-skeleton-step,.task-skeleton-card { padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.task-skeleton-stepper { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.task-skeleton-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.config-base-flat { padding: 14px 16px; background: var(--elevated); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; }
+.config-base-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.config-base-head h3 { margin: 0 0 2px; }
+.config-flat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 0; }
+.config-flat-grid > div { display: grid; gap: 3px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--control-radius); }
+.config-flat-grid dt { font-size: 12px; color: var(--muted); }
+.config-flat-grid dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.config-system-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.config-system-card { padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); display: grid; gap: 8px; }
+.config-system-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.config-system-card p { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.config-system-card .ant-btn { justify-self: start; padding-inline: 0; }
+.skill-table-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.skill-hierarchy-table .ant-table-cell { overflow-wrap: anywhere; }
+.skill-tree-cell { display: flex; align-items: flex-start; }
+.skill-tree-cell > .ant-table-row-indent { flex: none; }
+.skill-tree-cell > .ant-btn,.skill-tree-cell > .skill-expand-spacer { flex: 0 0 24px; }
+.skill-tree-name { display: flex; align-items: center; align-content: center; flex-wrap: wrap; gap: 2px 6px; min-width: 0; min-height: 24px; }
+.skill-tree-name .ant-tag { margin-inline-end: 0; }
+.skill-hierarchy-table .skill-table-status { white-space: nowrap; }
+.skill-child-table-wrap { display: grid; gap: 6px; padding: 6px 8px; background: var(--bg); border-radius: var(--control-radius); }
+.skill-child-row { display: grid; grid-template-columns: minmax(220px, 1.5fr) minmax(160px, 1fr) 88px 88px; align-items: center; gap: 10px; padding: 6px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--control-radius); font-size: 12px; }
+.skill-child-name { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.skill-child-name .ant-tag { margin: 0; }
+.skill-child-id { font-size: 11px; color: var(--muted); }
+@media (max-width: 900px) {
+  .blocker-banner-grid,.config-flat-grid,.config-system-cards,.task-skeleton-cards { grid-template-columns: minmax(0, 1fr); }
+  .task-skeleton-stepper { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .skill-child-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+@media (max-width: 600px) {
+  .page { padding-top: 14px; }
+  .project-overview-heading h2,.task-page-heading h2 { font-size: 20px; }
+}
+
+/* --- Pass 2: Prototype visual alignment --- */
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand-badge { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: 0.02em; }
+.brand-version { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.header-pill-btn { border-radius: 7px !important; border-color: var(--border) !important; background: var(--surface) !important; color: var(--text) !important; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding-inline: 10px !important; font-size: 12px !important; }
+.header-pill-btn:hover { border-color: var(--accent) !important; color: var(--text) !important; }
+.header-pill-btn kbd { margin-left: 4px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border); background: var(--muted-surface); font-size: 10px; color: var(--muted); }
+
+.nav-global-head { padding: 8px 12px 4px; }
+.nav-footer { margin-top: auto; padding: 12px 14px 10px; border-top: 1px solid var(--border); display: grid; gap: 2px; }
+.nav-footer-path { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-footer-caption { font-size: 11px; color: var(--muted); opacity: 0.8; }
+.project-issue-dot { color: var(--warning); font-size: 12px; margin-left: auto; flex: none; }
+.task-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.task-link-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-link-stage { flex: none; font-size: 11px; font-weight: 600; color: var(--accent); }
+.task-link-stage.is-completed { color: var(--good); }
+.task-link-stage.is-blocked { color: var(--bad); }
+.task-link-stage.is-unknown { color: var(--warning); }
+
+/* Overview page */
+.overview-header { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
+.overview-header h2 { margin: 4px 0 6px; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+.overview-subtitle { margin: 0; color: var(--muted); font-size: 13px; max-width: 680px; }
+.overview-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.overview-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.overview-section-head h3 { margin: 0; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.overview-card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.overview-card { appearance: none; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); transition: border-color var(--motion-fast) ease, background var(--motion-fast) ease, transform var(--motion-fast) ease; }
+.overview-card:hover { border-color: var(--accent); background: var(--accent-tint); transform: translateY(-1px); }
+.overview-card-top { display: flex; align-items: center; gap: 10px; }
+.overview-card-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); font-size: 15px; flex: none; }
+.overview-card-titles { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.overview-card-titles strong { font-size: 14px; font-weight: 600; }
+.overview-card-titles span { font-size: 12px; color: var(--muted); }
+.overview-card-arrow { color: var(--muted); font-size: 12px; transition: transform var(--motion-fast) ease; }
+.overview-card:hover .overview-card-arrow { transform: translateX(2px); color: var(--accent); }
+.overview-card-desc { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--muted); flex: 1; }
+.overview-card-footer { padding-top: 10px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted); }
+
+/* Flat Project Overview */
+.project-flat-header { display: grid; gap: 6px; margin-bottom: 16px; }
+.project-flat-title-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; }
+.project-flat-title-row h2 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+.project-inline-status { font-size: 12.5px; font-weight: 500; color: var(--good); }
+.project-inline-status.is-warning { color: var(--warning); }
+.project-inline-status.is-error { color: var(--bad); }
+.project-flat-meta-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--muted); }
+.project-flat-counts strong { color: var(--text); font-weight: 600; }
+
+.slim-amber-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 14px; margin-bottom: 14px; border-radius: 8px; border: 1px solid var(--warning); background: var(--warning-soft); font-size: 12.5px; }
+.slim-amber-copy { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--text); }
+.slim-amber-copy .anticon { color: var(--warning); }
+.slim-amber-action { color: var(--warning) !important; font-size: 12px !important; padding-inline: 0 !important; }
+
+.task-index-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.task-index-filter-bar { display: inline-flex; align-items: center; width: fit-content; flex: none; padding: 3px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); gap: 2px; }
+.task-filter-pill { appearance: none; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; font-size: 12.5px; font-weight: 500; transition: background var(--motion-fast) ease, color var(--motion-fast) ease; }
+.task-filter-pill:hover { color: var(--text); }
+.task-filter-pill.is-active { background: var(--muted-surface); color: var(--text); font-weight: 600; }
+.task-filter-count { font-size: 11px; color: var(--muted); }
+.task-index-query { flex: 0 1 320px; min-width: 220px; }
+.task-index-table .ant-table { background: transparent !important; }
+.task-index-table .ant-table-thead > tr > th { background: transparent !important; color: var(--muted) !important; font-size: 12px; font-weight: 500; border-bottom: 1px solid var(--border) !important; }
+.task-index-table .ant-table-tbody > tr > td { border-bottom: 1px solid var(--border) !important; padding-block: 10px !important; }
+.task-index-table .ant-table-tbody > tr { cursor: pointer; }
+.task-index-table .ant-table-tbody > tr:hover > td { background: var(--muted-surface) !important; }
+.task-date-cell { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.task-row-chevron { font-size: 10px; opacity: 0.5; }
+.task-index-table .ant-table-tbody > tr:hover .task-row-chevron { opacity: 1; color: var(--text); }
+
+/* Flat Task Header */
+.task-flat-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.task-flat-left { display: grid; gap: 8px; }
+.task-back-btn { justify-self: start; border-radius: 7px !important; }
+.task-title-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; }
+.task-title-line h2 { margin: 0; font-size: 22px; font-weight: 700; }
+.task-id-inline { font-size: 12px; color: var(--muted); }
+.task-flat-actions { display: flex; align-items: center; gap: 8px; }
+.task-flat-actions .ant-btn { border-radius: 7px !important; }
+.task-history-drawer { display: grid; gap: 14px; }
+.task-history-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Global Config flat */
+.config-flat-heading { margin-bottom: 16px; }
+.config-flat-heading h2 { margin: 0 0 4px; font-size: 26px; font-weight: 700; }
+.config-flat-heading p { margin: 0; font-size: 13px; }
+.config-base-flat { padding: 16px 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin-bottom: 12px; }
+.config-flat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; }
+.config-skills-section { min-width: 0; margin-top: 20px; }
+.config-skills-head { display: grid; gap: 4px; margin-bottom: 8px; }
+.config-skills-head h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.config-skills-head .muted { font-size: 12.5px; }
+
+@media (max-width: 1000px) {
+  .overview-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .config-flat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 680px) {
+  .overview-card-grid,.config-flat-grid { grid-template-columns: minmax(0, 1fr); }
 }

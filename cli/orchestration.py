@@ -1165,8 +1165,9 @@ def _route_dict(task: Dict[str, Any], level: str, *, next_stage: Optional[str], 
         data['applicable_obligations'] = orchestration_policy.resolve_task_obligations(
             task, task.get('_events') or [], data['included_stages'])['applicable_obligations']
     if action in {"dispatch_role", "task_complete"} and task.get("_task_dir") is not None:
-        context = dict(context or {})
-        context["validation"] = _validation_advice(task)
+        if task.get("_include_validation_advice", True):
+            context = dict(context or {})
+            context["validation"] = _validation_advice(task)
         if action == "dispatch_role" and next_stage in {"development", "verification", "review"}:
             data["recommended_skills"] = sorted(set(data["recommended_skills"]) | {"testing-strategy"})
     if allowed is not None:
@@ -1379,9 +1380,11 @@ def resolve_route(task_id: str, *, db_path: Optional[str] = None,
                   confirmation_policy: Optional[str] = None,
                   allowed_effects: Optional[Iterable[str]] = None,
                   _facts: Optional[Tuple[Dict[str, Any], List[Dict[str, Any]]]] = None,
-                  task_dir: Optional[Path] = None) -> Dict[str, Any]:
+                  task_dir: Optional[Path] = None,
+                  include_validation_advice: bool = True) -> Dict[str, Any]:
     root = _root(base_root)
     task, events = _facts if _facts is not None else _load_task_facts(task_id, db_path, task_dir=task_dir)
+    task["_include_validation_advice"] = include_validation_advice
     if task.get("domain") != "software":
         if task.get("issues"):
             raise OrchestrationError("; ".join(task["issues"]))
@@ -1980,6 +1983,7 @@ def resolve_progress(
     base_root: Optional["str | Path"] = None,
     connection: Optional[sqlite3.Connection] = None,
     task_dir: Optional[Path] = None,
+    include_validation_advice: bool = True,
 ) -> Dict[str, Any]:
     """Return display-oriented workflow progress from the same orchestration facts.
 
@@ -1993,7 +1997,8 @@ def resolve_progress(
     if task["domain"] != "software":
         from .execution import progress_view
         role_map = {row["workflow_role"]: row for row in catalog["roles"]}
-        route = resolve_route(task_id, base_root=root, _facts=(task, events), task_dir=task_dir)
+        route = resolve_route(task_id, base_root=root, _facts=(task, events), task_dir=task_dir,
+                              include_validation_advice=include_validation_advice)
         facts = task["_progress_facts"]
         return {**facts, **progress_view(facts["execution"], effective_level=None, role_map=role_map, route=route),
                 "domain": "video", "workflow_mode": None, "mode_source": None,
@@ -2013,7 +2018,8 @@ def resolve_progress(
                                             project_id=str(task["project_id"]), task_id=task_id)
     execution_facts = task["_progress_facts"]["execution"]
     try:
-        route = resolve_route(task_id, db_path=db_path, base_root=root, _facts=(task, events), task_dir=task_dir)
+        route = resolve_route(task_id, db_path=db_path, base_root=root, _facts=(task, events), task_dir=task_dir,
+                              include_validation_advice=include_validation_advice)
     except Exception as exc:
         # A failed gate lookup does not erase explicit progress or turn old terminal
         # tasks into current work. It stays a separately reported read problem.

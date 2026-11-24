@@ -1,7 +1,7 @@
 ---
 name: video-script-research
 display_name: 视频剧本与资料
-version: 5.4.0
+version: 5.4.1
 description: 根据视频简报、现有资料和表达约束编写内容结构、脚本或台词，保留重要主张与实际来源的对应。
 ---
 

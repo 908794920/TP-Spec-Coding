@@ -16,7 +16,7 @@ import sqlite3
 from urllib.parse import unquote
 
 from cli.path_identity import path_identity_key
-from .common import CANONICAL_SUBDIRS, load_project_registry, resolve_knowledge_project, meta_paths, read_jsonl, effective_project_identity
+from .common import CANONICAL_SUBDIRS, load_project_registry, resolve_knowledge_project
 from .telemetry import KnowledgeError, columns, connect_readonly
 
 
@@ -117,55 +117,8 @@ def document_root(cfg, row: dict) -> Path:
     return resolved_boundary
 
 
-def registered_conversion_path(cfg, record: dict) -> Path:
-    """Only the exact output of an existing registered ingestion conversion.
-
-    A source registry is not blanket permission to read arbitrary origin paths.
-    Resolve the declared conversion against the configured ingest root and the
-    batch's converted/<origin>.md convention; never fetch an original or URL.
-    """
-    from .ingest import batch_paths, _ingest_root
-    batch = _relative(str(record.get("batch") or ""))
-    origin = _relative(str(record.get("origin_path") or ""))
-    if record.get("conversion_status") != "converted":
-        raise KnowledgeError("KNOWLEDGE_CONVERSION_NOT_REGISTERED")
-    ingest_root = _ingest_root(cfg).resolve(strict=True)
-    configured = Path(str(cfg.knowledge_ingest.get("manifest_root") or ".ai-kb/ingest"))
-    vault = cfg.paths.knowledge_physical_root.resolve(strict=True)
-    if not configured.is_absolute() and not ingest_root.is_relative_to(vault):
-        raise KnowledgeError("KNOWLEDGE_DOCUMENT_BOUNDARY")
-    boundary = (batch_paths(cfg, batch)["root"] / "converted").resolve(strict=True)
-    if not boundary.is_relative_to(ingest_root):
-        raise KnowledgeError("KNOWLEDGE_DOCUMENT_BOUNDARY")
-    declared = str(record.get("conversion_path") or "")
-    declared_path = Path(declared)
-    if not declared_path.is_absolute():
-        _relative(declared)
-        declared_path = vault / declared_path
-    target = declared_path.resolve(strict=True)
-    expected = (boundary / (origin + ".md")).resolve(strict=True)
-    if target != expected or not target.is_relative_to(boundary) or not target.is_file() or target.suffix.lower() != ".md":
-        raise KnowledgeError("KNOWLEDGE_DOCUMENT_BOUNDARY")
-    return target
-
-
-def _conversion_for_row(cfg, row: dict) -> Path:
-    registration = metadata(row).get("registered_conversion")
-    if not isinstance(registration, dict) or row.get("scope", row.get("layer")) != "source":
-        raise KnowledgeError("KNOWLEDGE_DOCUMENT_BOUNDARY")
-    matches = [record for record in read_jsonl(meta_paths(cfg)["source_registry"])
-               if all(str(record.get(name) or "") == str(registration.get(name) or "") for name in ("project", "batch", "origin_path"))]
-    if len(matches) != 1 or effective_project_identity(cfg, str(matches[0].get("project") or ""), scope="source")["project"] != str(row.get("project")):
-        raise KnowledgeError("KNOWLEDGE_CONVERSION_REGISTRATION_CHANGED")
-    if str(row.get("project")) not in {item["id"] for item in scopes(cfg)}:
-        raise KnowledgeError("KNOWLEDGE_DOCUMENT_UNREGISTERED")
-    return registered_conversion_path(cfg, matches[0])
-
-
 def document_path(cfg, row: dict) -> Path:
     relative = _relative(str(row.get("rel_path", row.get("path", ""))))
-    if relative.startswith("@converted/"):
-        return _conversion_for_row(cfg, row)
     lexical = cfg.paths.knowledge_physical_root.resolve(strict=True) / relative
     boundary = document_root(cfg, row)
     resolved = lexical.resolve(strict=True)
@@ -204,7 +157,7 @@ def scope_condition(cfg, projects=None) -> tuple[str, list]:
             conditions.append("(d.project=? AND d.scope=? AND substr(d.rel_path,1,?)=?)")
             params += [row["id"], layer, len(prefix), prefix]
         # Metadata-only original sources are registered during explicit indexing.
-        conditions.append("(d.project=? AND d.scope='source' AND (substr(d.rel_path,1,12)='@registered/' OR substr(d.rel_path,1,11)='@converted/'))")
+        conditions.append("(d.project=? AND d.scope='source' AND substr(d.rel_path,1,12)='@registered/')")
         params.append(row["id"])
     return "(" + (" OR ".join(conditions) or "0") + ")", params
 
@@ -235,7 +188,8 @@ def public_document(cfg, row: dict) -> dict:
             "metadata_only": bool(meta.get("metadata_only")), "source_refs": [value for value in refs if isinstance(value, str)] if isinstance(refs, list) else [],
             "evidence_refs": meta["evidence_refs"] if isinstance(meta.get("evidence_refs"), list) else [], "superseded": meta.get("superseded"),
             "replaced_by": meta.get("replaced_by"), "relations": meta["relations"] if isinstance(meta.get("relations"), list) else [],
-            "origin": meta["origin"] if isinstance(meta.get("origin"), dict) else None, "conversion": meta.get("conversion") if isinstance(meta.get("conversion"), str) else None}
+            "origin": meta["origin"] if isinstance(meta.get("origin"), dict) else None,
+            "content_path": meta.get("content_path") if isinstance(meta.get("content_path"), str) else None}
 
 
 def query_documents(cfg, query="", *, projects=None, layer="", kind="", maintenance="",

@@ -322,16 +322,16 @@ def workspace_doctor(workspace_root: "str | Path", *, installation_config: "str 
     elif portability.get("status") == "SYNC_AVAILABLE":
         warnings.append("project-local Content Systems config contains removable machine-specific/redundant values")
     if surface.get("status") == "BLOCKED":
-        issues.extend([f"project entry surface: {msg}" for msg in surface.get("blockers") or []])
+        issues.extend([f"project Memory: {msg}" for msg in surface.get("blockers") or []])
     elif surface.get("status") == "SYNC_AVAILABLE":
-        warnings.append("project README/AGENTS/.tp-spec README entry surface needs Base sync")
+        warnings.append("project Memory has missing starter files")
     binding_version_mismatch = bool(r["binding"]["exists"] and r["binding"]["base_version"] and r["binding"]["base_version"] != active_version())
     runtime_version_mismatch = bool(r.get("runtime",{}).get("exists") and r.get("runtime",{}).get("valid") and r.get("runtime",{}).get("base_version") and r.get("runtime",{}).get("base_version") != active_version())
     legacy_safe = any(info["state"] == "LEGACY_LINK_SAFE_REMOVE" for info in r["legacy_paths"].values())
     project_sync_available = r.get("project_portability",{}).get("status") == "SYNC_AVAILABLE" or r.get("project_surface",{}).get("status") == "SYNC_AVAILABLE"
     runtime_rebind_required = r.get("runtime_portability",{}).get("status") == "REBIND_AVAILABLE"
     active_task_review_required = r.get("active_task_portability",{}).get("status") == "REVIEW_REQUIRED"
-    if not r["base"]["valid"] or any("legacy link target mismatch" in issue or "Runtime database is not healthy" in issue or "Runtime portability:" in issue or "project portability:" in issue or "project entry surface:" in issue for issue in issues):
+    if not r["base"]["valid"] or any("legacy link target mismatch" in issue or "Runtime database is not healthy" in issue or "Runtime portability:" in issue or "project portability:" in issue or "project Memory:" in issue for issue in issues):
         semantic_health = "UNSAFE"
     elif binding_version_mismatch or runtime_version_mismatch or runtime_rebind_required or active_task_review_required:
         semantic_health = "SYNC_REQUIRED"
@@ -397,9 +397,9 @@ def migration_plan_for_workspace(workspace_root: "str | Path", *, installation_c
     elif r.get("project_portability",{}).get("status") == "SYNC_AVAILABLE":
         actions.append({"action":"NORMALIZE_PROJECT_CONTENT_CONFIG","path":r["project_portability"]["config_path"]})
     if r.get("project_surface",{}).get("status") == "BLOCKED":
-        blockers.extend([f"project entry surface: {msg}" for msg in r["project_surface"].get("blockers") or []])
+        blockers.extend([f"project Memory: {msg}" for msg in r["project_surface"].get("blockers") or []])
     elif r.get("project_surface",{}).get("status") == "SYNC_AVAILABLE":
-        actions.append({"action":"SYNC_PROJECT_ENTRY_SURFACE","files":[row["path"] for row in r["project_surface"].get("files") or [] if row.get("changed")]})
+        actions.append({"action":"BOOTSTRAP_PROJECT_MEMORY","files":[row["path"] for row in r["project_surface"].get("files") or [] if row.get("changed")]})
     return {
         "schema":"tp-spec.base-migration-plan/v1",
         "status":"BLOCKED" if blockers else "READY",
@@ -666,7 +666,7 @@ def _migrate_one(workspace: Path, args) -> Dict[str, Any]:
     surface = sync_project_surface(workspace, project_id=project_id, apply=True)
     changes.extend({"action":row["action"],"path":row["path"]} for row in surface.get("changes") or [])
     if surface.get("status") == "BLOCKED":
-        return {"workspace_root":str(workspace),"status":"BLOCKED_AFTER_BINDING","blockers":surface.get("blockers") or ["project entry surface sync blocked"],"changes":changes,"surface":surface}
+        return {"workspace_root":str(workspace),"status":"BLOCKED_AFTER_BINDING","blockers":surface.get("blockers") or ["project Memory initialization blocked"],"changes":changes,"surface":surface}
     final=workspace_doctor(workspace,installation_config=args.installation_config)
     return {"workspace_root":str(workspace),"status":"PASS" if final["status"]=="PASS" else "WARN","changes":changes,"post_doctor":final}
 
@@ -769,5 +769,5 @@ def add_base_subparsers(root_subparsers) -> None:
     p=sub.add_parser("doctor",help="Check installation/binding/Runtime portability/legacy-link health for one/all projects"); _common_workspace(p); p.set_defaults(func=cmd_doctor)
     p=sub.add_parser("inventory",help="Collect workspace roots from registries/inventory and optional bounded discovery"); p.add_argument("--installation-config",default=None); p.add_argument("--inventory",default=None); p.add_argument("--search-root",action="append",default=[]); p.add_argument("--max-depth",type=int,default=5); p.add_argument("--write",action="store_true"); p.set_defaults(func=cmd_inventory)
     p=sub.add_parser("migration-plan",help="Plan Junction-to-resolver convergence without writes"); _common_workspace(p); p.set_defaults(func=cmd_migration_plan)
-    p=sub.add_parser("sync-project",help="Synchronize Runtime machine binding, portable project config, and project entry surface"); _common_workspace(p); p.add_argument("--apply",action="store_true"); p.set_defaults(func=cmd_sync_project)
+    p=sub.add_parser("sync-project",help="Synchronize Runtime machine binding and portable project config, and initialize missing project Memory"); _common_workspace(p); p.add_argument("--apply",action="store_true"); p.set_defaults(func=cmd_sync_project)
     p=sub.add_parser("migrate",help="Write binding, rebind portable Runtime locator, normalize project config/entry docs, and optionally remove verified legacy links"); _common_workspace(p); p.add_argument("--apply",action="store_true"); p.add_argument("--remove-legacy-links",action="store_true"); p.add_argument("--remove-redundant-content-config",action="store_true",help="deprecated compatibility flag; portability normalization now runs on apply"); p.set_defaults(func=cmd_migrate)

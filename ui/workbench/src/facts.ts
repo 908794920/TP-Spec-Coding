@@ -109,7 +109,7 @@ const explanations: Record<string, Record<string, string>> = {
     operation: { CHECKPOINT: '检查点', VERIFY: '验证', REVIEW: '审查', checkpoint: '检查点', verify: '验证', review: '审查', SCOPE_CHANGE: '范围变更' },
     phase: { intake: '受理', planning: '规划', development: '开发', verification: '验证', VERIFYING: '验证中',
         creative: '创作', asset_production: '素材制作', post_production: '剪辑后期', media_quality: '成片质检',
-        delivery: '交付', CLOSING: '结单中', COMPLETED: '已完成' },
+        delivery: '交付', CLOSING: '结单中', COMPLETED: '已完成', other: '待归类' },
     from_stage: { planning: '规划', development: '开发', verification: '验证', delivery: '交付' },
     to_stage: { planning: '规划', development: '开发', verification: '验证', delivery: '交付' },
     mode: { default: '默认', conditional: '条件性', accept: '实际接受', defer: '延期', waive: '豁免' },

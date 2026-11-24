@@ -6,6 +6,7 @@ export interface WorkflowProps {
     workflow: FactRecord;
     task: FactRecord;
     blockers?: unknown;
+    lifecycleActivity?: unknown;
     workItems: WorkItems;
     onConditions: () => void;
     onDocuments?: () => void;

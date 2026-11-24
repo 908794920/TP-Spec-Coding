@@ -1,7 +1,7 @@
 ---
 name: tp-external-skill-management
 display_name: 自定义 SKILL 管理
-version: 5.4.0
+version: 5.4.1
 description: 用于 TP-Spec 用户级外部方法包的明确来源导入、更新、启停、移除、关联和可用性核验；不管理宿主插件或业务项目 Skill，不自动执行包内脚本。
 ---
 
@@ -31,7 +31,7 @@ description: 用于 TP-Spec 用户级外部方法包的明确来源导入、更�
 
 1. 修改后重新 `skill list`，按精确 ID 检查实际 `status/enabled/source_root/path`、关联和局部 `problems`，不使用旧摘要证明成功。
 2. 导入、更新或启用后执行 `tp-spec skill read --id <ID> --json`；核对正文来源、入口、相对 Markdown 引用与实际 SHA-256。目录 `available` 不证明脚本可执行或依赖齐备，不运行包内脚本来凑验收。
-3. 停用后列表应是 `disabled`，正常 CLI 读取应拒绝；移除且清除登记后 ID 应消失，读取应返回 `NOT_FOUND`。若保留登记但文件缺失，应如实报告 `missing`，不能冒充完整移除。
+3. 停用后列表应是 `disabled`，正常 CLI 读取应拒绝。整包目录移除后 ID 应消失，读取应返回 `NOT_FOUND`；管理动作还应另行核对该包的登记条目是否已清除。已登记的包目录仍在而入口缺失时应为 `missing`。
 4. 已使用工作台或用户要求查看时，在相同用户根点击“重新读取”，检查节点、关联和正文。外部文件按请求实时读取，普通包变更不要求重启；更换用户根环境变量才重启相应进程。
 5. 报告具体 ID、动作、前后状态、验证与保留/恢复情况。失败保留可恢复事实并说明责任和恢复条件；较新的用户改动出现后不盲目回滚覆盖。
 

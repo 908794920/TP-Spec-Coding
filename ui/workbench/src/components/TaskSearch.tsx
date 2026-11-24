@@ -147,9 +147,9 @@ export function TaskSearch({ contexts, revision, onOpenTask }: {
         return () => document.removeEventListener('pointerdown', onPointerDown);
     }, [open]);
     return <div className="task-search" ref={box}>
-      <Button ref={trigger} type="text" className="task-search-toggle" icon={<SearchOutlined/>} aria-expanded={open} aria-controls={panelId}
+      <Button ref={trigger} type="default" className="task-search-toggle header-pill-btn" icon={<SearchOutlined/>} aria-expanded={open} aria-controls={panelId}
         aria-label={open ? '收起任务查询' : '按 TASK ID 或标题查询任务'} aria-keyshortcuts="Control+K Meta+K" title={`查询任务（${shortcut}）`}
-        onClick={() => (open ? close() : setOpen(true))}><kbd aria-hidden="true">{shortcut}</kbd></Button>
+        onClick={() => (open ? close() : setOpen(true))}><span>全局搜索</span><kbd aria-hidden="true">{shortcut}</kbd></Button>
       {open && <div className="task-search-panel" id={panelId} onKeyDown={handlePanelKeyDown}>
         <Input className="task-search-input" autoFocus allowClear value={query} prefix={<SearchOutlined/>}
           aria-label="按 TASK ID 或标题查询任务" placeholder="按 TASK ID 或标题查询"

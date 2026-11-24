@@ -20,8 +20,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         /* Vite 8 bundles with Rolldown, whose `manualChunks` accepts only the function form (Rollup's
-           object form is rejected). `@xyflow/react` needs no rule: it only arrives through the
-           graph's dynamic import, so it already gets its own on-demand chunk. */
+           object form is rejected). */
         manualChunks(id) {
           return /\/node_modules\/(antd|@ant-design|@rc-component)\//.test(id.replace(/\\/g, '/')) ? 'vendor' : undefined;
         },

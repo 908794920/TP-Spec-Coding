@@ -8,7 +8,7 @@ Every registered source must have a disposition:
 
 `pending | canonicalized | merged | source_only | duplicate | superseded | quarantined | excluded`
 
-The target is 100% **registered-source accountability**, not 100% source-to-canonical conversion. Templates, duplicates, archives and low-value material must not be turned into canonical notes merely to raise a percentage.
+The target is 100% **registered-source accountability**. Assign templates, duplicates, archives and low-value material the appropriate disposition without creating unnecessary canonical notes.
 
 ## Standard flow
 
@@ -16,7 +16,6 @@ The target is 100% **registered-source accountability**, not 100% source-to-cano
 REGISTER
 → MANIFEST / HASH
 → DEDUP
-→ CONVERT or QUARANTINE
 → GROUP / TRIAGE
 → SEARCH EXISTING CANONICAL
 → AI READ / UPDATE / CREATE / MERGE
@@ -34,9 +33,8 @@ Before INDEX/VERIFY/L4, run `tp-spec knowledge scan` **after the final canonical
 
 - Source file scope and write boundary must be explicit. External originals are not silently modified.
 - Hash duplicates before semantic processing.
-- Conversion failure enters quarantine; no silent drop.
+- Keep derived material tied to the exact registered source. Resolve hash mismatches before associating results. Record the cause of a read failure before deciding source disposition.
+- Remote retrieval or transfer requires its own authorization.
 - Update existing canonical before creating another node for the same semantic object.
 - Multi-model/parallel ingestion must have deterministic progress ownership; SQLite projection writes are serialized.
 - Destructive source cleanup, ambiguous project assignment, merge/split uncertainty and evidence conflicts are fail-closed for unattended maintenance.
-
-The default local conversion adapter is Microsoft MarkItDown, invoked through TP-Spec-Coding's narrow `convert_local` boundary. Base does not reimplement PDF/Office parsers and does not let document normalization silently become HTTP/URL retrieval. Registered-source hash drift blocks conversion before output/manifest mutation; per-source conversion failure enters `quarantined`. OCR/cloud-specific enhancement remains an optional adapter concern rather than a user-machine-specific office path requirement.

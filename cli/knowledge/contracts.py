@@ -16,8 +16,7 @@ def _functions(*functions):
 def projection_source_subject(cfg):
     from . import common
     return stable_hash({"registered_sources": read_jsonl(meta_paths(cfg)["source_registry"]),
-                        "source_path_ids": common.source_path_ids(cfg),
-                        "registered_conversion_versions": common.registered_conversion_versions(cfg)})
+                        "source_path_ids": common.source_path_ids(cfg)})
 
 
 def projection_contract(cfg):
@@ -31,10 +30,9 @@ def projection_contract(cfg):
         "schema": "tp-spec.knowledge-projection-contract/v1",
         "implementation": _functions(_functions, projection_contract, projection_source_subject, common.read_note, common.parse_frontmatter, common.normalize_yaml_scalars, common.collect_notes,
             common.canonical_dirs, common.source_dirs, common.effective_project_identity, common.apply_note_identity,
-            common.load_project_registry, common.load_source_registry, common.source_registry_records, common.source_path_ids, common.registered_conversion_versions,
+            common.load_project_registry, common.load_source_registry, common.source_registry_records, common.source_path_ids,
             documents.source_identity, documents.document_key, documents._relative, documents.metadata,
-            documents.scopes, documents.scope_condition, documents.document_root, documents.document_path, documents._conversion_for_row,
-            documents.registered_conversion_path, projection.tokenize, projection.chunk_markdown,
+            documents.scopes, documents.scope_condition, documents.document_root, documents.document_path, projection.tokenize, projection.chunk_markdown,
             projection._note_metadata, projection._registered_sources, projection._source_id,
             projection._insert_doc, projection._rebuild_graph, projection.build_projection,
             projection.update_projection, projection.update_canonical_note_projection, reading._text),
@@ -65,7 +63,7 @@ def quality_contract(cfg):
         "implementation": _functions(_functions, quality_contract, *implementation, common.parse_frontmatter, common.normalize_yaml_scalars, common.read_note,
             common.collect_notes, common.canonical_dirs, common.source_dirs,
             common.effective_project_identity, common.apply_note_identity, common.load_project_registry, common.load_source_registry, common.source_registry_records, common.source_path_ids,
-            common.find_source_ids, common.source_accountability, common.registered_conversion_versions, state.apply_quality_policy,
+            common.find_source_ids, common.source_accountability, state.apply_quality_policy,
             state.load_quality_policy, state.code_dependency_snapshot, state._affected_canonical,
             state._verification_binding, state.stage_scan, state.maintain, state.verify,
             state.create_audit_plan, state._audit_assertions, state.record_audit, state.commit_snapshot),

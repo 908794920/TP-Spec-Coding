@@ -25,7 +25,7 @@ tp-spec knowledge read --workspace-root <workspace> --document-id <document_key>
 
 保留 canonical-first；在允许 source 补充且候选不足时返回 source。`--layer canonical|source` 可指定层级，`--kind` 可指定类型。显式 source 查询不产生“canonical 失败”的推断；只有实际发生补充时记录 `canonical_shortfall`。中文、英文类名、标识符、路径和多词仍使用原分词 / FTS 匹配语义，没有换搜索引擎。候选对应索引版本；文件已变化时以随后正文读取返回的版本状态为准。
 
-Markdown 正文读取的 `document.version` 是本次实际读取内容的哈希，`indexed_version` 保留索引哈希，`version_status=same|changed` 表明是否一致。`metadata_source=current_document` 表示标题、类型、状态、替代关系和来源引用等取自同一次读取的当前 frontmatter；稳定 key、注册项目/路径及转换来源身份仍按登记记录校验。`updated_at` 保留索引登记的文件时间，`updated_at_source=indexed_document` 明确其来源，不据此声称当前文件未变化。缺少或不支持的 frontmatter 返回 `metadata_available=false`，不把旧索引状态冒充当前状态，也不因此阻止正文读取。公开元数据字段存在不可表示的值时，保留其余有效字段并返回 `metadata_warning=KNOWLEDGE_CURRENT_METADATA_UNSUPPORTED`，该字段的当前事实保持未知。仅注册元数据的外部原件返回 `metadata_source=registered_source`，不声称读到了外部原件正文。
+Markdown 正文读取的 `document.version` 是本次实际读取内容的哈希，`indexed_version` 保留索引哈希，`version_status=same|changed` 表明是否一致。`metadata_source=current_document` 表示标题、类型、状态、替代关系和来源引用等取自同一次读取的当前 frontmatter；稳定 key、注册项目和路径仍按登记记录校验。`updated_at` 保留索引登记的文件时间，`updated_at_source=indexed_document` 明确其来源，不据此声称当前文件未变化。缺少或不支持的 frontmatter 返回 `metadata_available=false`，不把旧索引状态冒充当前状态，也不因此阻止正文读取。公开元数据字段存在不可表示的值时，保留其余有效字段并返回 `metadata_warning=KNOWLEDGE_CURRENT_METADATA_UNSUPPORTED`，该字段的当前事实保持未知。仅注册元数据的外部原件返回 `metadata_source=registered_source`，不声称读到了外部原件正文。
 
 正文默认返回目录最多 20 项、目录标题累计最多 1,000 字符；正文最多 80 个完整原文行、累计最多 4,000 字符。这是字符预算，不是 tokenizer 的 token 预算。返回 `read_mode`、`outline`、`outline_truncated`、`truncated`、`next_start_line`、`line_start`、`line_end`、`body_start_line`、`total_lines`、`body_returned` 和预算提示。
 
@@ -91,7 +91,7 @@ tp-spec knowledge index build --workspace-root <workspace>
 | 存放位置 | 原字段 / 使用统计扩展字段 | 含义与历史处理 |
 |---|---|---|
 | `documents` | 原 `rel_path/scope/project/kind/canonical_id/source_id/title/sha256/...` 保留 | 原索引与 FTS5 关系不变；SQLite 自增 ID 不公开为永久 ID |
-| `documents` | 新 `document_key, metadata_json` | 稳定公开标识及已登记维护 / 来源 / 转换事实；旧元数据缺失不补造 |
+| `documents` | 新 `document_key, metadata_json` | 稳定公开标识及已登记的维护和来源事实；旧元数据缺失不补造 |
 | `retrieval_runs` | 原 `id/query_hash/retrieval_mode/fallback_reason/candidate_count/answerability/layer/elapsed_ms/created_at` 保留 | 历史 `candidate_count` 仍是当时片段数，不能改称文档数 |
 | `retrieval_runs` | 新 `receipt_id, request_id, request_fingerprint, scope_fingerprint` | 权威回执、逻辑去重与范围指纹；旧行保持 NULL |
 | `retrieval_runs` | 新 `task_id, actor_role, purpose, caller` | 可选调用身份与用途；旧未知不直接标为 AI 搜索 |
@@ -113,9 +113,9 @@ tp-spec knowledge index build --workspace-root <workspace>
 
 公开标识形如 `knowledge:<解析来源身份哈希>:<层级和文档身份哈希>`。来源身份基于解析后的 Vault 路径；canonical 使用 canonical ID，source 使用能区分具体文件的相对定位符。重新索引不会因数据库自增 ID 改变而改变公开标识；移动整个 Vault 属于来源身份变化，不把新旧根目录硬猜成同一来源。
 
-source_id 可以对应多个文件。legacy `knowledge:<asset_id>`、canonical ID、原 source ID 和路径只在当前项目 / shared 内唯一对应时关联；一对多保留“未关联”事实，不随机打开其中一篇。非 Markdown 原件展示已有注册元数据；已登记且符合既有 ingest 路径契约的 Markdown 转换件可读，未登记件不自动转换、不抓取原件。虚拟 `@registered/` 与 `@converted/` 路径只代表已登记索引定位符，不是供用户传入的任意磁盘路径。
+source_id 可以对应多个文件。legacy `knowledge:<asset_id>`、canonical ID、原 source ID 和路径只在当前项目 / shared 内唯一对应时关联；一对多保留“未关联”事实，不随机打开其中一篇。外部原件展示登记信息。已进入知识库正常文档目录的 Markdown 可按文档权限读取，source registry 的 `content_path` 可关联它和原件。虚拟 `@registered/` 路径只代表登记索引定位符。
 
-读取前重新解析实际路径和注册边界；路径越界、编码转义、绝对路径、Windows 盘符 / UNC、目录逃逸和符号链接逃逸会拒绝。转换件还须与当前 source registry 中的 batch、origin_path、project 和实际转换输出路径一致。删除、改名、ID / project 变更或读取过程中版本变化有明确错误。仅目录结果不产生成功正文读取数。
+读取前重新解析实际路径和注册边界；路径越界、编码转义、绝对路径、Windows 盘符 / UNC、目录逃逸和符号链接逃逸会拒绝。删除、改名、ID / project 变更或读取过程中版本变化有明确错误。仅目录结果不产生成功正文读取数。
 
 页面显式读取**当前完整正文**，不复用 CLI 的 80 行预览作为全文。目录根据实际渲染标题生成；阅读面板支持已注册内部跳转、返回上篇、关闭 / Escape 后回到原入口焦点，窄屏沿用 Wiki 全屏抽屉布局。只显示局部关系，不建立全库关系图。
 

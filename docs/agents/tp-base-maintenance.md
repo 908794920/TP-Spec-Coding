@@ -35,6 +35,6 @@
 
 - [Getting Started](../GETTING_STARTED.md)、[文档地图](../README.md)、[Agent / Role / Skill](../AGENTS_AND_SKILLS.md)。
 - [用户级外部 SKILL](../EXTERNAL_SKILLS.md)：被管理的外部包与 Base、项目独立；管理能力本身是 Base 内置 SKILL。
-- [本地工作台](../WORKBENCH.md)：展示与读取共用目录，图的列布局不改变真实关系或使用效果。
+- [本地工作台](../WORKBENCH.md)：展示与读取共用目录，父子表与分组展示不改变真实关系或使用效果。
 
 修改业务代码与 Base 产品源码交软件工程领域，内容维护交 Wiki/Knowledge 领域。管理能力不拥有 Task state，也不因为节点存在就获得执行授权。

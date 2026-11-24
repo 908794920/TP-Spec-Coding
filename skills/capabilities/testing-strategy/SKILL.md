@@ -1,7 +1,7 @@
 ---
 name: testing-strategy
 display_name: 分层测试
-version: 5.4.0
+version: 5.4.1
 description: Use to choose and execute risk-proportionate tests for code changes, mapping acceptance criteria to reproducible evidence without equating test count with confidence.
 ---
 
@@ -26,7 +26,7 @@ production read 必须用户明确确认并最小权限；DML/DDL/生产写必�
 
 统计、报表或查询结果的核验按需读 [业务语义与查询核对](../database-engineering/SKILL.md#业务语义与查询核对)，沿已确认口径分别核对 SQL、结果行和回答；执行成功或页面有数字不等于口径正确。
 
-存在 UI/页面 AC 时采用 **Diff-aware** 验证：先由当前 Change Set/Diff 推导受影响 route/page，再用真实浏览器检查声明视口、关键交互、页面状态、Console/Network 和横向滚动。源码 grep、DOM/CSS 字符串断言只能作为静态结构契约，不能单独构成视觉 PASS。稳定路径优先复用 Playwright Test TS，必要视觉才采用获准 Midscene 官方集成；报告采集不等于视觉/人验，动效必须看真实过程。测试时主动完成已有脚本复用、稳定场景提炼、带断言的真实回放和项目 Memory 保存评估；不等用户逐次提醒，不为每次点击留一份脚本。具体闭环与 Evidence 规则按需读取 [Visual QA](references/visual-qa.md)。
+存在 UI/页面 AC 时采用 **Diff-aware** 验证：先由当前 Change Set/Diff 推导受影响 route/page，再用真实浏览器检查声明视口、关键交互、页面状态、Console/Network 和横向滚动。源码 grep、DOM/CSS 字符串断言只能作为静态结构契约，不能单独构成视觉 PASS。优先复用项目现有脚本及获准工具；报告采集不等于视觉/人验，动效必须看真实过程。测试时主动完成已有脚本复用、稳定场景提炼、带断言的真实回放和项目 Memory 保存评估；不等用户逐次提醒，不为每次点击留一份脚本。具体闭环与 Evidence 规则按需读取 [Visual QA](references/visual-qa.md)。
 
 ## 完成判定
 PASS 的每个关键结论都能回到真实 evidence；测试通过只证明被测预期在本次条件下成立，不能证明模型自行增加的限制合理或已获授权。验证 subject 实质变化后旧 PASS 不继续冒充当前 PASS，应重新验证或保持 `PASS_STALE`。

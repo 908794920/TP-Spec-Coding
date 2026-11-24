@@ -377,24 +377,6 @@ def stable_hash(value: Any) -> str:
     return hashlib.sha256(blob).hexdigest()
 
 
-def registered_conversion_versions(cfg) -> Dict[str, Any]:
-    """Versions of exact already-registered Markdown outputs, never originals."""
-    from .documents import registered_conversion_path
-    versions = {}
-    for record in read_jsonl(meta_paths(cfg)["source_registry"]):
-        if record.get("conversion_status") != "converted" or record.get("disposition") in {"quarantined", "excluded"}:
-            continue
-        key = "@converted/" + stable_hash([record.get("batch"), str(record.get("origin_path") or ""), str(record.get("project") or "")])
-        item = {"scope": "source", "id": str(record.get("source_id") or ""), "project": str(record.get("project") or "")}
-        try:
-            path = registered_conversion_path(cfg, record)
-            item.update(sha256=hashlib.sha256(path.read_bytes()).hexdigest(), status="RESOLVED")
-        except (ValueError, OSError, RuntimeError):
-            item["status"] = "UNAVAILABLE"
-        versions[key] = item
-    return versions
-
-
 def knowledge_truth_snapshot(cfg: ResolvedConfig) -> Dict[str, Any]:
     root = cfg.paths.knowledge_physical_root
     canonical, sources = collect_notes(root, cfg)
@@ -406,9 +388,6 @@ def knowledge_truth_snapshot(cfg: ResolvedConfig) -> Dict[str, Any]:
             "id": note["id"],
             "project": note["truth_project"],
         }
-    for relative, item in registered_conversion_versions(cfg).items():
-        if item.get("status") == "RESOLVED":
-            files[relative] = {key: item[key] for key in ("scope", "sha256", "id", "project")}
     # Registry/dictionaries are data-owned knowledge configuration and affect interpretation.
     registry = cfg.paths.knowledge_registry
     if registry.is_file() and registry.is_relative_to(root):

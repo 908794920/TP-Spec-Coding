@@ -1,15 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Deterministic project-facing TP-Spec-Coding entrypoint maintenance.
-
-The project root README/AGENTS managed block and ``.tp-spec/README.md`` are a
-portable integration surface. They describe stable resolver behavior only;
-machine-specific paths stay in the installation profile and are never rendered
-into project files. ``.tp-spec/memory`` is bootstrapped create-once and remains
-project-owned after creation.
-"""
+"""Validate project write targets and initialize project-owned Memory once."""
 from __future__ import annotations
 
-import hashlib
 import os
 from pathlib import Path
 import stat
@@ -20,8 +12,6 @@ from cli.environment import load_project_binding
 
 BASE_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_ROOT = BASE_ROOT / "project-entry"
-MANAGED_START = "<!-- tp-spec-base:managed:start -->"
-MANAGED_END = "<!-- tp-spec-base:managed:end -->"
 
 
 class ProjectSurfaceError(ValueError):
@@ -54,29 +44,6 @@ def _render(name: str, *, project_id: str) -> str:
     return text.replace("{{PROJECT_ID}}", project_id).rstrip() + "\n"
 
 
-def _managed_block(*, project_id: str) -> str:
-    body = _render("root-managed-block.md", project_id=project_id).rstrip()
-    return f"{MANAGED_START}\n{body}\n{MANAGED_END}\n"
-
-
-def _replace_managed(text: str, block: str) -> tuple[str, str]:
-    starts = text.count(MANAGED_START)
-    ends = text.count(MANAGED_END)
-    if starts != ends or starts > 1:
-        raise ProjectSurfaceError(f"malformed managed block markers: starts={starts}, ends={ends}")
-    newline = "\r\n" if "\r\n" in text else "\n"
-    body = block.rstrip("\n").replace("\n", newline)
-    if starts == 1:
-        start, end = text.index(MANAGED_START), text.index(MANAGED_END)
-        if end < start:
-            raise ProjectSurfaceError("managed block end precedes its start")
-        # Outside the markers belongs to the project: preserve BOM, whitespace,
-        # line endings and trailing content rather than normalizing the document.
-        return text[:start] + body + text[end + len(MANAGED_END):], "REPLACE_MANAGED_BLOCK"
-    separator = "" if not text or text.endswith(newline * 2) else (newline if text.endswith(newline) else newline * 2)
-    return text + separator + body + newline, "APPEND_MANAGED_BLOCK"
-
-
 def _project_id(workspace: Path, explicit: str = "") -> str:
     if explicit:
         return explicit
@@ -103,39 +70,8 @@ def _memory_bootstrap_rows(workspace: Path, *, project_id: str) -> List[Dict[str
 def project_surface_plan(workspace_root: "str | Path", *, project_id: str = "") -> Dict[str, Any]:
     workspace = Path(workspace_root).resolve(strict=False)
     pid = _project_id(workspace, project_id)
-    block = _managed_block(project_id=pid)
-    rows: List[Dict[str, Any]] = []
+    rows = _memory_bootstrap_rows(workspace, project_id=pid)
     blockers: List[str] = []
-
-    for rel in ("AGENTS.md", "README.md"):
-        path = workspace / rel
-        try:
-            issue = project_path_issue(path, workspace)
-            if issue:
-                raise ProjectSurfaceError(issue)
-            before_bytes = path.read_bytes() if path.is_file() else None
-            before = before_bytes.decode("utf-8") if before_bytes is not None else ""
-            after, action = _replace_managed(before, block)
-        except (ProjectSurfaceError, OSError, UnicodeError) as exc:
-            blockers.append(f"{rel}: {exc}")
-            rows.append({"path": str(path), "state": "BLOCKED", "action": "NONE", "changed": False})
-            continue
-        if not path.is_file():
-            action = "CREATE_WITH_MANAGED_BLOCK"
-            if rel == "README.md":
-                after = f"# {pid}\n\n{block}"
-        changed = before != after
-        rows.append({"path": str(path), "state": "STALE" if changed else "CURRENT", "action": action if changed else "NONE", "changed": changed, "content": after,
-                     "before_sha256": hashlib.sha256(before_bytes).hexdigest() if before_bytes is not None else None})
-
-    runtime_readme = workspace / ".tp-spec" / "README.md"
-    desired = _render("tp-spec-readme.md", project_id=pid)
-    before_bytes = runtime_readme.read_bytes() if runtime_readme.is_file() else None
-    before = before_bytes.decode("utf-8-sig") if before_bytes is not None else ""
-    changed = before.replace("\r\n", "\n") != desired.replace("\r\n", "\n")
-    rows.append({"path": str(runtime_readme), "state": "STALE" if changed else "CURRENT", "action": "WRITE_BASE_MANAGED_README" if changed else "NONE", "changed": changed, "content": desired,
-                 "before_sha256": hashlib.sha256(before_bytes).hexdigest() if before_bytes is not None else None})
-    rows.extend(_memory_bootstrap_rows(workspace, project_id=pid))
     for row in rows:
         path = Path(row["path"])
         if row.get("changed"):
@@ -145,8 +81,6 @@ def project_surface_plan(workspace_root: "str | Path", *, project_id: str = "") 
     issue = project_path_issue(workspace / ".tp-spec" / "memory" / "skills", workspace, directory=True)
     if issue:
         blockers.append(issue)
-
-
     return {
         "schema": "tp-spec.project-surface-plan/v1",
         "workspace_root": str(workspace),
@@ -169,25 +103,22 @@ def sync_project_surface(workspace_root: "str | Path", *, project_id: str = "", 
                 continue
             path = Path(row["path"])
 
-            def check_unchanged():
+            def check_missing():
                 issue = project_path_issue(path, workspace)
                 if issue:
                     raise ProjectSurfaceError(issue)
-                before = path.read_bytes() if path.is_file() else None
-                digest = hashlib.sha256(before).hexdigest() if before is not None else None
-                if digest != row.get("before_sha256"):
+                if path.exists():
                     raise ProjectSurfaceError(f"PROJECT_SURFACE_CHANGED: replan before writing {path}")
 
-            check_unchanged()
+            check_missing()
             path.parent.mkdir(parents=True, exist_ok=True)
-            mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
             temporary = None
             try:
                 with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".tp-spec-surface-", delete=False) as handle:
                     temporary = Path(handle.name)
                     handle.write(str(row["content"]).encode("utf-8"))
-                os.chmod(temporary, mode)
-                check_unchanged()
+                os.chmod(temporary, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+                check_missing()
                 os.replace(temporary, path)
             finally:
                 if temporary is not None:

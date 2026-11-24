@@ -1,7 +1,7 @@
 ---
 id: tp-video-producer
 name: tp-视频制片统筹
-version: 5.4.0
+version: 5.4.1
 status: active
 type: workflow-role
 role: tp-video-producer

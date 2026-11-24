@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 from cli.content_systems import junction_relation, load_content_systems
 from .common import CANONICAL_SUBDIRS, meta_paths, write_json, resolve_knowledge_project, read_note
 from .eval import evaluate
-from .ingest import convert_batch, disposition, finalize_batch, ingest_status, register_batch
+from .ingest import disposition, finalize_batch, ingest_status, register_batch
 from .migration import migration_plan
 from .normalization import normalization_plan, apply_normalization
 from .lint import lint_knowledge, lint_canonical_note
@@ -497,13 +497,6 @@ def cmd_ingest_status(args) -> int:
     return _run("tp-spec.knowledge-ingest-status/v1", lambda: ingest_status(_cfg(args), args.batch))
 
 
-def cmd_ingest_convert(args) -> int:
-    return _run(
-        "tp-spec.knowledge-ingest-convert/v1",
-        lambda: convert_batch(_cfg(args), batch=args.batch, source_id=args.source_id, origin_path=args.origin_path),
-    )
-
-
 def cmd_ingest_disposition(args) -> int:
     return _run(
         "tp-spec.knowledge-ingest-status/v1",
@@ -591,7 +584,6 @@ def add_knowledge_subparsers(root_subparsers) -> None:
 
     ing=sub.add_parser("ingest",help="External source registration/disposition workflow"); isub=ing.add_subparsers(dest="ingest_cmd",required=True)
     p=isub.add_parser("register"); _common(p); p.add_argument("--project",required=True); p.add_argument("--batch",required=True); p.add_argument("--source-root",required=True); p.set_defaults(func=cmd_ingest_register)
-    p=isub.add_parser("convert",help="Normalize pending registered local documents with Microsoft MarkItDown"); _common(p); p.add_argument("--batch",required=True); p.add_argument("--source-id"); p.add_argument("--origin-path"); p.set_defaults(func=cmd_ingest_convert)
     p=isub.add_parser("status"); _common(p); p.add_argument("--batch",required=True); p.set_defaults(func=cmd_ingest_status)
     p=isub.add_parser("disposition"); _common(p); p.add_argument("--batch",required=True); p.add_argument("--source-id",required=True); p.add_argument("--origin-path"); p.add_argument("--disposition",required=True,choices=["pending","canonicalized","merged","source_only","duplicate","superseded","quarantined","excluded"]); p.add_argument("--canonical-id",action="append",default=[]); p.add_argument("--reason"); p.set_defaults(func=cmd_ingest_disposition)
     p=isub.add_parser("finalize"); _common(p); p.add_argument("--batch",required=True); p.set_defaults(func=cmd_ingest_finalize)

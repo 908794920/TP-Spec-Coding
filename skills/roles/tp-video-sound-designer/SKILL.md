@@ -1,7 +1,7 @@
 ---
 id: tp-video-sound-designer
 name: tp-视频声音制作
-version: 5.4.0
+version: 5.4.1
 status: active
 type: workflow-role
 role: tp-video-sound-designer

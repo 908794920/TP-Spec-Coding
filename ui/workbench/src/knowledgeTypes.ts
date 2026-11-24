@@ -22,7 +22,7 @@ export interface KnowledgeDocument {
     layer: 'canonical' | 'source'; kind: string; version: string; version_kind: string;
     updated_at: string | null; status: string | null; metadata_available: boolean; metadata_only: boolean;
     source_refs: string[]; evidence_refs: unknown[]; superseded: unknown; replaced_by: unknown; relations: unknown[];
-    origin: Record<string, unknown> | null; conversion: string | null; availability?: string;
+    origin: Record<string, unknown> | null; content_path: string | null; availability?: string;
     indexed_version?: string; version_status?: string; snippet?: string; heading_path?: string;
     line_start?: number; line_end?: number; reads: KnowledgeNumber; adopted_tasks: KnowledgeNumber; last_used: string | null;
 }

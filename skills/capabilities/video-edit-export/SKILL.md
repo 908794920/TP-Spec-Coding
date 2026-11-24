@@ -1,7 +1,7 @@
 ---
 name: video-edit-export
 display_name: 视频剪辑与导出
-version: 5.4.0
+version: 5.4.1
 description: 用选用画面、音轨和交付规格维护主时间线，输出可续编工程、审看版和真实成片文件。
 ---
 
