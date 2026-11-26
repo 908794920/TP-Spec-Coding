@@ -284,6 +284,7 @@ def cmd_workitem_supersede(args) -> int:
     return _write(args, lambda conn, task, facts: supersede(conn, task, facts, item_id=args.id,
         replacement_id=args.replacement_id, result_event_id=args.replacement_result_event,
         receipt_event_id=args.replacement_receipt_event, reason=args.reason, evidence=args.evidence,
+        fix_basis=_json_file(args.fix_basis) if getattr(args, "fix_basis", None) else None,
         actor=args.role, agent=args.agent))
 
 
@@ -403,6 +404,9 @@ def add_workitem_subparsers(workitem_parser) -> None:
             parser.add_argument("--replacement-receipt-event", required=True, type=int)
             parser.add_argument("--reason", required=True)
             parser.add_argument("--evidence", required=True, action="append")
+            parser.add_argument("--fix-basis", default=None,
+                                help="Fix-only JSON file: user withdrawal source, original scope, "
+                                     "covered ACs and coverage statement")
         else:
             parser.add_argument("--file", required=True)
         parser.set_defaults(func=function)

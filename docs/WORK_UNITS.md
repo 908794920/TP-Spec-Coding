@@ -118,6 +118,33 @@ tp-spec workitem supersede --task TASK-ID --id OLD-WORK --replacement-id ACTUAL-
 
 `SUPERSEDED` 保留原父步骤和登记记录，尝试次数仍为零。登记时核对原 Work 的依赖，替代 Work 的结果和接收须晚于原 Work 登记并覆盖其 AC；替代实施 Work 须有原允许路径内的实际输出。依赖、步骤完成及集成检查继续核对精确替代绑定和证据。同一替代 Work 的结果重试或覆盖证据更新后，由协调者用同一入口重新登记当前接收和证据，再刷新集成候选。原 Work 始终没有执行记录、结果或专业 PASS。
 
+### 撤回的 Fix 被后续合法结果替代
+
+从未认领的 scoped **Fix** 属于用户明确撤回的做法（`PENDING`、`attempt=0`、无认领/owner/参与历史）时，同一 `workitem supersede` 入口也可登记替代；Fix 必须补充 `--fix-basis`（JSON 文件路径，与 spec/candidate 一样只收文件），说明撤回来源、原登记 scope 与已覆盖 AC：
+
+```json
+{
+  "source": {
+    "kind": "user_instruction",
+    "statement": "用户实际撤回该做法的原话或陈述",
+    "reference": "evidence/withdrawal.md 或 event:123"
+  },
+  "scope": "与待替代 Fix 完全相同的原登记 scope",
+  "ac_refs": ["AC-01"],
+  "coverage": "后续结果如何覆盖原 scope 与这些 AC 的说明"
+}
+```
+
+```bash
+tp-spec workitem supersede --task TASK-ID --id OLD-FIX --replacement-id ACTUAL-WORK --replacement-result-event 123 --replacement-receipt-event 124 --reason "后续结果已达到原目标" --evidence evidence/work-coverage.md --fix-basis fix-basis.json --role tp-project-manager --agent ACTUAL-COORDINATOR-AGENT --db RUNTIME-DB
+```
+
+`--reason` 说明不同实现如何达到原目标，`--evidence` 提供真实覆盖证据，二者继续做摘要校验；`--fix-basis` 只做结构化校验：`source` 须先满足用户来源语义（`kind=user_instruction`，`statement` 与 `reference` 均非空），其 `reference` 解析为 Task 内文件或本 Task `event:<ID>` 并落摘要，与记录的来源项精确对应；`kind` 缺失、非 `user_instruction`（如 `assistant_proposal`）或字段不足以 `WORK_FIX_BASIS_SOURCE_INVALID` 拒绝，不会被改写成用户来源；`scope` 必须与原登记完全一致；`ac_refs` 必须包含原 Fix 全部 AC 且都存在于 Task 矩阵与替代结果 AC 中，没有 AC 的 Fix 显式给 `[]`。文件/事件不存在、任务不符、原 scope 绑定不符或原 AC 缺项均拒绝。程序不判断两段自然语言是否同义，协调者对用户撤回与业务覆盖的真实性负责，任意文本不被当作授权。
+
+替代结果和接收须晚于原登记（替代 Work 本身可以先于 Fix 登记，只要其结果晚于原登记）、同 Task 同目标仓、绑定精确 result/receipt 并覆盖原 AC；原本为实施类时替代结果自身须有非空 `changed_paths`（自身授权范围内已记录的真实输出），此情形才免去“与原允许路径有交集”这一旧条件，普通 Work 的路径命中要求不变。Fix 未绑定 AC 的旧 spec 仍可登记，覆盖声明与实际证据仍必需。失败原因按来源类型不符、未接收、绑定/顺序不符、目标仓不同、AC 不覆盖、实施无输出、撤回证据缺失或过期分别报告。
+
+有效替代仍触发原父步骤的候选与复验检查并绑定替代 receipt：不以原 Fix 的名义生成结果、接收或 PASS，也不因替代项属于另一父步骤或为普通 Work 而跳过复验。替代结果重试或证据变化会使登记过期，须用同一入口刷新同一替代的当前接收与证据并刷新候选；不允许改用另一条替代覆盖历史。
+
 `workflow next --json` 保留当前父 phase，实际需要补做的专业操作在 `context.operation_stage`。`rework_fix/workitem_resolve/workitem_candidate_then_resume` 是协调提示，不是自动派发、更高权限或已完成。Work 的结束/接收都不自动恢复或完成父步骤。
 
 ## 固定集成主体与原步骤复验

@@ -115,22 +115,24 @@ def _historical_input_ids(events, locator_fields):
     for row in events:
         if row["event_type"] == execution.PLAN and plan_field in locator_fields.get(row["id"], ()):
             refs = detail_of(row)["plan"]["assessment"]["source_refs"]
-            target_kind = "DELIVERY_RESULT"
+            # A formal plan may cite the Task's own public FACTs as assessment
+            # inputs; other reference sites keep their narrower target kind.
+            target_kinds = {"DELIVERY_RESULT", "FACT"}
         elif (row["event_type"] in {"WORK_SESSION_UPDATED", "WORK_SESSION_ENDED"}
               and ("detail", "evidence_refs") in locator_fields.get(row["id"], ())):
             refs = detail_of(row).get("evidence_refs", [])
-            target_kind = "FACT"
+            target_kinds = {"FACT"}
         elif row["event_type"] == work_units.EVENT:
             work = work_units.trusted(row)
             if not work or work["action"] != "create":
                 continue
             refs = work["spec"]["scope_refs"]
-            target_kind = "FACT"
+            target_kinds = {"FACT"}
         else:
             continue
         for ref in refs:
             target = by_ref.get(ref.strip())
-            if target and target["event_type"] == target_kind and target["id"] < row["id"]:
+            if target and target["event_type"] in target_kinds and target["id"] < row["id"]:
                 inputs.add(target["id"])
     return inputs
 

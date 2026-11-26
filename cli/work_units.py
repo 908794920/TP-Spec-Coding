@@ -95,6 +95,97 @@ def append(conn, task, action, payload, *, actor, agent="", item=None):
         result_status="COMPLETED" if action in {"result", "receive", "candidate"} else "RECORDED")
 
 
+FIX_BASIS_FIELDS = {"source", "scope", "ac_refs", "coverage"}
+
+
+def _fix_basis_record(value):
+    """Shape check for a recorded Fix basis; absent (None) is not a Fix basis."""
+    if not isinstance(value, dict) or set(value) - {"source", "scope", "ac_refs", "coverage", "source_items"}:
+        return False
+    from .orchestration_policy import valid_user_source
+    if not valid_user_source(value.get("source")):
+        return False
+    if any(not isinstance(value.get(key), str) or not value[key].strip() for key in ("scope", "coverage")):
+        return False
+    if not isinstance(value.get("ac_refs"), list) or any(
+            not isinstance(ac, str) or not ac.strip() for ac in value["ac_refs"]):
+        return False
+    items = value.get("source_items")
+    if not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], dict):
+        return False
+    return items[0].get("ref") == value["source"]["reference"]
+
+
+def fix_basis_issue(unit, basis, replacement=None):
+    """Structural relation between a recorded Fix basis and the original registration.
+
+    Returns a diagnostic instead of a bare boolean, so that evidence replay,
+    workflow routing and closeout reject the same binding for the same reason.
+    A Fix with no acceptance criteria of its own keeps an explicit empty list.
+    """
+    if not _fix_basis_record(basis):
+        return "WORK_FIX_BASIS_REQUIRED"
+    spec = unit["spec"]
+    if basis["scope"] != spec["scope"]:
+        return "WORK_FIX_BASIS_SCOPE_MISMATCH: name the original registered scope exactly"
+    missing = sorted(set(spec["ac_refs"]) - set(basis["ac_refs"]))
+    if missing:
+        return "WORK_FIX_BASIS_AC_MISSING: " + ", ".join(missing)
+    if replacement is not None:
+        uncovered = sorted(set(basis["ac_refs"]) - set(replacement["spec"]["ac_refs"]))
+        if uncovered:
+            return "WORK_FIX_BASIS_AC_NOT_IN_REPLACEMENT: " + ", ".join(uncovered)
+    return None
+
+
+def normalize_fix_basis(conn, task_id, unit, raw):
+    """Validate the withdrawal source, original scope and covered ACs of a Fix.
+
+    The wording is evidence for the coordinator, never a machine judgement that
+    two statements mean the same thing; only Task-local references and the
+    structural bindings (original scope, existing ACs) are checked here.
+    """
+    from .orchestration_policy import user_source, valid_user_source
+    from .yaml_checks import check_acceptance_yaml
+    basis = authority.obj(raw, FIX_BASIS_FIELDS, "fix basis")
+    raw_source = basis.get("source")
+    if not isinstance(raw_source, dict):
+        raise ValueError("WORK_FIX_BASIS_REQUIRED: fix basis needs the user withdrawal source "
+                         "(kind, statement and reference)")
+    # Validate the recorded kind before normalizing: a proposal or other record
+    # must not be relabelled as a user instruction by this function.
+    if not valid_user_source(raw_source):
+        raise ValueError("WORK_FIX_BASIS_SOURCE_INVALID: the withdrawal source must be kind="
+                         "\"user_instruction\" with the actual statement and a Task-local reference")
+    source = user_source(_text(raw_source.get("statement"), "fix_basis.source.statement"),
+                         _text(raw_source.get("reference"), "fix_basis.source.reference"))
+    record = {"source": source,
+              "scope": _text(basis.get("scope"), "fix_basis.scope"),
+              "coverage": _text(basis.get("coverage"), "fix_basis.coverage"),
+              "ac_refs": _strings(basis.get("ac_refs"), "fix_basis.ac_refs") if basis.get("ac_refs") is not None else [],
+              "source_items": references(conn, task_id, [source["reference"]])}
+    issue = fix_basis_issue(unit, record)
+    if issue:
+        raise ValueError(issue)
+    acceptance = check_acceptance_yaml((task_dir(conn, task_id) / "acceptance.md").read_text(encoding="utf-8-sig"))
+    unknown = sorted(set(record["ac_refs"]) - set(acceptance.acceptance_ids))
+    if unknown:
+        raise ValueError("WORK_AC_NOT_IN_TASK: " + ", ".join(unknown))
+    return record
+
+
+def check_fix_basis(conn, task_id, unit, binding, replacement=None, *, check_content=True):
+    issue = fix_basis_issue(unit, binding.get("fix_basis"), replacement)
+    if issue:
+        raise ValueError(issue)
+    if not check_content:
+        return
+    try:
+        check_references(conn, task_id, binding["fix_basis"]["source_items"])
+    except (ValueError, OSError) as exc:
+        raise ValueError(f"WORK_FIX_BASIS_STALE: {unit['item_id']}; {exc}") from exc
+
+
 def trusted(row):
     row = dict(row)
     detail = execution.detail_of(row)
@@ -146,7 +237,8 @@ def trusted(row):
     if action == "supersede" and not (
             execution._nonempty(body.get("summary")) and execution._nonempty(body.get("replacement_id"))
             and all(type(body.get(k)) is int and body[k] > 0 for k in ("result_event_id", "receipt_event_id"))
-            and isinstance(body.get("evidence_items"), list) and body["evidence_items"]):
+            and isinstance(body.get("evidence_items"), list) and body["evidence_items"]
+            and (body.get("fix_basis") is None or _fix_basis_record(body.get("fix_basis")))):
         return None
     return body
 
@@ -240,7 +332,7 @@ def project_units(rows, *, domain=None):
             continue
         if action == "supersede":
             previous = unit.get("supersession")
-            if (video or unit["spec"]["kind"] != "WORK" or unit["attempt"] != 0 or wid in started_items
+            if (video or unit["spec"]["kind"] not in {"WORK", "FIX"} or unit["attempt"] != 0 or wid in started_items
                     or not replacement_matches(unit, units.get(body["replacement_id"]), body)
                     or (previous and (previous["replacement_id"] != body["replacement_id"]
                                       or previous["receipt_event_id"] > body["receipt_event_id"]))):
@@ -277,7 +369,44 @@ def checked_item(conn, task_id, item_id):
     return dict(item)
 
 
+def fix_replacement_issue(unit, replacement, binding):
+    """Why a replacement does not stand in for a withdrawn Fix, or None.
+
+    The rule is about the replacement's result and receipt following the
+    original registration, not about which Work was registered first; a result
+    produced after the Fix supersedes it even when the Work predates the Fix.
+    """
+    if not replacement or replacement["item_id"] == unit["item_id"]:
+        return "the replacement Work is not registered"
+    if replacement["recorded_state"] != "COMPLETED" or not replacement["result"]:
+        return "the replacement has no recorded result"
+    if not replacement["receipt"]:
+        return "the replacement result has not been received"
+    if (replacement["result"]["event_id"] != binding.get("result_event_id")
+            or replacement["receipt"]["event_id"] != binding.get("receipt_event_id")):
+        return "the recorded result/receipt events do not match the replacement"
+    if not unit["create_event_id"] < binding["result_event_id"] < binding["receipt_event_id"]:
+        return "the replacement result and receipt must follow the original registration"
+    original, actual = unit["spec"], replacement["spec"]
+    if actual["target_root"] != original["target_root"]:
+        return "the replacement targets a different target root"
+    uncovered = sorted(set(original["ac_refs"]) - set(actual["ac_refs"]))
+    if uncovered:
+        return "the replacement does not cover original acceptance criteria: " + ", ".join(uncovered)
+    issue = fix_basis_issue(unit, binding.get("fix_basis"), replacement)
+    if issue:
+        return issue
+    if original["security_context"].get("effect_scope") in authority.READ_EFFECTS:
+        return None
+    if (actual["security_context"].get("effect_scope") in authority.READ_EFFECTS
+            or not replacement["result"]["result"]["changed_paths"]):
+        return "an implementation replacement needs its own recorded changed paths"
+    return None
+
+
 def replacement_matches(unit, replacement, binding):
+    if unit["spec"]["kind"] == "FIX":
+        return fix_replacement_issue(unit, replacement, binding) is None
     if not (replacement and replacement["item_id"] != unit["item_id"]
             and replacement["recorded_state"] == "COMPLETED" and replacement["result"] and replacement["receipt"]
             and replacement["result"]["event_id"] == binding["result_event_id"]
@@ -297,7 +426,17 @@ def check_supersession(conn, task_id, unit, units, *, check_content=True):
     if not binding:
         raise ValueError("WORK_SUPERSESSION_REQUIRED")
     replacement = units.get(binding["replacement_id"])
-    if (not replacement_matches(unit, replacement, binding)
+    if unit["spec"]["kind"] == "FIX":
+        reason = fix_replacement_issue(unit, replacement, binding)
+        if reason is None:
+            row = conn.execute("SELECT status FROM work_item WHERE task_id=? AND item_id=?",
+                               (task_id, binding["replacement_id"])).fetchone()
+            if row is None or row["status"] != "COMPLETED":
+                reason = "the replacement Work is not COMPLETED"
+        if reason is not None:
+            raise ValueError(f"WORK_SUPERSESSION_STALE: {unit['item_id']} -> {binding['replacement_id']}: {reason}")
+        check_fix_basis(conn, task_id, unit, binding, replacement, check_content=check_content)
+    elif (not replacement_matches(unit, replacement, binding)
             or checked_item(conn, task_id, binding["replacement_id"])["status"] != "COMPLETED"):
         raise ValueError(f"WORK_SUPERSESSION_STALE: {unit['item_id']} -> {binding['replacement_id']}")
     if check_content:
@@ -309,22 +448,32 @@ def check_supersession(conn, task_id, unit, units, *, check_content=True):
 
 
 def supersede(conn, task, facts, *, item_id, replacement_id, result_event_id, receipt_event_id, reason,
-              evidence, actor, agent):
+              evidence, actor, agent, fix_basis=None):
     from . import db as dbmod
     coordinator(facts, actor, agent)
     task_id = task["task_id"]
     item = checked_item(conn, task_id, item_id)
     units = read(conn, task_id)["units"]
     unit = units.get(item_id)
-    if (facts.get("domain") == "video" or not unit or unit["spec"]["kind"] != "WORK" or unit["attempt"] != 0
+    if (facts.get("domain") == "video" or not unit or unit["spec"]["kind"] not in {"WORK", "FIX"} or unit["attempt"] != 0
             or item["status"] not in {"PENDING", "SUPERSEDED"} or item["status"] != unit["recorded_state"]):
-        raise ValueError("WORK_SUPERSEDE_REQUIRES_UNSTARTED: expected a never-claimed scoped software Work")
+        raise ValueError("WORK_SUPERSEDE_REQUIRES_UNSTARTED: expected a never-claimed scoped software Work or Fix")
+    if item.get("owner_role") or item.get("owner_agent"):
+        raise ValueError("WORK_SUPERSEDE_REQUIRES_UNSTARTED: the Work already has a recorded owner")
     if conn.execute("SELECT 1 FROM task_event WHERE task_id=? AND work_item_id=? AND event_type='WORK_SESSION_STARTED' LIMIT 1",
                     (task_id, item_id)).fetchone():
         raise ValueError("WORK_SUPERSEDE_REQUIRES_UNSTARTED: Work has participation history")
+    if unit["spec"]["kind"] == "FIX":
+        if fix_basis is None:
+            raise ValueError("WORK_FIX_BASIS_REQUIRED: Fix supersession needs --fix-basis JSON "
+                             "(withdrawal statement/source, original scope, covered ACs, coverage)")
+    elif fix_basis is not None:
+        raise ValueError("WORK_FIX_BASIS_NOT_APPLICABLE: only a Fix supersession takes a fix basis")
     require_dependencies(conn, task_id, item)
     binding = {"replacement_id": replacement_id, "result_event_id": result_event_id, "receipt_event_id": receipt_event_id,
                "summary": _text(reason, "supersession.reason"), "evidence_items": references(conn, task_id, evidence, evidence=True)}
+    if unit["spec"]["kind"] == "FIX":
+        binding["fix_basis"] = normalize_fix_basis(conn, task_id, unit, fix_basis)
     check_supersession(conn, task_id, {**unit, "supersession": binding}, units)
     previous = unit.get("supersession")
     if previous:
@@ -792,8 +941,23 @@ def step_guard(conn, task, facts, step, action):
     if action in {"resume", "complete"}:
         required = [u for u in relevant if u["recorded_state"] != "SUPERSEDED"]
         fixes = [u for u in required if u["spec"]["kind"] == "FIX"]
+        # A verified replacement stands in for a superseded Fix: it keeps the
+        # original step's candidate/verification obligation and binds the actual
+        # replacement receipt, without giving the old Fix a result, receipt or PASS.
+        substitutes = []
+        for u in relevant:
+            if u["recorded_state"] != "SUPERSEDED" or u["spec"]["kind"] != "FIX":
+                continue
+            target = data["units"].get((u.get("supersession") or {}).get("replacement_id"))
+            if not target or not target["receipt"]:
+                raise ValueError("WORK_SUPERSESSION_STALE: " + u["item_id"])
+            substitutes.append(target)
         needed = required if action == "complete" else fixes
-        if any(not u["receipt"] for u in needed):
+        obligations = list(needed)
+        for u in substitutes:
+            if all(u["item_id"] != x["item_id"] for x in obligations):
+                obligations.append(u)
+        if any(not u["receipt"] for u in obligations):
             raise ValueError("WORK_RESULT_NOT_RECEIVED: receive required child results before resuming/completing parent")
         if action == "complete":
             explicit = step.get("work_item_ids", [])
@@ -811,12 +975,18 @@ def step_guard(conn, task, facts, step, action):
             from .video_records import check_step
             check_step(conn, task, step, action, needed, fixes)
             return relevant
-        if fixes:
-            status = integration_status(conn, task, required_items=[u["item_id"] for u in needed])
+        if fixes or substitutes:
+            status = integration_status(conn, task, required_items=[u["item_id"] for u in obligations])
             if status["issues"]:
                 raise ValueError("; ".join(status["issues"]))
-        if action == "complete" and fixes:
-            last_receipt = max(u["receipt"]["event_id"] for u in fixes)
+        if action == "complete" and (fixes or substitutes):
+            # Delivery facts must follow the rework that actually stands in for
+            # this step; ordinary sibling Works keep their own receipt ordering.
+            rework = list(fixes)
+            for u in substitutes:
+                if all(u["item_id"] != x["item_id"] for x in rework):
+                    rework.append(u)
+            last_receipt = max(u["receipt"]["event_id"] for u in rework)
             from .workflow_records import _latest_trusted_verification, _latest_trusted_code_review
             if step["phase"] in {"verification", "review"}:
                 verification, subject, snapshot, _ = _latest_trusted_verification(conn, task["task_id"], task_dir(conn, task["task_id"]))
