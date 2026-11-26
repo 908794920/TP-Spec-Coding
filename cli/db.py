@@ -472,15 +472,23 @@ def migrate_legacy_registry_to_user(
         pid = str(item["project_id"])
         existing = merged.get(pid)
         if existing is None:
-            merged[pid] = dict(item)
+            entry = dict(item)
+            db_path = entry.get("db_path")
+            if isinstance(db_path, str) and db_path:
+                entry["db_path"] = _resolve_project_db_abs(db_path)
+            merged[pid] = entry
             actions.append({"action": "MIGRATE_RUNTIME_REGISTRY_ENTRY", "project_id": pid})
             continue
         old_root_raw = str(item.get("root_path") or "").strip()
         new_root_raw = str(existing.get("root_path") or "").strip()
-        old_db_raw = str(item.get("db_path") or "").strip()
-        new_db_raw = str(existing.get("db_path") or "").strip()
+        old_db_raw = str(item.get("db_path") or "")
+        new_db_raw = str(existing.get("db_path") or "")
+        # Legacy db_path may be Base-relative; compare and probe it through the
+        # existing compatibility resolver. root_path keeps its absolute-only rule.
+        old_db = _resolve_project_db_abs(old_db_raw) if old_db_raw else ""
+        new_db = _resolve_project_db_abs(new_db_raw) if new_db_raw else ""
         roots_equal = bool(old_root_raw and new_root_raw and os.path.isabs(old_root_raw) and os.path.isabs(new_root_raw) and same_path(old_root_raw, new_root_raw))
-        dbs_equal = bool(old_db_raw and new_db_raw and os.path.isabs(old_db_raw) and os.path.isabs(new_db_raw) and same_path(old_db_raw, new_db_raw))
+        dbs_equal = bool(old_db and new_db and same_path(old_db, new_db))
         if old_root_raw and new_root_raw and not roots_equal:
             old_live = os.path.isabs(str(item.get("root_path") or "")) and Path(str(item.get("root_path"))).exists()
             new_live = os.path.isabs(str(existing.get("root_path") or "")) and Path(str(existing.get("root_path"))).exists()
@@ -490,9 +498,9 @@ def migrate_legacy_registry_to_user(
                 conflicts.append(f"project {pid} legacy registry points to a live workspace while machine-local root is stale")
             else:
                 actions.append({"action": "DROP_STALE_LEGACY_RUNTIME_ENTRY", "project_id": pid, "legacy_root": item.get("root_path"), "current_root": existing.get("root_path")})
-        elif old_db_raw and new_db_raw and not dbs_equal:
-            old_db_live = os.path.isabs(str(item.get("db_path") or "")) and Path(str(item.get("db_path"))).exists()
-            new_db_live = os.path.isabs(str(existing.get("db_path") or "")) and Path(str(existing.get("db_path"))).exists()
+        elif old_db and new_db and not dbs_equal:
+            old_db_live = Path(old_db).exists()
+            new_db_live = Path(new_db).exists()
             if old_db_live and new_db_live:
                 conflicts.append(f"project {pid} has two live Runtime DB paths in legacy and machine-local registries")
             elif old_db_live and not new_db_live:

@@ -4,7 +4,8 @@ import os, sys
 from pathlib import Path
 import yaml
 
-config = Path(os.environ.get("TP_SPEC_INSTALLATION_CONFIG") or (Path.home() / ".tp-spec" / "installation.yaml"))
+_user_root = Path(os.environ.get("TP_SPEC_USER_ROOT") or (Path.home() / ".tp-spec")).expanduser()
+config = Path(os.environ.get("TP_SPEC_INSTALLATION_CONFIG") or (_user_root / "installation.yaml")).expanduser()
 if not config.is_file():
     print(f"[tp-spec] installation config missing: {config}", file=sys.stderr); raise SystemExit(2)
 try:

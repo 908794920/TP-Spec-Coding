@@ -99,10 +99,15 @@ def ingest_status(cfg, batch: str) -> Dict[str, Any]:
 
 
 def finalize_batch(cfg, batch: str) -> Dict[str, Any]:
-    paths=batch_paths(cfg,batch); status=ingest_status(cfg,batch)
+    paths = batch_paths(cfg, batch)
+    meta = read_json(paths["meta"], {})
+    if not isinstance(meta, dict) or not meta.get("registered_at"):
+        raise ValueError(f"batch is not registered: {batch}")
+    if not paths["manifest"].is_file():
+        raise ValueError(f"batch source manifest missing: {batch}")
+    status = ingest_status(cfg, batch)
     if status["pending"] or status["accounted"] != status["registered"]:
         raise ValueError(f"batch finalize blocked: accountability incomplete ({status['accounted']}/{status['registered']})")
-    meta=read_json(paths["meta"],{}) or {}
     meta["finalized_at"]=now_iso(); meta["final_accountability"]=status["accountability"]
     write_json(paths["meta"],meta)
     status["finalized"]=True; status["status"]="PASS"; return status

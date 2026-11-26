@@ -341,7 +341,12 @@ def workspace_doctor(workspace_root: "str | Path", *, installation_config: "str 
     project_sync_available = r.get("project_portability",{}).get("status") == "SYNC_AVAILABLE" or r.get("project_surface",{}).get("status") == "SYNC_AVAILABLE"
     runtime_rebind_required = r.get("runtime_portability",{}).get("status") == "REBIND_AVAILABLE"
     active_task_review_required = r.get("active_task_portability",{}).get("status") == "REVIEW_REQUIRED"
-    if not r["base"]["valid"] or any("legacy link target mismatch" in issue or "Runtime database is not healthy" in issue or "Runtime portability:" in issue or "project portability:" in issue or "project Memory:" in issue for issue in issues):
+    # Contract version drift has a dedicated upgrade path (SYNC_REQUIRED). Every
+    # other FAIL-level issue is a present fault, so it must never read as merely
+    # healthy; UNSAFE is the existing semantic value for exactly those faults.
+    drift_issue_count = int(runtime_version_mismatch) + int(binding_version_mismatch)
+    non_drift_issue = len(issues) - drift_issue_count > 0
+    if not r["base"]["valid"] or non_drift_issue:
         semantic_health = "UNSAFE"
     elif binding_version_mismatch or runtime_version_mismatch or runtime_rebind_required or active_task_review_required:
         semantic_health = "SYNC_REQUIRED"
@@ -531,13 +536,38 @@ def inventory_rows(*, installation_config: Optional[str]=None, inventory_path: O
     return sorted(reconciled,key=lambda x:path_identity_key(x["root"]))
 
 
-def reconcile_inventory_project(project_id: str, workspace_root: Path, inventory_path: Optional[str]=None) -> Optional[Path]:
-    inv=load_workspace_inventory(inventory_path)
+def reconcile_inventory_project(
+    project_id: str,
+    workspace_root: Path,
+    inventory_path: Optional[str] = None,
+    *,
+    add_missing: bool = False,
+) -> Optional[Path]:
+    inv = load_workspace_inventory(inventory_path)
     if not inv.exists:
         return None
-    rows=[dict(row) for row in inv.workspaces if str(row.get("id") or "") != project_id]
-    rows.append({"id":project_id,"root":path_config_text(canonical_path(workspace_root)),"enabled":True})
-    return write_workspace_inventory(rows,path=inventory_path or inv.path)
+
+    workspace = canonical_path(workspace_root)
+    rows = inv.workspaces
+    project_rows = []
+    for row in rows:
+        listed_root = str(row.get("root") or row.get("workspace_root") or "").strip()
+        if listed_root and same_path(listed_root, workspace):
+            return None
+        if str(row.get("id") or "") == project_id:
+            project_rows.append((row, listed_root))
+
+    if len(project_rows) == 1:
+        row, listed_root = project_rows[0]
+        # A retry can repair a missing former root without replacing another live workspace.
+        if not listed_root or canonical_path(listed_root).exists():
+            return None
+        row["root"] = path_config_text(workspace)
+    elif not project_rows and add_missing:
+        rows.append({"id": project_id, "root": path_config_text(workspace), "enabled": True})
+    else:
+        return None
+    return write_workspace_inventory(rows, path=inv.path)
 
 
 def _all_workspaces(args) -> List[Path]:
@@ -658,7 +688,12 @@ def _migrate_one(workspace: Path, args) -> Dict[str, Any]:
                 "runtime_portability": runtime_rebind, "blockers": []}
     if runtime_rebind.get("action") == "REBIND_RUNTIME_ROOT":
         changes.append({"action":"REBIND_RUNTIME_ROOT","db_path":runtime_rebind.get("db_path"),"from":runtime_rebind.get("previous_root"),"to":runtime_rebind.get("current_root"),"registry":runtime_rebind.get("registry_written")})
-        inv_path = reconcile_inventory_project(project_id, workspace, getattr(args,"inventory",None))
+    # Both Runtime locators can already be current on a retry after a failed inventory write.
+    if runtime_rebind.get("status") == "CURRENT":
+        inv_path = reconcile_inventory_project(
+            project_id, workspace, getattr(args, "inventory", None),
+            add_missing=runtime_rebind.get("action") == "REBIND_RUNTIME_ROOT",
+        )
         if inv_path:
             changes.append({"action":"RECONCILE_WORKSPACE_INVENTORY","path":str(inv_path),"project_id":project_id})
     if args.remove_legacy_links:
@@ -720,7 +755,11 @@ def cmd_sync_project(args) -> int:
                 runtime_result=apply_runtime_rebind(workspace,project_id)
                 if runtime_result.get("status")=="BLOCKED":
                     results.append({"workspace_root":str(workspace),"status":"BLOCKED","runtime_portability":runtime_result,"portability":None,"surface":None,"active_task_portability":resolution.get("active_task_portability")}); continue
-                inv_path=reconcile_inventory_project(project_id,workspace,getattr(args,"inventory",None))
+            if args.apply and runtime_result.get("status") == "CURRENT":
+                inv_path = reconcile_inventory_project(
+                    project_id, workspace, getattr(args, "inventory", None),
+                    add_missing=bool(runtime_result.get("action")),
+                )
                 if inv_path:
                     runtime_result=dict(runtime_result); runtime_result["inventory_reconciled"]=str(inv_path)
             portability=normalize_project_portability(workspace,installation_config=args.installation_config,apply=bool(args.apply))
