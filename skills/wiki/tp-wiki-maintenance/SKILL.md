@@ -48,8 +48,8 @@ Wiki subject 差异仅凭成功时捕获、可重现旧完整 subject 的 durabl
 
 `snapshot-commit` 在 candidate 门禁通过后，以正式 Wiki 仍匹配本轮起点身份为条件进行 CAS 提升；正式正文有并发变化则拒绝。失败/中断草稿留在隔离 candidate，下轮 `maintain` 隔离旧 draft 并从正式 Wiki 重新开始。`policy-review` 仍针对正式成功 baseline，准确重现旧规则范围后登记，再重新 `maintain`；scope 不匹配是拒绝原因，不自动切换。
 
-候选目录由最近的 Wiki Git 仓根 `.gitignore` 中 `.*.tp-wiki-candidate/` 隔离，包含嵌套 Repo；不隐藏正式 Wiki 或 metadata，也不自动提交 Git。丢弃时在既有 candidate state 记录退役目录和树摘要：未成功发布时保留最近一份失败草稿，成功发布后清理摘要仍匹配的已退役草稿。修改过、无退役身份、活动候选、待恢复副本均保留；删除失败单独报告，不改写正式成功结果。
+候选目录由最近的 Wiki Git 仓根 `.gitignore` 中 `.*.tp-wiki-candidate/` 隔离，包含嵌套 Repo；不隐藏正式 Wiki 或 metadata，也不自动提交 Git。`maintain/scan/build` 先恢复既有发布事务、再解析 Wiki 来源，来源缺失或不可读时在退休活动候选之前阻塞：草稿留在原 candidate，正式 Wiki 与源码 Git 不变，恢复来源后重跑同一命令继续。丢弃时在既有 candidate state 记录退役目录和树摘要：未成功发布时保留最近一份失败草稿，成功发布后只自动清理 Wiki subject 与当前正式树一致的已退役草稿（`wiki_subject_digest`：含 manifest 中人工维护的内容，只忽略运行回执类 meta 文件）；subject 不同的草稿保留，交 `candidate-cleanup` 明确处置。manifest 仅时间戳不同也按 subject 不同保守保留，不按字段做归一化。修改过、无退役身份、活动候选、待恢复副本均保留；删除失败单独报告，不改写正式成功结果。
 
-已有积压先用 `wiki candidate-cleanup` 只读查看，获准后加 `--apply`。旧草稿缺少树摘要时，只能用 `--retirement-receipt <已有maintain回执>` 证明准确的 discard 路径及 canonical，且正式发布身份仍匹配、草稿没有独有的 durable Wiki 字节时才接纳清理；不按目录名或时间猜测归属。该操作不 scan/build、刷新基线或执行语义审计。
+已有积压先用 `wiki candidate-cleanup` 只读查看，获准后加 `--apply`。自动流程只清理 Wiki subject 与当前正式树一致的退役稿，其余 subject 不同的只由本命令删除；已接纳的 legacy 回执同样受这条比较约束，不会扩大自动清理范围。因此计划里的 eligible 与 retained 要按实际来源逐条核对。旧草稿缺少树摘要时，只能用 `--retirement-receipt <已有maintain回执>` 证明准确的 discard 路径及 canonical，且正式发布身份仍匹配、草稿没有独有的 durable Wiki 字节时才接纳清理；不按目录名或时间猜测归属。该操作不 scan/build、刷新基线或执行语义审计。
 
 AI 只写返回的 candidate 内 Wiki/metadata，不改 source repo 或 canonical Knowledge；正式提升交 CLI。分别报告 NO_CHANGE、candidate 更新、验证/审计和正式 baseline 是否提交；临时收据清理失败与提交结果分开说明。

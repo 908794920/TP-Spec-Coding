@@ -47,6 +47,8 @@ python -m cli.main base installation-doctor
 
 `TP_SPEC_BASE_ROOT` 可以作为 Base 定位信号，但不要把它的机器绝对值写入业务项目文档。
 
+`base configure` 在写 `installation.yaml` 之前先检查启动器目标：bin 目录或 `tp-spec`/`tp-spec.cmd`/`tp-spec.ps1` 目标被非普通文件占用，或 Base 缺少启动器源文件时，命令返回 `BLOCKED` 并给出具体路径，此时配置与启动器都不改；按报告移除冲突后重跑同一条命令即可收敛。写入之后才发生的 I/O 失败仍返回 `FAIL`，需要按同一命令重试。
+
 ## 4. 接入项目
 
 先确认 `<project-root>` 是否已经存在 `.tp-spec/config/project-binding.yaml`，并使用 resolver/registry 判断是否已经注册。

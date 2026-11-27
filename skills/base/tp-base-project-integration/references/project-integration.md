@@ -18,6 +18,8 @@
 
 解析、契约检查与 rebind 使用同一个数据库。已选库缺失、身份/schema 不匹配、旧 workspace 或冲突注册库仍存在时停止受影响同步。重绑更新 machine-local locator。
 
+`base doctor` 与 `base migration-plan` 按结构化事实区分两种机器本地漂移：`rebind_required` 才是 workspace root 变了，计划给出 `REBIND_RUNTIME_ROOT`；只有 Registry 记录的 root/base/schema 定位与当前 workspace 不一致（`registry_sync_required`）时计划给出 `RECONCILE_RUNTIME_REGISTRY`，只更新 Registry、不改根也不重写 Runtime 字节，不把登记漂移报告成需要搬移或重绑根。
+
 ### Active task portability
 
 Base 只检查 `.tp-spec/tasks` 中仍处于 `NEW/ACTIVE/BLOCKED` 的顶层 Markdown formal artifacts。若发现具有执行语义的旧 `.tp-spec/knowledge|wiki|scripts|agents|governance|skills|templates|automation|cli` 路径，报告 `LEGACY_ACTIVE_REFERENCE` 并要求 targeted review。明确的 legacy/禁止使用描述不作为 actionable finding。`tasksHistory`、evidence 与已完成任务不做历史清洗。

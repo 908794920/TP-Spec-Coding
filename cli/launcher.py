@@ -60,23 +60,59 @@ def _persist_windows_user_path(bin_root: Path) -> Dict[str, Any]:
     return {"supported": True, "changed": changed}
 
 
+def precheck_launchers(*, base_root: "str | Path", state_root: "str | Path") -> Dict[str, Any]:
+    """Report launcher conflicts that are visible before anything is written.
+
+    Only states the installer could not have produced itself: the bin path occupied by a
+    non-directory, a launcher target that is not a regular file, or a Base launcher source
+    that is missing. Every issue names the exact path. Callers write the installation config
+    only when this passes; a failure here leaves configuration and launchers untouched.
+    """
+    base = canonical_path(base_root); bin_root = launcher_bin_root(canonical_path(state_root))
+    names = ("tp-spec.ps1", "tp-spec.cmd", "tp-spec")
+    issues: list[str] = []
+    conflicts: list[str] = []
+    if (bin_root.exists() or bin_root.is_symlink()) and not bin_root.is_dir():
+        issues.append(f"launcher bin path is not a directory: {bin_root}")
+        conflicts.append(str(bin_root))
+    for name in names:
+        target = bin_root / name
+        if (target.exists() or target.is_symlink()) and not target.is_file():
+            issues.append(f"launcher target is not a regular file: {target}")
+            conflicts.append(str(target))
+    missing = [str(base / "scripts" / name) for name in names if not (base / "scripts" / name).is_file()]
+    if missing:
+        issues.append("launcher source missing: " + ", ".join(missing))
+        conflicts.extend(missing)
+    return {"status": "PASS" if not issues else "FAIL", "bin_root": str(bin_root),
+            "conflicts": conflicts, "issues": issues}
+
+
 def install_launchers(*, base_root: "str | Path", state_root: "str | Path", persist_path: bool) -> Dict[str, Any]:
     base = canonical_path(base_root); state = canonical_path(state_root); bin_root = launcher_bin_root(state)
+    precheck = precheck_launchers(base_root=base, state_root=state)
+    if precheck["status"] != "PASS":
+        return {"status": "FAIL", "bin_root": str(bin_root), "conflicts": precheck["conflicts"],
+                "issues": precheck["issues"]}
     bin_root.mkdir(parents=True, exist_ok=True)
     sources = {
         "tp-spec.ps1": base / "scripts" / "tp-spec.ps1",
         "tp-spec.cmd": base / "scripts" / "tp-spec.cmd",
         "tp-spec": base / "scripts" / "tp-spec",
     }
-    missing = [str(path) for path in sources.values() if not path.is_file()]
-    if missing:
-        return {"status": "FAIL", "bin_root": str(bin_root), "issues": ["launcher source missing: " + ", ".join(missing)]}
     changed = []
     for name, source in sources.items():
         target = bin_root / name
         data = source.read_bytes()
         if not target.is_file() or target.read_bytes() != data:
-            target.write_bytes(data); changed.append(str(target))
+            # A write that fails part way stays a real I/O failure: report the path and the
+            # targets already replaced, and let the caller retry the same command.
+            try:
+                target.write_bytes(data)
+            except OSError as exc:
+                return {"status": "FAIL", "bin_root": str(bin_root), "changed": changed,
+                        "conflicts": [str(target)], "issues": [f"launcher write failed: {target}: {exc}"]}
+            changed.append(str(target))
         if name == "tp-spec":
             try: target.chmod(target.stat().st_mode | 0o111)
             except OSError: pass

@@ -175,12 +175,13 @@ def record(cfg, operation: str, request: dict, digest: str, *, status="completed
         conn.execute("BEGIN IMMEDIATE")
         old = _existing(conn, request["request_id"])
         clean_results = [result_identity(dict(row)) for row in results]
-        # Versions on a retry must not claim the old receipt when the actual output changed.
+        # A retry must not claim the old receipt when the output or the failure reason changed.
         encoded = json.dumps(clean_results, ensure_ascii=False, sort_keys=True)
         if old:
             if old["request_fingerprint"] != digest:
                 raise KnowledgeError("KNOWLEDGE_REQUEST_CONFLICT")
-            if old["status"] != status or old["results_json"] != encoded:
+            if (old["status"] != status or old["results_json"] != encoded
+                    or (old["error_code"] or "") != (error_code or "")):
                 raise KnowledgeError("KNOWLEDGE_RETRY_RESULT_CHANGED")
             return {"collection_status": "available", "receipt": _receipt(old, replay=True)}
         actual_projects = sorted({str(row.get("project") or "") for row in clean_results if row.get("project")})

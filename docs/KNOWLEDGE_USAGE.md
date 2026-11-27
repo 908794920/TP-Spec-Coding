@@ -84,7 +84,7 @@ tp-spec knowledge index build --workspace-root <workspace>
 
 `build/update` 保留同库 `retrieval_runs` 和 `knowledge_reads`；不再将删除整个投影数据库作为重建或默认回退。失败时保留数据库和日志，修正注册、权限或不可读来源后重新执行同一显式命令；追加升级可重复执行。不要通过清空投影、删除日志、修改风险规则或回填旧事件消除错误。若需要回退代码，保留追加的兼容列 / 表和备份，不删除升级后产生的使用证据。
 
-采集失败不会阻断实际成功的检索 / 阅读；返回 `collection_warning` 和实际采集状态。调用方须同时检查 `status` 和警告，因此一次成功搜索仍可能没有形成可计入统计的回执。缺库、旧 schema、写入失败分别可辨认；`KNOWLEDGE_USAGE_UPGRADE_REQUIRED` 表示需经授权的显式升级路径处理，搜索、读取和页面访问都不自动建表或迁移。`KNOWLEDGE_REQUEST_CONFLICT` 和 `KNOWLEDGE_RETRY_RESULT_CHANGED` 是调用一致性错误，不冒用旧成功回执。
+采集失败不会阻断实际成功的检索 / 阅读；返回 `collection_warning` 和实际采集状态。调用方须同时检查 `status` 和警告，因此一次成功搜索仍可能没有形成可计入统计的回执。缺库、旧 schema、写入失败分别可辨认；`KNOWLEDGE_USAGE_UPGRADE_REQUIRED` 表示需经授权的显式升级路径处理，搜索、读取和页面访问都不自动建表或迁移。`KNOWLEDGE_REQUEST_CONFLICT` 和 `KNOWLEDGE_RETRY_RESULT_CHANGED` 是调用一致性错误，不冒用旧成功回执。同一 request ID 的失败结果换了失败码（例如文件缺失变成不可读）也按 `KNOWLEDGE_RETRY_RESULT_CHANGED` 拒绝，不返回旧回执，原记录与来源字节不变；要记录新失败事实须用新 request ID。
 
 ### 3.1 追加字段清单
 
@@ -103,7 +103,7 @@ tp-spec knowledge index build --workspace-root <workspace>
 
 `results_json` 使用白名单，保存 document_key、原 ID、标题、路径、内容项目、层级、版本 / 版本类型、片段哈希与行范围等定位元数据，不保存正文、摘要或原查询。查询只保存 SHA-256；固定错误码与 Knowledge HTTP 访问日志不会再次记录原搜索词。哈希可能被猜测，不宣称不可反推。内容索引本来就需要存储文档 / 片段用于搜索；“不存正文”指**使用日志与回执不复制正文**，不是删除 FTS5 资料。
 
-一个逻辑 request ID 只写一条权威搜索或读取记录，跨两类操作也检查冲突。指纹包含查询哈希 / 文档、项目 + shared/global、过滤、数量 / 分页、读取模式 / 行范围以及 Task、角色和用途。相同 ID、相同参数与相同结果版本返回原回执；更改模式、范围、身份、用途或结果版本时明确拒绝。主动重新搜索须用新 ID，未指定时自动生成。去重受实际日志保留期限制，已清理的旧 ID 不能提供永久去重保证。
+一个逻辑 request ID 只写一条权威搜索或读取记录，跨两类操作也检查冲突。指纹包含查询哈希 / 文档、项目 + shared/global、过滤、数量 / 分页、读取模式 / 行范围以及 Task、角色和用途。相同 ID、相同参数与相同结果版本返回原回执；更改模式、范围、身份、用途、结果版本或失败码时明确拒绝。主动重新搜索须用新 ID，未指定时自动生成。去重受实际日志保留期限制，已清理的旧 ID 不能提供永久去重保证。
 
 ### 3.2 保留期限
 

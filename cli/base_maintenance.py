@@ -302,7 +302,11 @@ def workspace_doctor(workspace_root: "str | Path", *, installation_config: "str 
     if runtime_portability.get("status") == "BLOCKED":
         issues.extend([f"Runtime portability: {msg}" for msg in runtime_portability.get("blockers") or []])
     elif runtime_portability.get("status") == "REBIND_AVAILABLE":
-        warnings.append(f"Runtime machine root needs rebind: {runtime_portability.get('previous_root')} -> {runtime_portability.get('current_root')}")
+        # The merged status covers two different repairs; name the one that actually applies.
+        if runtime_portability.get("rebind_required"):
+            warnings.append(f"Runtime machine root needs rebind: {runtime_portability.get('previous_root')} -> {runtime_portability.get('current_root')}")
+        elif runtime_portability.get("registry_sync_required"):
+            warnings.append(f"Runtime registry entry needs sync: {runtime_portability.get('registry_path')} does not match this workspace's Runtime locator; the workspace root itself is unchanged")
     active_task_portability = r.get("active_task_portability") or {}
     if active_task_portability.get("status") == "REVIEW_REQUIRED":
         warnings.append(f"active task artifacts contain {len(active_task_portability.get('findings') or [])} actionable legacy Junction reference(s)")
@@ -385,12 +389,21 @@ def migration_plan_for_workspace(workspace_root: "str | Path", *, installation_c
     if runtime_portability.get("status") == "BLOCKED":
         blockers.extend([f"Runtime portability: {msg}" for msg in runtime_portability.get("blockers") or []])
     elif runtime_portability.get("status") == "REBIND_AVAILABLE":
-        actions.append({
-            "action": "REBIND_RUNTIME_ROOT",
-            "db_path": runtime_portability.get("db_path"),
-            "from": runtime_portability.get("previous_root"),
-            "to": runtime_portability.get("current_root"),
-        })
+        # Registry-only drift still returns REBIND_AVAILABLE, but only a real root change
+        # needs the root rewritten; a stale registry entry is reconciled in place.
+        if runtime_portability.get("rebind_required"):
+            actions.append({
+                "action": "REBIND_RUNTIME_ROOT",
+                "db_path": runtime_portability.get("db_path"),
+                "from": runtime_portability.get("previous_root"),
+                "to": runtime_portability.get("current_root"),
+            })
+        elif runtime_portability.get("registry_sync_required"):
+            actions.append({
+                "action": "RECONCILE_RUNTIME_REGISTRY",
+                "db_path": runtime_portability.get("db_path"),
+                "registry_path": runtime_portability.get("registry_path"),
+            })
     active_task_portability = r.get("active_task_portability") or {}
     if active_task_portability.get("status") == "REVIEW_REQUIRED":
         actions.append({

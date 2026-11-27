@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 from cli import db as dbmod
 from cli.path_identity import canonical_path, same_path
-from cli.launcher import install_launchers, launcher_health
+from cli.launcher import install_launchers, launcher_health, precheck_launchers
 from cli.namespace_migration import legacy_user_root
 from cli.environment import (
     INSTALLATION_SCHEMA,
@@ -155,11 +155,22 @@ def configure_installation(
     if not knowledge.is_dir():
         return {"schema": INSTALLATION_SCHEMA, "status": "BLOCKED", "path": str(path), "error": f"Knowledge System Root does not exist: {knowledge}"}
 
+    # Launcher conflicts are discoverable before any write. Report them with their paths and
+    # leave the installation config untouched, so the recorded YAML never points at a repair
+    # that has not succeeded yet; removing the conflict and rerunning finishes the same command.
+    launcher_precheck = precheck_launchers(base_root=base, state_root=path.parent)
+    if launcher_precheck["status"] != "PASS":
+        return {"schema": INSTALLATION_SCHEMA, "status": "BLOCKED", "path": str(path),
+                "error": "launcher target conflict; nothing was written: " + "; ".join(launcher_precheck["issues"]),
+                "launcher": launcher_precheck}
+
     write_installation_config(base_root=base, wiki_root=wiki, knowledge_root=knowledge, path=path)
     launcher_result = install_launchers(
         base_root=base, state_root=path.parent,
         persist_path=(os.name == "nt" and installation_config is None),
     )
+    # A failure after this point is a real I/O failure: the config above is already written,
+    # and rerunning the same command converges once the underlying problem is gone.
     if launcher_result.get("status") != "PASS":
         return {"schema": INSTALLATION_SCHEMA, "status": "FAIL", "path": str(path), "launcher": launcher_result}
     after = path.read_bytes()

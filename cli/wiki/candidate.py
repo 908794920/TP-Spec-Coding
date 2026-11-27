@@ -65,6 +65,14 @@ def _tree(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _subject(path: Path) -> str:
+    """Digest the durable Wiki subject; staged run receipts never make a draft unique."""
+    from .snapshot import wiki_subject_digest
+
+    _safe_path(path)
+    return wiki_subject_digest(path) if path.is_dir() else "MISSING"
+
+
 def _rename_absent(source: Path, destination: Path) -> None:
     """Keep an independently created destination, including an empty directory."""
     _safe_path(source)
@@ -172,7 +180,8 @@ def _remove_owned_tree(paths: dict[str, Path], path: Path, expected: str) -> Non
     shutil.rmtree(path)
 
 
-def _cleanup_retired(paths: dict[str, Path], data: dict[str, Any], *, apply: bool) -> dict[str, Any]:
+def _cleanup_retired(paths: dict[str, Path], data: dict[str, Any], *, apply: bool,
+                     automatic: bool = False) -> dict[str, Any]:
     records = data.get("retired_drafts", [])
     if not isinstance(records, list):
         raise ValueError("WIKI_CANDIDATE_STATE_INVALID: retired drafts must be a list")
@@ -185,6 +194,7 @@ def _cleanup_retired(paths: dict[str, Path], data: dict[str, Any], *, apply: boo
     result = {"eligible": [], "removed": [], "retained": [], "cleanup_pending": []}
     expected = data.get("new_tree") if data.get("phase") == "published" else data.get("old_tree")
     ready = data.get("phase") != "publishing" and _tree(paths["canonical"]) == expected
+    automatic_basis = _subject(paths["canonical"]) if automatic else ""
     remaining = []
     for index, record in enumerate(records):
         path = paths["root"] / record["name"]
@@ -198,6 +208,14 @@ def _cleanup_retired(paths: dict[str, Path], data: dict[str, Any], *, apply: boo
             _safe_path(path)
             if any(entry.name == ".git" for entry in path.rglob("*")) or _tree(path) != record["tree"]:
                 result["retained"].append({"path": str(path), "reason": "retired tree changed or contains Git metadata"})
+                continue
+            # Automatic cleanup runs inside publish and discard, where the user cannot see it.
+            # Retire only bytes the published subject already holds; a draft with a different
+            # Wiki subject (including its manifest content) needs the explicit candidate-cleanup
+            # decision. Staged run receipts never make a draft unique. The rule holds for adopted
+            # legacy retirements too, so an adoption receipt cannot widen the automatic boundary.
+            if automatic and automatic_basis != _subject(path):
+                result["retained"].append({"path": str(path), "reason": "unique unpublished draft; explicit candidate-cleanup required"})
                 continue
             result["eligible"].append(str(path))
             if apply:
@@ -358,7 +376,7 @@ def _discard(paths: dict[str, Path]) -> dict[str, Any]:
     if data and (draft or retained_previous):
         data["phase"] = "abandoned"
         _write_state(paths, data)
-    cleanup = _cleanup_retired(paths, data, apply=True) if data else {}
+    cleanup = _cleanup_retired(paths, data, apply=True, automatic=True) if data else {}
     return {"status": "DISCARDED" if draft else "NO_CANDIDATE", "draft_path": str(draft) if draft else None,
             "retained_previous_path": str(retained_previous) if retained_previous else None, "retired_cleanup": cleanup}
 
@@ -463,7 +481,7 @@ def publish_candidate(canonical: Path, *, expected_candidate: Path) -> dict[str,
         try:
             _write_state(paths, data)
             cleanup = _cleanup_previous(paths, data)
-            cleanup.extend(_cleanup_retired(paths, data, apply=True)["cleanup_pending"])
+            cleanup.extend(_cleanup_retired(paths, data, apply=True, automatic=True)["cleanup_pending"])
         except (OSError, ValueError):
             cleanup = ["publication state/previous: cleanup pending; recover publication"]
         return {"status": "PUBLISHED", "canonical_wiki_repo_root": str(paths["canonical"]),

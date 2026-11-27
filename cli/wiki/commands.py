@@ -56,11 +56,15 @@ def _resolve(args) -> tuple[Any, List[RepoTarget]]:
     return cfg, targets
 
 
-def _candidate_target(target: RepoTarget) -> tuple[RepoTarget, Dict[str, Any]]:
+def _candidate_target(cfg, target: RepoTarget) -> tuple[RepoTarget, Dict[str, Any], Dict[str, Any]]:
     recovery = recover_publication(target.wiki_repo_root)
+    # Resolve the declared source before retiring the active candidate. A missing or moved
+    # stable ref is a source problem; blocking here keeps that draft readable and untouched.
+    # The single SourceView resolved below is reused by the scan, so the ref is not read twice.
+    source_cfg = _source_cfg(cfg, target, staged=False)
     discarded = discard_candidate(target.wiki_repo_root)
     candidate = begin_candidate(target.wiki_repo_root)
-    return replace(target, wiki_repo_root=candidate), {
+    return replace(target, wiki_repo_root=candidate), source_cfg, {
         "published_wiki_repo_root": str(target.wiki_repo_root), "candidate_wiki_repo_root": str(candidate),
         "publication_recovery": recovery, "previous_candidate": discarded,
     }
@@ -242,8 +246,7 @@ def _stage_targets(args, *, build: bool) -> int:
             try:
                 if build and snapshot_paths(t.wiki_repo_root)["baseline"].is_file():
                     raise ValueError("Wiki baseline already exists; use wiki maintain")
-                t, candidate_info = _candidate_target(t)
-                source_cfg = _source_cfg(cfg, t, staged=False)
+                t, source_cfg, candidate_info = _candidate_target(cfg, t)
                 changeset = _scan(cfg, t, source_cfg, args)
                 row = {"repo_id": t.repo_id, "target": t.as_dict(), "changeset": changeset, "state": "STAGED", **candidate_info}
                 if build:
@@ -630,8 +633,11 @@ def cmd_maintain(args) -> int:
         for t in targets:
             try:
                 recovery = recover_publication(t.wiki_repo_root)
-                discarded = discard_candidate(t.wiki_repo_root)
+                # Source first, retirement second: a missing or moved stable ref must block the
+                # round without moving the active draft out of the way. The resolved view is
+                # reused below, so the ref is not parsed a second time (no rebind race).
                 source_cfg = _source_cfg(cfg, t, staged=False)
+                discarded = discard_candidate(t.wiki_repo_root)
                 fast = no_change_fast_path(t.wiki_repo_root, t.repo_root, source_cfg,
                     repair=bool(getattr(args, "repair", False) or getattr(args, "initialize_source", False)))
                 if fast is None:

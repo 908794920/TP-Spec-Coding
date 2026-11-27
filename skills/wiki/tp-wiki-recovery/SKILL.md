@@ -11,9 +11,9 @@ description: 用于 Wiki Anchor、引用行号、来源或基线异常的定向�
 
 核对 Content Systems Resolver 的 workspace/repo、Wiki physical root 及选定源码；来源选择、迁移与失败分支按 [Stable Source](../../../wiki/rules/stable-source.md)处理。缺旧对象、来源或权限时如实停止相应动作，不换用当前工作区去冒充旧 baseline。
 
-维护失败/中断先区分正式成功 Wiki 与隔离 candidate。`maintain/build/scan` 返回的 `candidate_wiki_repo_root` 是本轮 AI 唯一写入根；后续计划、manifest、verify、coverage、audit、audit-record 和普通 source-read 自动路由该 candidate。失败草稿不作为正式正文或下一轮成功输入；重新 `maintain` 隔离旧 draft，从正式 Wiki 建立新 candidate。`NO_CHANGE` 不建立 candidate，不手工搬运草稿或半套 metadata 恢复。
+维护失败/中断先区分正式成功 Wiki 与隔离 candidate。`maintain/build/scan` 返回的 `candidate_wiki_repo_root` 是本轮 AI 唯一写入根；后续计划、manifest、verify、coverage、audit、audit-record 和普通 source-read 自动路由该 candidate。来源缺失或不可读时命令在退休活动候选之前阻塞，草稿留在原 candidate、正式 Wiki 与源码 Git 不变；恢复来源后重跑同一命令即可继续。失败草稿不作为正式正文或下一轮成功输入；重新 `maintain` 隔离旧 draft，从正式 Wiki 建立新 candidate。`NO_CHANGE` 不建立 candidate，不手工搬运草稿或半套 metadata 恢复。
 
-候选保留清理使用 `wiki candidate-cleanup`（默认只读计划，`--apply` 才写入）。活动 candidate、publishing 现场、修改过的 previous/退役树、无归属记录的目录均保留；只有当前正式树仍匹配发布身份且 previous 匹配原 old_tree 时才能清理 previous。旧 draft 还需已有 maintain 丢弃回执及无独有 durable 字节的核对；不手工补造退役摘要来删除未知目录。Git 隔离只覆盖候选目录，不替代实际清理，也不隐藏正式文档回执。
+候选保留清理使用 `wiki candidate-cleanup`（默认只读计划，`--apply` 才写入）。活动 candidate、publishing 现场、修改过的 previous/退役树、无归属记录的目录均保留；只有当前正式树仍匹配发布身份且 previous 匹配原 old_tree 时才能清理 previous。自动流程（下一轮隔离与成功发布）只清理 `wiki_subject_digest` 与当前正式树一致的退役稿（含 manifest 的人工内容，只忽略运行回执），subject 不同的草稿只能由本命令按计划删除。旧 draft 还需已有 maintain 丢弃回执及无独有 durable 字节的核对；不手工补造退役摘要来删除未知目录。Git 隔离只覆盖候选目录，不替代实际清理，也不隐藏正式文档回执。
 
 `WIKI_SUBJECT_SCOPE_UNPROVEN` 需要实际差异范围或确切成功原字节：成功 durable 分项能重现完整旧 subject 时才按文档差集缩小复核，源码依赖/topology、initial、repair、旧 FAIL、UNCERTAIN 与必要 L4 继续适用。缺旧分项、未知/全局变动不等于全库正文已错，不自动全库重写，也不拿当前 anchors 伪造历史身份。`policy-review` 在正式 Wiki 上核对旧规则和配置，准确登记后重跑 `maintain`；scope 无法重现摘要时保持拒绝，不自动换 scope。
 
