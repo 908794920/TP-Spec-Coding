@@ -10,6 +10,9 @@ from typing import Any, Dict
 from cli.path_identity import canonical_path, same_path
 
 
+_LAUNCHER_NAMES = ("tp-spec.ps1", "tp-spec.cmd", "tp-spec")
+
+
 def launcher_bin_root(state_root: "str | Path") -> Path:
     return canonical_path(state_root) / "bin"
 
@@ -69,18 +72,17 @@ def precheck_launchers(*, base_root: "str | Path", state_root: "str | Path") -> 
     only when this passes; a failure here leaves configuration and launchers untouched.
     """
     base = canonical_path(base_root); bin_root = launcher_bin_root(canonical_path(state_root))
-    names = ("tp-spec.ps1", "tp-spec.cmd", "tp-spec")
     issues: list[str] = []
     conflicts: list[str] = []
     if (bin_root.exists() or bin_root.is_symlink()) and not bin_root.is_dir():
         issues.append(f"launcher bin path is not a directory: {bin_root}")
         conflicts.append(str(bin_root))
-    for name in names:
+    for name in _LAUNCHER_NAMES:
         target = bin_root / name
         if (target.exists() or target.is_symlink()) and not target.is_file():
             issues.append(f"launcher target is not a regular file: {target}")
             conflicts.append(str(target))
-    missing = [str(base / "scripts" / name) for name in names if not (base / "scripts" / name).is_file()]
+    missing = [str(base / "scripts" / name) for name in _LAUNCHER_NAMES if not (base / "scripts" / name).is_file()]
     if missing:
         issues.append("launcher source missing: " + ", ".join(missing))
         conflicts.extend(missing)
@@ -95,15 +97,10 @@ def install_launchers(*, base_root: "str | Path", state_root: "str | Path", pers
         return {"status": "FAIL", "bin_root": str(bin_root), "conflicts": precheck["conflicts"],
                 "issues": precheck["issues"]}
     bin_root.mkdir(parents=True, exist_ok=True)
-    sources = {
-        "tp-spec.ps1": base / "scripts" / "tp-spec.ps1",
-        "tp-spec.cmd": base / "scripts" / "tp-spec.cmd",
-        "tp-spec": base / "scripts" / "tp-spec",
-    }
     changed = []
-    for name, source in sources.items():
+    for name in _LAUNCHER_NAMES:
         target = bin_root / name
-        data = source.read_bytes()
+        data = (base / "scripts" / name).read_bytes()
         if not target.is_file() or target.read_bytes() != data:
             # A write that fails part way stays a real I/O failure: report the path and the
             # targets already replaced, and let the caller retry the same command.
@@ -137,13 +134,27 @@ def _persistent_path_contains(bin_root: Path) -> bool:
 
 def launcher_health(*, base_root: "str | Path | None", state_root: "str | Path", require_path: bool) -> Dict[str, Any]:
     bin_root = launcher_bin_root(state_root)
-    required = [bin_root / "tp-spec.ps1", bin_root / "tp-spec.cmd", bin_root / "tp-spec"]
-    missing = [str(p) for p in required if not p.is_file()]
+    required = [bin_root / name for name in _LAUNCHER_NAMES]
+    present = [path for path in required if path.is_file()]
+    missing = [str(path) for path in required if path not in present]
     path_visible = _path_contains(os.environ.get("PATH", ""), bin_root) or _persistent_path_contains(bin_root)
     issues = []
     if missing: issues.append("launcher files missing")
     if require_path and not path_visible: issues.append("tp-spec launcher bin is not visible on PATH")
-    if base_root is None: issues.append("Base root unresolved for launcher")
+    stale = []
+    if base_root is None:
+        issues.append("Base root unresolved for launcher")
+    else:
+        source_dir = canonical_path(base_root) / "scripts"
+        for target in present:
+            source = source_dir / target.name
+            try:
+                if target.read_bytes() != source.read_bytes():
+                    stale.append(str(target))
+            except OSError as exc:
+                issues.append(f"cannot compare launcher {target} with {source}: {exc}")
+    if stale:
+        issues.append("launcher contents differ from configured Base; rerun base configure: " + ", ".join(stale))
     return {"status": "PASS" if not issues else "FAIL", "bin_root": str(bin_root),
-            "files": [str(p) for p in required], "missing": missing,
+            "files": [str(p) for p in required], "missing": missing, "stale": stale,
             "path_visible": path_visible, "issues": issues}

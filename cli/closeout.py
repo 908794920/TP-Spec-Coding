@@ -64,6 +64,8 @@ def compact(result: dict[str, Any]) -> dict[str, Any]:
     """Project a completed preflight; never omit a check, blocker or unknown."""
     value = dict(result)
     value["detail_mode"] = "COMPACT"
+    if result.get("retired"):
+        return value
     value["detail_note"] = "All checks executed; nested facts/route context are available without --compact."
     value["checks"] = []
     for row in result["checks"]:
@@ -86,6 +88,15 @@ def compact(result: dict[str, Any]) -> dict[str, Any]:
     value["downstream_closeout_pending"] = list(result.get("downstream_closeout_pending") or [])
     value["unknown_sources"] = list(result.get("unknown_sources") or [])
     return value
+
+
+def retired_history(task, task_dir: str, retirement: event_policies.TrustedEvent) -> dict[str, Any]:
+    return {"schema": SCHEMA, "task_id": task["task_id"], "state": task["current_state"],
+            "retired": True, "ready": False, "already_terminal": False, "read_only": True,
+            "task_dir": str(Path(task_dir).absolute()), "checks": [], "blockers": [],
+            "unknowns": [], "acceptance_issues": [], "route": None, "next_actions": [],
+            "retirement": {"event_id": retirement.row["id"], "reason": retirement.detail["reason"]},
+            "coverage_note": "可信退休任务只展示历史，不执行结单预检或追补新义务。"}
 
 
 def terminal_result(conn, task) -> dict[str, Any]:

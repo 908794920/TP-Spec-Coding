@@ -2,8 +2,9 @@
 .SYNOPSIS
     Stable TP-Spec-Coding CLI launcher.
 .DESCRIPTION
-    Resolves Base from TP_SPEC_BASE_ROOT, ~/.tp-spec/installation.yaml, or the
-    installed Base script location. The caller working directory is preserved.
+    Resolves Base from TP_SPEC_BASE_ROOT, the installation config, or the Base
+    script location. The config uses TP_SPEC_INSTALLATION_CONFIG, then
+    TP_SPEC_USER_ROOT, then ~/.tp-spec. The caller working directory is preserved.
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(
@@ -26,7 +27,11 @@ function Test-TpSpecBaseRoot {
 function Get-TpSpecInstallationBaseRoot {
     $configPath = $env:TP_SPEC_INSTALLATION_CONFIG
     if ([string]::IsNullOrWhiteSpace($configPath)) {
-        $configPath = Join-Path (Join-Path $HOME '.tp-spec') 'installation.yaml'
+        $userRoot = $env:TP_SPEC_USER_ROOT
+        if ([string]::IsNullOrWhiteSpace($userRoot)) {
+            $userRoot = Join-Path $HOME '.tp-spec'
+        }
+        $configPath = Join-Path $userRoot 'installation.yaml'
     }
     if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { return $null }
     try {

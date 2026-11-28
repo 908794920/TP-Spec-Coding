@@ -448,6 +448,7 @@ ChangeSet 原内容 ID 保持原格式；正式新记录额外保留既有快照
 ### 确定性结单预检与结果复用
 
 `task complete --task <ID> --task-dir <DIR> --check` 只读返回 `tp-spec.closeout/v1`。
+有可信退休事件时，即使原工件目录已移走，也返回 `retired=true` 和原工作流状态，退出码为 1，行动建议为空。
 `checks` 逐项列出判定、适用性、真实依据、问题、`responsibility` 和 `depends_on`；
 `blockers` 保留扁平兼容字段，`unknowns` 明示未取得确定结果的必需项，`next_actions`
 列出尚未满足的依赖。有效等级和适用步骤来自统一 Runtime，不以裸 `flow_level` 推断。

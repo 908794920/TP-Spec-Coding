@@ -1224,10 +1224,11 @@ def validate_final_acceptance(conn, task_id: str, task_dir: Path) -> None:
 
 
 def completion_check(*, task_id: str, task_dir: str, db: Optional[str] = None,
-                     connection=None, base_root: Optional["str | Path"] = None) -> Dict[str, Any]:
-    """The sole read-only preflight; Complete reuses it inside the write lock."""
-    from .closeout import collect
-    tdir = _task_dir(task_dir)
+                     connection=None, base_root: Optional["str | Path"] = None,
+                     show_retired_history: bool = True) -> Dict[str, Any]:
+    """Run the read-only preflight, or show a trusted retirement as history."""
+    from .closeout import collect, retired_history
+    from .event_policies import load_task_retirement
     db_path = dbmod.resolve_db_path(db, task_id=task_id)
     conn = connection if connection is not None else dbmod.connect_readonly(db_path)
     started = not conn.in_transaction
@@ -1238,7 +1239,11 @@ def completion_check(*, task_id: str, task_dir: str, db: Optional[str] = None,
         task = conn.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone()
         if task is None:
             raise ValueError(f"task not found: {task_id}")
-        return collect(conn, task, tdir, db_path=db_path, base_root=base_root)
+        if show_retired_history:
+            retirement = load_task_retirement(conn, task_id)
+            if retirement is not None:
+                return retired_history(task, task_dir, retirement)
+        return collect(conn, task, _task_dir(task_dir), db_path=db_path, base_root=base_root)
     finally:
         if started and conn.in_transaction:
             conn.execute("ROLLBACK")
@@ -1293,7 +1298,8 @@ def complete(*, task_id: str, task_dir: str, actor: Optional[str], summary: str,
                 raise ValueError("VIDEO_COMPLETION_ROLE_INVALID")
 
         def checked(dbconn):
-            preflight = completion_check(task_id=task_id, task_dir=str(tdir), db=db_path, connection=dbconn)
+            preflight = completion_check(task_id=task_id, task_dir=str(tdir), db=db_path,
+                                         connection=dbconn, show_retired_history=False)
             if preflight.get("already_terminal"):
                 raise recording.RequestReplay(preflight)
             if not preflight["ready"]:
